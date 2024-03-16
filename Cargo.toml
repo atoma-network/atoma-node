@@ -1,0 +1,7 @@
+[workspace]
+
+members = [ 
+    "event-subscribe",
+    "inference", 
+    "networking"
+, "node-json-rpc"]
