@@ -1,7 +1,3 @@
 [workspace]
 
-members = [ 
-    "atoma-event-subscribe",
-    "atoma-inference", 
-    "atoma-networking"
-, "atoma-json-rpc", "atoma-storage"]
+members = ["atoma-event-subscribe", "atoma-inference", "atoma-networking", "atoma-json-rpc", "atoma-storage"]
