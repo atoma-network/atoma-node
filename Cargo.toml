@@ -4,4 +4,4 @@ members = [
     "atoma-event-subscribe",
     "atoma-inference", 
     "atoma-networking"
-, "atoma-json-rpc"]
+, "atoma-json-rpc", "atoma-storage"]
