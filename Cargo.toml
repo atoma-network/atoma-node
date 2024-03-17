@@ -1,7 +1,7 @@
 [workspace]
 
 members = [ 
-    "event-subscribe",
-    "inference", 
-    "networking"
-, "node-json-rpc"]
+    "atoma-event-subscribe",
+    "atoma-inference", 
+    "atoma-networking"
+, "atoma-json-rpc"]
