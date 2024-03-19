@@ -13,8 +13,8 @@ pub enum Model {
     StableDiffusionV3,
 }
 
-#[derive(Clone, Debug)]
-pub struct NodeId(VerificationKey);
+pub type NodeId = VerificationKey;
+pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
@@ -42,15 +42,14 @@ pub struct ModelRequest {
     pub(crate) quantization_method: Option<QuantizationMethod>,
 }
 
-#[derive(Clone, Debug)]
-pub struct ModelResponse { 
+pub struct ModelResponse {
     pub(crate) is_success: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum QuantizationMethod {
-    Ggml,
-    Gptq(),
+    Ggml(QuantizationBits),
+    Gptq(QuantizationBits),
 }
 
 #[derive(Clone, Debug)]

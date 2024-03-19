@@ -9,4 +9,6 @@ version = "0.1.0"
 [workspace.dependencies]
 async-trait = "0.1.78"
 ed25519-consensus = "2.1.0"
+thiserror = "1.0.58"
 tokio = "1.36.0"
+tracing = "0.1.40"
