@@ -6,3 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait.workspace = true
+ed25519-consensus.workspace = true
+tokio = { workspace = true, features = ["full", "tracing"] }

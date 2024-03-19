@@ -1,3 +1,12 @@
 [workspace]
+resolver = "2"
 
 members = ["atoma-event-subscribe", "atoma-inference", "atoma-networking", "atoma-json-rpc", "atoma-storage"]
+
+[workspace.package]
+version = "0.1.0"
+
+[workspace.dependencies]
+async-trait = "0.1.78"
+ed25519-consensus = "2.1.0"
+tokio = "1.36.0"
