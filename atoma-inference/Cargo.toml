@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 async-trait.workspace = true
 ed25519-consensus.workspace = true
+tch.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full", "tracing"] }
 tracing.workspace = true

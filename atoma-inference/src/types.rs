@@ -1,16 +1,31 @@
 use ed25519_consensus::VerificationKey;
 
 #[derive(Clone, Debug)]
-pub struct Prompt(String);
+pub struct Prompt(pub(crate) String);
 
 #[derive(Clone, Debug)]
 pub enum Model {
     Llama2(usize),
+    Mamba(usize),
     Mixtral8x7b,
     Mistral(usize),
     StableDiffusionV1,
     StableDiffusionV2,
     StableDiffusionV3,
+}
+
+impl Model {
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Llama2(size) => format!("Llama2({})", size),
+            Self::Mamba(size) => format!("Mamba({})", size),
+            Self::Mixtral8x7b => String::from("Mixtral8x7b"),
+            Self::Mistral(size) => format!("Mistral({})", size),
+            Self::StableDiffusionV1 => String::from("StableDiffusionV1"),
+            Self::StableDiffusionV2 => String::from("StableDiffusionV2"),
+            Self::StableDiffusionV3 => String::from("StableDiffusionV3"),
+        }
+    }
 }
 
 pub type NodeId = VerificationKey;

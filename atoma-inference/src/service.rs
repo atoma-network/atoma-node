@@ -1,4 +1,5 @@
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
+use tch::TchError;
 use thiserror::Error;
 
 use crate::{
@@ -46,13 +47,19 @@ impl<T: ApiTrait> InferenceCore<T> {
 impl<T: ApiTrait> InferenceCore<T> {
     pub fn inference(
         &mut self,
-        _prompt: Prompt,
-        _model: Model,
+        prompt: Prompt,
+        model: Model,
         _temperature: Temperature,
         _max_tokens: usize,
         _top_p: f32,
         _top_k: usize,
     ) -> Result<InferenceResponse, InferenceCoreError> {
+        let mut model_path = self.config.storage_base_path().clone();
+        model_path.push(format!("{}", model.to_string()));
+        let model = tch::CModule::load(model_path)?;
+        let result = model
+            .forward_ts(prompt.0)
+            .map_err(|e| InferenceCoreError::FailedInference(e))?;
         todo!()
     }
 
@@ -68,7 +75,7 @@ impl<T: ApiTrait> InferenceCore<T> {
 #[derive(Debug, Error)]
 pub enum InferenceCoreError {
     #[error("Failed to generate inference output: `{0}`")]
-    FailedInference(String),
+    FailedInference(TchError),
     #[error("Failed to fetch new AI model: `{0}`")]
     FailedModelFetch(String),
     #[error("Failed to connect to web2 API: `{0}`")]
