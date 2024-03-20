@@ -3,7 +3,7 @@ use tokio::sync::{mpsc, oneshot, oneshot::error::RecvError};
 use tracing::{debug, error};
 
 use crate::{
-    service::{InferenceCore, InferenceCoreError},
+    service::{ApiTrait, InferenceCore, InferenceCoreError},
     types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
 };
 
@@ -22,12 +22,12 @@ pub enum CoreError {
     Shutdown(RecvError),
 }
 
-pub struct CoreThread {
-    core: InferenceCore,
+pub struct CoreThread<T> {
+    core: InferenceCore<T>,
     receiver: mpsc::Receiver<CoreThreadCommand>,
 }
 
-impl CoreThread {
+impl<T: ApiTrait> CoreThread<T> {
     pub async fn run(mut self) -> Result<(), CoreError> {
         debug!("Starting Core thread");
 
