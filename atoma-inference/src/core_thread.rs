@@ -47,10 +47,14 @@ impl<T: ApiTrait> CoreThread<T> {
                         error!("Current node, with verification key = {:?} was not sampled from {sampled_nodes:?}", self.core.public_key);
                         continue;
                     }
-                    let response = self
-                        .core
-                        .inference(prompt, model, temperature, max_tokens, top_p, top_k)
-                        .map_err(|e| CoreError::FailedInference(e))?;
+                    let response = self.core.inference(
+                        prompt,
+                        model,
+                        temperature,
+                        max_tokens,
+                        top_p,
+                        top_k,
+                    )?;
                     sender.send(response).ok();
                 }
                 CoreThreadCommand::FetchModel(request, sender) => {
@@ -58,15 +62,24 @@ impl<T: ApiTrait> CoreThread<T> {
                         model,
                         quantization_method,
                     } = request;
-                    let response = self
-                        .core
-                        .fetch_model(model, quantization_method)
-                        .map_err(|e| CoreError::FailedInference(e))?;
+                    let response = self.core.fetch_model(model, quantization_method)?;
                     sender.send(response).ok();
                 }
             }
         }
 
         Ok(())
+    }
+}
+
+impl From<InferenceCoreError> for CoreError {
+    fn from(error: InferenceCoreError) -> Self {
+        match error {
+            InferenceCoreError::FailedInference(_) => CoreError::FailedInference(error),
+            InferenceCoreError::FailedModelFetch(_) => CoreError::FailedModelFetch(error),
+            InferenceCoreError::FailedApiConnection(_) => {
+                panic!("API connection should have been already established")
+            }
+        }
     }
 }
