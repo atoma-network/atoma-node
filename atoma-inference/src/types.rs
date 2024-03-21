@@ -47,6 +47,7 @@ pub struct InferenceRequest {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct InferenceResponse {
     // TODO: possibly a Merkle root hash
     pub(crate) response_hash: [u8; 32],
@@ -61,6 +62,7 @@ pub struct ModelRequest {
     pub(crate) quantization_method: Option<QuantizationMethod>,
 }
 
+#[allow(dead_code)]
 pub struct ModelResponse {
     pub(crate) is_success: bool,
 }
