@@ -1,3 +1,1 @@
-pub struct InferenceConfig { 
-    
-}
+pub struct InferenceConfig {}
