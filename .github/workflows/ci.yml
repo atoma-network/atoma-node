@@ -1,0 +1,41 @@
+name: CI
+
+"on":
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+  merge_group:
+
+env:
+  toolchain: nightly-2024-03-06
+  CARGO_HTTP_MULTIPLEXING: false
+  CARGO_TERM_COLOR: always
+  CARGO_UNSTABLE_SPARSE_REGISTRY: true
+  CARGO_INCREMENTAL: 0
+  TERM: unknown
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy:
+    name: clippy
+    runs-on: [ubuntu-20.04]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.toolchain }}
+          components: clippy, rustfmt
+      - name: cargo format
+        run: cargo fmt --all -- --check
+      - name: Install cargo-lints
+        run: cargo install cargo-lints
+      - name: Clippy check (with lints)
+        run: cargo lints clippy --all-targets --all-features
