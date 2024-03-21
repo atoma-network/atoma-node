@@ -1,10 +1,11 @@
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
-use tch::TchError;
 use thiserror::Error;
+use tokenizers::Tokenizer;
+use tracing::info;
 
 use crate::{
     config::InferenceConfig,
-    types::{InferenceResponse, Model, ModelResponse, Prompt, QuantizationMethod, Temperature},
+    types::{InferenceResponse, ModelResponse, ModelType, Prompt, QuantizationMethod, Temperature},
 };
 
 #[derive(Debug, Error)]
@@ -34,7 +35,7 @@ impl<T: ApiTrait> InferenceCore<T> {
         private_key: PrivateKey,
     ) -> Result<Self, InferenceCoreError> {
         let public_key = private_key.verification_key();
-        let web2_api = T::connect(&config.api_key)?;
+        let web2_api = T::connect(&config.api_key())?;
         Ok(Self {
             config,
             public_key,
@@ -48,24 +49,29 @@ impl<T: ApiTrait> InferenceCore<T> {
     pub fn inference(
         &mut self,
         prompt: Prompt,
-        model: Model,
-        _temperature: Temperature,
+        model: ModelType,
+        _temperature: Option<Temperature>,
         _max_tokens: usize,
-        _top_p: f32,
+        _random_seed: usize,
+        _repeat_penalty: f32,
+        _top_p: Option<f32>,
         _top_k: usize,
     ) -> Result<InferenceResponse, InferenceCoreError> {
         let mut model_path = self.config.storage_base_path().clone();
-        model_path.push(format!("{}", model.to_string()));
-        let model = tch::CModule::load(model_path)?;
-        let result = model
-            .forward_ts(prompt.0)
-            .map_err(|e| InferenceCoreError::FailedInference(e))?;
+        model_path.push(model.to_string());
+
+        let tokenizer = Tokenizer::from_file(self.config.tokenizer_file_path())
+            .map_err(InferenceCoreError::FailedInference)?;
+        let mut tokens = tokenizer
+            .encode(prompt.0, true)
+            .map_err(InferenceCoreError::FailedInference)?;
+
         todo!()
     }
 
     pub fn fetch_model(
         &mut self,
-        _model: Model,
+        _model: ModelType,
         _quantization_method: Option<QuantizationMethod>,
     ) -> Result<ModelResponse, InferenceCoreError> {
         Ok(ModelResponse { is_success: true })
@@ -75,7 +81,7 @@ impl<T: ApiTrait> InferenceCore<T> {
 #[derive(Debug, Error)]
 pub enum InferenceCoreError {
     #[error("Failed to generate inference output: `{0}`")]
-    FailedInference(TchError),
+    FailedInference(Box<dyn std::error::Error + Send + Sync>),
     #[error("Failed to fetch new AI model: `{0}`")]
     FailedModelFetch(String),
     #[error("Failed to connect to web2 API: `{0}`")]

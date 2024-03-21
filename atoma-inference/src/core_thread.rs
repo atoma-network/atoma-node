@@ -39,6 +39,8 @@ impl<T: ApiTrait> CoreThread<T> {
                         model,
                         max_tokens,
                         temperature,
+                        random_seed,
+                        repeat_penalty,
                         top_k,
                         top_p,
                         sampled_nodes,
@@ -52,6 +54,8 @@ impl<T: ApiTrait> CoreThread<T> {
                         model,
                         temperature,
                         max_tokens,
+                        random_seed,
+                        repeat_penalty,
                         top_p,
                         top_k,
                     )?;

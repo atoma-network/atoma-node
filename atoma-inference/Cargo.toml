@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 async-trait.workspace = true
+candle-nn.workspace = true
 ed25519-consensus.workspace = true
-tch.workspace = true
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+tokenizers.workspace = true
 tokio = { workspace = true, features = ["full", "tracing"] }
 tracing.workspace = true

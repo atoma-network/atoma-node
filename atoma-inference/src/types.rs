@@ -1,10 +1,12 @@
+use std::fmt::Display;
+
 use ed25519_consensus::VerificationKey;
 
 #[derive(Clone, Debug)]
 pub struct Prompt(pub(crate) String);
 
 #[derive(Clone, Debug)]
-pub enum Model {
+pub enum ModelType {
     Llama2(usize),
     Mamba(usize),
     Mixtral8x7b,
@@ -14,16 +16,16 @@ pub enum Model {
     StableDiffusionV3,
 }
 
-impl Model {
-    pub fn to_string(&self) -> String {
+impl Display for ModelType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Llama2(size) => format!("Llama2({})", size),
-            Self::Mamba(size) => format!("Mamba({})", size),
-            Self::Mixtral8x7b => String::from("Mixtral8x7b"),
-            Self::Mistral(size) => format!("Mistral({})", size),
-            Self::StableDiffusionV1 => String::from("StableDiffusionV1"),
-            Self::StableDiffusionV2 => String::from("StableDiffusionV2"),
-            Self::StableDiffusionV3 => String::from("StableDiffusionV3"),
+            Self::Llama2(size) => write!(f, "Llama2({})", size),
+            Self::Mamba(size) => write!(f, "Mamba({})", size),
+            Self::Mixtral8x7b => write!(f, "Mixtral8x7b"),
+            Self::Mistral(size) => write!(f, "Mistral({})", size),
+            Self::StableDiffusionV1 => write!(f, "StableDiffusionV1"),
+            Self::StableDiffusionV2 => write!(f, "StableDiffusionV2"),
+            Self::StableDiffusionV3 => write!(f, "StableDiffusionV3"),
         }
     }
 }
@@ -34,12 +36,14 @@ pub type Temperature = f32;
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
     pub(crate) prompt: Prompt,
-    pub(crate) model: Model,
+    pub(crate) model: ModelType,
     pub(crate) max_tokens: usize,
+    pub(crate) random_seed: usize,
+    pub(crate) repeat_penalty: f32,
     pub(crate) sampled_nodes: Vec<NodeId>,
-    pub(crate) temperature: f32,
+    pub(crate) temperature: Option<f32>,
     pub(crate) top_k: usize,
-    pub(crate) top_p: f32,
+    pub(crate) top_p: Option<f32>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,7 +57,7 @@ pub struct InferenceResponse {
 
 #[derive(Clone, Debug)]
 pub struct ModelRequest {
-    pub(crate) model: Model,
+    pub(crate) model: ModelType,
     pub(crate) quantization_method: Option<QuantizationMethod>,
 }
 

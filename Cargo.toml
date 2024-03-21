@@ -8,9 +8,10 @@ version = "0.1.0"
 
 [workspace.dependencies]
 async-trait = "0.1.78"
+candle-nn = "0.4.1"
 ed25519-consensus = "2.1.0"
-ort = "1.16.3"
+serde = "1.0.197"
 thiserror = "1.0.58"
-tch = "0.15.0"
+tokenizers = "0.15.2"
 tokio = "1.36.0"
 tracing = "0.1.40"
