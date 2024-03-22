@@ -1,37 +1,11 @@
-use std::fmt::Display;
-
+use crate::models::ModelType;
 use ed25519_consensus::VerificationKey;
-
-#[derive(Clone, Debug)]
-pub struct Prompt(pub(crate) String);
-
-#[derive(Clone, Debug)]
-pub enum ModelType {
-    Llama2(usize),
-    Mamba(usize),
-    Mixtral8x7b,
-    Mistral(usize),
-    StableDiffusionV1,
-    StableDiffusionV2,
-    StableDiffusionV3,
-}
-
-impl Display for ModelType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Llama2(size) => write!(f, "Llama2({})", size),
-            Self::Mamba(size) => write!(f, "Mamba({})", size),
-            Self::Mixtral8x7b => write!(f, "Mixtral8x7b"),
-            Self::Mistral(size) => write!(f, "Mistral({})", size),
-            Self::StableDiffusionV1 => write!(f, "StableDiffusionV1"),
-            Self::StableDiffusionV2 => write!(f, "StableDiffusionV2"),
-            Self::StableDiffusionV3 => write!(f, "StableDiffusionV3"),
-        }
-    }
-}
 
 pub type NodeId = VerificationKey;
 pub type Temperature = f32;
+
+#[derive(Clone, Debug)]
+pub struct Prompt(pub(crate) String);
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {

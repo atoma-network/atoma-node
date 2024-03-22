@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 async-trait.workspace = true
-candle-nn.workspace = true
+candle.workspace = true
+candle-transformers.workspace = true
 ed25519-consensus.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

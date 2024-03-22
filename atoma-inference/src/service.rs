@@ -3,7 +3,8 @@ use thiserror::Error;
 
 use crate::{
     config::InferenceConfig,
-    types::{InferenceResponse, ModelResponse, ModelType, Prompt, QuantizationMethod, Temperature},
+    models::ModelType,
+    types::{InferenceResponse, ModelResponse, Prompt, QuantizationMethod, Temperature},
 };
 
 #[derive(Debug, Error)]
@@ -23,6 +24,7 @@ pub trait ApiTrait {
 #[allow(dead_code)]
 pub struct InferenceCore<T> {
     config: InferenceConfig,
+    // models: Vec<Model>,
     pub(crate) public_key: PublicKey,
     private_key: PrivateKey,
     web2_api: T,

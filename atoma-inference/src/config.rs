@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::{
+    models::ModelType,
     specs::{HardwareSpec, SoftwareSpec},
-    types::ModelType,
 };
 
 pub struct InferenceConfig {
