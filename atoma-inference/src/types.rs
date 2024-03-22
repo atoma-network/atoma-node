@@ -5,11 +5,8 @@ pub type NodeId = VerificationKey;
 pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
-pub struct Prompt(pub(crate) String);
-
-#[derive(Clone, Debug)]
 pub struct InferenceRequest {
-    pub(crate) prompt: Prompt,
+    pub(crate) prompt: String,
     pub(crate) model: ModelType,
     pub(crate) max_tokens: usize,
     pub(crate) random_seed: usize,
@@ -43,15 +40,17 @@ pub struct ModelResponse {
 
 #[derive(Clone, Debug)]
 pub enum QuantizationMethod {
-    Ggml(QuantizationBits),
-    Gptq(QuantizationBits),
+    Ggml(PrecisionBits),
+    Gptq(PrecisionBits),
 }
 
 #[derive(Clone, Debug)]
-pub enum QuantizationBits {
+pub enum PrecisionBits {
     Q1,
     Q2,
     Q4,
     Q5,
     Q8,
+    F16,
+    F32,
 }

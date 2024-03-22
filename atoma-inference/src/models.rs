@@ -1,7 +1,9 @@
-use std::{error::Error, fmt::Display};
+use std::fmt::Display;
 
-use candle::Device;
+use candle::{DType, Device, Error as CandleError};
+use candle_nn::VarBuilder;
 use candle_transformers::{
+    generation::LogitsProcessor,
     models::{
         llama::{Config as LlamaConfig, Llama},
         llama2_c::{Config as Llama2Config, Llama as Llama2},
@@ -10,10 +12,12 @@ use candle_transformers::{
         mixtral::{Config as MixtralConfig, Model as MixtralModel},
         stable_diffusion::StableDiffusionConfig,
     },
-    quantized_var_builder::VarBuilder,
 };
+use thiserror::Error;
 
 use tokenizers::Tokenizer;
+
+use crate::types::Temperature;
 
 #[derive(Clone, Debug)]
 pub enum ModelType {
@@ -62,13 +66,21 @@ impl From<ModelType> for ModelConfig {
 
 pub trait ModelApi {
     fn load(model_specs: ModelSpecs, var_builder: VarBuilder) -> Self;
-    fn run(&self, input: String) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn run(
+        &self,
+        input: String,
+        max_tokens: usize,
+        random_seed: usize,
+        temperature: Temperature,
+        top_p: f32,
+    ) -> Result<String, ModelError>;
 }
 
 #[allow(dead_code)]
 pub struct ModelSpecs {
     pub(crate) config: ModelConfig,
     pub(crate) device: Device,
+    pub(crate) dtype: DType,
     pub(crate) tokenizer: Tokenizer,
 }
 
@@ -100,51 +112,82 @@ impl ModelApi for Model {
         let model_config = model_specs.config.clone();
         match model_config {
             ModelConfig::Llama(config) => {
-                let model = load_llama_model(config, var_builder);
+                let model = Llama::load(var_builder, &config).expect("Failed to load LlaMa model");
                 Self::Llama { model, model_specs }
             }
             ModelConfig::Llama2(config) => {
-                let model = load_llama2_model(config, var_builder);
+                let model = Llama2::load(var_builder, config).expect("Failed to load LlaMa2 model");
                 Self::Llama2 { model_specs, model }
             }
             ModelConfig::Mamba(config) => {
-                let model = load_mamba_model(config, var_builder);
+                let model =
+                    MambaModel::new(&config, var_builder).expect("Failed to load Mamba model");
                 Self::Mamba { model_specs, model }
             }
             ModelConfig::Mistral(config) => {
-                let model = load_mistral(config, var_builder);
+                let model =
+                    MistralModel::new(&config, var_builder).expect("Failed to load Mistral model");
                 Self::Mistral { model_specs, model }
             }
             ModelConfig::Mixtral8x7b(config) => {
-                let model = load_mixtral(config, var_builder);
+                let model =
+                    MixtralModel::new(&config, var_builder).expect("Failed to load Mixtral model");
                 Self::Mixtral8x7b { model_specs, model }
             }
-            ModelConfig::StableDiffusion(config) => {
+            ModelConfig::StableDiffusion(_) => {
                 panic!("TODO: implement it")
             }
         }
     }
 
-    fn run(&self, input: String) -> Result<String, Box<dyn Error + Send + Sync>> {
-        todo!()
+    fn run(
+        &self,
+        input: String,
+        max_tokens: usize,
+        random_seed: usize,
+        temperature: Temperature,
+        top_p: f32,
+    ) -> Result<String, ModelError> {
+        match self {
+            Self::Llama { model_specs, model } => {
+                let tokenizer = model_specs
+                    .tokenizer
+                    .encode(input, true)
+                    .map_err(ModelError::TokenizerError)?;
+
+                let mut logits = LogitsProcessor::new(
+                    random_seed as u64,
+                    Some(temperature as f64),
+                    Some(top_p as f64),
+                );
+
+                let start = std::time::Instant::now();
+
+                let index_pos = 0;
+                let mut tokens_generated = 0;
+
+                todo!()
+            }
+            Self::Llama2 { model_specs, model } => {
+                todo!()
+            }
+            Self::Mamba { model_specs, model } => {
+                todo!()
+            }
+            Self::Mistral { model_specs, model } => {
+                todo!()
+            }
+            Self::Mixtral8x7b { model_specs, model } => {
+                todo!()
+            }
+        }
     }
 }
 
-fn load_llama_model(config: LlamaConfig, var_builder: VarBuilder) -> Llama {
-    todo!()
-}
-
-fn load_llama2_model(config: Llama2Config, var_builder: VarBuilder) -> Llama2 {
-    todo!()
-}
-
-fn load_mamba_model(config: MambaConfig, var_builder: VarBuilder) -> MambaModel {
-    todo!()
-}
-fn load_mistral(config: MistralConfig, var_builder: VarBuilder) -> MistralModel {
-    todo!()
-}
-
-fn load_mixtral(config: MixtralConfig, var_builder: VarBuilder) -> MixtralModel {
-    todo!()
+#[derive(Debug, Error)]
+pub enum ModelError {
+    #[error("Failed to load error: `{0}`")]
+    LoadError(CandleError),
+    #[error("Failed input tokenization: `{0}`")]
+    TokenizerError(Box<dyn std::error::Error + Send + Sync>),
 }

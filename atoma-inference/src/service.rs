@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::{
     config::InferenceConfig,
     models::ModelType,
-    types::{InferenceResponse, ModelResponse, Prompt, QuantizationMethod, Temperature},
+    types::{InferenceResponse, ModelResponse, QuantizationMethod, Temperature},
 };
 
 #[derive(Debug, Error)]
@@ -50,7 +50,7 @@ impl<T: ApiTrait> InferenceCore<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn inference(
         &mut self,
-        _prompt: Prompt,
+        _prompt: String,
         model: ModelType,
         _temperature: Option<Temperature>,
         _max_tokens: usize,
