@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use candle::{DType, Device, Error as CandleError};
+use candle::{DType, Device, Error as CandleError, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
@@ -150,10 +150,12 @@ impl ModelApi for Model {
     ) -> Result<String, ModelError> {
         match self {
             Self::Llama { model_specs, model } => {
-                let tokenizer = model_specs
+                let mut tokens = model_specs
                     .tokenizer
                     .encode(input, true)
-                    .map_err(ModelError::TokenizerError)?;
+                    .map_err(ModelError::TokenizerError)?
+                    .get_ids()
+                    .to_vec();
 
                 let mut logits = LogitsProcessor::new(
                     random_seed as u64,
@@ -166,6 +168,42 @@ impl ModelApi for Model {
                 let index_pos = 0;
                 let mut tokens_generated = 0;
 
+                let mut output = String::with_capacity(max_tokens);
+
+                for index in 0..max_tokens {
+                    let (context_size, context_index) = if cache.use_kv_cache && index > 0 {
+                        (1, index_pos)
+                    } else {
+                        (tokens.len(), 0)
+                    };
+                    let ctx = &tokens[tokens.len().saturating_sub(context_size)..];
+                    let input = Tensor::new(ctx, &model_specs.device)?.unsqueeze(0)?;
+                    let logits = model.forward(&input, context_index, &mut cache)?;
+                    let logits = logits.squeeze(0).map_err(ModelError::LogitsError)?;
+                    let logits = if repeat_penalty == 1. {
+                        logits
+                    } else {
+                        let start_at = tokens.len().saturating_sub(repeat_last_n);
+                        candle_transformers::utils::apply_repeat_penalty(
+                            &logits,
+                            repeat_penalty,
+                            &tokens[start_at..],
+                        )?
+                    };
+                    index_pos += ctx.len();
+            
+                    let next_token = logits_processor.sample(&logits)?;
+                    token_generated += 1;
+                    tokens.push(next_token);
+            
+                    if Some(next_token) == eos_token_id {
+                        break;
+                    }
+                    if let Some(t) = model_specs.tokenizer(next_token)? {
+                        print!("{t}");
+                        std::io::stdout().flush()?;
+                    }
+                }
                 todo!()
             }
             Self::Llama2 { model_specs, model } => {
@@ -190,4 +228,6 @@ pub enum ModelError {
     LoadError(CandleError),
     #[error("Failed input tokenization: `{0}`")]
     TokenizerError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Logits error: `{0}`")]
+    LogitsError(CandleError)
 }
