@@ -9,7 +9,7 @@ use tokio::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    service::{ApiTrait, InferenceCore, InferenceCoreError},
+    core::{ApiTrait, InferenceCore, InferenceCoreError},
     types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
 };
 
@@ -30,7 +30,7 @@ pub enum CoreError {
     Shutdown(RecvError),
 }
 
-pub(crate) struct CoreThreadHandle {
+pub struct CoreThreadHandle {
     sender: mpsc::Sender<CoreThreadCommand>,
     join_handle: JoinHandle<()>,
 }
@@ -138,14 +138,17 @@ impl CoreThreadDispatcher {
 }
 
 impl CoreThreadDispatcher {
-    async fn fetch_model(&self, request: ModelRequest) -> Result<ModelResponse, CoreError> {
+    pub(crate) async fn fetch_model(
+        &self,
+        request: ModelRequest,
+    ) -> Result<ModelResponse, CoreError> {
         let (sender, receiver) = oneshot::channel();
         self.send(CoreThreadCommand::FetchModel(request, sender))
             .await;
         receiver.await.map_err(CoreError::Shutdown)
     }
 
-    async fn run_inference(
+    pub(crate) async fn run_inference(
         &self,
         request: InferenceRequest,
     ) -> Result<InferenceResponse, CoreError> {
