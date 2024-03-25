@@ -6,8 +6,9 @@ use tracing::{info, warn};
 use thiserror::Error;
 
 use crate::{
+    apis::{ApiError, ApiTrait},
     config::InferenceConfig,
-    core::{ApiError, ApiTrait, InferenceCore, InferenceCoreError},
+    core::{InferenceCore, InferenceCoreError},
     core_thread::{CoreError, CoreThreadDispatcher, CoreThreadHandle},
     types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
 };

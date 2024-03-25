@@ -2,24 +2,11 @@ use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use thiserror::Error;
 
 use crate::{
+    apis::{ApiError, ApiTrait},
     config::InferenceConfig,
     models::ModelType,
     types::{InferenceResponse, ModelResponse, QuantizationMethod, Temperature},
 };
-
-#[derive(Debug, Error)]
-pub enum ApiError {
-    #[error("Api Error: {0}")]
-    ApiError(String),
-}
-
-pub trait ApiTrait {
-    fn call(&mut self) -> Result<(), ApiError>;
-    fn fetch(&mut self) -> Result<(), ApiError>;
-    fn connect(api_key: &str) -> Result<Self, ApiError>
-    where
-        Self: Sized;
-}
 
 #[allow(dead_code)]
 pub struct InferenceCore<T> {

@@ -9,7 +9,8 @@ use tokio::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    core::{ApiTrait, InferenceCore, InferenceCoreError},
+    apis::ApiTrait,
+    core::{InferenceCore, InferenceCoreError},
     types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
 };
 

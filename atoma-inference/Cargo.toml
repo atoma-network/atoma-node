@@ -12,7 +12,9 @@ candle-nn.workspace = true
 candle-transformers.workspace = true
 config.true = true
 ed25519-consensus.workspace = true
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 thiserror.workspace = true
 tokenizers.workspace = true
 tokio = { workspace = true, features = ["full", "tracing"] }
