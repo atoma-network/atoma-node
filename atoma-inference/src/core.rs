@@ -14,7 +14,7 @@ pub struct InferenceCore<T> {
     // models: Vec<Model>,
     pub(crate) public_key: PublicKey,
     private_key: PrivateKey,
-    pub(crate) web2_api: T,
+    pub(crate) api: T,
 }
 
 impl<T: ApiTrait> InferenceCore<T> {
@@ -23,12 +23,12 @@ impl<T: ApiTrait> InferenceCore<T> {
         private_key: PrivateKey,
     ) -> Result<Self, InferenceCoreError> {
         let public_key = private_key.verification_key();
-        let web2_api = T::connect(&config.api_key())?;
+        let api = T::create(config.api_key(), config.storage_base_path())?;
         Ok(Self {
             config,
             public_key,
             private_key,
-            web2_api,
+            api,
         })
     }
 }
@@ -58,11 +58,12 @@ impl<T: ApiTrait> InferenceCore<T> {
         todo!()
     }
 
-    pub fn fetch_model(
+    pub async fn fetch_model(
         &mut self,
-        _model: ModelType,
+        model: ModelType,
         _quantization_method: Option<QuantizationMethod>,
     ) -> Result<ModelResponse, InferenceCoreError> {
+        self.api.fetch(model).await?;
         Ok(ModelResponse {
             is_success: true,
             error: None,

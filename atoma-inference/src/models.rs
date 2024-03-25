@@ -24,29 +24,23 @@ const EOS_TOKEN: &str = "</s>";
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum ModelType {
-    Llama(usize),
-    Llama2(usize),
-    Mamba(usize),
+    Llama2_7b,
+    Mamba3b,
     Mixtral8x7b,
-    Mistral(usize),
-    StableDiffusionV1_5,
-    StableDiffusionV2_1,
+    Mistral7b,
+    StableDiffusion2,
     StableDiffusionXl,
-    StableDiffusionTurbo,
 }
 
 impl Display for ModelType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Llama(size) => write!(f, "llama({})", size),
-            Self::Llama2(size) => write!(f, "llama2({})", size),
-            Self::Mamba(size) => write!(f, "mamba({})", size),
+            Self::Llama2_7b => write!(f, "llama2_7b"),
+            Self::Mamba3b => write!(f, "mamba_3b"),
             Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
-            Self::Mistral(size) => write!(f, "mistral({})", size),
-            Self::StableDiffusionV1_5 => write!(f, "stable_diffusion_v1_5"),
-            Self::StableDiffusionV2_1 => write!(f, "stable_diffusion_v2_1"),
+            Self::Mistral7b => write!(f, "mistral_7b"),
+            Self::StableDiffusion2 => write!(f, "stable_diffusion_2"),
             Self::StableDiffusionXl => write!(f, "stable_diffusion_xl"),
-            Self::StableDiffusionTurbo => write!(f, "stable_diffusion_turbo"),
         }
     }
 }

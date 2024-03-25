@@ -1,106 +1,118 @@
-use reqwest::{
-    header::{self, HeaderMap},
-    Client, IntoUrl, Url,
-};
-use serde::{de::DeserializeOwned, Serialize};
-use thiserror::Error;
+use std::path::PathBuf;
 
-pub struct HuggingFaceClient {
-    client: Client,
-    endpoint: Url,
-    request_id: i64,
+use async_trait::async_trait;
+use hf_hub::api::tokio::{Api, ApiBuilder};
+
+use crate::models::ModelType;
+
+use super::ApiTrait;
+
+struct FilePaths {
+    file_paths: Vec<String>,
 }
 
-impl HuggingFaceClient {
-    pub fn connect<T: IntoUrl>(endpoint: T) -> Result<Self, HuggingFaceError> {
-        let client = Client::builder()
-            .default_headers({
-                let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
-                headers
-            })
-            .build()?;
-
-        Ok(Self {
-            client,
-            endpoint: endpoint.into_url()?,
-            request_id: 0,
-        })
-    }
-
-    fn next_request_id(&mut self) -> i64 {
-        self.request_id += 1;
-        self.request_id
-    }
-
-    pub async fn send_request<T: Serialize, R: DeserializeOwned>(
-        &mut self,
-        method: &str,
-        params: T,
-    ) -> Result<R, HuggingFaceError> {
-        let params = serde_json::to_value(params)?;
-        let request_json = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": self.next_request_id(),
-            "method": method,
-            "params`": params,
-        });
-
-        let response = self
-            .client
-            .post(self.endpoint.clone())
-            .body(request_json.to_string())
-            .send()
-            .await?;
-
-        let value = response.json().await?;
-        let response = extract_json_result(value)?;
-
-        Ok(serde_json::from_value(response)?)
+impl ModelType {
+    fn get_hugging_face_model_path(&self) -> (String, FilePaths) {
+        match self {
+            Self::Llama2_7b => (
+                String::from("meta-llama/Llama-2-7b-hf"),
+                FilePaths {
+                    file_paths: vec![
+                        "model-00001-of-00002.safetensors".to_string(),
+                        "model-00002-of-00002.safetensors".to_string(),
+                    ],
+                },
+            ),
+            Self::Mamba3b => (
+                String::from("state-spaces/mamba-2.8b-hf"),
+                FilePaths {
+                    file_paths: vec![
+                        "model-00001-of-00003.safetensors".to_string(),
+                        "model-00002-of-00003.safetensors".to_string(),
+                        "model-00003-of-00003.safetensors".to_string(),
+                    ],
+                },
+            ),
+            Self::Mistral7b => (
+                String::from("mistralai/Mistral-7B-Instruct-v0.2"),
+                FilePaths {
+                    file_paths: vec![
+                        "model-00001-of-00003.safetensors".to_string(),
+                        "model-00002-of-00003.safetensors".to_string(),
+                        "model-00002-of-00003.safetensors".to_string(),
+                    ],
+                },
+            ),
+            Self::Mixtral8x7b => (
+                String::from("mistralai/Mixtral-8x7B-Instruct-v0.1"),
+                FilePaths {
+                    file_paths: vec![
+                        "model-00001-of-00019.safetensors".to_string(),
+                        "model-00002-of-00019.safetensors".to_string(),
+                        "model-00003-of-00019.safetensors".to_string(),
+                        "model-00004-of-00019.safetensors".to_string(),
+                        "model-00005-of-00019.safetensors".to_string(),
+                        "model-00006-of-00019.safetensors".to_string(),
+                        "model-00007-of-00019.safetensors".to_string(),
+                        "model-00008-of-00019.safetensors".to_string(),
+                        "model-00009-of-00019.safetensors".to_string(),
+                        "model-000010-of-00019.safetensors".to_string(),
+                        "model-000011-of-00019.safetensors".to_string(),
+                        "model-000012-of-00019.safetensors".to_string(),
+                        "model-000013-of-00019.safetensors".to_string(),
+                        "model-000014-of-00019.safetensors".to_string(),
+                        "model-000015-of-00019.safetensors".to_string(),
+                        "model-000016-of-00019.safetensors".to_string(),
+                        "model-000017-of-00019.safetensors".to_string(),
+                        "model-000018-of-00019.safetensors".to_string(),
+                        "model-000019-of-00019.safetensors".to_string(),
+                    ],
+                },
+            ),
+            Self::StableDiffusion2 => (
+                String::from("stabilityai/stable-diffusion-2"),
+                FilePaths {
+                    file_paths: vec!["768-v-ema.safetensors".to_string()],
+                },
+            ),
+            Self::StableDiffusionXl => (
+                String::from("stabilityai/stable-diffusion-xl-base-1.0"),
+                FilePaths {
+                    file_paths: vec![
+                        "sd_xl_base_1.0.safetensors".to_string(),
+                        "sd_xl_base_1.0_0.9vae.safetensors".to_string(),
+                        "sd_xl_offset_example-lora_1.0.safetensors".to_string(),
+                    ],
+                },
+            ),
+        }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum HuggingFaceError {
-    #[error("Connection error: `{0}`")]
-    ConnectionError(reqwest::Error),
-    #[error("Serialization error: `{0}`")]
-    SerializationError(serde_json::Error),
-    #[error("Failed request with code `{code}` and message `{message}`")]
-    RequestError { code: i64, message: String },
-    #[error("Invalid response: `{message}`")]
-    InvalidResponse { message: String },
-}
-
-impl From<reqwest::Error> for HuggingFaceError {
-    fn from(error: reqwest::Error) -> Self {
-        Self::ConnectionError(error)
-    }
-}
-
-impl From<serde_json::Error> for HuggingFaceError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::SerializationError(error)
-    }
-}
-
-fn extract_json_result(val: serde_json::Value) -> Result<serde_json::Value, HuggingFaceError> {
-    if let Some(err) = val.get("error") {
-        let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-        let message = err
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("Unknown error");
-        return Err(HuggingFaceError::RequestError {
-            code,
-            message: message.to_string(),
-        });
+#[async_trait]
+impl ApiTrait for Api {
+    fn call(&mut self) -> Result<(), super::ApiError> {
+        todo!()
     }
 
-    let result = val
-        .get("result")
-        .ok_or_else(|| HuggingFaceError::InvalidResponse {
-            message: "Missing result field".to_string(),
-        })?;
-    Ok(result.clone())
+    fn create(api_key: String, cache_dir: PathBuf) -> Result<Self, super::ApiError>
+    where
+        Self: Sized,
+    {
+        Ok(ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?)
+    }
+
+    async fn fetch(&mut self, model: ModelType) -> Result<(), super::ApiError> {
+        let (model_path, files) = model.get_hugging_face_model_path();
+        let api_repo = self.model(model_path);
+        for file in files.file_paths {
+            api_repo.get(&file).await?;
+        }
+
+        Ok(())
+    }
 }

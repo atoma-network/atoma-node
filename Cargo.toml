@@ -13,6 +13,7 @@ candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-n
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", version = "0.4.2" }
 config = "0.14.0"
 ed25519-consensus = "2.1.0"
+hf-hub = "0.3.2"
 serde = "1.0.197"
 serde_json = "1.0.114"
 rand = "0.8.5"

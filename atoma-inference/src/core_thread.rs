@@ -88,7 +88,7 @@ impl<T: ApiTrait> CoreThread<T> {
                         model,
                         quantization_method,
                     } = request;
-                    let response = self.core.fetch_model(model, quantization_method)?;
+                    let response = self.core.fetch_model(model, quantization_method).await?;
                     sender.send(response).ok();
                 }
             }

@@ -125,34 +125,38 @@ impl From<InferenceCoreError> for InferenceServiceError {
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
     use rand::rngs::OsRng;
     use std::io::Write;
     use toml::{toml, Value};
+
+    use crate::models::ModelType;
 
     use super::*;
 
     struct TestApiInstance {}
 
+    #[async_trait]
     impl ApiTrait for TestApiInstance {
         fn call(&mut self) -> Result<(), ApiError> {
             Ok(())
         }
 
-        fn connect(_: &str) -> Result<Self, ApiError>
+        fn create(_: String, _: PathBuf) -> Result<Self, ApiError>
         where
             Self: Sized,
         {
             Ok(Self {})
         }
 
-        fn fetch(&mut self) -> Result<(), ApiError> {
+        async fn fetch(&mut self, _: ModelType) -> Result<(), ApiError> {
             Ok(())
         }
     }
 
     #[tokio::test]
     async fn test_inference_service_initialization() {
-        const CONFIG_FILE_PATH: &str = "./config.toml";
+        const CONFIG_FILE_PATH: &str = "./inference.toml";
         const PRIVATE_KEY_FILE_PATH: &str = "./private_key";
 
         let private_key = PrivateKey::new(&mut OsRng);
@@ -160,7 +164,7 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = [{ Mamba = 3 }]
+            models = ["Mamba3b"]
             storage_base_path = "./storage_base_path/"
             tokenizer_file_path = "./tokenizer_file_path/"
             tracing = true
