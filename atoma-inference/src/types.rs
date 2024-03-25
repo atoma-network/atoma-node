@@ -36,6 +36,7 @@ pub struct ModelRequest {
 #[allow(dead_code)]
 pub struct ModelResponse {
     pub(crate) is_success: bool,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Clone, Debug)]

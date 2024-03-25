@@ -11,9 +11,12 @@ async-trait = "0.1.78"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", version = "0.4.2" }
 candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-nn", version = "0.4.2" }
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", version = "0.4.2" }
+config = "0.14.0"
 ed25519-consensus = "2.1.0"
 serde = "1.0.197"
+rand = "0.8.5"
 thiserror = "1.0.58"
 tokenizers = "0.15.2"
 tokio = "1.36.0"
+toml = "0.8.12"
 tracing = "0.1.40"

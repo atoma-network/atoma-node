@@ -23,11 +23,11 @@ pub trait ApiTrait {
 
 #[allow(dead_code)]
 pub struct InferenceCore<T> {
-    config: InferenceConfig,
+    pub(crate) config: InferenceConfig,
     // models: Vec<Model>,
     pub(crate) public_key: PublicKey,
     private_key: PrivateKey,
-    web2_api: T,
+    pub(crate) web2_api: T,
 }
 
 impl<T: ApiTrait> InferenceCore<T> {
@@ -76,7 +76,10 @@ impl<T: ApiTrait> InferenceCore<T> {
         _model: ModelType,
         _quantization_method: Option<QuantizationMethod>,
     ) -> Result<ModelResponse, InferenceCoreError> {
-        Ok(ModelResponse { is_success: true })
+        Ok(ModelResponse {
+            is_success: true,
+            error: None,
+        })
     }
 }
 

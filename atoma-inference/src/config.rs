@@ -1,15 +1,14 @@
 use std::path::PathBuf;
 
-use crate::{
-    models::ModelType,
-    specs::{HardwareSpec, SoftwareSpec},
-};
+use config::Config;
+use serde::Deserialize;
 
+use crate::models::ModelType;
+
+#[derive(Debug, Deserialize)]
 pub struct InferenceConfig {
     api_key: String,
-    hardware_specs: HardwareSpec,
     models: Vec<ModelType>,
-    software_specs: SoftwareSpec,
     storage_base_path: PathBuf,
     tokenizer_file_path: PathBuf,
     tracing: bool,
@@ -18,18 +17,14 @@ pub struct InferenceConfig {
 impl InferenceConfig {
     pub fn new(
         api_key: String,
-        hardware_specs: HardwareSpec,
         models: Vec<ModelType>,
-        software_specs: SoftwareSpec,
         storage_base_path: PathBuf,
         tokenizer_file_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
-            hardware_specs,
             models,
-            software_specs,
             storage_base_path,
             tokenizer_file_path,
             tracing,
@@ -40,16 +35,8 @@ impl InferenceConfig {
         self.api_key.clone()
     }
 
-    pub fn hardware(&self) -> HardwareSpec {
-        self.hardware_specs.clone()
-    }
-
     pub fn models(&self) -> Vec<ModelType> {
         self.models.clone()
-    }
-
-    pub fn software(&self) -> SoftwareSpec {
-        self.software_specs.clone()
     }
 
     pub fn storage_base_path(&self) -> PathBuf {
@@ -62,5 +49,17 @@ impl InferenceConfig {
 
     pub fn tracing(&self) -> bool {
         self.tracing
+    }
+
+    pub fn from_file_path(config_file_path: PathBuf) -> Self {
+        let builder = Config::builder().add_source(config::File::with_name(
+            config_file_path.to_str().as_ref().unwrap(),
+        ));
+        let config = builder
+            .build()
+            .expect("Failed to generate inference configuration file");
+        config
+            .try_deserialize::<Self>()
+            .expect("Failed to generated config file")
     }
 }
