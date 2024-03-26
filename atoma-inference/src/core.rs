@@ -23,7 +23,7 @@ impl<T: ApiTrait> InferenceCore<T> {
         private_key: PrivateKey,
     ) -> Result<Self, InferenceCoreError> {
         let public_key = private_key.verification_key();
-        let api = T::create(config.api_key(), config.storage_base_path())?;
+        let api = T::create(config.api_key(), config.storage_folder())?;
         Ok(Self {
             config,
             public_key,
@@ -46,7 +46,7 @@ impl<T: ApiTrait> InferenceCore<T> {
         _top_p: Option<f32>,
         _top_k: usize,
     ) -> Result<InferenceResponse, InferenceCoreError> {
-        let mut model_path = self.config.storage_base_path().clone();
+        let mut model_path = self.config.storage_folder().clone();
         model_path.push(model.to_string());
 
         // let tokenizer = Tokenizer::from_file(self.config.tokenizer_file_path())

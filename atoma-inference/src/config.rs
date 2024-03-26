@@ -9,7 +9,7 @@ use crate::models::ModelType;
 pub struct InferenceConfig {
     api_key: String,
     models: Vec<ModelType>,
-    storage_base_path: PathBuf,
+    storage_folder: PathBuf,
     tokenizer_file_path: PathBuf,
     tracing: bool,
 }
@@ -18,14 +18,14 @@ impl InferenceConfig {
     pub fn new(
         api_key: String,
         models: Vec<ModelType>,
-        storage_base_path: PathBuf,
+        storage_folder: PathBuf,
         tokenizer_file_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
             models,
-            storage_base_path,
+            storage_folder,
             tokenizer_file_path,
             tracing,
         }
@@ -39,8 +39,8 @@ impl InferenceConfig {
         self.models.clone()
     }
 
-    pub fn storage_base_path(&self) -> PathBuf {
-        self.storage_base_path.clone()
+    pub fn storage_folder(&self) -> PathBuf {
+        self.storage_folder.clone()
     }
 
     pub fn tokenizer_file_path(&self) -> PathBuf {
