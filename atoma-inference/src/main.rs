@@ -3,6 +3,8 @@ use inference::service::InferenceService;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+
     let (_, receiver) = tokio::sync::mpsc::channel(32);
 
     let _ = InferenceService::start::<Api>(

@@ -10,21 +10,21 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub struct InferenceCore<T> {
+pub struct InferenceCore<Api> {
     pub(crate) config: InferenceConfig,
     // models: Vec<Model>,
     pub(crate) public_key: PublicKey,
     private_key: PrivateKey,
-    pub(crate) api: T,
+    pub(crate) api: Api,
 }
 
-impl<T: ApiTrait> InferenceCore<T> {
+impl<Api: ApiTrait> InferenceCore<Api> {
     pub fn new(
         config: InferenceConfig,
         private_key: PrivateKey,
     ) -> Result<Self, InferenceCoreError> {
         let public_key = private_key.verification_key();
-        let api = T::create(config.api_key(), config.storage_folder())?;
+        let api = Api::create(config.api_key(), config.storage_folder())?;
         Ok(Self {
             config,
             public_key,
@@ -34,7 +34,7 @@ impl<T: ApiTrait> InferenceCore<T> {
     }
 }
 
-impl<T: ApiTrait> InferenceCore<T> {
+impl<Api: ApiTrait> InferenceCore<Api> {
     #[allow(clippy::too_many_arguments)]
     pub fn inference(
         &mut self,

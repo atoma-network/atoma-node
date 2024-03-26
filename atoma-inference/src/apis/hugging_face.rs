@@ -39,7 +39,7 @@ impl ModelType {
                     file_paths: vec![
                         "model-00001-of-00003.safetensors".to_string(),
                         "model-00002-of-00003.safetensors".to_string(),
-                        "model-00002-of-00003.safetensors".to_string(),
+                        "model-00003-of-00003.safetensors".to_string(),
                     ],
                 },
             ),
