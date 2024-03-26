@@ -17,14 +17,14 @@ pub struct InferenceService {
     core_thread_handle: CoreThreadHandle,
     dispatcher: CoreThreadDispatcher,
     start_time: Instant,
-    request_receiver: Receiver<InferenceRequest>,
+    _request_receiver: Receiver<InferenceRequest>,
 }
 
 impl InferenceService {
     pub async fn start<T: ApiTrait + Send + 'static>(
         config_file_path: PathBuf,
         private_key_path: PathBuf,
-        request_receiver: Receiver<InferenceRequest>,
+        _request_receiver: Receiver<InferenceRequest>,
     ) -> Result<Self, InferenceServiceError> {
         let private_key_bytes =
             std::fs::read(&private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
@@ -37,6 +37,8 @@ impl InferenceService {
         let models = inference_config.models();
         let inference_core = InferenceCore::<T>::new(inference_config, private_key)?;
 
+        info!("Starting Core Dispatcher..");
+
         let (dispatcher, core_thread_handle) = CoreThreadDispatcher::start(inference_core);
         let start_time = Instant::now();
 
@@ -44,10 +46,11 @@ impl InferenceService {
             dispatcher,
             core_thread_handle,
             start_time,
-            request_receiver,
+            _request_receiver,
         };
 
         for model in models {
+            info!("Fetching model {:?}", model);
             let response = inference_service
                 .fetch_model(ModelRequest {
                     model: model.clone(),
@@ -65,7 +68,7 @@ impl InferenceService {
         Ok(inference_service)
     }
 
-    async fn run_inference(
+    pub async fn run_inference(
         &self,
         inference_request: InferenceRequest,
     ) -> Result<InferenceResponse, InferenceServiceError> {
@@ -75,7 +78,7 @@ impl InferenceService {
             .map_err(InferenceServiceError::CoreError)
     }
 
-    async fn fetch_model(
+    pub async fn fetch_model(
         &self,
         model_request: ModelRequest,
     ) -> Result<ModelResponse, InferenceServiceError> {

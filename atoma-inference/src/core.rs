@@ -1,5 +1,6 @@
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use thiserror::Error;
+use tracing::info;
 
 use crate::{
     apis::{ApiError, ApiTrait},
@@ -37,7 +38,7 @@ impl<T: ApiTrait> InferenceCore<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn inference(
         &mut self,
-        _prompt: String,
+        prompt: String,
         model: ModelType,
         _temperature: Option<Temperature>,
         _max_tokens: usize,
@@ -46,14 +47,9 @@ impl<T: ApiTrait> InferenceCore<T> {
         _top_p: Option<f32>,
         _top_k: usize,
     ) -> Result<InferenceResponse, InferenceCoreError> {
+        info!("Running inference on prompt: {prompt}, for model: {model}");
         let mut model_path = self.config.storage_folder().clone();
         model_path.push(model.to_string());
-
-        // let tokenizer = Tokenizer::from_file(self.config.tokenizer_file_path())
-        //     .map_err(InferenceCoreError::FailedInference)?;
-        // let mut tokens = tokenizer
-        //     .encode(prompt.0, true)
-        //     .map_err(InferenceCoreError::FailedInference)?;
 
         todo!()
     }

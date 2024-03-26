@@ -6,15 +6,15 @@ pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
-    pub(crate) prompt: String,
-    pub(crate) model: ModelType,
-    pub(crate) max_tokens: usize,
-    pub(crate) random_seed: usize,
-    pub(crate) repeat_penalty: f32,
-    pub(crate) sampled_nodes: Vec<NodeId>,
-    pub(crate) temperature: Option<f32>,
-    pub(crate) top_k: usize,
-    pub(crate) top_p: Option<f32>,
+    pub prompt: String,
+    pub model: ModelType,
+    pub max_tokens: usize,
+    pub random_seed: usize,
+    pub repeat_penalty: f32,
+    pub sampled_nodes: Vec<NodeId>,
+    pub temperature: Option<f32>,
+    pub top_k: usize,
+    pub top_p: Option<f32>,
 }
 
 #[derive(Clone, Debug)]
