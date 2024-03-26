@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use hf_hub::api::tokio::{Api, ApiBuilder};
+use hf_hub::api::sync::{Api, ApiBuilder};
 
 use crate::models::ModelType;
 
@@ -106,11 +106,11 @@ impl ApiTrait for Api {
             .build()?)
     }
 
-    async fn fetch(&mut self, model: ModelType) -> Result<(), super::ApiError> {
+    fn fetch(&self, model: ModelType) -> Result<(), super::ApiError> {
         let (model_path, files) = model.get_hugging_face_model_path();
         let api_repo = self.model(model_path);
         for file in files.file_paths {
-            api_repo.get(&file).await?;
+            api_repo.get(&file)?;
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use hf_hub::api::tokio::Api;
+use hf_hub::api::sync::Api;
 use inference::service::InferenceService;
 
 #[tokio::main]
@@ -12,7 +12,6 @@ async fn main() {
         "../private_key".parse().unwrap(),
         receiver,
     )
-    .await
     .expect("Failed to start inference service");
 
     // inference_service

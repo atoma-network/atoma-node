@@ -59,7 +59,7 @@ impl<Api: ApiTrait> InferenceCore<Api> {
         model: ModelType,
         _quantization_method: Option<QuantizationMethod>,
     ) -> Result<ModelResponse, InferenceCoreError> {
-        self.api.fetch(model).await?;
+        self.api.fetch(model)?;
         Ok(ModelResponse {
             is_success: true,
             error: None,

@@ -1,6 +1,6 @@
 pub mod hugging_face;
 use async_trait::async_trait;
-use hf_hub::api::tokio::ApiError as HuggingFaceError;
+use hf_hub::api::sync::ApiError as HuggingFaceError;
 
 use std::path::PathBuf;
 
@@ -22,10 +22,9 @@ impl From<HuggingFaceError> for ApiError {
     }
 }
 
-#[async_trait]
 pub trait ApiTrait {
     fn call(&mut self) -> Result<(), ApiError>;
-    async fn fetch(&mut self, model: ModelType) -> Result<(), ApiError>;
+    fn fetch(&self, model: ModelType) -> Result<(), ApiError>;
     fn create(api_key: String, cache_dir: PathBuf) -> Result<Self, ApiError>
     where
         Self: Sized;

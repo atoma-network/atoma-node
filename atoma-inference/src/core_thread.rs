@@ -53,6 +53,17 @@ impl<T: ApiTrait> CoreThread<T> {
     pub async fn run(mut self) -> Result<(), CoreError> {
         debug!("Starting Core thread");
 
+        // let models = self.core.config.models();
+        // for model_type in models {
+        //     let (model_sender, model_receiver) = std::sync::mpsc::channel();
+        //     let
+        //     std::thread::spawn(move || {
+        //         while Ok(request) = model_receiver.recv() {
+
+        //         }
+        //     });
+        // }
+
         while let Some(command) = self.receiver.recv().await {
             match command {
                 CoreThreadCommand::RunInference(request, sender) => {

@@ -1,6 +1,12 @@
 use ed25519_consensus::SigningKey as PrivateKey;
-use std::{io, path::PathBuf, time::Instant};
-use tokio::sync::mpsc::{error::SendError, Receiver};
+use std::{io, path::PathBuf, sync::Arc, time::Instant};
+use tokio::{
+    io::join,
+    sync::{
+        mpsc::{error::SendError, Receiver},
+        RwLock,
+    },
+};
 use tracing::{info, warn};
 
 use thiserror::Error;
@@ -21,7 +27,7 @@ pub struct InferenceService {
 }
 
 impl InferenceService {
-    pub async fn start<T: ApiTrait + Send + 'static>(
+    pub fn start<T: ApiTrait + Clone + Send + 'static>(
         config_file_path: PathBuf,
         private_key_path: PathBuf,
         _request_receiver: Receiver<InferenceRequest>,
@@ -37,6 +43,17 @@ impl InferenceService {
         let models = inference_config.models();
         let inference_core = InferenceCore::<T>::new(inference_config, private_key)?;
 
+        let mut handles = Vec::with_capacity(models.len());
+        for model in models {
+            let api = inference_core.api.clone();
+            let handle = std::thread::spawn(move || {
+                api.fetch(model).expect("Failed to fetch model");
+            });
+            handles.push(handle);
+        }
+
+        handles.into_iter().for_each(|h| h.join().unwrap());
+
         info!("Starting Core Dispatcher..");
 
         let (dispatcher, core_thread_handle) = CoreThreadDispatcher::start(inference_core);
@@ -48,22 +65,6 @@ impl InferenceService {
             start_time,
             _request_receiver,
         };
-
-        for model in models {
-            info!("Fetching model {:?}", model);
-            let response = inference_service
-                .fetch_model(ModelRequest {
-                    model: model.clone(),
-                    quantization_method: None,
-                })
-                .await?;
-            if !response.is_success {
-                warn!(
-                    "Failed to fetch model: {:?}, with error: {:?}",
-                    model, response.error
-                );
-            }
-        }
 
         Ok(inference_service)
     }
@@ -114,6 +115,8 @@ pub enum InferenceServiceError {
     CoreError(CoreError),
     #[error("Send error: `{0}`")]
     SendError(SendError<InferenceResponse>),
+    #[error("Api error: `{0}`")]
+    ApiError(ApiError),
 }
 
 impl From<InferenceCoreError> for InferenceServiceError {
@@ -123,6 +126,12 @@ impl From<InferenceCoreError> for InferenceServiceError {
             InferenceCoreError::FailedInference(e) => Self::FailedInference(e),
             InferenceCoreError::FailedModelFetch(e) => Self::FailedModelFetch(e),
         }
+    }
+}
+
+impl From<ApiError> for InferenceServiceError {
+    fn from(error: ApiError) -> Self {
+        Self::ApiError(error)
     }
 }
 
@@ -137,9 +146,9 @@ mod tests {
 
     use super::*;
 
+    #[derive(Clone)]
     struct TestApiInstance {}
 
-    #[async_trait]
     impl ApiTrait for TestApiInstance {
         fn call(&mut self) -> Result<(), ApiError> {
             Ok(())
@@ -152,7 +161,7 @@ mod tests {
             Ok(Self {})
         }
 
-        async fn fetch(&mut self, _: ModelType) -> Result<(), ApiError> {
+        fn fetch(&self, _: ModelType) -> Result<(), ApiError> {
             Ok(())
         }
     }
@@ -186,7 +195,6 @@ mod tests {
             PathBuf::try_from(PRIVATE_KEY_FILE_PATH).unwrap(),
             receiver,
         )
-        .await
         .unwrap();
 
         std::fs::remove_file(CONFIG_FILE_PATH).unwrap();
