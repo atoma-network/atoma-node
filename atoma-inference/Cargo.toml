@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 async-trait.workspace = true
 candle.workspace = true
+candle-flash-attn = { workspace = true, optional = true }
 candle-nn.workspace = true
 candle-transformers.workspace = true
 ed25519-consensus.workspace = true
@@ -16,3 +17,10 @@ thiserror.workspace = true
 tokenizers.workspace = true
 tokio = { workspace = true, features = ["full", "tracing"] }
 tracing.workspace = true
+
+[features]
+accelerate = ["candle/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
+cuda = ["candle/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+cudnn = ["candle/cudnn"]
+flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
+metal = ["candle/metal", "candle-nn/metal", "candle-transformers/metal"]
