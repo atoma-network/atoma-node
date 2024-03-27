@@ -1,14 +1,16 @@
 use std::path::PathBuf;
 
+use candle::DType;
 use config::Config;
 use serde::Deserialize;
 
-use crate::models::ModelType;
+use crate::{models::ModelType, types::PrecisionBits};
 
 #[derive(Debug, Deserialize)]
 pub struct InferenceConfig {
     api_key: String,
     models: Vec<ModelType>,
+    precision: PrecisionBits,
     storage_folder: PathBuf,
     tokenizer_file_path: PathBuf,
     tracing: bool,
@@ -18,6 +20,7 @@ impl InferenceConfig {
     pub fn new(
         api_key: String,
         models: Vec<ModelType>,
+        precision: PrecisionBits,
         storage_folder: PathBuf,
         tokenizer_file_path: PathBuf,
         tracing: bool,
@@ -25,6 +28,7 @@ impl InferenceConfig {
         Self {
             api_key,
             models,
+            precision,
             storage_folder,
             tokenizer_file_path,
             tracing,
@@ -49,6 +53,10 @@ impl InferenceConfig {
 
     pub fn tracing(&self) -> bool {
         self.tracing
+    }
+
+    pub fn precision_bits(&self) -> PrecisionBits {
+        self.precision
     }
 
     pub fn from_file_path(config_file_path: PathBuf) -> Self {

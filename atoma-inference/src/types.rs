@@ -1,5 +1,6 @@
 use crate::models::ModelType;
 use ed25519_consensus::VerificationKey;
+use serde::Deserialize;
 
 pub type NodeId = VerificationKey;
 pub type Temperature = f32;
@@ -46,7 +47,7 @@ pub enum QuantizationMethod {
     Gptq(PrecisionBits),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum PrecisionBits {
     Q1,
     Q2,

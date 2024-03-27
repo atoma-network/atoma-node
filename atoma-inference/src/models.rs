@@ -6,7 +6,7 @@ use candle_transformers::{
     generation::LogitsProcessor,
     models::{
         llama::{Cache as LlamaCache, Config as LlamaConfig, Llama},
-        llama2_c::{Cache as Llama2Cache, Config as Llama2Config, Llama as Llama2},
+        llama2_c::{Cache as Llama2Cache, Llama as Llama2},
         mamba::{Config as MambaConfig, Model as MambaModel},
         mistral::{Config as MistralConfig, Model as MistralModel},
         mixtral::{Config as MixtralConfig, Model as MixtralModel},
@@ -45,10 +45,26 @@ impl Display for ModelType {
     }
 }
 
+impl ModelType {
+    pub(crate) fn model_config(&self) -> ModelConfig {
+        match self {
+            Self::Llama2_7b => ModelConfig::Llama(LlamaConfig::config_7b_v2(false)), // TODO: add the case for flash attention
+            Self::Mamba3b => todo!(),
+            Self::Mistral7b => ModelConfig::Mistral(MistralConfig::config_7b_v0_1(false)), // TODO: add the case for flash attention
+            Self::Mixtral8x7b => ModelConfig::Mixtral8x7b(MixtralConfig::v0_1_8x7b(false)), // TODO: add the case for flash attention
+            Self::StableDiffusion2 => {
+                ModelConfig::StableDiffusion(StableDiffusionConfig::v2_1(None, None, None))
+            }
+            Self::StableDiffusionXl => {
+                ModelConfig::StableDiffusion(StableDiffusionConfig::sdxl_turbo(None, None, None))
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum ModelConfig {
     Llama(LlamaConfig),
-    Llama2(Llama2Config),
     Mamba(MambaConfig),
     Mixtral8x7b(MixtralConfig),
     Mistral(MistralConfig),
@@ -121,10 +137,10 @@ impl ModelApi for Model {
                 let model = Llama::load(var_builder, &config).expect("Failed to load LlaMa model");
                 Self::Llama { model, model_specs }
             }
-            ModelConfig::Llama2(config) => {
-                let model = Llama2::load(var_builder, config).expect("Failed to load LlaMa2 model");
-                Self::Llama2 { model_specs, model }
-            }
+            // ModelConfig::Llama2(config) => {
+            //     let model = Llama2::load(var_builder, config).expect("Failed to load LlaMa2 model");
+            //     Self::Llama2 { model_specs, model }
+            // }
             ModelConfig::Mamba(config) => {
                 let model =
                     MambaModel::new(&config, var_builder).expect("Failed to load Mamba model");

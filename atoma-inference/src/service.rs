@@ -1,6 +1,8 @@
+use candle::{DType, Device};
 use ed25519_consensus::SigningKey as PrivateKey;
 use hf_hub::api::sync::Api;
 use std::{io, path::PathBuf, time::Instant};
+use tokenizers::Tokenizer;
 use tokio::sync::mpsc::{error::SendError, Receiver};
 use tracing::info;
 
@@ -9,8 +11,7 @@ use thiserror::Error;
 use crate::{
     apis::{ApiError, ApiTrait},
     config::InferenceConfig,
-    core::{InferenceCore, InferenceCoreError},
-    core_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
+    model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
     types::{InferenceRequest, InferenceResponse},
 };
 
@@ -38,15 +39,14 @@ impl InferenceService {
         let api_key = inference_config.api_key();
         let storage_folder = inference_config.storage_folder();
         let models = inference_config.models();
-        let inference_core = InferenceCore::new(inference_config, private_key)?;
 
         let api = Api::create(api_key, storage_folder)?;
 
         let mut handles = Vec::with_capacity(models.len());
-        for model in models {
+        for model in models.iter() {
             let api = api.clone();
             let handle = std::thread::spawn(move || {
-                api.fetch(model).expect("Failed to fetch model");
+                api.fetch(model.clone()).expect("Failed to fetch model");
             });
             handles.push(handle);
         }
@@ -54,6 +54,13 @@ impl InferenceService {
         handles.into_iter().for_each(|h| h.join().unwrap());
 
         info!("Starting Core Dispatcher..");
+
+        let model_configs = models.iter().map(|mt| mt.model_config()).collect();
+        let device = Device::new_metal(ordinal);
+
+        let tokenizer_file = inference_config.tokenizer_file_path();
+        let tokenizer =
+            Tokenizer::from_file(tokenizer_file).map_err(InferenceServiceError::TokenizerError)?;
 
         let (dispatcher, model_thread_handle) = ModelThreadDispatcher::start(inference_core)?;
         let start_time = Instant::now();
@@ -104,16 +111,8 @@ pub enum InferenceServiceError {
     SendError(SendError<InferenceResponse>),
     #[error("Api error: `{0}`")]
     ApiError(ApiError),
-}
-
-impl From<InferenceCoreError> for InferenceServiceError {
-    fn from(error: InferenceCoreError) -> Self {
-        match error {
-            InferenceCoreError::FailedApiConnection(e) => Self::FailedApiConnection(e),
-            InferenceCoreError::FailedInference(e) => Self::FailedInference(e),
-            InferenceCoreError::FailedModelFetch(e) => Self::FailedModelFetch(e),
-        }
-    }
+    #[error("Tokenizer error: `{0}`")]
+    TokenizerError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl From<ApiError> for InferenceServiceError {
@@ -124,7 +123,6 @@ impl From<ApiError> for InferenceServiceError {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
     use rand::rngs::OsRng;
     use std::io::Write;
     use toml::{toml, Value};
