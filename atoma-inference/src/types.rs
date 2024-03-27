@@ -1,4 +1,5 @@
 use crate::models::ModelType;
+use candle::DType;
 use ed25519_consensus::VerificationKey;
 use serde::Deserialize;
 
@@ -47,13 +48,27 @@ pub enum QuantizationMethod {
     Gptq(PrecisionBits),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum PrecisionBits {
-    Q1,
-    Q2,
-    Q4,
-    Q5,
-    Q8,
+    BF16,
     F16,
     F32,
+    F64,
+    I64,
+    U8,
+    U32,
+}
+
+impl PrecisionBits {
+    pub(crate) fn into_dtype(self) -> DType {
+        match self {
+            Self::BF16 => DType::BF16,
+            Self::F16 => DType::F16,
+            Self::F32 => DType::F32,
+            Self::F64 => DType::F64,
+            Self::I64 => DType::I64,
+            Self::U8 => DType::U8,
+            Self::U32 => DType::U32,
+        }
+    }
 }

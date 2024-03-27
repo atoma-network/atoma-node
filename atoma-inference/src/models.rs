@@ -77,12 +77,6 @@ impl From<ModelType> for ModelConfig {
     }
 }
 
-#[derive(Clone)]
-pub enum ModelCache {
-    Llama(LlamaCache),
-    Llama2(Llama2Cache),
-}
-
 pub trait ModelApi {
     fn load(model_specs: ModelSpecs, var_builder: VarBuilder) -> Self;
     fn run(
@@ -99,7 +93,7 @@ pub trait ModelApi {
 
 #[allow(dead_code)]
 pub struct ModelSpecs {
-    pub(crate) cache: Option<ModelCache>,
+    pub(crate) cache: Option<LlamaCache>,
     pub(crate) config: ModelConfig,
     pub(crate) device: Device,
     pub(crate) dtype: DType,
@@ -174,15 +168,7 @@ impl ModelApi for Model {
     ) -> Result<String, ModelError> {
         match self {
             Self::Llama { model_specs, model } => {
-                let mut cache = if let ModelCache::Llama(cache) =
-                    model_specs.cache.clone().expect("Failed to get cache")
-                {
-                    cache
-                } else {
-                    return Err(ModelError::CacheError(String::from(
-                        "Failed to obtain correct cache",
-                    )));
-                };
+                let mut cache = model_specs.cache.clone().expect("Failed to get cache");
                 let mut tokens = model_specs
                     .tokenizer
                     .encode(input, true)

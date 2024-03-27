@@ -1,5 +1,6 @@
-use candle::Device;
-use candle_transformers::quantized_var_builder::VarBuilder;
+use candle::{Device, Error as CandleError};
+use candle_nn::var_builder::VarBuilder;
+use candle_transformers::models::llama::Cache as LlamaCache;
 use ed25519_consensus::SigningKey as PrivateKey;
 use hf_hub::api::sync::Api;
 use std::{io, path::PathBuf, time::Instant};
@@ -11,8 +12,9 @@ use thiserror::Error;
 
 use crate::{
     apis::{ApiError, ApiTrait},
-    config::InferenceConfig,
+    config::{InferenceConfig, ModelTokenizer},
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
+    models::{ModelApi, ModelConfig, ModelSpecs, ModelType},
     types::{InferenceRequest, InferenceResponse},
 };
 
@@ -24,11 +26,14 @@ pub struct InferenceService {
 }
 
 impl InferenceService {
-    pub fn start<T: ApiTrait + Clone + Send + 'static>(
+    pub fn start<T>(
         config_file_path: PathBuf,
         private_key_path: PathBuf,
         _request_receiver: Receiver<InferenceRequest>,
-    ) -> Result<Self, InferenceServiceError> {
+    ) -> Result<Self, InferenceServiceError>
+    where
+        T: ModelApi + Send + 'static,
+    {
         let private_key_bytes =
             std::fs::read(&private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
         let private_key_bytes: [u8; 32] = private_key_bytes
@@ -45,34 +50,69 @@ impl InferenceService {
         let api = Api::create(api_key, storage_folder)?;
 
         let mut handles = Vec::with_capacity(models.len());
-        for model in models.iter() {
+        for model in &models {
             let api = api.clone();
-            let handle = std::thread::spawn(move || {
-                api.fetch(model.clone()).expect("Failed to fetch model")
-            });
+            let model_type = model.model_type.clone();
+            let handle =
+                std::thread::spawn(move || api.fetch(model_type).expect("Failed to fetch model"));
             handles.push(handle);
         }
 
         let path_bufs = handles
             .into_iter()
-            .map(|h| {
+            .zip(models)
+            .map(|(h, mt)| {
                 let path_bufs = h.join().unwrap();
+                (mt, path_bufs)
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         info!("Starting Core Dispatcher..");
 
-        let model_configs = models.iter().map(|mt| mt.model_config()).collect();
-        let device = Device::new_metal(ordinal);
-
-        let tokenizer_file = inference_config.tokenizer_file_path();
-        let tokenizer =
-            Tokenizer::from_file(tokenizer_file).map_err(InferenceServiceError::TokenizerError)?;
-
-        let var_builder = VarBuilder::pp(&self, s);
+        let device = Device::new_metal(0)?; // TODO: check this
+        let models = path_bufs
+            .iter()
+            .map(|(mt, paths)| {
+                let ModelTokenizer {
+                    model_type,
+                    tokenizer,
+                    precision,
+                    use_kv_cache,
+                } = mt;
+                let config = model_type.model_config();
+                let tokenizer = Tokenizer::from_file(tokenizer)
+                    .map_err(InferenceServiceError::TokenizerError)?;
+                let dtype = precision.into_dtype();
+                let var_builder =
+                    unsafe { VarBuilder::from_mmaped_safetensors(paths, dtype, &device)? };
+                let cache = if let ModelType::Llama2_7b = model_type {
+                    let llama_config = if let ModelConfig::Llama(cfg) = config.clone() {
+                        cfg
+                    } else {
+                        panic!("Configuration for Llama model unexpected")
+                    };
+                    Some(LlamaCache::new(
+                        use_kv_cache.unwrap_or_default(),
+                        dtype,
+                        &llama_config,
+                        &device,
+                    )?)
+                } else {
+                    None
+                };
+                let model_specs = ModelSpecs {
+                    cache,
+                    config,
+                    device: device.clone(),
+                    dtype,
+                    tokenizer,
+                };
+                Ok::<_, InferenceServiceError>((model_type.clone(), model_specs, var_builder))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start(inference_core, public_key)
+            ModelThreadDispatcher::start::<T>(models, public_key)
                 .map_err(InferenceServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
@@ -102,7 +142,11 @@ impl InferenceService {
             self.start_time.elapsed()
         );
 
-        self.model_thread_handle.drain(..).map(|h| h.stop());
+        let _ = self
+            .model_thread_handle
+            .drain(..)
+            .map(|h| h.stop())
+            .collect::<Vec<_>>();
     }
 }
 
@@ -124,11 +168,19 @@ pub enum InferenceServiceError {
     ApiError(ApiError),
     #[error("Tokenizer error: `{0}`")]
     TokenizerError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("Candle error: `{0}`")]
+    CandleError(CandleError),
 }
 
 impl From<ApiError> for InferenceServiceError {
     fn from(error: ApiError) -> Self {
         Self::ApiError(error)
+    }
+}
+
+impl From<CandleError> for InferenceServiceError {
+    fn from(error: CandleError) -> Self {
+        Self::CandleError(error)
     }
 }
 
@@ -138,23 +190,27 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::ModelType;
-
     use super::*;
 
     #[derive(Clone)]
-    struct TestApiInstance {}
+    struct TestModelInstance {}
 
-    impl ApiTrait for TestApiInstance {
-        fn create(_: String, _: PathBuf) -> Result<Self, ApiError>
-        where
-            Self: Sized,
-        {
-            Ok(Self {})
+    impl ModelApi for TestModelInstance {
+        fn load(_model_specs: ModelSpecs, _var_builder: VarBuilder) -> Self {
+            Self {}
         }
 
-        fn fetch(&self, _: ModelType) -> Result<Vec<PathBuf>, ApiError> {
-            Ok(vec![])
+        fn run(
+            &self,
+            _input: String,
+            _max_tokens: usize,
+            _random_seed: usize,
+            _repeat_last_n: usize,
+            _repeat_penalty: f32,
+            _temperature: crate::types::Temperature,
+            _top_p: f32,
+        ) -> Result<String, crate::models::ModelError> {
+            Ok(String::from(""))
         }
     }
 
@@ -182,7 +238,7 @@ mod tests {
 
         let (_, receiver) = tokio::sync::mpsc::channel(1);
 
-        let _ = InferenceService::start::<TestApiInstance>(
+        let _ = InferenceService::start::<TestModelInstance>(
             PathBuf::try_from(CONFIG_FILE_PATH).unwrap(),
             PathBuf::try_from(PRIVATE_KEY_FILE_PATH).unwrap(),
             receiver,

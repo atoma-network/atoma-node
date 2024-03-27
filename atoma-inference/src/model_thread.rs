@@ -48,7 +48,7 @@ impl<T> ModelThread<T>
 where
     T: ModelApi,
 {
-    pub fn run(mut self, public_key: PublicKey) -> Result<(), ModelThreadError> {
+    pub fn run(self, public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
@@ -96,13 +96,13 @@ pub struct ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) fn start<T: ModelApi + Send + Sync + 'static>(
-        &self,
+    pub(crate) fn start<T>(
         models: Vec<(ModelType, ModelSpecs, VarBuilder)>,
         public_key: PublicKey,
-    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
-        let (core_sender, core_receiver) = std::sync::mpsc::channel::<InferenceResponse>();
-
+    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError>
+    where
+        T: ModelApi + Send + 'static,
+    {
         let mut handles = Vec::with_capacity(models.len());
         let mut model_senders = HashMap::with_capacity(models.len());
 

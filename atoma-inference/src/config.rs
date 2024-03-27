@@ -5,35 +5,35 @@ use serde::Deserialize;
 
 use crate::{models::ModelType, types::PrecisionBits};
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelTokenizer {
+    pub(crate) model_type: ModelType,
+    pub(crate) tokenizer: PathBuf,
+    pub(crate) precision: PrecisionBits,
+    pub(crate) use_kv_cache: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct InferenceConfig {
     api_key: String,
-    models: Vec<ModelType>,
-    precision: PrecisionBits,
+    models: Vec<ModelTokenizer>,
     storage_folder: PathBuf,
-    tokenizer_file_path: PathBuf,
     tracing: bool,
-    use_kv_cache: Option<bool>,
 }
 
 impl InferenceConfig {
     pub fn new(
         api_key: String,
-        models: Vec<ModelType>,
-        precision: PrecisionBits,
+        models: Vec<ModelTokenizer>,
         storage_folder: PathBuf,
-        tokenizer_file_path: PathBuf,
         tracing: bool,
         use_kv_cache: Option<bool>,
     ) -> Self {
         Self {
             api_key,
             models,
-            precision,
             storage_folder,
-            tokenizer_file_path,
             tracing,
-            use_kv_cache,
         }
     }
 
@@ -41,7 +41,7 @@ impl InferenceConfig {
         self.api_key.clone()
     }
 
-    pub fn models(&self) -> Vec<ModelType> {
+    pub fn models(&self) -> Vec<ModelTokenizer> {
         self.models.clone()
     }
 
@@ -49,20 +49,8 @@ impl InferenceConfig {
         self.storage_folder.clone()
     }
 
-    pub fn tokenizer_file_path(&self) -> PathBuf {
-        self.tokenizer_file_path.clone()
-    }
-
     pub fn tracing(&self) -> bool {
         self.tracing
-    }
-
-    pub fn precision_bits(&self) -> PrecisionBits {
-        self.precision
-    }
-
-    pub fn use_kv_cache(&self) -> Option<bool> {
-        self.use_kv_cache
     }
 
     pub fn from_file_path(config_file_path: PathBuf) -> Self {
