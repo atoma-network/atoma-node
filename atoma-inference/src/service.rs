@@ -1,4 +1,5 @@
-use candle::{DType, Device};
+use candle::Device;
+use candle_transformers::quantized_var_builder::VarBuilder;
 use ed25519_consensus::SigningKey as PrivateKey;
 use hf_hub::api::sync::Api;
 use std::{io, path::PathBuf, time::Instant};
@@ -35,6 +36,7 @@ impl InferenceService {
             .expect("Incorrect private key bytes length");
 
         let private_key = PrivateKey::from(private_key_bytes);
+        let public_key = private_key.verification_key();
         let inference_config = InferenceConfig::from_file_path(config_file_path);
         let api_key = inference_config.api_key();
         let storage_folder = inference_config.storage_folder();
@@ -46,12 +48,17 @@ impl InferenceService {
         for model in models.iter() {
             let api = api.clone();
             let handle = std::thread::spawn(move || {
-                api.fetch(model.clone()).expect("Failed to fetch model");
+                api.fetch(model.clone()).expect("Failed to fetch model")
             });
             handles.push(handle);
         }
 
-        handles.into_iter().for_each(|h| h.join().unwrap());
+        let path_bufs = handles
+            .into_iter()
+            .map(|h| {
+                let path_bufs = h.join().unwrap();
+            })
+            .collect();
 
         info!("Starting Core Dispatcher..");
 
@@ -62,7 +69,11 @@ impl InferenceService {
         let tokenizer =
             Tokenizer::from_file(tokenizer_file).map_err(InferenceServiceError::TokenizerError)?;
 
-        let (dispatcher, model_thread_handle) = ModelThreadDispatcher::start(inference_core)?;
+        let var_builder = VarBuilder::pp(&self, s);
+
+        let (dispatcher, model_thread_handle) =
+            ModelThreadDispatcher::start(inference_core, public_key)
+                .map_err(InferenceServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
         Ok(Self {
@@ -135,10 +146,6 @@ mod tests {
     struct TestApiInstance {}
 
     impl ApiTrait for TestApiInstance {
-        fn call(&mut self) -> Result<(), ApiError> {
-            Ok(())
-        }
-
         fn create(_: String, _: PathBuf) -> Result<Self, ApiError>
         where
             Self: Sized,
@@ -146,8 +153,8 @@ mod tests {
             Ok(Self {})
         }
 
-        fn fetch(&self, _: ModelType) -> Result<(), ApiError> {
-            Ok(())
+        fn fetch(&self, _: ModelType) -> Result<Vec<PathBuf>, ApiError> {
+            Ok(vec![])
         }
     }
 

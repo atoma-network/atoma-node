@@ -91,10 +91,6 @@ impl ModelType {
 
 #[async_trait]
 impl ApiTrait for Api {
-    fn call(&mut self) -> Result<(), super::ApiError> {
-        todo!()
-    }
-
     fn create(api_key: String, cache_dir: PathBuf) -> Result<Self, super::ApiError>
     where
         Self: Sized,
@@ -106,13 +102,15 @@ impl ApiTrait for Api {
             .build()?)
     }
 
-    fn fetch(&self, model: ModelType) -> Result<(), super::ApiError> {
+    fn fetch(&self, model: ModelType) -> Result<Vec<PathBuf>, super::ApiError> {
         let (model_path, files) = model.get_hugging_face_model_path();
         let api_repo = self.model(model_path);
+        let mut path_bufs = Vec::with_capacity(files.file_paths.len());
+
         for file in files.file_paths {
-            api_repo.get(&file)?;
+            path_bufs.push(api_repo.get(&file)?);
         }
 
-        Ok(())
+        Ok(path_bufs)
     }
 }

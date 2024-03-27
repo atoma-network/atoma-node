@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use candle::DType;
 use config::Config;
 use serde::Deserialize;
 
@@ -14,6 +13,7 @@ pub struct InferenceConfig {
     storage_folder: PathBuf,
     tokenizer_file_path: PathBuf,
     tracing: bool,
+    use_kv_cache: Option<bool>,
 }
 
 impl InferenceConfig {
@@ -24,6 +24,7 @@ impl InferenceConfig {
         storage_folder: PathBuf,
         tokenizer_file_path: PathBuf,
         tracing: bool,
+        use_kv_cache: Option<bool>,
     ) -> Self {
         Self {
             api_key,
@@ -32,6 +33,7 @@ impl InferenceConfig {
             storage_folder,
             tokenizer_file_path,
             tracing,
+            use_kv_cache,
         }
     }
 
@@ -57,6 +59,10 @@ impl InferenceConfig {
 
     pub fn precision_bits(&self) -> PrecisionBits {
         self.precision
+    }
+
+    pub fn use_kv_cache(&self) -> Option<bool> {
+        self.use_kv_cache
     }
 
     pub fn from_file_path(config_file_path: PathBuf) -> Self {

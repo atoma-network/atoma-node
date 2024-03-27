@@ -22,8 +22,7 @@ impl From<HuggingFaceError> for ApiError {
 }
 
 pub trait ApiTrait {
-    fn call(&mut self) -> Result<(), ApiError>;
-    fn fetch(&self, model: ModelType) -> Result<(), ApiError>;
+    fn fetch(&self, model: ModelType) -> Result<Vec<PathBuf>, ApiError>;
     fn create(api_key: String, cache_dir: PathBuf) -> Result<Self, ApiError>
     where
         Self: Sized;
