@@ -35,7 +35,7 @@ impl InferenceService {
         T: ModelApi + Send + 'static,
     {
         let private_key_bytes =
-            std::fs::read(&private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
+            std::fs::read(private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
         let private_key_bytes: [u8; 32] = private_key_bytes
             .try_into()
             .expect("Incorrect private key bytes length");

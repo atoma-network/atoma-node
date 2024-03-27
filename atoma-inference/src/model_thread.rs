@@ -11,8 +11,6 @@ use crate::{
     types::{InferenceRequest, InferenceResponse},
 };
 
-const CORE_THREAD_COMMANDS_CHANNEL_SIZE: usize = 32;
-
 pub enum CoreThreadCommand {
     RunInference(InferenceRequest, oneshot::Sender<InferenceResponse>),
 }
@@ -56,15 +54,14 @@ where
 
             let InferenceRequest {
                 prompt,
-                model,
                 max_tokens,
                 temperature,
                 random_seed,
                 repeat_last_n,
                 repeat_penalty,
-                top_k,
                 top_p,
                 sampled_nodes,
+                ..
             } = request;
             if !sampled_nodes.contains(&public_key) {
                 error!("Current node, with verification key = {:?} was not sampled from {sampled_nodes:?}", public_key);

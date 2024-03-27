@@ -31,18 +31,6 @@ pub struct InferenceResponse {
 }
 
 #[derive(Clone, Debug)]
-pub struct ModelRequest {
-    pub(crate) model: ModelType,
-    pub(crate) quantization_method: Option<QuantizationMethod>,
-}
-
-#[allow(dead_code)]
-pub struct ModelResponse {
-    pub(crate) is_success: bool,
-    pub(crate) error: Option<String>,
-}
-
-#[derive(Clone, Debug)]
 pub enum QuantizationMethod {
     Ggml(PrecisionBits),
     Gptq(PrecisionBits),

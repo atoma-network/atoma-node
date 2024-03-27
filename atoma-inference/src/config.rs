@@ -27,7 +27,6 @@ impl InferenceConfig {
         models: Vec<ModelTokenizer>,
         storage_folder: PathBuf,
         tracing: bool,
-        use_kv_cache: Option<bool>,
     ) -> Self {
         Self {
             api_key,
