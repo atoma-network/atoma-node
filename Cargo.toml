@@ -13,6 +13,7 @@ candle-nn = { git = "https://github.com/jorgeantonio21/candle/", package = "cand
 candle-transformers = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-transformers", branch = "ja-send-sync-sd-scheduler" }
 config = "0.14.0"
 ed25519-consensus = "2.1.0"
+futures = "0.3.30"
 hf-hub = "0.3.2"
 serde = "1.0.197"
 serde_json = "1.0.114"

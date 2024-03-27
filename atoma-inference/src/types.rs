@@ -8,6 +8,7 @@ pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
+    pub request_id: u128,
     pub prompt: String,
     pub model: ModelType,
     pub max_tokens: usize,

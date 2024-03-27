@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use candle_nn::VarBuilder;
 use ed25519_consensus::VerificationKey as PublicKey;
+use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, warn};
@@ -87,9 +88,9 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct ModelThreadDispatcher {
     model_senders: HashMap<ModelType, std::sync::mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<InferenceResponse>>,
 }
 
 impl ModelThreadDispatcher {
@@ -125,7 +126,10 @@ impl ModelThreadDispatcher {
             model_senders.insert(model_type, model_sender);
         }
 
-        let model_dispatcher = ModelThreadDispatcher { model_senders };
+        let model_dispatcher = ModelThreadDispatcher {
+            model_senders,
+            responses: FuturesUnordered::new(),
+        };
 
         Ok((model_dispatcher, handles))
     }
@@ -146,12 +150,9 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) async fn run_inference(
-        &self,
-        request: InferenceRequest,
-    ) -> Result<InferenceResponse, ModelThreadError> {
+    pub(crate) fn run_inference(&self, request: InferenceRequest) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand(request, sender));
-        receiver.await.map_err(ModelThreadError::Shutdown)
+        self.responses.push(receiver);
     }
 }
