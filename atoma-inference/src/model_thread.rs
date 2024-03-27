@@ -12,10 +12,6 @@ use crate::{
     types::{InferenceRequest, InferenceResponse},
 };
 
-pub enum CoreThreadCommand {
-    RunInference(InferenceRequest, oneshot::Sender<InferenceResponse>),
-}
-
 pub struct ModelThreadCommand(InferenceRequest, oneshot::Sender<InferenceResponse>);
 
 #[derive(Debug, Error)]
