@@ -55,9 +55,9 @@ pub enum ModelConfig {
     Llama(LlamaConfig),
     Llama2(Llama2Config),
     Mamba(MambaConfig),
-    Mixtral8x7b(MixtralConfig),
     Mistral(MistralConfig),
-    StableDiffusion(StableDiffusionConfig),
+    Mixtral8x7b(Box<MixtralConfig>),
+    StableDiffusion(Box<StableDiffusionConfig>),
 }
 
 impl From<ModelType> for ModelConfig {
@@ -74,6 +74,8 @@ pub enum ModelCache {
 
 pub trait ModelApi {
     fn load(model_specs: ModelSpecs, var_builder: VarBuilder) -> Self;
+
+    #[allow(clippy::too_many_arguments)]
     fn run(
         &self,
         input: String,
