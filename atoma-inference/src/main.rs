@@ -5,14 +5,14 @@ use inference::service::InferenceService;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // let (_, receiver) = tokio::sync::mpsc::channel(32);
+    let (_, receiver) = tokio::sync::mpsc::channel(32);
 
-    // let _ = InferenceService::start::<Model>(
-    //     "../inference.toml".parse().unwrap(),
-    //     "../private_key".parse().unwrap(),
-    //     receiver,
-    // )
-    // .expect("Failed to start inference service");
+    let _ = InferenceService::start::<Model>(
+        "../inference.toml".parse().unwrap(),
+        "../private_key".parse().unwrap(),
+        receiver,
+    )
+    .expect("Failed to start inference service");
 
     // inference_service
     //     .run_inference(InferenceRequest {

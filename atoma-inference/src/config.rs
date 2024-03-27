@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use config::Config;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{models::ModelType, types::PrecisionBits};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelTokenizer {
     pub(crate) model_type: ModelType,
     pub(crate) tokenizer: PathBuf,
@@ -13,7 +13,7 @@ pub struct ModelTokenizer {
     pub(crate) use_kv_cache: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct InferenceConfig {
     api_key: String,
     models: Vec<ModelTokenizer>,
@@ -62,5 +62,29 @@ impl InferenceConfig {
         config
             .try_deserialize::<Self>()
             .expect("Failed to generated config file")
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config() {
+        let config = InferenceConfig::new(
+            String::from("my_key"),
+            vec![ModelTokenizer {
+                model_type: ModelType::Llama2_7b,
+                tokenizer: "tokenizer".parse().unwrap(),
+                precision: PrecisionBits::BF16,
+                use_kv_cache: Some(true),
+            }],
+            "storage_folder".parse().unwrap(),
+            true,
+        );
+
+        let toml_str = toml::to_string(&config).unwrap();
+        let should_be_toml_str = "api_key = \"my_key\"\nstorage_folder = \"storage_folder\"\ntracing = true\n\n[[models]]\nmodel_type = \"Llama2_7b\"\ntokenizer = \"tokenizer\"\nprecision = \"BF16\"\nuse_kv_cache = true\n";
+        assert_eq!(toml_str, should_be_toml_str);
     }
 }

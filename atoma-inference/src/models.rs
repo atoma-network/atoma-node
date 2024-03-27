@@ -12,7 +12,7 @@ use candle_transformers::{
         stable_diffusion::StableDiffusionConfig,
     },
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use tokenizers::Tokenizer;
@@ -21,7 +21,7 @@ use crate::types::Temperature;
 
 const EOS_TOKEN: &str = "</s>";
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum ModelType {
     Llama2_7b,
     Mamba3b,
