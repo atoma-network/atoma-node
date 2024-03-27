@@ -1,13 +1,8 @@
 use ed25519_consensus::SigningKey as PrivateKey;
-use std::{io, path::PathBuf, sync::Arc, time::Instant};
-use tokio::{
-    io::join,
-    sync::{
-        mpsc::{error::SendError, Receiver},
-        RwLock,
-    },
-};
-use tracing::{info, warn};
+use hf_hub::api::sync::Api;
+use std::{io, path::PathBuf, time::Instant};
+use tokio::sync::mpsc::{error::SendError, Receiver};
+use tracing::info;
 
 use thiserror::Error;
 
@@ -15,13 +10,13 @@ use crate::{
     apis::{ApiError, ApiTrait},
     config::InferenceConfig,
     core::{InferenceCore, InferenceCoreError},
-    core_thread::{CoreError, CoreThreadDispatcher, CoreThreadHandle},
-    types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
+    core_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
+    types::{InferenceRequest, InferenceResponse},
 };
 
 pub struct InferenceService {
-    core_thread_handle: CoreThreadHandle,
-    dispatcher: CoreThreadDispatcher,
+    model_thread_handle: Vec<ModelThreadHandle>,
+    dispatcher: ModelThreadDispatcher,
     start_time: Instant,
     _request_receiver: Receiver<InferenceRequest>,
 }
@@ -40,12 +35,16 @@ impl InferenceService {
 
         let private_key = PrivateKey::from(private_key_bytes);
         let inference_config = InferenceConfig::from_file_path(config_file_path);
+        let api_key = inference_config.api_key();
+        let storage_folder = inference_config.storage_folder();
         let models = inference_config.models();
-        let inference_core = InferenceCore::<T>::new(inference_config, private_key)?;
+        let inference_core = InferenceCore::new(inference_config, private_key)?;
+
+        let api = Api::create(api_key, storage_folder)?;
 
         let mut handles = Vec::with_capacity(models.len());
         for model in models {
-            let api = inference_core.api.clone();
+            let api = api.clone();
             let handle = std::thread::spawn(move || {
                 api.fetch(model).expect("Failed to fetch model");
             });
@@ -56,17 +55,15 @@ impl InferenceService {
 
         info!("Starting Core Dispatcher..");
 
-        let (dispatcher, core_thread_handle) = CoreThreadDispatcher::start(inference_core);
+        let (dispatcher, model_thread_handle) = ModelThreadDispatcher::start(inference_core)?;
         let start_time = Instant::now();
 
-        let inference_service = Self {
+        Ok(Self {
             dispatcher,
-            core_thread_handle,
+            model_thread_handle,
             start_time,
             _request_receiver,
-        };
-
-        Ok(inference_service)
+        })
     }
 
     pub async fn run_inference(
@@ -76,28 +73,18 @@ impl InferenceService {
         self.dispatcher
             .run_inference(inference_request)
             .await
-            .map_err(InferenceServiceError::CoreError)
-    }
-
-    pub async fn fetch_model(
-        &self,
-        model_request: ModelRequest,
-    ) -> Result<ModelResponse, InferenceServiceError> {
-        self.dispatcher
-            .fetch_model(model_request)
-            .await
-            .map_err(InferenceServiceError::CoreError)
+            .map_err(InferenceServiceError::ModelThreadError)
     }
 }
 
 impl InferenceService {
-    pub async fn stop(self) {
+    pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
             self.start_time.elapsed()
         );
 
-        self.core_thread_handle.stop().await;
+        self.model_thread_handle.drain(..).map(|h| h.stop());
     }
 }
 
@@ -112,7 +99,7 @@ pub enum InferenceServiceError {
     #[error("Failed to generate private key: `{0}`")]
     PrivateKeyError(io::Error),
     #[error("Core error: `{0}`")]
-    CoreError(CoreError),
+    ModelThreadError(ModelThreadError),
     #[error("Send error: `{0}`")]
     SendError(SendError<InferenceResponse>),
     #[error("Api error: `{0}`")]

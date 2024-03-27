@@ -10,31 +10,28 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub struct InferenceCore<Api> {
+pub struct InferenceCore {
     pub(crate) config: InferenceConfig,
     // models: Vec<Model>,
     pub(crate) public_key: PublicKey,
     private_key: PrivateKey,
-    pub(crate) api: Api,
 }
 
-impl<Api: ApiTrait> InferenceCore<Api> {
+impl InferenceCore {
     pub fn new(
         config: InferenceConfig,
         private_key: PrivateKey,
     ) -> Result<Self, InferenceCoreError> {
         let public_key = private_key.verification_key();
-        let api = Api::create(config.api_key(), config.storage_folder())?;
         Ok(Self {
             config,
             public_key,
             private_key,
-            api,
         })
     }
 }
 
-impl<Api: ApiTrait> InferenceCore<Api> {
+impl InferenceCore {
     #[allow(clippy::too_many_arguments)]
     pub fn inference(
         &mut self,
@@ -52,18 +49,6 @@ impl<Api: ApiTrait> InferenceCore<Api> {
         model_path.push(model.to_string());
 
         todo!()
-    }
-
-    pub async fn fetch_model(
-        &mut self,
-        model: ModelType,
-        _quantization_method: Option<QuantizationMethod>,
-    ) -> Result<ModelResponse, InferenceCoreError> {
-        self.api.fetch(model)?;
-        Ok(ModelResponse {
-            is_success: true,
-            error: None,
-        })
     }
 }
 

@@ -1,5 +1,4 @@
 pub mod hugging_face;
-use async_trait::async_trait;
 use hf_hub::api::sync::ApiError as HuggingFaceError;
 
 use std::path::PathBuf;

@@ -10,6 +10,7 @@ pub struct InferenceRequest {
     pub model: ModelType,
     pub max_tokens: usize,
     pub random_seed: usize,
+    pub repeat_last_n: usize,
     pub repeat_penalty: f32,
     pub sampled_nodes: Vec<NodeId>,
     pub temperature: Option<f32>,
@@ -21,9 +22,9 @@ pub struct InferenceRequest {
 #[allow(dead_code)]
 pub struct InferenceResponse {
     // TODO: possibly a Merkle root hash
-    pub(crate) response_hash: [u8; 32],
-    pub(crate) node_id: NodeId,
-    pub(crate) signature: Vec<u8>,
+    // pub(crate) response_hash: [u8; 32],
+    // pub(crate) node_id: NodeId,
+    // pub(crate) signature: Vec<u8>,
     pub(crate) response: String,
 }
 

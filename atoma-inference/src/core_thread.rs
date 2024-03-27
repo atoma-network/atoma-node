@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use candle_nn::VarBuilder;
+use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 use tokio::{
     sync::{
@@ -9,100 +13,86 @@ use tokio::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    apis::ApiTrait,
     core::{InferenceCore, InferenceCoreError},
-    types::{InferenceRequest, InferenceResponse, ModelRequest, ModelResponse},
+    models::{ModelApi, ModelError, ModelSpecs, ModelType},
+    types::{InferenceRequest, InferenceResponse},
 };
 
 const CORE_THREAD_COMMANDS_CHANNEL_SIZE: usize = 32;
 
 pub enum CoreThreadCommand {
     RunInference(InferenceRequest, oneshot::Sender<InferenceResponse>),
-    FetchModel(ModelRequest, oneshot::Sender<ModelResponse>),
 }
 
+pub struct ModelThreadCommand(InferenceRequest, oneshot::Sender<InferenceResponse>);
+
 #[derive(Debug, Error)]
-pub enum CoreError {
+pub enum ModelThreadError {
     #[error("Core thread shutdown: `{0}`")]
     FailedInference(InferenceCoreError),
-    #[error("Core thread shutdown: `{0}`")]
-    FailedModelFetch(InferenceCoreError),
+    #[error("Model thread shutdown: `{0}`")]
+    ModelError(ModelError),
     #[error("Core thread shutdown: `{0}`")]
     Shutdown(RecvError),
 }
 
-pub struct CoreThreadHandle {
-    sender: mpsc::Sender<CoreThreadCommand>,
-    join_handle: JoinHandle<()>,
+pub struct ModelThreadHandle {
+    sender: std::sync::mpsc::Sender<ModelThreadCommand>,
+    join_handle: std::thread::JoinHandle<()>,
 }
 
-impl CoreThreadHandle {
-    pub async fn stop(self) {
-        // drop the sender, this will force all the other weak senders to not be able to upgrade.
+impl ModelThreadHandle {
+    pub fn stop(self) {
         drop(self.sender);
-        self.join_handle.await.ok();
+        self.join_handle.join().ok();
     }
 }
 
-pub struct CoreThread<T> {
-    core: InferenceCore<T>,
-    receiver: mpsc::Receiver<CoreThreadCommand>,
+pub struct ModelThread<T: ModelApi> {
+    model: T,
+    receiver: std::sync::mpsc::Receiver<ModelThreadCommand>,
 }
 
-impl<T: ApiTrait> CoreThread<T> {
-    pub async fn run(mut self) -> Result<(), CoreError> {
-        debug!("Starting Core thread");
+impl<T> ModelThread<T>
+where
+    T: ModelApi,
+{
+    pub fn run(mut self, public_key: PublicKey) -> Result<(), ModelThreadError> {
+        debug!("Start Model thread");
 
-        // let models = self.core.config.models();
-        // for model_type in models {
-        //     let (model_sender, model_receiver) = std::sync::mpsc::channel();
-        //     let
-        //     std::thread::spawn(move || {
-        //         while Ok(request) = model_receiver.recv() {
+        while let Ok(command) = self.receiver.recv() {
+            let ModelThreadCommand(request, sender) = command;
 
-        //         }
-        //     });
-        // }
-
-        while let Some(command) = self.receiver.recv().await {
-            match command {
-                CoreThreadCommand::RunInference(request, sender) => {
-                    let InferenceRequest {
-                        prompt,
-                        model,
-                        max_tokens,
-                        temperature,
-                        random_seed,
-                        repeat_penalty,
-                        top_k,
-                        top_p,
-                        sampled_nodes,
-                    } = request;
-                    if !sampled_nodes.contains(&self.core.public_key) {
-                        error!("Current node, with verification key = {:?} was not sampled from {sampled_nodes:?}", self.core.public_key);
-                        continue;
-                    }
-                    let response = self.core.inference(
-                        prompt,
-                        model,
-                        temperature,
-                        max_tokens,
-                        random_seed,
-                        repeat_penalty,
-                        top_p,
-                        top_k,
-                    )?;
-                    sender.send(response).ok();
-                }
-                CoreThreadCommand::FetchModel(request, sender) => {
-                    let ModelRequest {
-                        model,
-                        quantization_method,
-                    } = request;
-                    let response = self.core.fetch_model(model, quantization_method).await?;
-                    sender.send(response).ok();
-                }
+            let InferenceRequest {
+                prompt,
+                model,
+                max_tokens,
+                temperature,
+                random_seed,
+                repeat_last_n,
+                repeat_penalty,
+                top_k,
+                top_p,
+                sampled_nodes,
+            } = request;
+            if !sampled_nodes.contains(&public_key) {
+                error!("Current node, with verification key = {:?} was not sampled from {sampled_nodes:?}", public_key);
+                continue;
             }
+            let response = self
+                .model
+                .run(
+                    prompt,
+                    max_tokens,
+                    random_seed,
+                    repeat_last_n,
+                    repeat_penalty,
+                    temperature.unwrap_or_default(),
+                    top_p.unwrap_or_default(),
+                )
+                .map_err(ModelThreadError::ModelError)?;
+            let response = InferenceResponse { response };
+            sender.send(response).ok();
         }
 
         Ok(())
@@ -110,72 +100,79 @@ impl<T: ApiTrait> CoreThread<T> {
 }
 
 #[derive(Clone)]
-pub struct CoreThreadDispatcher {
-    sender: mpsc::WeakSender<CoreThreadCommand>,
+pub struct ModelThreadDispatcher {
+    model_senders: HashMap<ModelType, std::sync::mpsc::Sender<ModelThreadCommand>>,
 }
 
-impl CoreThreadDispatcher {
-    pub(crate) fn start<T: ApiTrait + Send + 'static>(
-        core: InferenceCore<T>,
-    ) -> (Self, CoreThreadHandle) {
-        let (sender, receiver) = mpsc::channel(CORE_THREAD_COMMANDS_CHANNEL_SIZE);
-        let core_thread = CoreThread { core, receiver };
+impl ModelThreadDispatcher {
+    pub(crate) fn start<T: ModelApi + Send + Sync + 'static>(
+        &self,
+        models: Vec<(ModelType, ModelSpecs, VarBuilder)>,
+        public_key: PublicKey,
+    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
+        let (core_sender, core_receiver) = std::sync::mpsc::channel::<InferenceResponse>();
 
-        let join_handle = tokio::task::spawn(async move {
-            if let Err(e) = core_thread.run().await {
-                if !matches!(e, CoreError::Shutdown(_)) {
-                    panic!("Fatal error occurred: {e}");
+        let mut handles = Vec::with_capacity(models.len());
+        let mut model_senders = HashMap::with_capacity(models.len());
+
+        for (model_type, model_specs, var_builder) in models {
+            let (model_sender, model_receiver) = std::sync::mpsc::channel::<ModelThreadCommand>();
+            let model = T::load(model_specs, var_builder); // TODO: for now this piece of code cannot be shared among threads safely
+            let model_thread = ModelThread {
+                model,
+                receiver: model_receiver,
+            };
+            let join_handle = std::thread::spawn(move || {
+                if let Err(e) = model_thread.run(public_key) {
+                    error!("Model thread error: {e}");
+                    if !matches!(e, ModelThreadError::Shutdown(_)) {
+                        panic!("Fatal error occurred: {e}");
+                    }
                 }
-            }
-        });
+            });
+            handles.push(ModelThreadHandle {
+                join_handle,
+                sender: model_sender.clone(),
+            });
+            model_senders.insert(model_type, model_sender);
+        }
 
-        let dispatcher = Self {
-            sender: sender.downgrade(),
-        };
-        let handle = CoreThreadHandle {
-            join_handle,
-            sender,
-        };
+        let model_dispatcher = ModelThreadDispatcher { model_senders };
 
-        (dispatcher, handle)
+        Ok((model_dispatcher, handles))
     }
 
-    async fn send(&self, command: CoreThreadCommand) {
-        if let Some(sender) = self.sender.upgrade() {
-            if let Err(e) = sender.send(command).await {
-                warn!("Could not send command to thread core, it might be shutting down: {e}");
-            }
+    fn send(&self, command: ModelThreadCommand) {
+        let request = command.0.clone();
+        let model_type = request.model;
+
+        let sender = self
+            .model_senders
+            .get(&model_type)
+            .expect("Failed to get model thread, this should not happen !");
+
+        if let Err(e) = sender.send(command) {
+            warn!("Could not send command to model core, it might be shutting down: {e}");
         }
     }
 }
 
-impl CoreThreadDispatcher {
-    pub(crate) async fn fetch_model(
-        &self,
-        request: ModelRequest,
-    ) -> Result<ModelResponse, CoreError> {
-        let (sender, receiver) = oneshot::channel();
-        self.send(CoreThreadCommand::FetchModel(request, sender))
-            .await;
-        receiver.await.map_err(CoreError::Shutdown)
-    }
-
+impl ModelThreadDispatcher {
     pub(crate) async fn run_inference(
         &self,
         request: InferenceRequest,
-    ) -> Result<InferenceResponse, CoreError> {
+    ) -> Result<InferenceResponse, ModelThreadError> {
         let (sender, receiver) = oneshot::channel();
-        self.send(CoreThreadCommand::RunInference(request, sender))
-            .await;
-        receiver.await.map_err(CoreError::Shutdown)
+        self.send(ModelThreadCommand(request, sender));
+        receiver.await.map_err(ModelThreadError::Shutdown)
     }
 }
 
-impl From<InferenceCoreError> for CoreError {
+impl From<InferenceCoreError> for ModelThreadError {
     fn from(error: InferenceCoreError) -> Self {
         match error {
-            InferenceCoreError::FailedInference(_) => CoreError::FailedInference(error),
-            InferenceCoreError::FailedModelFetch(_) => CoreError::FailedModelFetch(error),
+            InferenceCoreError::FailedInference(_) => ModelThreadError::FailedInference(error),
+            InferenceCoreError::FailedModelFetch(_) => unreachable!(),
             InferenceCoreError::FailedApiConnection(_) => {
                 panic!("API connection should have been already established")
             }

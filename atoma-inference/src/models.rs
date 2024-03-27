@@ -22,7 +22,7 @@ use crate::types::Temperature;
 
 const EOS_TOKEN: &str = "</s>";
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 pub enum ModelType {
     Llama2_7b,
     Mamba3b,
