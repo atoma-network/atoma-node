@@ -8,9 +8,9 @@ version = "0.1.0"
 
 [workspace.dependencies]
 async-trait = "0.1.78"
-candle = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-core", branch = "ja-send-sync-sd-scheduler" }
-candle-nn = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-nn", branch = "ja-send-sync-sd-scheduler" }
-candle-transformers = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-transformers", branch = "ja-send-sync-sd-scheduler" }
+candle = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-core", branch = "main" }
+candle-nn = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-nn", branch = "main" }
+candle-transformers = { git = "https://github.com/jorgeantonio21/candle/", package = "candle-transformers", branch = "main" }
 config = "0.14.0"
 ed25519-consensus = "2.1.0"
 futures = "0.3.30"
