@@ -1,13 +1,14 @@
 use crate::models::ModelType;
 use candle::DType;
 use ed25519_consensus::VerificationKey;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type NodeId = VerificationKey;
 pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
+    pub request_id: u128,
     pub prompt: String,
     pub model: ModelType,
     pub max_tokens: usize,
@@ -31,24 +32,12 @@ pub struct InferenceResponse {
 }
 
 #[derive(Clone, Debug)]
-pub struct ModelRequest {
-    pub(crate) model: ModelType,
-    pub(crate) quantization_method: Option<QuantizationMethod>,
-}
-
-#[allow(dead_code)]
-pub struct ModelResponse {
-    pub(crate) is_success: bool,
-    pub(crate) error: Option<String>,
-}
-
-#[derive(Clone, Debug)]
 pub enum QuantizationMethod {
     Ggml(PrecisionBits),
     Gptq(PrecisionBits),
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum PrecisionBits {
     BF16,
     F16,

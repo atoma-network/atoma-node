@@ -12,6 +12,7 @@ candle-nn.workspace = true
 candle-transformers.workspace = true
 config.true = true
 ed25519-consensus.workspace = true
+futures.workspace = true
 hf-hub.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }

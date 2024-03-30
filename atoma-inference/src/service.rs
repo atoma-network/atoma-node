@@ -2,11 +2,12 @@ use candle::{Device, Error as CandleError};
 use candle_nn::var_builder::VarBuilder;
 use candle_transformers::models::llama::Cache as LlamaCache;
 use ed25519_consensus::SigningKey as PrivateKey;
+use futures::StreamExt;
 use hf_hub::api::sync::Api;
 use std::{io, path::PathBuf, time::Instant};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc::{error::SendError, Receiver};
-use tracing::info;
+use tracing::{error, info};
 
 use thiserror::Error;
 
@@ -22,20 +23,20 @@ pub struct InferenceService {
     model_thread_handle: Vec<ModelThreadHandle>,
     dispatcher: ModelThreadDispatcher,
     start_time: Instant,
-    _request_receiver: Receiver<InferenceRequest>,
+    request_receiver: Receiver<InferenceRequest>,
 }
 
 impl InferenceService {
     pub fn start<T>(
         config_file_path: PathBuf,
         private_key_path: PathBuf,
-        _request_receiver: Receiver<InferenceRequest>,
+        request_receiver: Receiver<InferenceRequest>,
     ) -> Result<Self, InferenceServiceError>
     where
         T: ModelApi + Send + 'static,
     {
         let private_key_bytes =
-            std::fs::read(&private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
+            std::fs::read(private_key_path).map_err(InferenceServiceError::PrivateKeyError)?;
         let private_key_bytes: [u8; 32] = private_key_bytes
             .try_into()
             .expect("Incorrect private key bytes length");
@@ -120,18 +121,32 @@ impl InferenceService {
             dispatcher,
             model_thread_handle,
             start_time,
-            _request_receiver,
+            request_receiver,
         })
     }
 
-    pub async fn run_inference(
-        &self,
-        inference_request: InferenceRequest,
-    ) -> Result<InferenceResponse, InferenceServiceError> {
-        self.dispatcher
-            .run_inference(inference_request)
-            .await
-            .map_err(InferenceServiceError::ModelThreadError)
+    pub async fn run(&mut self) -> Result<InferenceResponse, InferenceServiceError> {
+        loop {
+            tokio::select! {
+                message = self.request_receiver.recv() => {
+                    if let Some(request) = message {
+                        self.dispatcher.run_inference(request);
+                    }
+                }
+                response = self.dispatcher.responses.next() => {
+                    if let Some(resp) = response {
+                        match resp {
+                            Ok(response) => {
+                                info!("Received a new inference response: {:?}", response);
+                            }
+                            Err(e) => {
+                                error!("Found error in generating inference response: {e}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

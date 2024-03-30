@@ -6,14 +6,13 @@ use candle_transformers::{
     generation::LogitsProcessor,
     models::{
         llama::{Cache as LlamaCache, Config as LlamaConfig, Llama},
-        llama2_c::{Cache as Llama2Cache, Llama as Llama2},
         mamba::{Config as MambaConfig, Model as MambaModel},
         mistral::{Config as MistralConfig, Model as MistralModel},
         mixtral::{Config as MixtralConfig, Model as MixtralModel},
         stable_diffusion::StableDiffusionConfig,
     },
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use tokenizers::Tokenizer;
@@ -22,7 +21,7 @@ use crate::types::Temperature;
 
 const EOS_TOKEN: &str = "</s>";
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum ModelType {
     Llama2_7b,
     Mamba3b,
@@ -51,13 +50,15 @@ impl ModelType {
             Self::Llama2_7b => ModelConfig::Llama(LlamaConfig::config_7b_v2(false)), // TODO: add the case for flash attention
             Self::Mamba3b => todo!(),
             Self::Mistral7b => ModelConfig::Mistral(MistralConfig::config_7b_v0_1(false)), // TODO: add the case for flash attention
-            Self::Mixtral8x7b => ModelConfig::Mixtral8x7b(MixtralConfig::v0_1_8x7b(false)), // TODO: add the case for flash attention
-            Self::StableDiffusion2 => {
-                ModelConfig::StableDiffusion(StableDiffusionConfig::v2_1(None, None, None))
-            }
-            Self::StableDiffusionXl => {
-                ModelConfig::StableDiffusion(StableDiffusionConfig::sdxl_turbo(None, None, None))
-            }
+            Self::Mixtral8x7b => {
+                ModelConfig::Mixtral8x7b(Box::new(MixtralConfig::v0_1_8x7b(false)))
+            } // TODO: add the case for flash attention
+            Self::StableDiffusion2 => ModelConfig::StableDiffusion(Box::new(
+                StableDiffusionConfig::v2_1(None, None, None),
+            )),
+            Self::StableDiffusionXl => ModelConfig::StableDiffusion(Box::new(
+                StableDiffusionConfig::sdxl_turbo(None, None, None),
+            )),
         }
     }
 }
@@ -66,9 +67,9 @@ impl ModelType {
 pub enum ModelConfig {
     Llama(LlamaConfig),
     Mamba(MambaConfig),
-    Mixtral8x7b(MixtralConfig),
+    Mixtral8x7b(Box<MixtralConfig>),
     Mistral(MistralConfig),
-    StableDiffusion(StableDiffusionConfig),
+    StableDiffusion(Box<StableDiffusionConfig>),
 }
 
 impl From<ModelType> for ModelConfig {
@@ -79,6 +80,8 @@ impl From<ModelType> for ModelConfig {
 
 pub trait ModelApi {
     fn load(model_specs: ModelSpecs, var_builder: VarBuilder) -> Self;
+
+    #[allow(clippy::too_many_arguments)]
     fn run(
         &self,
         input: String,
@@ -104,10 +107,6 @@ pub enum Model {
     Llama {
         model_specs: ModelSpecs,
         model: Llama,
-    },
-    Llama2 {
-        model_specs: ModelSpecs,
-        model: Llama2,
     },
     Mamba {
         model_specs: ModelSpecs,
@@ -239,9 +238,6 @@ impl ModelApi for Model {
                     );
                 }
                 Ok(output.join(" "))
-            }
-            Self::Llama2 { .. } => {
-                todo!()
             }
             Self::Mamba { .. } => {
                 todo!()

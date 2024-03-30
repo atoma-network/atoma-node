@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::mpsc};
 
 use candle_nn::VarBuilder;
 use ed25519_consensus::VerificationKey as PublicKey;
+use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, warn};
@@ -10,12 +11,6 @@ use crate::{
     models::{ModelApi, ModelError, ModelSpecs, ModelType},
     types::{InferenceRequest, InferenceResponse},
 };
-
-const CORE_THREAD_COMMANDS_CHANNEL_SIZE: usize = 32;
-
-pub enum CoreThreadCommand {
-    RunInference(InferenceRequest, oneshot::Sender<InferenceResponse>),
-}
 
 pub struct ModelThreadCommand(InferenceRequest, oneshot::Sender<InferenceResponse>);
 
@@ -28,7 +23,7 @@ pub enum ModelThreadError {
 }
 
 pub struct ModelThreadHandle {
-    sender: std::sync::mpsc::Sender<ModelThreadCommand>,
+    sender: mpsc::Sender<ModelThreadCommand>,
     join_handle: std::thread::JoinHandle<()>,
 }
 
@@ -41,7 +36,7 @@ impl ModelThreadHandle {
 
 pub struct ModelThread<T: ModelApi> {
     model: T,
-    receiver: std::sync::mpsc::Receiver<ModelThreadCommand>,
+    receiver: mpsc::Receiver<ModelThreadCommand>,
 }
 
 impl<T> ModelThread<T>
@@ -56,15 +51,14 @@ where
 
             let InferenceRequest {
                 prompt,
-                model,
                 max_tokens,
                 temperature,
                 random_seed,
                 repeat_last_n,
                 repeat_penalty,
-                top_k,
                 top_p,
                 sampled_nodes,
+                ..
             } = request;
             if !sampled_nodes.contains(&public_key) {
                 error!("Current node, with verification key = {:?} was not sampled from {sampled_nodes:?}", public_key);
@@ -90,9 +84,9 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct ModelThreadDispatcher {
-    model_senders: HashMap<ModelType, std::sync::mpsc::Sender<ModelThreadCommand>>,
+    model_senders: HashMap<ModelType, mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<InferenceResponse>>,
 }
 
 impl ModelThreadDispatcher {
@@ -107,7 +101,7 @@ impl ModelThreadDispatcher {
         let mut model_senders = HashMap::with_capacity(models.len());
 
         for (model_type, model_specs, var_builder) in models {
-            let (model_sender, model_receiver) = std::sync::mpsc::channel::<ModelThreadCommand>();
+            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
             let model = T::load(model_specs, var_builder); // TODO: for now this piece of code cannot be shared among threads safely
             let model_thread = ModelThread {
                 model,
@@ -128,7 +122,10 @@ impl ModelThreadDispatcher {
             model_senders.insert(model_type, model_sender);
         }
 
-        let model_dispatcher = ModelThreadDispatcher { model_senders };
+        let model_dispatcher = ModelThreadDispatcher {
+            model_senders,
+            responses: FuturesUnordered::new(),
+        };
 
         Ok((model_dispatcher, handles))
     }
@@ -149,12 +146,9 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) async fn run_inference(
-        &self,
-        request: InferenceRequest,
-    ) -> Result<InferenceResponse, ModelThreadError> {
+    pub(crate) fn run_inference(&self, request: InferenceRequest) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand(request, sender));
-        receiver.await.map_err(ModelThreadError::Shutdown)
+        self.responses.push(receiver);
     }
 }
