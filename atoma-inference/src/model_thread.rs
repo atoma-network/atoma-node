@@ -108,7 +108,6 @@ where
     U: Response,
 {
     pub(crate) fn start<M, F>(
-        api: F,
         config: ModelConfig,
         public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle<T, U>>), ModelThreadError>
@@ -119,6 +118,10 @@ where
             + 'static,
     {
         let model_ids = config.model_ids();
+        let api_key = config.api_key();
+        let storage_path = config.storage_path();
+        let api = F::create(api_key, storage_path)?;
+
         let mut handles = Vec::with_capacity(model_ids.len());
         let mut model_senders = HashMap::with_capacity(model_ids.len());
 

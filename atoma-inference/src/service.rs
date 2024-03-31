@@ -49,13 +49,9 @@ where
         let private_key = PrivateKey::from(private_key_bytes);
         let public_key = private_key.verification_key();
         let model_config = ModelConfig::from_file_path(config_file_path);
-        let api_key = model_config.api_key();
-        let storage_folder = model_config.storage_folder();
-
-        let api = F::create(api_key, storage_folder)?;
 
         let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start::<M, F>(api, model_config, public_key)
+            ModelThreadDispatcher::start::<M, F>(model_config, public_key)
                 .map_err(ModelServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
@@ -236,7 +232,7 @@ mod tests {
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
             models = ["Mamba3b"]
-            storage_folder = "./storage_folder/"
+            storage_path = "./storage_path/"
             tokenizer_file_path = "./tokenizer_file_path/"
             tracing = true
         });

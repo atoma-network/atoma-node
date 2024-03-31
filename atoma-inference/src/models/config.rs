@@ -9,7 +9,7 @@ use crate::models::ModelId;
 pub struct ModelConfig {
     api_key: String,
     models: Vec<ModelId>,
-    storage_folder: PathBuf,
+    storage_path: PathBuf,
     tracing: bool,
 }
 
@@ -17,13 +17,13 @@ impl ModelConfig {
     pub fn new(
         api_key: String,
         models: Vec<ModelId>,
-        storage_folder: PathBuf,
+        storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
             models,
-            storage_folder,
+            storage_path,
             tracing,
         }
     }
@@ -36,8 +36,8 @@ impl ModelConfig {
         self.models.clone()
     }
 
-    pub fn storage_folder(&self) -> PathBuf {
-        self.storage_folder.clone()
+    pub fn storage_path(&self) -> PathBuf {
+        self.storage_path.clone()
     }
 
     pub fn tracing(&self) -> bool {
@@ -66,12 +66,12 @@ pub mod tests {
         let config = ModelConfig::new(
             String::from("my_key"),
             vec!["Llama2_7b".to_string()],
-            "storage_folder".parse().unwrap(),
+            "storage_path".parse().unwrap(),
             true,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nmodels = [\"Llama2_7b\"]\nstorage_folder = \"storage_folder\"\ntracing = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\nmodels = [\"Llama2_7b\"]\nstorage_path = \"storage_path\"\ntracing = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
