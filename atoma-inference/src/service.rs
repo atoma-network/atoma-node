@@ -13,29 +13,29 @@ use crate::{
     models::{config::ModelConfig, ModelTrait, Request, Response},
 };
 
-pub struct ModelService<T, U>
+pub struct ModelService<Req, Resp>
 where
-    T: Request,
-    U: Response,
+    Req: Request,
+    Resp: Response,
 {
-    model_thread_handle: Vec<ModelThreadHandle<T, U>>,
-    dispatcher: ModelThreadDispatcher<T, U>,
+    model_thread_handle: Vec<ModelThreadHandle<Req, Resp>>,
+    dispatcher: ModelThreadDispatcher<Req, Resp>,
     start_time: Instant,
-    request_receiver: Receiver<T>,
+    request_receiver: Receiver<Req>,
 }
 
-impl<T, U> ModelService<T, U>
+impl<Req, Resp> ModelService<Req, Resp>
 where
-    T: Clone + Request,
-    U: std::fmt::Debug + Response,
+    Req: Clone + Request,
+    Resp: std::fmt::Debug + Response,
 {
     pub fn start<M, F>(
         config_file_path: PathBuf,
         private_key_path: PathBuf,
-        request_receiver: Receiver<T>,
+        request_receiver: Receiver<Req>,
     ) -> Result<Self, ModelServiceError>
     where
-        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput> + Send + 'static,
+        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
         F: ApiTrait,
     {
         let private_key_bytes =
@@ -61,7 +61,7 @@ where
         })
     }
 
-    pub async fn run(&mut self) -> Result<U, ModelServiceError> {
+    pub async fn run(&mut self) -> Result<Resp, ModelServiceError> {
         loop {
             tokio::select! {
                 message = self.request_receiver.recv() => {
@@ -86,10 +86,10 @@ where
     }
 }
 
-impl<T, U> ModelService<T, U>
+impl<Req, Resp> ModelService<Req, Resp>
 where
-    T: Request,
-    U: Response,
+    Req: Request,
+    Resp: Response,
 {
     pub async fn stop(mut self) {
         info!(

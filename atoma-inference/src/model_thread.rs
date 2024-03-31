@@ -11,10 +11,10 @@ use crate::{
     models::{config::ModelConfig, ModelError, ModelId, ModelTrait, Request, Response},
 };
 
-pub struct ModelThreadCommand<T, U>(T, oneshot::Sender<U>)
+pub struct ModelThreadCommand<Req, Resp>(Req, oneshot::Sender<Resp>)
 where
-    T: Request,
-    U: Response;
+    Req: Request,
+    Resp: Response;
 
 #[derive(Debug, Error)]
 pub enum ModelThreadError {
@@ -38,19 +38,19 @@ impl From<ApiError> for ModelThreadError {
     }
 }
 
-pub struct ModelThreadHandle<T, U>
+pub struct ModelThreadHandle<Req, Resp>
 where
-    T: Request,
-    U: Response,
+    Req: Request,
+    Resp: Response,
 {
-    sender: mpsc::Sender<ModelThreadCommand<T, U>>,
+    sender: mpsc::Sender<ModelThreadCommand<Req, Resp>>,
     join_handle: std::thread::JoinHandle<Result<(), ModelThreadError>>,
 }
 
-impl<T, U> ModelThreadHandle<T, U>
+impl<Req, Resp> ModelThreadHandle<Req, Resp>
 where
-    T: Request,
-    U: Response,
+    Req: Request,
+    Resp: Response,
 {
     pub fn stop(self) {
         drop(self.sender);
@@ -58,16 +58,16 @@ where
     }
 }
 
-pub struct ModelThread<M: ModelTrait, T: Request, U: Response> {
+pub struct ModelThread<M: ModelTrait, Req: Request, Resp: Response> {
     model: M,
-    receiver: mpsc::Receiver<ModelThreadCommand<T, U>>,
+    receiver: mpsc::Receiver<ModelThreadCommand<Req, Resp>>,
 }
 
-impl<M, T, U> ModelThread<M, T, U>
+impl<M, Req, Resp> ModelThread<M, Req, Resp>
 where
-    M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput>,
-    T: Request,
-    U: Response,
+    M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput>,
+    Req: Request,
+    Resp: Response,
 {
     pub fn run(self, public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
@@ -85,7 +85,7 @@ where
                 .model
                 .run(model_input)
                 .map_err(ModelThreadError::ModelError)?;
-            let response = U::from_model_output(model_output);
+            let response = Resp::from_model_output(model_output);
             sender.send(response).ok();
         }
 
@@ -93,27 +93,27 @@ where
     }
 }
 
-pub struct ModelThreadDispatcher<T, U>
+pub struct ModelThreadDispatcher<Req, Resp>
 where
-    T: Request,
-    U: Response,
+    Req: Request,
+    Resp: Response,
 {
-    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand<T, U>>>,
-    pub(crate) responses: FuturesUnordered<oneshot::Receiver<U>>,
+    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand<Req, Resp>>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<Resp>>,
 }
 
-impl<T, U> ModelThreadDispatcher<T, U>
+impl<Req, Resp> ModelThreadDispatcher<Req, Resp>
 where
-    T: Clone + Request,
-    U: Response,
+    Req: Clone + Request,
+    Resp: Response,
 {
     pub(crate) fn start<M, F>(
         config: ModelConfig,
         public_key: PublicKey,
-    ) -> Result<(Self, Vec<ModelThreadHandle<T, U>>), ModelThreadError>
+    ) -> Result<(Self, Vec<ModelThreadHandle<Req, Resp>>), ModelThreadError>
     where
         F: ApiTrait,
-        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput> + Send + 'static,
+        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let model_ids = config.model_ids();
         let api_key = config.api_key();
@@ -159,7 +159,7 @@ where
         Ok((model_dispatcher, handles))
     }
 
-    fn send(&self, command: ModelThreadCommand<T, U>) {
+    fn send(&self, command: ModelThreadCommand<Req, Resp>) {
         let request = command.0.clone();
         let model_type = request.requested_model();
 
