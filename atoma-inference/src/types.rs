@@ -1,7 +1,8 @@
-use crate::models::ModelType;
 use candle::DType;
 use ed25519_consensus::VerificationKey;
 use serde::{Deserialize, Serialize};
+
+use crate::models::ModelId;
 
 pub type NodeId = VerificationKey;
 pub type Temperature = f32;
@@ -10,7 +11,7 @@ pub type Temperature = f32;
 pub struct InferenceRequest {
     pub request_id: u128,
     pub prompt: String,
-    pub model: ModelType,
+    pub model: ModelId,
     pub max_tokens: usize,
     pub random_seed: usize,
     pub repeat_last_n: usize,
@@ -49,6 +50,7 @@ pub enum PrecisionBits {
 }
 
 impl PrecisionBits {
+    #[allow(dead_code)]
     pub(crate) fn into_dtype(self) -> DType {
         match self {
             Self::BF16 => DType::BF16,

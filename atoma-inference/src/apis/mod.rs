@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::models::ModelType;
+use crate::models::ModelId;
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -21,8 +21,8 @@ impl From<HuggingFaceError> for ApiError {
     }
 }
 
-pub trait ApiTrait {
-    fn fetch(&self, model: ModelType) -> Result<Vec<PathBuf>, ApiError>;
+pub trait ApiTrait: Send {
+    fn fetch(&self, model_id: &ModelId) -> Result<Vec<PathBuf>, ApiError>;
     fn create(api_key: String, cache_dir: PathBuf) -> Result<Self, ApiError>
     where
         Self: Sized;
