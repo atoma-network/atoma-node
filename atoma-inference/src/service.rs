@@ -107,22 +107,16 @@ where
 
 #[derive(Debug, Error)]
 pub enum ModelServiceError {
-    #[error("Failed to connect to API: `{0}`")]
-    FailedApiConnection(ApiError),
     #[error("Failed to run inference: `{0}`")]
-    FailedInference(Box<dyn std::error::Error + Send + Sync>),
+    FailedInference(Box<dyn std::error::Error + Sync>),
     #[error("Failed to fecth model: `{0}`")]
     FailedModelFetch(String),
     #[error("Failed to generate private key: `{0}`")]
     PrivateKeyError(io::Error),
     #[error("Core error: `{0}`")]
     ModelThreadError(ModelThreadError),
-    // #[error("Send error: `{0}`")]
-    // SendError(SendError<_>),
     #[error("Api error: `{0}`")]
     ApiError(ApiError),
-    #[error("Tokenizer error: `{0}`")]
-    TokenizerError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("Candle error: `{0}`")]
     CandleError(CandleError),
 }
