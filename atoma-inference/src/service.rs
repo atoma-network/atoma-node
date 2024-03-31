@@ -35,9 +35,7 @@ where
         request_receiver: Receiver<T>,
     ) -> Result<Self, ModelServiceError>
     where
-        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput>
-            + Send
-            + 'static,
+        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput> + Send + 'static,
         F: ApiTrait,
     {
         let private_key_bytes =

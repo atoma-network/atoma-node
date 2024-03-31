@@ -113,9 +113,7 @@ where
     ) -> Result<(Self, Vec<ModelThreadHandle<T, U>>), ModelThreadError>
     where
         F: ApiTrait,
-        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput>
-            + Send
-            + 'static,
+        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput> + Send + 'static,
     {
         let model_ids = config.model_ids();
         let api_key = config.api_key();
