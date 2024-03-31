@@ -1,5 +1,5 @@
 // use hf_hub::api::sync::Api;
-// use inference::service::InferenceService;
+// use inference::service::ModelService;
 
 #[tokio::main]
 async fn main() {
@@ -7,7 +7,7 @@ async fn main() {
 
     // let (_, receiver) = tokio::sync::mpsc::channel(32);
 
-    // let _ = InferenceService::start::<Model, Api>(
+    // let _ = ModelService::start::<Model, Api>(
     //     "../inference.toml".parse().unwrap(),
     //     "../private_key".parse().unwrap(),
     //     receiver,
