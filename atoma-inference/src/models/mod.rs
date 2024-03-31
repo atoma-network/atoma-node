@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use crate::{apis::ApiTrait, models::config::ModelConfig};
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 
@@ -16,11 +15,9 @@ pub trait ModelBuilder {
 
 pub trait ModelTrait {
     type Builder: Send + Sync + 'static;
-    type FetchApi: ApiTrait + Send + Sync + 'static;
     type Input;
     type Output;
 
-    fn fetch(api: &Self::FetchApi, config: ModelConfig) -> Result<(), ModelError>;
     fn load(filenames: Vec<PathBuf>) -> Result<Self, ModelError>
     where
         Self: Sized;

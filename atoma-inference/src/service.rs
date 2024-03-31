@@ -35,7 +35,7 @@ where
         request_receiver: Receiver<T>,
     ) -> Result<Self, ModelServiceError>
     where
-        M: ModelTrait<FetchApi = F, Input = T::ModelInput, Output = U::ModelOutput>
+        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput>
             + Send
             + 'static,
         F: ApiTrait,
@@ -200,13 +200,8 @@ mod tests {
 
     impl ModelTrait for TestModelInstance {
         type Builder = ();
-        type FetchApi = MockApi;
         type Input = ();
         type Output = ();
-
-        fn fetch(_: &Self::FetchApi, _: ModelConfig) -> Result<(), crate::models::ModelError> {
-            Ok(())
-        }
 
         fn load(_: Vec<PathBuf>) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})

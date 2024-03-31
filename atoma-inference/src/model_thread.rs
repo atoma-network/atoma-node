@@ -113,7 +113,7 @@ where
     ) -> Result<(Self, Vec<ModelThreadHandle<T, U>>), ModelThreadError>
     where
         F: ApiTrait,
-        M: ModelTrait<FetchApi = F, Input = T::ModelInput, Output = U::ModelOutput>
+        M: ModelTrait<Input = T::ModelInput, Output = U::ModelOutput>
             + Send
             + 'static,
     {
