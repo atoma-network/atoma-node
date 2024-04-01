@@ -217,7 +217,7 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = ["Mamba3b"]
+            models = [["Mamba3b", "F16"]]
             storage_path = "./storage_path/"
             tokenizer_file_path = "./tokenizer_file_path/"
             tracing = true

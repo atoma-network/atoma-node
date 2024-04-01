@@ -71,7 +71,7 @@ pub mod tests {
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nmodels = [\"Llama2_7b\"]\nstorage_path = \"storage_path\"\ntracing = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\nmodels = [[\"Llama2_7b\", \"F16\"]]\nstorage_path = \"storage_path\"\ntracing = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
