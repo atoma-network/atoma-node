@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use hf_hub::api::sync::Api;
 use inference::{
-    models::candle::{
-        mamba::MambaModel,
+    models::{
+        candle::mamba::MambaModel,
         types::{TextRequest, TextResponse},
     },
     service::{ModelService, ModelServiceError},

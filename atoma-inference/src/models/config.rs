@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::{models::ModelId, types::PrecisionBits};
+use crate::{models::types::PrecisionBits, models::ModelId};
 
 type Revision = String;
 

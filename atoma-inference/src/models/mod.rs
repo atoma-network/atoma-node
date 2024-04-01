@@ -4,11 +4,12 @@ use ::candle::Error as CandleError;
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 
-use crate::types::PrecisionBits;
+use crate::models::types::PrecisionBits;
 
 pub mod candle;
 pub mod config;
 pub mod token_output_stream;
+pub mod types;
 
 pub type ModelId = String;
 

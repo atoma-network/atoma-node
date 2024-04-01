@@ -15,11 +15,9 @@ use tracing::info;
 
 use crate::{
     bail,
+    models::types::{PrecisionBits, TextModelInput},
     models::{token_output_stream::TokenOutputStream, ModelError, ModelId, ModelTrait},
-    types::PrecisionBits,
 };
-
-use super::types::TextModelInput;
 
 pub struct MambaModel {
     model: Model,

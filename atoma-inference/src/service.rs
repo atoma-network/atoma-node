@@ -166,7 +166,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::{models::ModelId, types::PrecisionBits};
+    use crate::{models::types::PrecisionBits, models::ModelId};
 
     use super::*;
 
