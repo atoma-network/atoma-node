@@ -12,12 +12,6 @@ pub mod token_output_stream;
 
 pub type ModelId = String;
 
-pub trait ModelBuilder {
-    fn try_from_file(path: PathBuf) -> Result<Self, ModelError>
-    where
-        Self: Sized;
-}
-
 pub trait ModelTrait {
     type Input;
     type Output;
