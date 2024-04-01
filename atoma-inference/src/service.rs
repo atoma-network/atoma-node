@@ -191,7 +191,6 @@ mod tests {
     struct TestModelInstance {}
 
     impl ModelTrait for TestModelInstance {
-        type Builder = ();
         type Input = ();
         type Output = ();
 

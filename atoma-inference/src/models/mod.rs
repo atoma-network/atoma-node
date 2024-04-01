@@ -14,7 +14,6 @@ pub trait ModelBuilder {
 }
 
 pub trait ModelTrait {
-    type Builder: Send + Sync + 'static;
     type Input;
     type Output;
 
