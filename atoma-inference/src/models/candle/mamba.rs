@@ -2,18 +2,20 @@ use std::{path::PathBuf, time::Instant};
 
 use candle::{
     utils::{cuda_is_available, metal_is_available},
-    DType, Device,
+    DType, Device, Tensor,
 };
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
-    models::mamba::{Config, Model},
+    models::mamba::{Config, Model, State},
+    utils::apply_repeat_penalty,
 };
 use tokenizers::Tokenizer;
 use tracing::info;
 
 use crate::{
-    models::{ModelError, ModelId, ModelTrait},
+    bail,
+    models::{token_output_stream::TokenOutputStream, ModelError, ModelId, ModelTrait},
     types::PrecisionBits,
 };
 
@@ -22,7 +24,7 @@ pub struct MambaModel {
     config: Config,
     device: Device,
     dtype: DType,
-    tokenizer: Tokenizer,
+    tokenizer: TokenOutputStream,
     which: Which,
 }
 
@@ -40,7 +42,7 @@ impl MambaModel {
             config,
             device,
             dtype,
-            tokenizer,
+            tokenizer: TokenOutputStream::new(tokenizer),
             which,
         }
     }
@@ -52,6 +54,7 @@ pub struct MambaInput {
     random_seed: u64,
     repeat_penalty: f32,
     repeat_last_n: usize,
+    max_tokens: usize,
     top_p: f64,
 }
 
@@ -62,6 +65,7 @@ impl MambaInput {
         random_seed: u64,
         repeat_penalty: f32,
         repeat_last_n: usize,
+        max_tokens: usize,
         top_p: f64,
     ) -> Self {
         Self {
@@ -70,6 +74,7 @@ impl MambaInput {
             random_seed,
             repeat_penalty,
             repeat_last_n,
+            max_tokens,
             top_p,
         }
     }
@@ -120,8 +125,88 @@ impl ModelTrait for MambaModel {
         self.which.model_id().to_string()
     }
 
-    fn run(&self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        todo!()
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        let MambaInput {
+            prompt,
+            temperature,
+            random_seed,
+            repeat_penalty,
+            repeat_last_n,
+            max_tokens,
+            top_p,
+        } = input;
+
+        self.tokenizer.clear();
+        let mut tokens = self
+            .tokenizer
+            .tokenizer()
+            .encode(prompt, true)
+            .map_err(ModelError::TokenizerError)?
+            .get_ids()
+            .to_vec();
+        let mut logits_processor =
+            LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
+
+        let mut generated_tokens = 0_usize;
+        let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
+            Some(token) => token,
+            None => bail!("Invalid eos token"),
+        };
+
+        let mut state = State::new(1, &self.config, &self.device)?; // TODO: handle larger batch sizes
+
+        let mut next_logits = None;
+        for &t in tokens.iter() {
+            let input = Tensor::new(&[t], &self.device)?;
+            let logits = self.model.forward(&input, &mut state)?;
+            next_logits = Some(logits);
+            if let Some(t) = self.tokenizer.next_token(t)? {
+                print!("{t}")
+            }
+        }
+
+        let mut output = String::new();
+
+        let start_gen = Instant::now();
+        for _ in 0..max_tokens {
+            let logits = match next_logits.as_ref() {
+                Some(logits) => logits,
+                None => bail!("cannot work on an empty prompt"),
+            };
+
+            let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
+            let logits = if repeat_penalty == 1.0 {
+                logits
+            } else {
+                let start_at = tokens.len().saturating_sub(repeat_last_n);
+                apply_repeat_penalty(&logits, repeat_penalty, &tokens[start_at..])?
+            };
+
+            let next_token = logits_processor.sample(&logits)?;
+            tokens.push(next_token);
+            generated_tokens += 1;
+
+            if next_token == eos_token {
+                break;
+            }
+
+            if let Some(t) = self.tokenizer.next_token(next_token)? {
+                output.push_str(t.as_str());
+            }
+
+            let input = Tensor::new(&[next_token], &self.device)?;
+            next_logits = Some(self.model.forward(&input, &mut state)?);
+        }
+        let dt = start_gen.elapsed();
+        if let Some(rest) = self.tokenizer.decode_rest()? {
+            output.push_str(rest.as_str());
+        }
+
+        println!(
+            "\n{generated_tokens} tokens generated ({:.2} token/s)",
+            generated_tokens as f64 / dt.as_secs_f64(),
+        );
+        Ok(output)
     }
 }
 

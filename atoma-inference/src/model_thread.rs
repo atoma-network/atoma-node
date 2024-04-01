@@ -72,7 +72,7 @@ where
     Req: Request,
     Resp: Response,
 {
-    pub fn run(self, public_key: PublicKey) -> Result<(), ModelThreadError> {
+    pub fn run(mut self, public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {

@@ -202,7 +202,7 @@ mod tests {
             String::from("")
         }
 
-        fn run(&self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
+        fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
             Ok(())
         }
     }
