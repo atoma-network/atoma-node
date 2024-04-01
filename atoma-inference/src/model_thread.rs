@@ -126,14 +126,14 @@ where
         let mut handles = Vec::with_capacity(model_ids.len());
         let mut model_senders = HashMap::with_capacity(model_ids.len());
 
-        for (model_id, precision) in model_ids {
+        for (model_id, precision, revision) in model_ids {
             let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
             let model_name = model_id.clone();
 
             let join_handle = std::thread::spawn(move || {
-                let filenames = api.fetch(&model_name)?;
+                let filenames = api.fetch(model_name, revision)?;
 
                 let model = M::load(filenames, precision)?;
                 let model_thread = ModelThread {

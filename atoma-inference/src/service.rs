@@ -2,7 +2,7 @@ use candle::Error as CandleError;
 use ed25519_consensus::SigningKey as PrivateKey;
 use futures::StreamExt;
 use std::{io, path::PathBuf, time::Instant};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
 use thiserror::Error;
@@ -21,7 +21,10 @@ where
     model_thread_handle: Vec<ModelThreadHandle<Req, Resp>>,
     dispatcher: ModelThreadDispatcher<Req, Resp>,
     start_time: Instant,
+    flush_storage: bool,
+    storage_path: PathBuf,
     request_receiver: Receiver<Req>,
+    response_sender: Sender<Resp>,
 }
 
 impl<Req, Resp> ModelService<Req, Resp>
@@ -33,6 +36,7 @@ where
         config_file_path: PathBuf,
         private_key_path: PathBuf,
         request_receiver: Receiver<Req>,
+        response_sender: Sender<Resp>,
     ) -> Result<Self, ModelServiceError>
     where
         M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
@@ -48,6 +52,9 @@ where
         let public_key = private_key.verification_key();
         let model_config = ModelConfig::from_file_path(config_file_path);
 
+        let flush_storage = model_config.flush_storage();
+        let storage_path = model_config.storage_path();
+
         let (dispatcher, model_thread_handle) =
             ModelThreadDispatcher::start::<M, F>(model_config, public_key)
                 .map_err(ModelServiceError::ModelThreadError)?;
@@ -57,7 +64,10 @@ where
             dispatcher,
             model_thread_handle,
             start_time,
+            flush_storage,
+            storage_path,
             request_receiver,
+            response_sender,
         })
     }
 
@@ -74,6 +84,7 @@ where
                         match resp {
                             Ok(response) => {
                                 info!("Received a new inference response: {:?}", response);
+                                self.response_sender.send(response).await.map_err(|e| ModelServiceError::SendError(e.to_string()))?;
                             }
                             Err(e) => {
                                 error!("Found error in generating inference response: {e}");
@@ -97,6 +108,13 @@ where
             self.start_time.elapsed()
         );
 
+        if self.flush_storage {
+            match std::fs::remove_dir(self.storage_path) {
+                Ok(()) => {}
+                Err(e) => error!("Failed to remove storage folder, on shutdown: {e}"),
+            };
+        }
+
         let _ = self
             .model_thread_handle
             .drain(..)
@@ -108,7 +126,7 @@ where
 #[derive(Debug, Error)]
 pub enum ModelServiceError {
     #[error("Failed to run inference: `{0}`")]
-    FailedInference(Box<dyn std::error::Error + Sync>),
+    FailedInference(Box<dyn std::error::Error + Send + Sync>),
     #[error("Failed to fecth model: `{0}`")]
     FailedModelFetch(String),
     #[error("Failed to generate private key: `{0}`")]
@@ -119,6 +137,8 @@ pub enum ModelServiceError {
     ApiError(ApiError),
     #[error("Candle error: `{0}`")]
     CandleError(CandleError),
+    #[error("Sender error: `{0}`")]
+    SendError(String),
 }
 
 impl From<ApiError> for ModelServiceError {
@@ -154,7 +174,7 @@ mod tests {
             Ok(Self {})
         }
 
-        fn fetch(&self, _: &ModelId) -> Result<Vec<PathBuf>, ApiError> {
+        fn fetch(&self, _: ModelId, _: String) -> Result<Vec<PathBuf>, ApiError> {
             Ok(vec![])
         }
     }
@@ -229,12 +249,14 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, receiver) = tokio::sync::mpsc::channel::<()>(1);
+        let (_, req_receiver) = tokio::sync::mpsc::channel::<()>(1);
+        let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
 
         let _ = ModelService::<(), ()>::start::<TestModelInstance, MockApi>(
             PathBuf::try_from(CONFIG_FILE_PATH).unwrap(),
             PathBuf::try_from(PRIVATE_KEY_FILE_PATH).unwrap(),
-            receiver,
+            req_receiver,
+            resp_sender,
         )
         .unwrap();
 

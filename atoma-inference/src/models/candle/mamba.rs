@@ -19,6 +19,8 @@ use crate::{
     types::PrecisionBits,
 };
 
+use super::types::TextModelInput;
+
 pub struct MambaModel {
     model: Model,
     config: Config,
@@ -48,40 +50,8 @@ impl MambaModel {
     }
 }
 
-pub struct MambaInput {
-    prompt: String,
-    temperature: f64,
-    random_seed: u64,
-    repeat_penalty: f32,
-    repeat_last_n: usize,
-    max_tokens: usize,
-    top_p: f64,
-}
-
-impl MambaInput {
-    pub fn new(
-        prompt: String,
-        temperature: f64,
-        random_seed: u64,
-        repeat_penalty: f32,
-        repeat_last_n: usize,
-        max_tokens: usize,
-        top_p: f64,
-    ) -> Self {
-        Self {
-            prompt,
-            temperature,
-            random_seed,
-            repeat_penalty,
-            repeat_last_n,
-            max_tokens,
-            top_p,
-        }
-    }
-}
-
 impl ModelTrait for MambaModel {
-    type Input = MambaInput;
+    type Input = TextModelInput;
     type Output = String;
 
     fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
@@ -126,7 +96,7 @@ impl ModelTrait for MambaModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let MambaInput {
+        let TextModelInput {
             prompt,
             temperature,
             random_seed,
@@ -134,6 +104,7 @@ impl ModelTrait for MambaModel {
             repeat_last_n,
             max_tokens,
             top_p,
+            ..
         } = input;
 
         self.tokenizer.clear();

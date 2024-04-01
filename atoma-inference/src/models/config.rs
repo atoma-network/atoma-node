@@ -5,10 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{models::ModelId, types::PrecisionBits};
 
+type Revision = String;
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
     api_key: String,
-    models: Vec<(ModelId, PrecisionBits)>,
+    flush_storage: bool,
+    models: Vec<(ModelId, PrecisionBits, Revision)>,
     storage_path: PathBuf,
     tracing: bool,
 }
@@ -16,12 +19,14 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn new(
         api_key: String,
-        models: Vec<(ModelId, PrecisionBits)>,
+        flush_storage: bool,
+        models: Vec<(ModelId, PrecisionBits, Revision)>,
         storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
+            flush_storage,
             models,
             storage_path,
             tracing,
@@ -32,7 +37,11 @@ impl ModelConfig {
         self.api_key.clone()
     }
 
-    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits)> {
+    pub fn flush_storage(&self) -> bool {
+        self.flush_storage
+    }
+
+    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits, Revision)> {
         self.models.clone()
     }
 
@@ -65,7 +74,8 @@ pub mod tests {
     fn test_config() {
         let config = ModelConfig::new(
             String::from("my_key"),
-            vec![("Llama2_7b".to_string(), PrecisionBits::F16)],
+            true,
+            vec![("Llama2_7b".to_string(), PrecisionBits::F16, "".to_string())],
             "storage_path".parse().unwrap(),
             true,
         );
