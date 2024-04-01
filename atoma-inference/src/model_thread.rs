@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::mpsc};
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc},
+};
 
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
@@ -112,24 +115,27 @@ where
         public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle<Req, Resp>>), ModelThreadError>
     where
-        F: ApiTrait,
+        F: ApiTrait + Send + Sync + 'static,
         M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let model_ids = config.model_ids();
         let api_key = config.api_key();
         let storage_path = config.storage_path();
-        let api = F::create(api_key, storage_path)?;
+        let api = Arc::new(F::create(api_key, storage_path)?);
 
         let mut handles = Vec::with_capacity(model_ids.len());
         let mut model_senders = HashMap::with_capacity(model_ids.len());
 
-        for model_id in model_ids {
-            let filenames = api.fetch(&model_id)?;
+        for (model_id, precision) in model_ids {
+            let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
+            let model_name = model_id.clone();
 
             let join_handle = std::thread::spawn(move || {
-                let model = M::load(filenames)?; // TODO: for now this piece of code cannot be shared among threads safely
+                let filenames = api.fetch(&model_name)?;
+
+                let model = M::load(filenames, precision)?;
                 let model_thread = ModelThread {
                     model,
                     receiver: model_receiver,

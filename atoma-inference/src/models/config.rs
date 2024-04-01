@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::models::ModelId;
+use crate::{models::ModelId, types::PrecisionBits};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
     api_key: String,
-    models: Vec<ModelId>,
+    models: Vec<(ModelId, PrecisionBits)>,
     storage_path: PathBuf,
     tracing: bool,
 }
@@ -16,7 +16,7 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn new(
         api_key: String,
-        models: Vec<ModelId>,
+        models: Vec<(ModelId, PrecisionBits)>,
         storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
@@ -32,7 +32,7 @@ impl ModelConfig {
         self.api_key.clone()
     }
 
-    pub fn model_ids(&self) -> Vec<ModelId> {
+    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits)> {
         self.models.clone()
     }
 
@@ -65,7 +65,7 @@ pub mod tests {
     fn test_config() {
         let config = ModelConfig::new(
             String::from("my_key"),
-            vec!["Llama2_7b".to_string()],
+            vec![("Llama2_7b".to_string(), PrecisionBits::F16)],
             "storage_path".parse().unwrap(),
             true,
         );

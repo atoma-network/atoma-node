@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
+use ::candle::Error as CandleError;
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 
-pub mod config;
+use crate::types::PrecisionBits;
+
 pub mod candle;
+pub mod config;
 
 pub type ModelId = String;
 
@@ -18,7 +21,7 @@ pub trait ModelTrait {
     type Input;
     type Output;
 
-    fn load(filenames: Vec<PathBuf>) -> Result<Self, ModelError>
+    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_id(&self) -> ModelId;
@@ -41,4 +44,13 @@ pub trait Response: Send + 'static {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelError {}
+pub enum ModelError {
+    #[error("Tokenizer error: `{0}`")]
+    TokenizerError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("IO error: `{0}`")]
+    IoError(std::io::Error),
+    #[error("Deserialize error: `{0}`")]
+    DeserializeError(serde_json::Error),
+    #[error("Candle error: `{0}`")]
+    CandleError(CandleError),
+}

@@ -36,7 +36,7 @@ where
     ) -> Result<Self, ModelServiceError>
     where
         M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
-        F: ApiTrait,
+        F: ApiTrait + Send + Sync + 'static,
     {
         let private_key_bytes =
             std::fs::read(private_key_path).map_err(ModelServiceError::PrivateKeyError)?;
@@ -140,7 +140,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::ModelId;
+    use crate::{models::ModelId, types::PrecisionBits};
 
     use super::*;
 
@@ -194,7 +194,7 @@ mod tests {
         type Input = ();
         type Output = ();
 
-        fn load(_: Vec<PathBuf>) -> Result<Self, crate::models::ModelError> {
+        fn load(_: Vec<PathBuf>, _: PrecisionBits) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
 
