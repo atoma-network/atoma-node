@@ -4,6 +4,7 @@ use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 
 pub mod config;
+pub mod candle;
 
 pub type ModelId = String;
 
@@ -14,7 +15,6 @@ pub trait ModelBuilder {
 }
 
 pub trait ModelTrait {
-    type Builder: Send + Sync + 'static;
     type Input;
     type Output;
 
