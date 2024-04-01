@@ -25,11 +25,11 @@ impl ApiTrait for Api {
 
     fn fetch(&self, model_id: ModelId, revision: String) -> Result<Vec<PathBuf>, ApiError> {
         let repo = self.repo(Repo::with_revision(model_id, RepoType::Model, revision));
-        let mut filenames = Vec::with_capacity(3);
-
-        filenames.push(repo.get("tokenizer.json")?);
-        filenames.push(repo.get("config.json")?);
-        filenames.push(repo.get("model.safetensors")?);
+        let filenames = vec![
+            repo.get("tokenizer.json")?,
+            repo.get("config.json")?,
+            repo.get("model.safetensors")?,
+        ];
 
         Ok(filenames)
     }

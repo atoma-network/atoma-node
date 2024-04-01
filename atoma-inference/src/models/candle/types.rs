@@ -41,7 +41,7 @@ impl Request for TextRequest {
     }
 
     fn is_node_authorized(&self, public_key: &PublicKey) -> bool {
-        self.sampled_nodes.contains(&public_key)
+        self.sampled_nodes.contains(public_key)
     }
 
     fn requested_model(&self) -> ModelId {
@@ -61,6 +61,7 @@ pub struct TextModelInput {
 }
 
 impl TextModelInput {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         prompt: String,
         temperature: f64,
