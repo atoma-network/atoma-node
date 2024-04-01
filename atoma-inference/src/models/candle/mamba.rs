@@ -217,7 +217,7 @@ enum Which {
     Mamba790m,
     Mamba1_4b,
     Mamba2_8b,
-    Mamba2_8bSlimPj,
+    // Mamba2_8bSlimPj, TODO: add this
 }
 
 impl Which {
@@ -228,7 +228,7 @@ impl Which {
             Self::Mamba790m => "state-spaces/mamba-790m",
             Self::Mamba1_4b => "state-spaces/mamba-1.4b",
             Self::Mamba2_8b => "state-spaces/mamba-2.8b",
-            Self::Mamba2_8bSlimPj => "state-spaces/mamba-2.8b-slimpj'",
+            // Self::Mamba2_8bSlimPj => "state-spaces/mamba-2.8b-slimpj'",
         }
     }
 
