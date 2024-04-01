@@ -62,8 +62,8 @@ impl ModelTrait for MambaModel {
 
         let start = Instant::now();
 
-        let tokenizer_filename = filenames[0].clone();
-        let config_filename = filenames[1].clone();
+        let config_filename = filenames[0].clone();
+        let tokenizer_filename = filenames[1].clone();
         let weights_filenames = filenames[2..].to_vec();
 
         let tokenizer =
@@ -81,11 +81,10 @@ impl ModelTrait for MambaModel {
         };
         let dtype = precision.into_dtype();
 
-        let var_builder = unsafe {
-            VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)
-                .map_err(ModelError::CandleError)?
-        };
-        let model = Model::new(&config, var_builder).map_err(ModelError::CandleError)?;
+        info!("Loading model weights..");
+        let var_builder =
+            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)? };
+        let model = Model::new(&config, var_builder.pp("backbone"))?;
         info!("Loaded Mamba model in {:?}", start.elapsed());
 
         Ok(Self::new(model, config, device, dtype, tokenizer))
@@ -107,6 +106,8 @@ impl ModelTrait for MambaModel {
             ..
         } = input;
 
+        info!("Running inference on prompt: {:?}", prompt);
+
         self.tokenizer.clear();
         let mut tokens = self
             .tokenizer
@@ -127,16 +128,18 @@ impl ModelTrait for MambaModel {
         let mut state = State::new(1, &self.config, &self.device)?; // TODO: handle larger batch sizes
 
         let mut next_logits = None;
+        let mut output = String::new();
+
         for &t in tokens.iter() {
             let input = Tensor::new(&[t], &self.device)?;
             let logits = self.model.forward(&input, &mut state)?;
+
             next_logits = Some(logits);
             if let Some(t) = self.tokenizer.next_token(t)? {
-                print!("{t}")
+                info!("{:?}", t);
+                output.push_str(t.as_str());
             }
         }
-
-        let mut output = String::new();
 
         let start_gen = Instant::now();
         for _ in 0..max_tokens {
@@ -162,6 +165,7 @@ impl ModelTrait for MambaModel {
             }
 
             if let Some(t) = self.tokenizer.next_token(next_token)? {
+                info!("{:?}", t);
                 output.push_str(t.as_str());
             }
 
@@ -173,7 +177,7 @@ impl ModelTrait for MambaModel {
             output.push_str(rest.as_str());
         }
 
-        println!(
+        info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );

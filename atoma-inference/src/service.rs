@@ -1,5 +1,5 @@
 use candle::Error as CandleError;
-use ed25519_consensus::SigningKey as PrivateKey;
+use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -22,6 +22,7 @@ where
     dispatcher: ModelThreadDispatcher<Req, Resp>,
     start_time: Instant,
     flush_storage: bool,
+    public_key: PublicKey,
     storage_path: PathBuf,
     request_receiver: Receiver<Req>,
     response_sender: Sender<Resp>,
@@ -66,6 +67,7 @@ where
             start_time,
             flush_storage,
             storage_path,
+            public_key,
             request_receiver,
             response_sender,
         })
@@ -94,6 +96,10 @@ where
                 }
             }
         }
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key
     }
 }
 
@@ -237,7 +243,7 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = [["Mamba3b", "F16", ""]]
+            models = [["Mamba3b", "F16", "", ""]]
             storage_path = "./storage_path/"
             tokenizer_file_path = "./tokenizer_file_path/"
             flush_storage = true

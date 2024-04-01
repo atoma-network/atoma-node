@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use hf_hub::api::sync::Api;
 use inference::{
     models::candle::{
@@ -22,24 +24,26 @@ async fn main() -> Result<(), ModelServiceError> {
     )
     .expect("Failed to start inference service");
 
+    let pk = service.public_key();
+
     tokio::spawn(async move {
         service.run().await?;
         Ok::<(), ModelServiceError>(())
     });
 
-    let sampled_nodes = vec![];
+    tokio::time::sleep(Duration::from_millis(5000)).await;
 
     req_sender
         .send(TextRequest {
             request_id: 0,
-            prompt: "Natalie Portman".to_string(),
-            model: "state-spaces/mamba-2.8b".to_string(),
+            prompt: "Who was the first american president ? ".to_string(),
+            model: "state-spaces/mamba-130m".to_string(),
             max_tokens: 512,
-            temperature: Some(0.6),
+            temperature: Some(0.0),
             random_seed: 42,
-            repeat_last_n: 15,
-            repeat_penalty: 0.6,
-            sampled_nodes,
+            repeat_last_n: 64,
+            repeat_penalty: 1.1,
+            sampled_nodes: vec![pk],
             top_p: Some(1.0),
             top_k: 10,
         })

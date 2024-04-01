@@ -7,7 +7,7 @@ use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     apis::{ApiError, ApiTrait},
@@ -127,12 +127,14 @@ where
         let mut model_senders = HashMap::with_capacity(model_ids.len());
 
         for (model_id, precision, revision) in model_ids {
+            info!("Spawning new thread for model: {model_id}");
             let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
             let model_name = model_id.clone();
 
             let join_handle = std::thread::spawn(move || {
+                info!("Fetching files for model: {model_name}");
                 let filenames = api.fetch(model_name, revision)?;
 
                 let model = M::load(filenames, precision)?;

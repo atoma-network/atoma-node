@@ -5,6 +5,7 @@ use hf_hub::{
     api::sync::{Api, ApiBuilder},
     Repo, RepoType,
 };
+use tracing::error;
 
 use crate::models::ModelId;
 
@@ -24,13 +25,28 @@ impl ApiTrait for Api {
     }
 
     fn fetch(&self, model_id: ModelId, revision: String) -> Result<Vec<PathBuf>, ApiError> {
-        let repo = self.repo(Repo::with_revision(model_id, RepoType::Model, revision));
-        let filenames = vec![
-            repo.get("tokenizer.json")?,
-            repo.get("config.json")?,
-            repo.get("model.safetensors")?,
-        ];
+        let mut tokenizer_file = None;
+        if model_id.contains("mamba") {
+            tokenizer_file = Some(
+                self.model("EleutherAI/gpt-neox-20b".to_string())
+                    .get("tokenizer.json")
+                    .map_err(|e| {
+                        error!("Failed to fetch tokenizer file: {e}");
+                        e
+                    })?,
+            )
+        }
 
-        Ok(filenames)
+        let repo = self.repo(Repo::with_revision(model_id, RepoType::Model, revision));
+
+        Ok(vec![
+            repo.get("config.json")?,
+            if let Some(tkn) = tokenizer_file {
+                tkn
+            } else {
+                repo.get("tokenizer.json")?
+            },
+            repo.get("model.safetensors")?,
+        ])
     }
 }
