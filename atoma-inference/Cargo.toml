@@ -1,11 +1,10 @@
 [package]
 name = "inference"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow.workspace = true
 async-trait.workspace = true
 candle.workspace = true
 candle-flash-attn = { workspace = true, optional = true }
@@ -19,8 +18,10 @@ hf-hub.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+clap.workspace = true
+image = { workspace = true }
 thiserror.workspace = true
-tokenizers.workspace = true
+tokenizers = { workspace = true, features = ["onig"] }
 tokio = { workspace = true, features = ["full", "tracing"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -31,7 +32,11 @@ toml.workspace = true
 
 
 [features]
-accelerate = ["candle/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
+accelerate = [
+  "candle/accelerate",
+  "candle-nn/accelerate",
+  "candle-transformers/accelerate",
+]
 cuda = ["candle/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle/cudnn"]
 flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
