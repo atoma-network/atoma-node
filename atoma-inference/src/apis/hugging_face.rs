@@ -25,7 +25,11 @@ impl ApiTrait for Api {
     }
 
     fn fetch(&self, model_id: ModelId, revision: String) -> Result<Vec<PathBuf>, ApiError> {
-        let repo = self.repo(Repo::with_revision(model_id.clone(), RepoType::Model, revision));
+        let repo = self.repo(Repo::with_revision(
+            model_id.clone(),
+            RepoType::Model,
+            revision,
+        ));
 
         Ok(vec![
             repo.get("config.json")?,
