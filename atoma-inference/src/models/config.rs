@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use config::Config;
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 
 use crate::{models::types::PrecisionBits, models::ModelId};
@@ -63,6 +64,36 @@ impl ModelConfig {
         config
             .try_deserialize::<Self>()
             .expect("Failed to generated config file")
+    }
+
+    pub fn from_env_file() -> Self {
+        dotenv().ok();
+
+        let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
+        let flush_storage = std::env::var("FLUSH_STORAGE")
+            .expect("Failed to retrieve flush storage variable, from .env file")
+            .parse()
+            .unwrap();
+        let models = serde_json::from_str(
+            &std::env::var("MODELS").expect("Failed to retrieve models metadata, from .env file"),
+        )
+        .unwrap();
+        let storage_path = std::env::var("STORAGE_PATH")
+            .expect("Failed to retrieve storage path, from .env file")
+            .parse()
+            .unwrap();
+        let tracing = std::env::var("TRACING")
+            .expect("Failed to retrieve tracing variable, from .env file")
+            .parse()
+            .unwrap();
+
+        Self {
+            api_key,
+            flush_storage,
+            models,
+            storage_path,
+            tracing,
+        }
     }
 }
 
