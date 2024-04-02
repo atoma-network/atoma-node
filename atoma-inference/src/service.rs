@@ -188,8 +188,7 @@ mod tests {
     impl Request for () {
         type ModelInput = ();
 
-        fn into_model_input(self) -> Self::ModelInput {
-        }
+        fn into_model_input(self) -> Self::ModelInput {}
 
         fn is_node_authorized(&self, _: &PublicKey) -> bool {
             true
@@ -207,8 +206,7 @@ mod tests {
     impl Response for () {
         type ModelOutput = ();
 
-        fn from_model_output(_: Self::ModelOutput) -> Self {
-        }
+        fn from_model_output(_: Self::ModelOutput) -> Self {}
     }
 
     #[derive(Clone)]

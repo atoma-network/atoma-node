@@ -36,7 +36,7 @@ async fn main() -> Result<(), ModelServiceError> {
     req_sender
         .send(TextRequest {
             request_id: 0,
-            prompt: "Who was the first american president ?".to_string(),
+            prompt: "Leon, the professional is a movie".to_string(),
             model: "state-spaces/mamba-130m".to_string(),
             max_tokens: 512,
             temperature: Some(0.0),
