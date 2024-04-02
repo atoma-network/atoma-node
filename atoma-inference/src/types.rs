@@ -1,41 +1,35 @@
-use crate::models::ModelType;
+use candle::DType;
 use ed25519_consensus::VerificationKey;
+use serde::{Deserialize, Serialize};
+
+use crate::models::ModelId;
 
 pub type NodeId = VerificationKey;
 pub type Temperature = f32;
 
 #[derive(Clone, Debug)]
 pub struct InferenceRequest {
-    pub(crate) prompt: String,
-    pub(crate) model: ModelType,
-    pub(crate) max_tokens: usize,
-    pub(crate) random_seed: usize,
-    pub(crate) repeat_penalty: f32,
-    pub(crate) sampled_nodes: Vec<NodeId>,
-    pub(crate) temperature: Option<f32>,
-    pub(crate) top_k: usize,
-    pub(crate) top_p: Option<f32>,
+    pub request_id: u128,
+    pub prompt: String,
+    pub model: ModelId,
+    pub max_tokens: usize,
+    pub random_seed: usize,
+    pub repeat_last_n: usize,
+    pub repeat_penalty: f32,
+    pub sampled_nodes: Vec<NodeId>,
+    pub temperature: Option<f32>,
+    pub top_k: usize,
+    pub top_p: Option<f32>,
 }
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct InferenceResponse {
     // TODO: possibly a Merkle root hash
-    pub(crate) response_hash: [u8; 32],
-    pub(crate) node_id: NodeId,
-    pub(crate) signature: Vec<u8>,
+    // pub(crate) response_hash: [u8; 32],
+    // pub(crate) node_id: NodeId,
+    // pub(crate) signature: Vec<u8>,
     pub(crate) response: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct ModelRequest {
-    pub(crate) model: ModelType,
-    pub(crate) quantization_method: Option<QuantizationMethod>,
-}
-
-#[allow(dead_code)]
-pub struct ModelResponse {
-    pub(crate) is_success: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -44,13 +38,28 @@ pub enum QuantizationMethod {
     Gptq(PrecisionBits),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum PrecisionBits {
-    Q1,
-    Q2,
-    Q4,
-    Q5,
-    Q8,
+    BF16,
     F16,
     F32,
+    F64,
+    I64,
+    U8,
+    U32,
+}
+
+impl PrecisionBits {
+    #[allow(dead_code)]
+    pub(crate) fn into_dtype(self) -> DType {
+        match self {
+            Self::BF16 => DType::BF16,
+            Self::F16 => DType::F16,
+            Self::F32 => DType::F32,
+            Self::F64 => DType::F64,
+            Self::I64 => DType::I64,
+            Self::U8 => DType::U8,
+            Self::U32 => DType::U32,
+        }
+    }
 }
