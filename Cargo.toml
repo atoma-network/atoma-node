@@ -9,6 +9,7 @@ version = "0.1.0"
 [workspace.dependencies]
 async-trait = "0.1.78"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", version = "0.4.2" }
+candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", version = "0.4.2" }
 candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-nn", version = "0.4.2" }
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", version = "0.4.2" }
 config = "0.14.0"
