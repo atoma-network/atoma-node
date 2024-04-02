@@ -43,9 +43,6 @@ pub struct Input {
 
     sd_version: StableDiffusionVersion,
 
-    /// Generate intermediary images at each step.
-    intermediary_images: bool,
-
     use_flash_attn: bool,
 
     use_f16: bool,
@@ -78,7 +75,6 @@ impl Input {
             n_steps: Some(20),
             num_samples: 1,
             sd_version: StableDiffusionVersion::V1_5,
-            intermediary_images: false,
             use_flash_attn: false,
             use_f16: true,
             guidance_scale: None,
@@ -315,6 +311,7 @@ impl CandleModel for StableDiffusion {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 enum StableDiffusionVersion {
     V1_5,
