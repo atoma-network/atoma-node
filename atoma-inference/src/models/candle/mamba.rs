@@ -128,13 +128,12 @@ impl ModelTrait for MambaModel {
         let mut next_logits = None;
         let mut output = String::new();
 
-        for &t in tokens.iter() {
-            let input = Tensor::new(&[t], &self.device)?;
+        for &token in tokens.iter() {
+            let input = Tensor::new(&[token], &self.device)?;
             let logits = self.model.forward(&input, &mut state)?;
 
             next_logits = Some(logits);
-            if let Some(t) = self.tokenizer.next_token(t)? {
-                info!("{:?}", t);
+            if let Some(t) = self.tokenizer.next_token(token)? {
                 output.push_str(t.as_str());
             }
         }
@@ -163,7 +162,6 @@ impl ModelTrait for MambaModel {
             }
 
             if let Some(t) = self.tokenizer.next_token(next_token)? {
-                info!("{:?}", t);
                 output.push_str(t.as_str());
             }
 

@@ -169,11 +169,11 @@ where
 
     fn send(&self, command: ModelThreadCommand<Req, Resp>) {
         let request = command.0.clone();
-        let model_type = request.requested_model();
+        let model_id = request.requested_model();
 
         let sender = self
             .model_senders
-            .get(&model_type)
+            .get(&model_id)
             .expect("Failed to get model thread, this should not happen !");
 
         if let Err(e) = sender.send(command) {

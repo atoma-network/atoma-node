@@ -25,24 +25,17 @@ impl ApiTrait for Api {
     }
 
     fn fetch(&self, model_id: ModelId, revision: String) -> Result<Vec<PathBuf>, ApiError> {
-        let mut tokenizer_file = None;
-        if model_id.contains("mamba") {
-            tokenizer_file = Some(
+        let repo = self.repo(Repo::with_revision(model_id.clone(), RepoType::Model, revision));
+
+        Ok(vec![
+            repo.get("config.json")?,
+            if model_id.contains("mamba") {
                 self.model("EleutherAI/gpt-neox-20b".to_string())
                     .get("tokenizer.json")
                     .map_err(|e| {
                         error!("Failed to fetch tokenizer file: {e}");
                         e
-                    })?,
-            )
-        }
-
-        let repo = self.repo(Repo::with_revision(model_id, RepoType::Model, revision));
-
-        Ok(vec![
-            repo.get("config.json")?,
-            if let Some(tkn) = tokenizer_file {
-                tkn
+                    })?
             } else {
                 repo.get("tokenizer.json")?
             },
