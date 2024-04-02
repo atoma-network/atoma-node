@@ -189,7 +189,6 @@ mod tests {
         type ModelInput = ();
 
         fn into_model_input(self) -> Self::ModelInput {
-            ()
         }
 
         fn is_node_authorized(&self, _: &PublicKey) -> bool {
@@ -209,7 +208,6 @@ mod tests {
         type ModelOutput = ();
 
         fn from_model_output(_: Self::ModelOutput) -> Self {
-            ()
         }
     }
 
@@ -238,7 +236,7 @@ mod tests {
         const CONFIG_FILE_PATH: &str = "./inference.toml";
         const PRIVATE_KEY_FILE_PATH: &str = "./private_key";
 
-        let private_key = PrivateKey::new(&mut OsRng);
+        let private_key = PrivateKey::new(OsRng);
         std::fs::write(PRIVATE_KEY_FILE_PATH, private_key.to_bytes()).unwrap();
 
         let config_data = Value::Table(toml! {
@@ -260,8 +258,8 @@ mod tests {
         let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
 
         let _ = ModelService::<(), ()>::start::<TestModelInstance, MockApi>(
-            PathBuf::try_from(CONFIG_FILE_PATH).unwrap(),
-            PathBuf::try_from(PRIVATE_KEY_FILE_PATH).unwrap(),
+            PathBuf::from(CONFIG_FILE_PATH),
+            PathBuf::from(PRIVATE_KEY_FILE_PATH),
             req_receiver,
             resp_sender,
         )
