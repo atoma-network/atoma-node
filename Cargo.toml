@@ -1,12 +1,21 @@
 [workspace]
 resolver = "2"
 
-members = ["atoma-event-subscribe", "atoma-inference", "atoma-networking", "atoma-json-rpc", "atoma-storage"]
+members = [
+    "atoma-event-subscribe/arbitrum",
+    "atoma-event-subscribe/solana",
+    "atoma-event-subscribe/sui",
+    "atoma-inference",
+    "atoma-networking",
+    "atoma-json-rpc",
+    "atoma-storage"
+]
 
 [workspace.package]
 version = "0.1.0"
 
 [workspace.dependencies]
+anyhow = "1.0.81"
 async-trait = "0.1.78"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", version = "0.4.2" }
 candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", version = "0.4.2" }
@@ -19,6 +28,7 @@ futures = "0.3.30"
 hf-hub = "0.3.2"
 serde = "1.0.197"
 serde_json = "1.0.114"
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk"}
 rand = "0.8.5"
 reqwest = "0.12.1"
 thiserror = "1.0.58"
