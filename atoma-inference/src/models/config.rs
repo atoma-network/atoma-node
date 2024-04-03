@@ -1,14 +1,18 @@
 use std::path::PathBuf;
 
 use config::Config;
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 
-use crate::models::ModelId;
+use crate::{models::types::PrecisionBits, models::ModelId};
+
+type Revision = String;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
     api_key: String,
-    models: Vec<ModelId>,
+    flush_storage: bool,
+    models: Vec<(ModelId, PrecisionBits, Revision)>,
     storage_path: PathBuf,
     tracing: bool,
 }
@@ -16,12 +20,14 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn new(
         api_key: String,
-        models: Vec<ModelId>,
+        flush_storage: bool,
+        models: Vec<(ModelId, PrecisionBits, Revision)>,
         storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
+            flush_storage,
             models,
             storage_path,
             tracing,
@@ -32,7 +38,11 @@ impl ModelConfig {
         self.api_key.clone()
     }
 
-    pub fn model_ids(&self) -> Vec<ModelId> {
+    pub fn flush_storage(&self) -> bool {
+        self.flush_storage
+    }
+
+    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits, Revision)> {
         self.models.clone()
     }
 
@@ -55,6 +65,36 @@ impl ModelConfig {
             .try_deserialize::<Self>()
             .expect("Failed to generated config file")
     }
+
+    pub fn from_env_file() -> Self {
+        dotenv().ok();
+
+        let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
+        let flush_storage = std::env::var("FLUSH_STORAGE")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+        let models = serde_json::from_str(
+            &std::env::var("MODELS").expect("Failed to retrieve models metadata, from .env file"),
+        )
+        .unwrap();
+        let storage_path = std::env::var("STORAGE_PATH")
+            .expect("Failed to retrieve storage path, from .env file")
+            .parse()
+            .unwrap();
+        let tracing = std::env::var("TRACING")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+
+        Self {
+            api_key,
+            flush_storage,
+            models,
+            storage_path,
+            tracing,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -65,13 +105,14 @@ pub mod tests {
     fn test_config() {
         let config = ModelConfig::new(
             String::from("my_key"),
-            vec!["Llama2_7b".to_string()],
+            true,
+            vec![("Llama2_7b".to_string(), PrecisionBits::F16, "".to_string())],
             "storage_path".parse().unwrap(),
             true,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nmodels = [\"Llama2_7b\"]\nstorage_path = \"storage_path\"\ntracing = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\nflush_storage = true\nmodels = [[\"Llama2_7b\", \"F16\", \"\"]]\nstorage_path = \"storage_path\"\ntracing = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

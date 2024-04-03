@@ -1,27 +1,27 @@
 use std::path::PathBuf;
 
+use ::candle::Error as CandleError;
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 
+use crate::models::types::PrecisionBits;
+
+pub mod candle;
 pub mod config;
+pub mod token_output_stream;
+pub mod types;
 
 pub type ModelId = String;
-
-pub trait ModelBuilder {
-    fn try_from_file(path: PathBuf) -> Result<Self, ModelError>
-    where
-        Self: Sized;
-}
 
 pub trait ModelTrait {
     type Input;
     type Output;
 
-    fn load(filenames: Vec<PathBuf>) -> Result<Self, ModelError>
+    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_id(&self) -> ModelId;
-    fn run(&self, input: Self::Input) -> Result<Self::Output, ModelError>;
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
 }
 
 pub trait Request: Send + 'static {
@@ -40,4 +40,34 @@ pub trait Response: Send + 'static {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelError {}
+pub enum ModelError {
+    #[error("Tokenizer error: `{0}`")]
+    TokenizerError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("IO error: `{0}`")]
+    IoError(std::io::Error),
+    #[error("Deserialize error: `{0}`")]
+    DeserializeError(serde_json::Error),
+    #[error("Candle error: `{0}`")]
+    CandleError(CandleError),
+    #[error("{0}")]
+    Msg(String),
+}
+
+impl From<CandleError> for ModelError {
+    fn from(error: CandleError) -> Self {
+        Self::CandleError(error)
+    }
+}
+
+#[macro_export]
+macro_rules! bail {
+    ($msg:literal $(,)?) => {
+        return Err(ModelError::Msg(format!($msg).into()))
+    };
+    ($err:expr $(,)?) => {
+        return Err(ModelError::Msg(format!($err).into()).bt())
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        return Err(ModelError::Msg(format!($fmt, $($arg)*).into()).bt())
+    };
+}

@@ -13,6 +13,7 @@ candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "
 candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-nn", version = "0.4.2" }
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", version = "0.4.2" }
 config = "0.14.0"
+dotenv = "0.15.0"
 ed25519-consensus = "2.1.0"
 futures = "0.3.30"
 hf-hub = "0.3.2"

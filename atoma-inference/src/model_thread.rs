@@ -1,10 +1,13 @@
-use std::{collections::HashMap, sync::mpsc};
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc},
+};
 
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     apis::{ApiError, ApiTrait},
@@ -69,7 +72,7 @@ where
     Req: Request,
     Resp: Response,
 {
-    pub fn run(self, public_key: PublicKey) -> Result<(), ModelThreadError> {
+    pub fn run(mut self, public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
@@ -112,24 +115,29 @@ where
         public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle<Req, Resp>>), ModelThreadError>
     where
-        F: ApiTrait,
+        F: ApiTrait + Send + Sync + 'static,
         M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let model_ids = config.model_ids();
         let api_key = config.api_key();
         let storage_path = config.storage_path();
-        let api = F::create(api_key, storage_path)?;
+        let api = Arc::new(F::create(api_key, storage_path)?);
 
         let mut handles = Vec::with_capacity(model_ids.len());
         let mut model_senders = HashMap::with_capacity(model_ids.len());
 
-        for model_id in model_ids {
-            let filenames = api.fetch(&model_id)?;
+        for (model_id, precision, revision) in model_ids {
+            info!("Spawning new thread for model: {model_id}");
+            let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
+            let model_name = model_id.clone();
 
             let join_handle = std::thread::spawn(move || {
-                let model = M::load(filenames)?; // TODO: for now this piece of code cannot be shared among threads safely
+                info!("Fetching files for model: {model_name}");
+                let filenames = api.fetch(model_name, revision)?;
+
+                let model = M::load(filenames, precision)?;
                 let model_thread = ModelThread {
                     model,
                     receiver: model_receiver,
@@ -161,11 +169,11 @@ where
 
     fn send(&self, command: ModelThreadCommand<Req, Resp>) {
         let request = command.0.clone();
-        let model_type = request.requested_model();
+        let model_id = request.requested_model();
 
         let sender = self
             .model_senders
-            .get(&model_type)
+            .get(&model_id)
             .expect("Failed to get model thread, this should not happen !");
 
         if let Err(e) = sender.send(command) {
