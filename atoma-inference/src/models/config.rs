@@ -71,7 +71,7 @@ impl ModelConfig {
 
         let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
         let flush_storage = std::env::var("FLUSH_STORAGE")
-            .expect("Failed to retrieve flush storage variable, from .env file")
+            .unwrap_or_default()
             .parse()
             .unwrap();
         let models = serde_json::from_str(
@@ -83,7 +83,7 @@ impl ModelConfig {
             .parse()
             .unwrap();
         let tracing = std::env::var("TRACING")
-            .expect("Failed to retrieve tracing variable, from .env file")
+            .unwrap_or_default()
             .parse()
             .unwrap();
 
