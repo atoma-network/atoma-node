@@ -9,12 +9,9 @@ use candle_transformers::models::stable_diffusion::{self};
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use tokenizers::Tokenizer;
 
-use crate::{
-    candle::device,
-    models::{types::PrecisionBits, ModelError, ModelId, ModelTrait},
-};
+use crate::models::{types::PrecisionBits, ModelError, ModelId, ModelTrait};
 
-use super::save_tensor_to_file;
+use super::{device, save_tensor_to_file};
 
 pub struct Input {
     prompt: String,
