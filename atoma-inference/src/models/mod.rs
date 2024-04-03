@@ -14,9 +14,13 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
+    type Fetch;
     type Input;
     type Output;
 
+    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
+        Ok(())
+    }
     fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
     where
         Self: Sized;

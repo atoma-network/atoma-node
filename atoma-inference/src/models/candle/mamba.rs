@@ -49,6 +49,7 @@ impl MambaModel {
 }
 
 impl ModelTrait for MambaModel {
+    type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
 

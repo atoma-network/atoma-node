@@ -9,9 +9,12 @@ use candle_transformers::models::stable_diffusion::{self};
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use tokenizers::Tokenizer;
 
-use crate::{candle::device, models::ModelError};
+use crate::{
+    candle::device,
+    models::{types::PrecisionBits, ModelError, ModelId, ModelTrait},
+};
 
-use super::{save_tensor_to_file, CandleModel};
+use super::save_tensor_to_file;
 
 pub struct Input {
     prompt: String,
@@ -108,9 +111,20 @@ pub struct Fetch {
     unet_weights: Option<String>,
 }
 
-impl CandleModel for StableDiffusion {
+impl ModelTrait for StableDiffusion {
     type Input = Input;
     type Fetch = Fetch;
+    type Output = Vec<Tensor>;
+
+    fn load(
+        _filenames: Vec<std::path::PathBuf>,
+        _precision: PrecisionBits,
+    ) -> Result<Self, ModelError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {})
+    }
 
     fn fetch(fetch: &Self::Fetch) -> Result<(), ModelError> {
         let which = match fetch.sd_version {
@@ -132,7 +146,11 @@ impl CandleModel for StableDiffusion {
         Ok(())
     }
 
-    fn inference(input: Self::Input) -> Result<Vec<Tensor>, ModelError> {
+    fn model_id(&self) -> ModelId {
+        "candle/stable_diffusion".to_string()
+    }
+
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         if !(0. ..=1.).contains(&input.img2img_strength) {
             Err(ModelError::Config(format!(
                 "img2img_strength must be between 0 and 1, got {}",
