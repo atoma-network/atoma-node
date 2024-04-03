@@ -1,14 +1,8 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+use serde::Deserialize;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod subscriber;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[derive(Debug, Deserialize)]
+pub struct AtomaEvent {
+    pub model: String
 }

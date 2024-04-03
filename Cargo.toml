@@ -24,6 +24,7 @@ candle-transformers = { git = "https://github.com/huggingface/candle", package =
 config = "0.14.0"
 dotenv = "0.15.0"
 ed25519-consensus = "2.1.0"
+ethers = "2.0.14"
 futures = "0.3.30"
 hf-hub = "0.3.2"
 serde = "1.0.197"
