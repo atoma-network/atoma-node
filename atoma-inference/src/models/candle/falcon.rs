@@ -54,7 +54,11 @@ impl ModelTrait for FalconModel {
         Ok(())
     }
 
-    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
+    fn load(
+        filenames: Vec<PathBuf>,
+        precision: PrecisionBits,
+        device_id: usize,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -74,9 +78,9 @@ impl ModelTrait for FalconModel {
         config.validate()?;
 
         let device = if cuda_is_available() {
-            Device::new_cuda(0).map_err(ModelError::CandleError)?
+            Device::new_cuda(device_id).map_err(ModelError::CandleError)?
         } else if metal_is_available() {
-            Device::new_metal(0).map_err(ModelError::CandleError)?
+            Device::new_metal(device_id).map_err(ModelError::CandleError)?
         } else {
             Device::Cpu
         };
