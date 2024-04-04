@@ -10,6 +10,7 @@ use crate::bail;
 
 use super::ModelError;
 
+pub mod llama;
 pub mod mamba;
 pub mod stable_diffusion;
 
