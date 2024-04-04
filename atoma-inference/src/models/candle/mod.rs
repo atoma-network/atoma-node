@@ -10,6 +10,7 @@ use crate::bail;
 
 use super::ModelError;
 
+pub mod falcon;
 pub mod mamba;
 pub mod stable_diffusion;
 
@@ -30,10 +31,9 @@ pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
 ) -> Result<Vec<std::path::PathBuf>, ModelError> {
-    let json_file = repo.get(json_file).map_err(candle::Error::wrap)?;
+    let json_file = repo.get(json_file)?;
     let json_file = std::fs::File::open(json_file)?;
-    let json: serde_json::Value =
-        serde_json::from_reader(&json_file).map_err(candle::Error::wrap)?;
+    let json: serde_json::Value = serde_json::from_reader(&json_file)?;
     let weight_map = match json.get("weight_map") {
         None => bail!("no weight map in {json_file:?}"),
         Some(serde_json::Value::Object(map)) => map,
