@@ -10,17 +10,18 @@ use crate::bail;
 
 use super::ModelError;
 
+pub mod falcon;
 pub mod llama;
 pub mod mamba;
 pub mod stable_diffusion;
 
-pub fn device() -> Result<Device, candle::Error> {
+pub fn device(device_id: usize) -> Result<Device, candle::Error> {
     if cuda_is_available() {
         info!("Using CUDA");
-        Device::new_cuda(0)
+        Device::new_cuda(device_id)
     } else if metal_is_available() {
         info!("Using Metal");
-        Device::new_metal(0)
+        Device::new_metal(device_id)
     } else {
         info!("Using Cpu");
         Ok(Device::Cpu)
@@ -31,10 +32,9 @@ pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
 ) -> Result<Vec<std::path::PathBuf>, ModelError> {
-    let json_file = repo.get(json_file).map_err(candle::Error::wrap)?;
+    let json_file = repo.get(json_file)?;
     let json_file = std::fs::File::open(json_file)?;
-    let json: serde_json::Value =
-        serde_json::from_reader(&json_file).map_err(candle::Error::wrap)?;
+    let json: serde_json::Value = serde_json::from_reader(&json_file)?;
     let weight_map = match json.get("weight_map") {
         None => bail!("no weight map in {json_file:?}"),
         Some(serde_json::Value::Object(map)) => map,

@@ -1,9 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use candle::{
-    utils::{cuda_is_available, metal_is_available},
-    DType, Device, Tensor,
-};
+use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
@@ -15,8 +12,12 @@ use tracing::info;
 
 use crate::{
     bail,
-    models::types::{PrecisionBits, TextModelInput},
-    models::{token_output_stream::TokenOutputStream, ModelError, ModelId, ModelTrait},
+    models::{
+        candle::device,
+        token_output_stream::TokenOutputStream,
+        types::{PrecisionBits, TextModelInput},
+        ModelError, ModelId, ModelTrait,
+    },
 };
 
 pub struct MambaModel {
@@ -53,7 +54,11 @@ impl ModelTrait for MambaModel {
     type Input = TextModelInput;
     type Output = String;
 
-    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
+    fn load(
+        filenames: Vec<PathBuf>,
+        precision: PrecisionBits,
+        device_id: usize,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -70,13 +75,7 @@ impl ModelTrait for MambaModel {
         let config: Config =
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
                 .map_err(ModelError::DeserializeError)?;
-        let device = if cuda_is_available() {
-            Device::new_cuda(0).map_err(ModelError::CandleError)?
-        } else if metal_is_available() {
-            Device::new_metal(0).map_err(ModelError::CandleError)?
-        } else {
-            Device::Cpu
-        };
+        let device = device(device_id)?;
         let dtype = precision.into_dtype();
 
         info!("Loading model weights..");
