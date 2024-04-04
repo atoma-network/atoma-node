@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     apis::{ApiError, ApiTrait},
-    models::{config::ModelConfig, ModelError, ModelId, ModelTrait, Request, Response},
+    models::{config::ModelsConfig, ModelError, ModelId, ModelTrait, Request, Response},
 };
 
 pub struct ModelThreadCommand<Req, Resp>(Req, oneshot::Sender<Resp>)
@@ -111,33 +111,37 @@ where
     Resp: Response,
 {
     pub(crate) fn start<M, F>(
-        config: ModelConfig,
+        config: ModelsConfig,
         public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle<Req, Resp>>), ModelThreadError>
     where
         F: ApiTrait + Send + Sync + 'static,
         M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
-        let model_ids = config.model_ids();
         let api_key = config.api_key();
         let storage_path = config.storage_path();
         let api = Arc::new(F::create(api_key, storage_path)?);
 
-        let mut handles = Vec::with_capacity(model_ids.len());
-        let mut model_senders = HashMap::with_capacity(model_ids.len());
+        let mut handles = Vec::new();
+        let mut model_senders = HashMap::new();
 
-        for (model_id, precision, revision) in model_ids {
-            info!("Spawning new thread for model: {model_id}");
+        for model_config in config.models() {
+            info!("Spawning new thread for model: {}", model_config.model_id());
             let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
-            let model_name = model_id.clone();
+            let model_name = model_config.model_id().clone();
+            model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = std::thread::spawn(move || {
                 info!("Fetching files for model: {model_name}");
-                let filenames = api.fetch(model_name, revision)?;
+                let filenames = api.fetch(model_name, model_config.revision())?;
 
-                let model = M::load(filenames, precision)?;
+                let model = M::load(
+                    filenames,
+                    model_config.precision(),
+                    model_config.device_id(),
+                )?;
                 let model_thread = ModelThread {
                     model,
                     receiver: model_receiver,
@@ -156,7 +160,6 @@ where
                 join_handle,
                 sender: model_sender.clone(),
             });
-            model_senders.insert(model_id, model_sender);
         }
 
         let model_dispatcher = ModelThreadDispatcher {

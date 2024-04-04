@@ -5,7 +5,7 @@ use hf_hub::api::sync::Api;
 use inference::{
     models::{
         candle::mamba::MambaModel,
-        config::ModelConfig,
+        config::ModelsConfig,
         types::{TextRequest, TextResponse},
     },
     service::{ModelService, ModelServiceError},
@@ -18,7 +18,7 @@ async fn main() -> Result<(), ModelServiceError> {
     let (req_sender, req_receiver) = tokio::sync::mpsc::channel::<TextRequest>(32);
     let (resp_sender, mut resp_receiver) = tokio::sync::mpsc::channel::<TextResponse>(32);
 
-    let model_config = ModelConfig::from_file_path("../inference.toml".parse().unwrap());
+    let model_config = ModelsConfig::from_file_path("../inference.toml".parse().unwrap());
     let private_key_bytes =
         std::fs::read("../private_key").map_err(ModelServiceError::PrivateKeyError)?;
     let private_key_bytes: [u8; 32] = private_key_bytes
