@@ -207,6 +207,11 @@ mod tests {
     impl ModelTrait for TestModelInstance {
         type Input = ();
         type Output = ();
+        type Fetch = ();
+
+        fn fetch(_fetch: &Self::Fetch) -> Result<(), crate::models::ModelError> {
+            Ok(())
+        }
 
         fn load(_: Vec<PathBuf>, _: PrecisionBits) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})

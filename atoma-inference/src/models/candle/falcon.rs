@@ -46,8 +46,13 @@ impl FalconModel {
 }
 
 impl ModelTrait for FalconModel {
+    type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
+
+    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
+        Ok(())
+    }
 
     fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
     where
@@ -61,8 +66,7 @@ impl ModelTrait for FalconModel {
         let tokenizer_filename = filenames[1].clone();
         let weights_filenames = filenames[2..].to_vec();
 
-        let tokenizer =
-            Tokenizer::from_file(tokenizer_filename).map_err(ModelError::TokenizerError)?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(ModelError::BoxedError)?;
 
         let config: Config =
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
@@ -112,7 +116,7 @@ impl ModelTrait for FalconModel {
         let mut tokens = self
             .tokenizer
             .encode(prompt, true)
-            .map_err(ModelError::TokenizerError)?
+            .map_err(ModelError::BoxedError)?
             .get_ids()
             .to_vec();
 
@@ -146,7 +150,7 @@ impl ModelTrait for FalconModel {
                 &self
                     .tokenizer
                     .decode(&[next_token], true)
-                    .map_err(ModelError::TokenizerError)?,
+                    .map_err(ModelError::BoxedError)?,
             );
         }
         let dt = start_gen.elapsed();
@@ -156,7 +160,7 @@ impl ModelTrait for FalconModel {
             max_tokens as f64 / dt.as_secs_f64(),
             self.tokenizer
                 .decode(&new_tokens, true)
-                .map_err(ModelError::TokenizerError)?,
+                .map_err(ModelError::BoxedError)?,
         );
 
         Ok(output)
