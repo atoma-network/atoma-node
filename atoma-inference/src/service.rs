@@ -213,7 +213,11 @@ mod tests {
             Ok(())
         }
 
-        fn load(_: Vec<PathBuf>, _: PrecisionBits) -> Result<Self, crate::models::ModelError> {
+        fn load(
+            _: Vec<PathBuf>,
+            _: PrecisionBits,
+            _device_id: usize,
+        ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
 
