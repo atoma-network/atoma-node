@@ -8,20 +8,60 @@ use crate::{models::types::PrecisionBits, models::ModelId};
 
 type Revision = String;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
-    api_key: String,
-    flush_storage: bool,
-    models: Vec<(ModelId, PrecisionBits, Revision)>,
-    storage_path: PathBuf,
-    tracing: bool,
+    model_id: ModelId,
+    precision: PrecisionBits,
+    revision: Revision,
+    device_id: usize,
 }
 
 impl ModelConfig {
     pub fn new(
+        model_id: ModelId,
+        precision: PrecisionBits,
+        revision: Revision,
+        device_id: usize,
+    ) -> Self {
+        Self {
+            model_id,
+            precision,
+            revision,
+            device_id,
+        }
+    }
+
+    pub fn model_id(&self) -> &ModelId {
+        &self.model_id
+    }
+
+    pub fn precision(&self) -> PrecisionBits {
+        self.precision
+    }
+
+    pub fn revision(&self) -> Revision {
+        self.revision.clone()
+    }
+
+    pub fn device_id(&self) -> usize {
+        self.device_id
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModelsConfig {
+    api_key: String,
+    flush_storage: bool,
+    models: Vec<ModelConfig>,
+    storage_path: PathBuf,
+    tracing: bool,
+}
+
+impl ModelsConfig {
+    pub fn new(
         api_key: String,
         flush_storage: bool,
-        models: Vec<(ModelId, PrecisionBits, Revision)>,
+        models: Vec<ModelConfig>,
         storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
@@ -42,7 +82,7 @@ impl ModelConfig {
         self.flush_storage
     }
 
-    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits, Revision)> {
+    pub fn models(&self) -> Vec<ModelConfig> {
         self.models.clone()
     }
 
@@ -103,10 +143,15 @@ pub mod tests {
 
     #[test]
     fn test_config() {
-        let config = ModelConfig::new(
+        let config = ModelsConfig::new(
             String::from("my_key"),
             true,
-            vec![("Llama2_7b".to_string(), PrecisionBits::F16, "".to_string())],
+            vec![ModelConfig::new(
+                "Llama2_7b".to_string(),
+                PrecisionBits::F16,
+                "".to_string(),
+                0,
+            )],
             "storage_path".parse().unwrap(),
             true,
         );
