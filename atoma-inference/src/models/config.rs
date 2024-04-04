@@ -10,10 +10,42 @@ type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
-    pub model_id: ModelId,
-    pub precision: PrecisionBits,
-    pub revision: Revision,
-    pub device_id: usize,
+    model_id: ModelId,
+    precision: PrecisionBits,
+    revision: Revision,
+    device_id: usize,
+}
+
+impl ModelConfig {
+    pub fn new(
+        model_id: ModelId,
+        precision: PrecisionBits,
+        revision: Revision,
+        device_id: usize,
+    ) -> Self {
+        Self {
+            model_id,
+            precision,
+            revision,
+            device_id,
+        }
+    }
+
+    pub fn model_id(&self) -> &ModelId {
+        &self.model_id
+    }
+
+    pub fn precision(&self) -> PrecisionBits {
+        self.precision
+    }
+
+    pub fn revision(&self) -> Revision {
+        self.revision.clone()
+    }
+
+    pub fn device_id(&self) -> usize {
+        self.device_id
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -114,7 +146,12 @@ pub mod tests {
         let config = ModelsConfig::new(
             String::from("my_key"),
             true,
-            vec![("Llama2_7b".to_string(), PrecisionBits::F16, "".to_string())],
+            vec![ModelConfig::new(
+                "Llama2_7b".to_string(),
+                PrecisionBits::F16,
+                "".to_string(),
+                0,
+            )],
             "storage_path".parse().unwrap(),
             true,
         );

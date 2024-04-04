@@ -126,17 +126,22 @@ where
         let mut model_senders = HashMap::new();
 
         for model_config in config.models() {
-            info!("Spawning new thread for model: {}", model_config.model_id);
+            info!("Spawning new thread for model: {}", model_config.model_id());
             let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
-            let model_name = model_config.model_id.clone();
+            let model_name = model_config.model_id().clone();
+            model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = std::thread::spawn(move || {
                 info!("Fetching files for model: {model_name}");
-                let filenames = api.fetch(model_name, model_config.revision)?;
+                let filenames = api.fetch(model_name, model_config.revision())?;
 
-                let model = M::load(filenames, model_config.precision, model_config.device_id)?;
+                let model = M::load(
+                    filenames,
+                    model_config.precision(),
+                    model_config.device_id(),
+                )?;
                 let model_thread = ModelThread {
                     model,
                     receiver: model_receiver,
@@ -155,7 +160,6 @@ where
                 join_handle,
                 sender: model_sender.clone(),
             });
-            model_senders.insert(model_config.model_id, model_sender);
         }
 
         let model_dispatcher = ModelThreadDispatcher {
