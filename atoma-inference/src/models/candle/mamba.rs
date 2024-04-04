@@ -49,6 +49,7 @@ impl MambaModel {
 }
 
 impl ModelTrait for MambaModel {
+    type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
 
@@ -64,8 +65,7 @@ impl ModelTrait for MambaModel {
         let tokenizer_filename = filenames[1].clone();
         let weights_filenames = filenames[2..].to_vec();
 
-        let tokenizer =
-            Tokenizer::from_file(tokenizer_filename).map_err(ModelError::TokenizerError)?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
         let config: Config =
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
@@ -110,8 +110,7 @@ impl ModelTrait for MambaModel {
         let mut tokens = self
             .tokenizer
             .tokenizer()
-            .encode(prompt, true)
-            .map_err(ModelError::TokenizerError)?
+            .encode(prompt, true)?
             .get_ids()
             .to_vec();
         let mut logits_processor =

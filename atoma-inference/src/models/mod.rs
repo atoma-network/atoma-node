@@ -14,9 +14,13 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
+    type Fetch;
     type Input;
     type Output;
 
+    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
+        Ok(())
+    }
     fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
     where
         Self: Sized;
@@ -41,22 +45,22 @@ pub trait Response: Send + 'static {
 
 #[derive(Debug, Error)]
 pub enum ModelError {
-    #[error("Tokenizer error: `{0}`")]
-    TokenizerError(Box<dyn std::error::Error + Send + Sync>),
-    #[error("IO error: `{0}`")]
-    IoError(std::io::Error),
     #[error("Deserialize error: `{0}`")]
-    DeserializeError(serde_json::Error),
-    #[error("Candle error: `{0}`")]
-    CandleError(CandleError),
+    DeserializeError(#[from] serde_json::Error),
     #[error("{0}")]
     Msg(String),
-}
-
-impl From<CandleError> for ModelError {
-    fn from(error: CandleError) -> Self {
-        Self::CandleError(error)
-    }
+    #[error("Candle error: `{0}`")]
+    CandleError(#[from] CandleError),
+    #[error("Config error: `{0}`")]
+    Config(String),
+    #[error("Image error: `{0}`")]
+    ImageError(#[from] image::ImageError),
+    #[error("Io error: `{0}`")]
+    IoError(#[from] std::io::Error),
+    #[error("Error: `{0}`")]
+    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error("ApiError error: `{0}`")]
+    ApiError(#[from] hf_hub::api::sync::ApiError),
 }
 
 #[macro_export]
