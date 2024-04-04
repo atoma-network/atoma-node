@@ -6,6 +6,10 @@ use candle::{
 };
 use tracing::info;
 
+use crate::bail;
+
+use super::ModelError;
+
 pub mod mamba;
 pub mod stable_diffusion;
 
@@ -25,15 +29,15 @@ pub fn device() -> Result<Device, candle::Error> {
 pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
-) -> candle::Result<Vec<std::path::PathBuf>> {
+) -> Result<Vec<std::path::PathBuf>, ModelError> {
     let json_file = repo.get(json_file).map_err(candle::Error::wrap)?;
     let json_file = std::fs::File::open(json_file)?;
     let json: serde_json::Value =
         serde_json::from_reader(&json_file).map_err(candle::Error::wrap)?;
     let weight_map = match json.get("weight_map") {
-        None => candle::bail!("no weight map in {json_file:?}"),
+        None => bail!("no weight map in {json_file:?}"),
         Some(serde_json::Value::Object(map)) => map,
-        Some(_) => candle::bail!("weight map in {json_file:?} is not a map"),
+        Some(_) => bail!("weight map in {json_file:?} is not a map"),
     };
     let mut safetensors_files = std::collections::HashSet::new();
     for value in weight_map.values() {
@@ -48,18 +52,18 @@ pub fn hub_load_safetensors(
     Ok(safetensors_files)
 }
 
-pub fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> candle::Result<()> {
+pub fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> Result<(), ModelError> {
     let p = p.as_ref();
     let (channel, height, width) = img.dims3()?;
     if channel != 3 {
-        candle::bail!("save_image expects an input of shape (3, height, width)")
+        bail!("save_image expects an input of shape (3, height, width)")
     }
     let img = img.permute((1, 2, 0))?.flatten_all()?;
     let pixels = img.to_vec1::<u8>()?;
     let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
         match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
             Some(image) => image,
-            None => candle::bail!("error saving image {p:?}"),
+            None => bail!("error saving image {p:?}"),
         };
     image.save(p).map_err(candle::Error::wrap)?;
     Ok(())

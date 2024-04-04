@@ -4,7 +4,6 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
-anyhow.workspace = true
 async-trait.workspace = true
 candle.workspace = true
 candle-flash-attn = { workspace = true, optional = true }
@@ -18,7 +17,6 @@ hf-hub.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-clap.workspace = true
 image = { workspace = true }
 thiserror.workspace = true
 tokenizers = { workspace = true, features = ["onig"] }
