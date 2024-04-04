@@ -97,7 +97,9 @@ impl From<&Input> for Fetch {
         }
     }
 }
-pub struct StableDiffusion {}
+pub struct StableDiffusion {
+    device_id: usize,
+}
 
 pub struct Fetch {
     tokenizer: Option<String>,
@@ -116,11 +118,12 @@ impl ModelTrait for StableDiffusion {
     fn load(
         _filenames: Vec<std::path::PathBuf>,
         _precision: PrecisionBits,
+        device_id: usize,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
-        Ok(Self {})
+        Ok(Self { device_id })
     }
 
     fn fetch(fetch: &Self::Fetch) -> Result<(), ModelError> {
@@ -202,7 +205,7 @@ impl ModelTrait for StableDiffusion {
         };
 
         let scheduler = sd_config.build_scheduler(n_steps)?;
-        let device = device()?;
+        let device = device(self.device_id)?;
         if let Some(seed) = input.seed {
             device.set_seed(seed)?;
         }

@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{
     apis::{ApiError, ApiTrait},
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
-    models::{config::ModelConfig, ModelTrait, Request, Response},
+    models::{config::ModelsConfig, ModelTrait, Request, Response},
 };
 
 pub struct ModelService<Req, Resp>
@@ -34,7 +34,7 @@ where
     Resp: std::fmt::Debug + Response,
 {
     pub fn start<M, F>(
-        model_config: ModelConfig,
+        model_config: ModelsConfig,
         private_key: PrivateKey,
         request_receiver: Receiver<Req>,
         response_sender: Sender<Resp>,
@@ -250,7 +250,7 @@ mod tests {
         let (_, req_receiver) = tokio::sync::mpsc::channel::<()>(1);
         let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
 
-        let config = ModelConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
+        let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
         let _ = ModelService::<(), ()>::start::<TestModelInstance, MockApi>(
             config,

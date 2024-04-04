@@ -13,13 +13,13 @@ use super::ModelError;
 pub mod mamba;
 pub mod stable_diffusion;
 
-pub fn device() -> Result<Device, candle::Error> {
+pub fn device(device_id: usize) -> Result<Device, candle::Error> {
     if cuda_is_available() {
         info!("Using CUDA");
-        Device::new_cuda(0)
+        Device::new_cuda(device_id)
     } else if metal_is_available() {
         info!("Using Metal");
-        Device::new_metal(0)
+        Device::new_metal(device_id)
     } else {
         info!("Using Cpu");
         Ok(Device::Cpu)

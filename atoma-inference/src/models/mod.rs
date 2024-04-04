@@ -21,7 +21,11 @@ pub trait ModelTrait {
     fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
         Ok(())
     }
-    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
+    fn load(
+        filenames: Vec<PathBuf>,
+        precision: PrecisionBits,
+        device_id: usize,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_id(&self) -> ModelId;
