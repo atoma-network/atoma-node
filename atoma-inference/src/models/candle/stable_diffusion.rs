@@ -31,21 +31,6 @@ pub struct Input {
     height: Option<usize>,
     width: Option<usize>,
 
-    /// The UNet weight file, in .safetensors format.
-    unet_weights: Option<String>,
-
-    /// The CLIP weight file, in .safetensors format.
-    clip_weights: Option<String>,
-
-    /// The VAE weight file, in .safetensors format.
-    vae_weights: Option<String>,
-
-    /// The file specifying the tokenizer to used for tokenization.
-    tokenizer: Option<String>,
-
-    /// The size of the sliced attention or 0 for automatic slicing (disabled by default)
-    sliced_attention_size: Option<usize>,
-
     /// The number of steps to run the diffusion for.
     n_steps: Option<usize>,
 
@@ -53,10 +38,6 @@ pub struct Input {
     num_samples: i64,
 
     sd_version: StableDiffusionVersion,
-
-    use_flash_attn: bool,
-
-    use_f16: bool,
 
     guidance_scale: Option<f64>,
 
@@ -69,31 +50,6 @@ pub struct Input {
 
     /// The seed to use when generating random samples.
     seed: Option<u64>,
-}
-
-impl Input {
-    pub fn default_prompt(prompt: String) -> Self {
-        Self {
-            prompt,
-            uncond_prompt: "".to_string(),
-            height: Some(256),
-            width: Some(256),
-            unet_weights: None,
-            clip_weights: None,
-            vae_weights: None,
-            tokenizer: None,
-            sliced_attention_size: None,
-            n_steps: Some(20),
-            num_samples: 1,
-            sd_version: StableDiffusionVersion::V1_5,
-            use_flash_attn: false,
-            use_f16: true,
-            guidance_scale: None,
-            img2img: None,
-            img2img_strength: 0.8,
-            seed: Some(0),
-        }
-    }
 }
 
 pub struct StableDiffusionLoadData {
@@ -138,9 +94,9 @@ impl ModelTrait for StableDiffusion {
         let api_key = config.api_key();
         let use_f16 = config.dtype() == "f16";
 
-        let vae_weights_file_path = ModelFile::Vae.get(api_key, cache_dir, model_type, use_f16)?;
+        let vae_weights_file_path = ModelFile::Vae.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
         let unet_weights_file_path =
-            ModelFile::Unet.get(api_key, cache_dir, model_type, use_f16)?;
+            ModelFile::Unet.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
 
         let mut clip_weights_file_paths = vec![];
         let mut tokenizer_file_paths = vec![];
@@ -153,9 +109,9 @@ impl ModelTrait for StableDiffusion {
             };
 
             let clip_weights_file_path =
-                clip_weights_file.get(api_key, cache_dir, model_type, false)?;
+                clip_weights_file.get(api_key.clone(), cache_dir.clone(), model_type.clone(), false)?;
             let tokenizer_file_path =
-                tokenizer_file.get(api_key, cache_dir, model_type, use_f16)?;
+                tokenizer_file.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
 
             clip_weights_file_paths.push(clip_weights_file_path);
             tokenizer_file_paths.push(tokenizer_file_path);
@@ -199,25 +155,25 @@ impl ModelTrait for StableDiffusion {
 
         let (tokenizer, tokenizer_2) = match load_data.model_type {
             ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => (
-                Tokenizer::from_file(load_data.tokenizer_file_paths[0])?,
-                Some(Tokenizer::from_file(load_data.tokenizer_file_paths[1])?),
+                Tokenizer::from_file(load_data.tokenizer_file_paths[0].clone())?,
+                Some(Tokenizer::from_file(load_data.tokenizer_file_paths[1].clone())?),
             ),
             _ => (
-                Tokenizer::from_file(load_data.tokenizer_file_paths[0])?,
+                Tokenizer::from_file(load_data.tokenizer_file_paths[0].clone())?,
                 None,
             ), // INTEGRITY: we have checked previously if the model type is valid for the family of stable diffusion models
         };
 
         let text_model = stable_diffusion::build_clip_transformer(
             &config.clip,
-            load_data.clip_weights_file_paths[0],
+            load_data.clip_weights_file_paths[0].clone(),
             &load_data.device,
             load_data.dtype,
         )?;
-        let text_model_2 = if let Some(clip_config_2) = config.clip2 {
+        let text_model_2 = if let Some(clip_config_2) = &config.clip2 {
             Some(stable_diffusion::build_clip_transformer(
-                &clip_config_2,
-                load_data.clip_weights_file_paths[1],
+                clip_config_2,
+                load_data.clip_weights_file_paths[1].clone(),
                 &load_data.device,
                 load_data.dtype,
             )?)
@@ -253,7 +209,7 @@ impl ModelTrait for StableDiffusion {
     }
 
     fn model_type(&self) -> ModelType {
-        self.model_type
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
@@ -301,20 +257,14 @@ impl ModelTrait for StableDiffusion {
         let text_embeddings = which
             .iter()
             .map(|first| {
-                let (tokenizer, text_model) = if *first {
-                    (&self.tokenizer, &self.text_model)
-                } else {
-                    (&self.tokenizer_2.unwrap(), &self.text_model_2.unwrap())
-                };
-
                 Self::text_embeddings(
                     &input.prompt,
                     &input.uncond_prompt,
-                    tokenizer,
-                    text_model,
-                    self.model_type,
+                    &self.tokenizer,
+                    self.tokenizer_2.as_ref(),
+                    &self.text_model,
+                    self.text_model_2.as_ref(),
                     &self.config,
-                    input.use_f16,
                     &self.device,
                     self.dtype,
                     use_guide_scale,
@@ -566,15 +516,20 @@ impl StableDiffusion {
         prompt: &str,
         uncond_prompt: &str,
         tokenizer: &Tokenizer,
+        tokenizer_2: Option<&Tokenizer>,
         text_model: &ClipTextTransformer,
-        model_type: ModelType,
+        text_model_2: Option<&ClipTextTransformer>,
         sd_config: &StableDiffusionConfig,
-        use_f16: bool,
         device: &Device,
         dtype: DType,
         use_guide_scale: bool,
         first: bool,
     ) -> Result<Tensor, ModelError> {
+        let (tokenizer, text_model) = if first { 
+            (tokenizer, text_model)
+        } else { 
+            (tokenizer_2.unwrap(), text_model_2.unwrap())
+        };
         let pad_id = match &sd_config.clip.pad_with {
             Some(padding) => {
                 *tokenizer

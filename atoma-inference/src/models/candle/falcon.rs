@@ -30,7 +30,6 @@ pub struct FalconModel {
 impl FalconModel {
     pub fn new(
         model: Falcon,
-        config: Config,
         device: Device,
         dtype: DType,
         model_type: ModelType,
@@ -121,7 +120,6 @@ impl ModelTrait for FalconModel {
 
         Ok(Self::new(
             model,
-            config,
             load_data.device,
             load_data.dtype,
             load_data.model_type,
@@ -199,30 +197,5 @@ impl ModelTrait for FalconModel {
         );
 
         Ok(output)
-    }
-}
-
-enum Which {
-    Falcon7b,
-    Falcon40b,
-    Falcon180b,
-}
-
-impl Which {
-    fn model_id(&self) -> &'static str {
-        match self {
-            Self::Falcon7b => "tiiuae/falcon-7b",
-            Self::Falcon40b => "tiiuae/falcon-40b",
-            Self::Falcon180b => "tiiuae/falcon-180b",
-        }
-    }
-
-    fn from_config(config: &Config) -> Self {
-        match config.hidden_size {
-            4544 => Self::Falcon7b,
-            8192 => Self::Falcon40b,
-            14848 => Self::Falcon180b,
-            _ => panic!("Invalid config hidden size value"),
-        }
     }
 }

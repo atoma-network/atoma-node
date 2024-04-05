@@ -106,16 +106,19 @@ impl ModelThreadDispatcher {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
 
+        let cache_dir = config.cache_dir();
+
         for model_config in config.models() {
             info!("Spawning new thread for model: {}", model_config.model_id());
 
+            let model_cache_dir = cache_dir.clone();
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
             let model_name = model_config.model_id().clone();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = std::thread::spawn(move || {
                 info!("Fetching files for model: {model_name}");
-                let load_data = M::fetch(model_config)?;
+                let load_data = M::fetch(model_cache_dir, model_config)?;
 
                 let model = M::load(load_data)?;
                 let model_thread = ModelThread {

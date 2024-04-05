@@ -42,7 +42,6 @@ pub struct Config {}
 pub struct LlamaModel {
     cache: Cache,
     device: Device,
-    dtype: DType,
     model: model::Llama,
     model_type: ModelType,
     tokenizer: Tokenizer,
@@ -115,7 +114,6 @@ impl ModelTrait for LlamaModel {
         Ok(Self {
             cache,
             device,
-            dtype,
             model,
             model_type: load_data.model_type,
             tokenizer,

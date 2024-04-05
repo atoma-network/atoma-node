@@ -223,37 +223,3 @@ impl ModelTrait for MambaModel {
         Ok(output)
     }
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Which {
-    Mamba130m,
-    Mamba370m,
-    Mamba790m,
-    Mamba1_4b,
-    Mamba2_8b,
-    // Mamba2_8bSlimPj, TODO: add this
-}
-
-impl Which {
-    fn model_id(&self) -> &'static str {
-        match self {
-            Self::Mamba130m => "state-spaces/mamba-130m",
-            Self::Mamba370m => "state-spaces/mamba-370m",
-            Self::Mamba790m => "state-spaces/mamba-790m",
-            Self::Mamba1_4b => "state-spaces/mamba-1.4b",
-            Self::Mamba2_8b => "state-spaces/mamba-2.8b",
-            // Self::Mamba2_8bSlimPj => "state-spaces/mamba-2.8b-slimpj'",
-        }
-    }
-
-    fn from_config(config: &Config) -> Self {
-        match config.d_model {
-            768 => Self::Mamba130m,
-            1024 => Self::Mamba370m,
-            1536 => Self::Mamba790m,
-            2048 => Self::Mamba1_4b,
-            2560 => Self::Mamba2_8b,
-            _ => panic!("Invalid config d_model value"),
-        }
-    }
-}

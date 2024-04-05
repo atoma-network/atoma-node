@@ -92,7 +92,6 @@ impl ModelType {
             Self::Mixtral8x7b => "TODO",
             Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
             Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
-            Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
             Self::StableDiffusionXl => "stabilityai/stable-diffusion-xl-base-1.0",
             Self::StableDiffusionTurbo => "stabilityai/sdxl-turbo",
         }
