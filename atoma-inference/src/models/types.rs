@@ -1,10 +1,29 @@
-use candle::DType;
+use std::path::PathBuf;
+
+use candle::{DType, Device};
 use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{ModelId, Request, Response};
 
 pub type NodeId = PublicKey;
+
+#[derive(Debug, Deserialize)]
+pub struct LlmFetchData {
+    pub api_key: String,
+    pub cache_dir: PathBuf,
+    pub model_id: ModelId,
+    pub revision: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LlmLoadData {
+    pub device_id: Device,
+    pub dtype: DType,
+    pub file_paths: Vec<PathBuf>,
+    pub model_id: ModelId,
+    pub use_flash_attention: bool,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TextRequest {

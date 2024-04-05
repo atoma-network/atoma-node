@@ -195,16 +195,16 @@ mod tests {
     impl ModelTrait for TestModelInstance {
         type Input = ();
         type Output = ();
-        type Fetch = ();
-        type Load = ();
+        type FetchData = ();
+        type LoadData = ();
 
-        fn fetch(_fetch: &Self::Fetch) -> Result<(), crate::models::ModelError> {
+        fn fetch(_fetch: &Self::FetchData) -> Result<(), crate::models::ModelError> {
             Ok(())
         }
 
         fn load(
             _: Vec<PathBuf>,
-            _: Self::Load,
+            _: Self::LoadData,
             _device_id: usize,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})

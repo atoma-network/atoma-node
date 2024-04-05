@@ -10,13 +10,11 @@ use candle_transformers::{
     models::falcon::{Config, Falcon},
     utils::apply_repeat_penalty,
 };
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
-use crate::{
-    models::types::{PrecisionBits, TextModelInput},
-    models::{ModelError, ModelId, ModelTrait},
-};
+use crate::models::{types::{LlmFetchData, LlmLoadData, TextModelInput}, ModelError, ModelId, ModelTrait};
 
 pub struct FalconModel {
     model: Falcon,
@@ -46,19 +44,40 @@ impl FalconModel {
 }
 
 impl ModelTrait for FalconModel {
-    type Fetch = ();
+    type FetchData = LlmFetchData;
     type Input = TextModelInput;
     type Output = String;
-    type Load = PrecisionBits;
+    type LoadData = LlmLoadData;
 
-    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
-        Ok(())
+    fn fetch(fetch_data: &Self::FetchData) -> Result<Vec<PathBuf>, ModelError> {
+        let api_key = fetch_data.api_key;
+        let cache_dir = fetch_data.cache_dir;
+
+        let api = ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?;
+
+        let repo = api.repo(Repo::with_revision(
+            fetch_data.model_id.clone(),
+            RepoType::Model,
+            fetch_data.revision,
+        ));
+
+        let config_file_path = repo.get("config.json")?;
+        let tokenizer_file_path = repo.get("tokenizer.json")?;
+        let model_weights_file_path = repo.get("model.safetensors")?;
+
+        Ok(vec![
+            config_file_path,
+            tokenizer_file_path,
+            model_weights_file_path,
+        ])
     }
 
     fn load(
-        filenames: Vec<PathBuf>,
-        precision: Self::Load,
-        device_id: usize,
+        load_data: Self::LoadData
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
@@ -67,9 +86,9 @@ impl ModelTrait for FalconModel {
 
         let start = Instant::now();
 
-        let config_filename = filenames[0].clone();
-        let tokenizer_filename = filenames[1].clone();
-        let weights_filenames = filenames[2..].to_vec();
+        let config_filename = load_data.file_paths[0].clone();
+        let tokenizer_filename = load_data.file_paths[1].clone();
+        let weights_filenames = load_data.file_paths[2..].to_vec();
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(ModelError::BoxedError)?;
 
@@ -79,24 +98,23 @@ impl ModelTrait for FalconModel {
         config.validate()?;
 
         let device = if cuda_is_available() {
-            Device::new_cuda(device_id).map_err(ModelError::CandleError)?
+            Device::new_cuda(load_data.device_id).map_err(ModelError::CandleError)?
         } else if metal_is_available() {
-            Device::new_metal(device_id).map_err(ModelError::CandleError)?
+            Device::new_metal(load_data.device_id).map_err(ModelError::CandleError)?
         } else {
             Device::Cpu
         };
 
-        let dtype = precision.into_dtype();
-        if dtype != DType::BF16 || dtype != DType::F32 {
+        if load_data.dtype != DType::BF16 || load_data.dtype != DType::F32 {
             panic!("Invalid dtype, it must be either BF16 or F32 precision");
         }
 
         let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)? };
+            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, load_data.dtype, &device)? };
         let model = Falcon::load(vb, config.clone())?;
         info!("loaded the model in {:?}", start.elapsed());
 
-        Ok(Self::new(model, config, device, dtype, tokenizer))
+        Ok(Self::new(model, config, device, load_data.dtype, tokenizer))
     }
 
     fn model_id(&self) -> ModelId {

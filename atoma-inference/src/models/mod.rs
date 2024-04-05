@@ -13,19 +13,13 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Fetch;
+    type FetchData;
     type Input: DeserializeOwned;
     type Output: Serialize;
-    type Load: DeserializeOwned;
+    type LoadData: DeserializeOwned;
 
-    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
-        Ok(())
-    }
-    fn load(
-        filenames: Vec<PathBuf>,
-        params: Self::Load,
-        device_id: usize,
-    ) -> Result<Self, ModelError>
+    fn fetch(fetch_data: &Self::FetchData) -> Result<Vec<PathBuf>, ModelError>;
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_id(&self) -> ModelId;

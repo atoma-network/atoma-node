@@ -10,10 +10,11 @@ type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
+    device_id: usize,
     model_id: ModelId,
     params: serde_json::Value,
     revision: Revision,
-    device_id: usize,
+    use_flash_attention: bool,
 }
 
 impl ModelConfig {
@@ -22,12 +23,14 @@ impl ModelConfig {
         params: serde_json::Value,
         revision: Revision,
         device_id: usize,
+        use_flash_attention: bool,
     ) -> Self {
         Self {
             model_id,
             params,
             revision,
             device_id,
+            use_flash_attention
         }
     }
 
@@ -45,6 +48,10 @@ impl ModelConfig {
 
     pub fn device_id(&self) -> usize {
         self.device_id
+    }
+
+    pub fn use_flash_attention(&self) -> bool {
+        self.use_flash_attention
     }
 }
 
@@ -153,6 +160,7 @@ pub mod tests {
                 serde_json::to_value(PrecisionBits::F16).unwrap(),
                 "".to_string(),
                 0,
+                true
             )],
             "storage_path".parse().unwrap(),
             true,

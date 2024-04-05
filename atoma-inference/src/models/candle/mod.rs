@@ -31,7 +31,7 @@ pub fn device(device_id: usize) -> Result<Device, candle::Error> {
 pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
-) -> Result<Vec<std::path::PathBuf>, ModelError> {
+) -> Result<Vec<PathBuf>, ModelError> {
     let json_file = repo.get(json_file)?;
     let json_file = std::fs::File::open(json_file)?;
     let json: serde_json::Value = serde_json::from_reader(&json_file)?;

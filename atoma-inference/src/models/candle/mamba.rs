@@ -7,7 +7,7 @@ use candle_transformers::{
     models::mamba::{Config, Model, State},
     utils::apply_repeat_penalty,
 };
-use serde::Deserialize;
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::info;
 
@@ -16,7 +16,7 @@ use crate::{
     models::{
         candle::device,
         token_output_stream::TokenOutputStream,
-        types::{PrecisionBits, TextModelInput},
+        types::{LlmFetchData, LlmLoadData, TextModelInput},
         ModelError, ModelId, ModelTrait,
     },
 };
@@ -50,22 +50,42 @@ impl MambaModel {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Load {
-    pub precision: PrecisionBits,
-}
-
 impl ModelTrait for MambaModel {
-    type Fetch = ();
+    type FetchData = LlmFetchData;
     type Input = TextModelInput;
     type Output = String;
-    type Load = Load;
+    type LoadData = LlmLoadData;
 
-    fn load(
-        filenames: Vec<PathBuf>,
-        params: Self::Load,
-        device_id: usize,
-    ) -> Result<Self, ModelError>
+    fn fetch(fetch_data: &Self::FetchData) -> Result<Vec<PathBuf>, ModelError> {
+        let api_key = fetch_data.api_key;
+        let cache_dir = fetch_data.cache_dir;
+
+        let api = ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?;
+
+        let repo = api.repo(Repo::with_revision(
+            fetch_data.model_id.clone(),
+            RepoType::Model,
+            fetch_data.revision,
+        ));
+
+        let config_file_path = repo.get("config.json")?;
+        let tokenizer_file_path = api
+            .model("EleutherAI/gpt-neox-20b".to_string())
+            .get("tokenizer.json")?;
+        let model_weights_file_path = repo.get("model.safetensors")?;
+
+        Ok(vec![
+            config_file_path,
+            tokenizer_file_path,
+            model_weights_file_path,
+        ])
+    }
+
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -73,17 +93,17 @@ impl ModelTrait for MambaModel {
 
         let start = Instant::now();
 
-        let config_filename = filenames[0].clone();
-        let tokenizer_filename = filenames[1].clone();
-        let weights_filenames = filenames[2..].to_vec();
+        let config_filename = load_data.file_paths[0].clone();
+        let tokenizer_filename = load_data.file_paths[1].clone();
+        let weights_filenames = load_data.file_paths[2..].to_vec();
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
         let config: Config =
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
                 .map_err(ModelError::DeserializeError)?;
-        let device = device(device_id)?;
-        let dtype = params.precision.into_dtype();
+        let device = device(load_data.device_id)?;
+        let dtype = load_data.dtype;
 
         info!("Loading model weights..");
         let var_builder =
