@@ -171,7 +171,7 @@ pub mod tests {
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nflush_storage = true\nmodels = [[\"Llama2_7b\", \"F16\", \"\"]]\nstorage_path = \"storage_path\"\ntracing = true\n";
+        let should_be_toml_str = "cache_dir = \"/\"\nflush_storage = true\ntracing = true\n\n[[models]]\napi_key = \"my_key\"\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\nsliced_attention_size = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
