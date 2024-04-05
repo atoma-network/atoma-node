@@ -49,6 +49,7 @@ impl ModelTrait for FalconModel {
     type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
+    type Load = PrecisionBits;
 
     fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
         Ok(())
@@ -56,7 +57,7 @@ impl ModelTrait for FalconModel {
 
     fn load(
         filenames: Vec<PathBuf>,
-        precision: PrecisionBits,
+        precision: Self::Load,
         device_id: usize,
     ) -> Result<Self, ModelError>
     where

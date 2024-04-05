@@ -7,6 +7,7 @@ use candle_transformers::{
     models::mamba::{Config, Model, State},
     utils::apply_repeat_penalty,
 };
+use serde::Deserialize;
 use tokenizers::Tokenizer;
 use tracing::info;
 
@@ -49,14 +50,20 @@ impl MambaModel {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Load {
+    pub precision: PrecisionBits,
+}
+
 impl ModelTrait for MambaModel {
     type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
+    type Load = Load;
 
     fn load(
         filenames: Vec<PathBuf>,
-        precision: PrecisionBits,
+        params: Self::Load,
         device_id: usize,
     ) -> Result<Self, ModelError>
     where
@@ -76,7 +83,7 @@ impl ModelTrait for MambaModel {
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
                 .map_err(ModelError::DeserializeError)?;
         let device = device(device_id)?;
-        let dtype = precision.into_dtype();
+        let dtype = params.precision.into_dtype();
 
         info!("Loading model weights..");
         let var_builder =

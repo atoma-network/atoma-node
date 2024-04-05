@@ -10,37 +10,29 @@ use thiserror::Error;
 use crate::{
     apis::{ApiError, ApiTrait},
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
-    models::{config::ModelsConfig, ModelTrait, Request, Response},
+    models::{config::ModelsConfig, ModelTrait},
 };
 
-pub struct ModelService<Req, Resp>
-where
-    Req: Request,
-    Resp: Response,
-{
-    model_thread_handle: Vec<ModelThreadHandle<Req, Resp>>,
-    dispatcher: ModelThreadDispatcher<Req, Resp>,
+pub struct ModelService {
+    model_thread_handle: Vec<ModelThreadHandle>,
+    dispatcher: ModelThreadDispatcher,
     start_time: Instant,
     flush_storage: bool,
     public_key: PublicKey,
     storage_path: PathBuf,
-    request_receiver: Receiver<Req>,
-    response_sender: Sender<Resp>,
+    request_receiver: Receiver<serde_json::Value>,
+    response_sender: Sender<serde_json::Value>,
 }
 
-impl<Req, Resp> ModelService<Req, Resp>
-where
-    Req: Clone + Request,
-    Resp: std::fmt::Debug + Response,
-{
+impl ModelService {
     pub fn start<M, F>(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        request_receiver: Receiver<Req>,
-        response_sender: Sender<Resp>,
+        request_receiver: Receiver<serde_json::Value>,
+        response_sender: Sender<serde_json::Value>,
     ) -> Result<Self, ModelServiceError>
     where
-        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
+        M: ModelTrait + Send + 'static,
         F: ApiTrait + Send + Sync + 'static,
     {
         let public_key = private_key.verification_key();
@@ -65,7 +57,7 @@ where
         })
     }
 
-    pub async fn run(&mut self) -> Result<Resp, ModelServiceError> {
+    pub async fn run(&mut self) -> Result<serde_json::Value, ModelServiceError> {
         loop {
             tokio::select! {
                 message = self.request_receiver.recv() => {
@@ -95,11 +87,7 @@ where
     }
 }
 
-impl<Req, Resp> ModelService<Req, Resp>
-where
-    Req: Request,
-    Resp: Response,
-{
+impl ModelService {
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
