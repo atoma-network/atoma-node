@@ -1,6 +1,7 @@
 use candle::Error as CandleError;
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
+use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
@@ -10,29 +11,37 @@ use thiserror::Error;
 use crate::{
     apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
-    models::{config::ModelsConfig, ModelTrait},
+    models::{config::ModelsConfig, ModelTrait, Request, Response},
 };
 
-pub struct ModelService {
-    model_thread_handle: Vec<ModelThreadHandle>,
-    dispatcher: ModelThreadDispatcher,
+pub struct ModelService<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
+    model_thread_handle: Vec<ModelThreadHandle<Req, Resp>>,
+    dispatcher: ModelThreadDispatcher<Req, Resp>,
     start_time: Instant,
     flush_storage: bool,
     public_key: PublicKey,
     cache_dir: PathBuf,
-    request_receiver: Receiver<serde_json::Value>,
-    response_sender: Sender<serde_json::Value>,
+    request_receiver: Receiver<Req>,
+    response_sender: Sender<Resp>,
 }
 
-impl ModelService {
+impl<Req, Resp> ModelService<Req, Resp>
+where
+    Req: Clone + Debug + Request,
+    Resp: Debug + Response,
+{
     pub fn start<M>(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        request_receiver: Receiver<serde_json::Value>,
-        response_sender: Sender<serde_json::Value>,
+        request_receiver: Receiver<Req>,
+        response_sender: Sender<Resp>,
     ) -> Result<Self, ModelServiceError>
     where
-        M: ModelTrait + Send + 'static,
+        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let public_key = private_key.verification_key();
 
@@ -56,7 +65,7 @@ impl ModelService {
         })
     }
 
-    pub async fn run(&mut self) -> Result<serde_json::Value, ModelServiceError> {
+    pub async fn run(&mut self) -> Result<Resp, ModelServiceError> {
         loop {
             tokio::select! {
                 message = self.request_receiver.recv() => {
@@ -86,7 +95,11 @@ impl ModelService {
     }
 }
 
-impl ModelService {
+impl<Req, Resp> ModelService<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
@@ -145,7 +158,10 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, Request, Response};
+    use crate::models::{
+        config::ModelConfig,
+        Request, Response,
+    };
 
     use super::*;
 
@@ -181,7 +197,7 @@ mod tests {
         type Output = ();
         type LoadData = ();
 
-        fn fetch(_: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
+        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
             Ok(())
         }
 
@@ -219,8 +235,8 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, req_receiver) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
-        let (resp_sender, _) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
+        let (_, req_receiver) = tokio::sync::mpsc::channel::<()>(1);
+        let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 

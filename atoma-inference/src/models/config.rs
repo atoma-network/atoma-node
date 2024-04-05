@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use config::Config;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::models::ModelId;
 
@@ -10,7 +11,6 @@ type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
-    api_key: String,
     device_id: usize,
     dtype: String,
     model_id: ModelId,
@@ -21,7 +21,6 @@ pub struct ModelConfig {
 
 impl ModelConfig {
     pub fn new(
-        api_key: String,
         model_id: ModelId,
         dtype: String,
         revision: Revision,
@@ -30,7 +29,6 @@ impl ModelConfig {
         sliced_attention_size: Option<usize>,
     ) -> Self {
         Self {
-            api_key,
             dtype,
             model_id,
             revision,
@@ -38,10 +36,6 @@ impl ModelConfig {
             use_flash_attention,
             sliced_attention_size,
         }
-    }
-
-    pub fn api_key(&self) -> String {
-        self.api_key.clone()
     }
 
     pub fn dtype(&self) -> String {
@@ -71,6 +65,7 @@ impl ModelConfig {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelsConfig {
+    api_key: String,
     cache_dir: PathBuf,
     flush_storage: bool,
     models: Vec<ModelConfig>,
@@ -79,17 +74,23 @@ pub struct ModelsConfig {
 
 impl ModelsConfig {
     pub fn new(
+        api_key: String,
         cache_dir: PathBuf,
         flush_storage: bool,
         models: Vec<ModelConfig>,
         tracing: bool,
     ) -> Self {
         Self {
+            api_key,
             cache_dir,
             flush_storage,
             models,
             tracing,
         }
+    }
+
+    pub fn api_key(&self) -> String {
+        self.api_key.clone()
     }
 
     pub fn cache_dir(&self) -> PathBuf {
@@ -114,6 +115,9 @@ impl ModelsConfig {
         ));
         let config = builder
             .build()
+            .map_err(|e| {
+                error!("{:?}", e);
+            })
             .expect("Failed to generate inference configuration file");
         config
             .try_deserialize::<Self>()
@@ -123,6 +127,10 @@ impl ModelsConfig {
     pub fn from_env_file() -> Self {
         dotenv().ok();
 
+        let api_key = std::env::var("API_KEY")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
         let cache_dir = std::env::var("CACHE_DIR")
             .unwrap_or_default()
             .parse()
@@ -141,6 +149,7 @@ impl ModelsConfig {
             .unwrap();
 
         Self {
+            api_key,
             cache_dir,
             flush_storage,
             models,
@@ -156,10 +165,10 @@ pub mod tests {
     #[test]
     fn test_config() {
         let config = ModelsConfig::new(
+            "my_key".to_string(),
             "/".to_string().into(),
             true,
             vec![ModelConfig::new(
-                "my_key".to_string(),
                 "F16".to_string(),
                 "Llama2_7b".to_string(),
                 "".to_string(),

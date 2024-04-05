@@ -2,7 +2,11 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{candle::mamba::MambaModel, config::ModelsConfig, types::TextRequest},
+    models::{
+        candle::mamba::MambaModel,
+        config::ModelsConfig,
+        types::{TextRequest, TextResponse},
+    },
     service::{ModelService, ModelServiceError},
 };
 
@@ -10,8 +14,8 @@ use inference::{
 async fn main() -> Result<(), ModelServiceError> {
     tracing_subscriber::fmt::init();
 
-    let (req_sender, req_receiver) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
-    let (resp_sender, mut resp_receiver) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
+    let (req_sender, req_receiver) = tokio::sync::mpsc::channel::<TextRequest>(32);
+    let (resp_sender, mut resp_receiver) = tokio::sync::mpsc::channel::<TextResponse>(32);
 
     let model_config = ModelsConfig::from_file_path("../inference.toml".parse().unwrap());
     let private_key_bytes =
@@ -35,22 +39,19 @@ async fn main() -> Result<(), ModelServiceError> {
     tokio::time::sleep(Duration::from_millis(5000)).await;
 
     req_sender
-        .send(
-            serde_json::to_value(TextRequest {
-                request_id: 0,
-                prompt: "Leon, the professional is a movie".to_string(),
-                model: "state-spaces/mamba-130m".to_string(),
-                max_tokens: 512,
-                temperature: Some(0.0),
-                random_seed: 42,
-                repeat_last_n: 64,
-                repeat_penalty: 1.1,
-                sampled_nodes: vec![pk],
-                top_p: Some(1.0),
-                top_k: 10,
-            })
-            .unwrap(),
-        )
+        .send(TextRequest {
+            request_id: 0,
+            prompt: "Leon, the professional is a movie".to_string(),
+            model: "mamba_370m".to_string(),
+            max_tokens: 512,
+            temperature: Some(0.0),
+            random_seed: 42,
+            repeat_last_n: 64,
+            repeat_penalty: 1.1,
+            sampled_nodes: vec![pk],
+            top_p: Some(1.0),
+            top_k: 10,
+        })
         .await
         .expect("Failed to send request");
 

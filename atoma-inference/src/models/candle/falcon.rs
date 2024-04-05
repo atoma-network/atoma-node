@@ -50,11 +50,13 @@ impl ModelTrait for FalconModel {
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError> {
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
-
-        let api_key = config.api_key();
 
         let api = ApiBuilder::new()
             .with_progress(true)
@@ -62,11 +64,11 @@ impl ModelTrait for FalconModel {
             .with_cache_dir(cache_dir)
             .build()?;
 
-        let repo = api.repo(Repo::with_revision(
-            config.model_id(),
-            RepoType::Model,
-            config.revision(),
-        ));
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let repo_id = model_type.repo().to_string();
+        let revision = model_type.default_revision().to_string();
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
 
         let config_file_path = repo.get("config.json")?;
         let tokenizer_file_path = repo.get("tokenizer.json")?;

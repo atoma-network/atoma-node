@@ -46,29 +46,33 @@ impl ModelTrait for LlamaModel {
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError> {
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()
             .with_progress(true)
-            .with_token(Some(config.api_key()))
+            .with_token(Some(api_key))
             .with_cache_dir(cache_dir)
             .build()?;
 
-        let api = api.repo(Repo::with_revision(
-            config.model_id(),
-            RepoType::Model,
-            config.revision(),
-        ));
-        let config_file_path = api.get("tokenizer.json")?;
-        let tokenizer_file_path = api.get("config.json")?;
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let repo_id = model_type.repo().to_string();
+        let revision = model_type.default_revision().to_string();
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
+        let config_file_path = repo.get("tokenizer.json")?;
+        let tokenizer_file_path = repo.get("config.json")?;
 
         let model_weights_file_paths = if &config.model_id() == "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
         {
-            vec![api.get("model.safetensors")?]
+            vec![repo.get("model.safetensors")?]
         } else {
-            hub_load_safetensors(&api, "model.safetensors.index.json")?
+            hub_load_safetensors(&repo, "model.safetensors.index.json")?
         };
 
         let mut file_paths = Vec::with_capacity(2 + model_weights_file_paths.len());

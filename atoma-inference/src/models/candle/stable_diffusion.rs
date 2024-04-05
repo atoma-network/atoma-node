@@ -76,7 +76,11 @@ impl ModelTrait for StableDiffusion {
     type Output = Vec<(Vec<u8>, usize, usize)>;
     type LoadData = StableDiffusionLoadData;
 
-    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError> {
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
         let model_type = ModelType::from_str(&config.model_id())?;
@@ -85,7 +89,6 @@ impl ModelTrait for StableDiffusion {
             _ => vec![true],
         };
 
-        let api_key = config.api_key();
         let use_f16 = config.dtype() == "f16";
 
         let vae_weights_file_path = ModelFile::Vae.get(

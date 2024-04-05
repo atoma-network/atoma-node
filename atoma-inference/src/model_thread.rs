@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::mpsc};
+use std::{collections::HashMap, fmt::Debug, sync::mpsc};
 
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
@@ -8,12 +8,16 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     apis::ApiError,
-    models::{config::ModelsConfig, ModelError, ModelId, ModelTrait},
+    models::{config::ModelsConfig, ModelError, ModelId, ModelTrait, Request, Response},
 };
 
-pub struct ModelThreadCommand {
-    request: serde_json::Value,
-    response_sender: oneshot::Sender<serde_json::Value>,
+pub struct ModelThreadCommand<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
+    request: Req,
+    response_sender: oneshot::Sender<Resp>,
 }
 
 #[derive(Debug, Error)]
@@ -40,26 +44,41 @@ impl From<ApiError> for ModelThreadError {
     }
 }
 
-pub struct ModelThreadHandle {
-    sender: mpsc::Sender<ModelThreadCommand>,
+pub struct ModelThreadHandle<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
+    sender: mpsc::Sender<ModelThreadCommand<Req, Resp>>,
     join_handle: std::thread::JoinHandle<Result<(), ModelThreadError>>,
 }
 
-impl ModelThreadHandle {
+impl<Req, Resp> ModelThreadHandle<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
     pub fn stop(self) {
         drop(self.sender);
         self.join_handle.join().ok();
     }
 }
 
-pub struct ModelThread<M: ModelTrait> {
-    model: M,
-    receiver: mpsc::Receiver<ModelThreadCommand>,
-}
-
-impl<M> ModelThread<M>
+pub struct ModelThread<M, Req, Resp>
 where
     M: ModelTrait,
+    Req: Request,
+    Resp: Response,
+{
+    model: M,
+    receiver: mpsc::Receiver<ModelThreadCommand<Req, Resp>>,
+}
+
+impl<M, Req, Resp> ModelThread<M, Req, Resp>
+where
+    M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput>,
+    Req: Request,
+    Resp: Response,
 {
     pub fn run(mut self, _public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
@@ -76,12 +95,12 @@ where
             //     continue;
             // }
 
-            let model_input = serde_json::from_value(request).unwrap();
+            let model_input = request.into_model_input();
             let model_output = self
                 .model
                 .run(model_input)
                 .map_err(ModelThreadError::ModelError)?;
-            let response = serde_json::to_value(model_output)?;
+            let response = Response::from_model_output(model_output);
             response_sender.send(response).ok();
         }
 
@@ -89,35 +108,45 @@ where
     }
 }
 
-pub struct ModelThreadDispatcher {
-    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
-    pub(crate) responses: FuturesUnordered<oneshot::Receiver<serde_json::Value>>,
+pub struct ModelThreadDispatcher<Req, Resp>
+where
+    Req: Request,
+    Resp: Response,
+{
+    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand<Req, Resp>>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<Resp>>,
 }
 
-impl ModelThreadDispatcher {
+impl<Req, Resp> ModelThreadDispatcher<Req, Resp>
+where
+    Req: Clone + Request,
+    Resp: Response,
+{
     pub(crate) fn start<M>(
         config: ModelsConfig,
         public_key: PublicKey,
-    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError>
+    ) -> Result<(Self, Vec<ModelThreadHandle<Req, Resp>>), ModelThreadError>
     where
-        M: ModelTrait, //<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
+        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
 
+        let api_key = config.api_key();
         let cache_dir = config.cache_dir();
 
         for model_config in config.models() {
             info!("Spawning new thread for model: {}", model_config.model_id());
 
+            let model_api_key = api_key.clone();
             let model_cache_dir = cache_dir.clone();
-            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
+            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
             let model_name = model_config.model_id().clone();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = std::thread::spawn(move || {
                 info!("Fetching files for model: {model_name}");
-                let load_data = M::fetch(model_cache_dir, model_config)?;
+                let load_data = M::fetch(model_api_key, model_cache_dir, model_config)?;
 
                 let model = M::load(load_data)?;
                 let model_thread = ModelThread {
@@ -148,12 +177,12 @@ impl ModelThreadDispatcher {
         Ok((model_dispatcher, handles))
     }
 
-    fn send(&self, command: ModelThreadCommand) {
+    fn send(&self, command: ModelThreadCommand<Req, Resp>) {
         let request = command.request.clone();
-        let model_id = request.get("model").unwrap().as_str().unwrap().to_string();
-        println!("model_id {model_id}");
+        let model_id = request.requested_model();
 
-        println!("{:?}", self.model_senders);
+        info!("model_id {model_id}");
+
         let sender = self
             .model_senders
             .get(&model_id)
@@ -165,8 +194,12 @@ impl ModelThreadDispatcher {
     }
 }
 
-impl ModelThreadDispatcher {
-    pub(crate) fn run_inference(&self, request: serde_json::Value) {
+impl<Req, Resp> ModelThreadDispatcher<Req, Resp>
+where
+    Req: Clone + Debug + Request,
+    Resp: Debug + Response,
+{
+    pub(crate) fn run_inference(&self, request: Req) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand {
             request,

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
 use ed25519_consensus::VerificationKey as PublicKey;
-use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use self::{config::ModelConfig, types::ModelType};
@@ -15,11 +14,15 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Input: DeserializeOwned;
-    type Output: Serialize;
+    type Input;
+    type Output;
     type LoadData;
 
-    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError>;
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError>;
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized;
