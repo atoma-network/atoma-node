@@ -1,8 +1,12 @@
 [package]
 name = "event-subscribe"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+futures-util.workspace = true
+solana-client.workspace = true
+solana-sdk.workspace = true
+tokio.workspace = true
