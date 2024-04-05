@@ -94,9 +94,18 @@ impl ModelTrait for StableDiffusion {
         let api_key = config.api_key();
         let use_f16 = config.dtype() == "f16";
 
-        let vae_weights_file_path = ModelFile::Vae.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
-        let unet_weights_file_path =
-            ModelFile::Unet.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
+        let vae_weights_file_path = ModelFile::Vae.get(
+            api_key.clone(),
+            cache_dir.clone(),
+            model_type.clone(),
+            use_f16,
+        )?;
+        let unet_weights_file_path = ModelFile::Unet.get(
+            api_key.clone(),
+            cache_dir.clone(),
+            model_type.clone(),
+            use_f16,
+        )?;
 
         let mut clip_weights_file_paths = vec![];
         let mut tokenizer_file_paths = vec![];
@@ -108,10 +117,18 @@ impl ModelTrait for StableDiffusion {
                 (ModelFile::Clip2, ModelFile::Tokenizer2)
             };
 
-            let clip_weights_file_path =
-                clip_weights_file.get(api_key.clone(), cache_dir.clone(), model_type.clone(), false)?;
-            let tokenizer_file_path =
-                tokenizer_file.get(api_key.clone(), cache_dir.clone(), model_type.clone(), use_f16)?;
+            let clip_weights_file_path = clip_weights_file.get(
+                api_key.clone(),
+                cache_dir.clone(),
+                model_type.clone(),
+                false,
+            )?;
+            let tokenizer_file_path = tokenizer_file.get(
+                api_key.clone(),
+                cache_dir.clone(),
+                model_type.clone(),
+                use_f16,
+            )?;
 
             clip_weights_file_paths.push(clip_weights_file_path);
             tokenizer_file_paths.push(tokenizer_file_path);
@@ -156,7 +173,9 @@ impl ModelTrait for StableDiffusion {
         let (tokenizer, tokenizer_2) = match load_data.model_type {
             ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => (
                 Tokenizer::from_file(load_data.tokenizer_file_paths[0].clone())?,
-                Some(Tokenizer::from_file(load_data.tokenizer_file_paths[1].clone())?),
+                Some(Tokenizer::from_file(
+                    load_data.tokenizer_file_paths[1].clone(),
+                )?),
             ),
             _ => (
                 Tokenizer::from_file(load_data.tokenizer_file_paths[0].clone())?,
@@ -525,9 +544,9 @@ impl StableDiffusion {
         use_guide_scale: bool,
         first: bool,
     ) -> Result<Tensor, ModelError> {
-        let (tokenizer, text_model) = if first { 
+        let (tokenizer, text_model) = if first {
             (tokenizer, text_model)
-        } else { 
+        } else {
             (tokenizer_2.unwrap(), text_model_2.unwrap())
         };
         let pad_id = match &sd_config.clip.pad_with {

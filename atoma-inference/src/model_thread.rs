@@ -7,7 +7,7 @@ use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    apis::{ApiError, ApiTrait},
+    apis::ApiError,
     models::{config::ModelsConfig, ModelError, ModelId, ModelTrait},
 };
 
@@ -95,12 +95,11 @@ pub struct ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) fn start<M, F>(
+    pub(crate) fn start<M>(
         config: ModelsConfig,
         public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError>
     where
-        F: ApiTrait + Send + Sync + 'static,
         M: ModelTrait, //<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
         let mut handles = Vec::new();

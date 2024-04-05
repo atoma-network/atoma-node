@@ -8,7 +8,7 @@ use tracing::{error, info};
 use thiserror::Error;
 
 use crate::{
-    apis::{ApiError, ApiTrait},
+    apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
     models::{config::ModelsConfig, ModelTrait},
 };
@@ -25,7 +25,7 @@ pub struct ModelService {
 }
 
 impl ModelService {
-    pub fn start<M, F>(
+    pub fn start<M>(
         model_config: ModelsConfig,
         private_key: PrivateKey,
         request_receiver: Receiver<serde_json::Value>,
@@ -33,7 +33,6 @@ impl ModelService {
     ) -> Result<Self, ModelServiceError>
     where
         M: ModelTrait + Send + 'static,
-        F: ApiTrait + Send + Sync + 'static,
     {
         let public_key = private_key.verification_key();
 
@@ -41,7 +40,7 @@ impl ModelService {
         let cache_dir = model_config.cache_dir();
 
         let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start::<M, F>(model_config, public_key)
+            ModelThreadDispatcher::start::<M>(model_config, public_key)
                 .map_err(ModelServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
@@ -146,24 +145,9 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, ModelId, Request, Response};
+    use crate::models::{config::ModelConfig, Request, Response};
 
     use super::*;
-
-    struct MockApi {}
-
-    impl ApiTrait for MockApi {
-        fn create(_: String, _: PathBuf) -> Result<Self, ApiError>
-        where
-            Self: Sized,
-        {
-            Ok(Self {})
-        }
-
-        fn fetch(&self, _: ModelId, _: String) -> Result<Vec<PathBuf>, ApiError> {
-            Ok(vec![])
-        }
-    }
 
     impl Request for () {
         type ModelInput = ();
@@ -240,7 +224,7 @@ mod tests {
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
-        let _ = ModelService::start::<TestModelInstance, MockApi>(
+        let _ = ModelService::start::<TestModelInstance>(
             config,
             private_key,
             req_receiver,

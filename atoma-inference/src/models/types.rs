@@ -64,11 +64,9 @@ impl FromStr for ModelType {
             "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
             "stable_diffusion_xl" => Ok(Self::StableDiffusionXl),
             "stable_diffusion_turbo" => Ok(Self::StableDiffusionTurbo),
-            _ => {
-                return Err(ModelError::InvalidModelType(format!(
-                    "Invalid string model type descryption"
-                )))
-            }
+            _ => Err(ModelError::InvalidModelType(
+                "Invalid string model type descryption".to_string()
+            )),
         }
     }
 }

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
-use hf_hub::api::sync::Api;
 use inference::{
     models::{candle::mamba::MambaModel, config::ModelsConfig, types::TextRequest},
     service::{ModelService, ModelServiceError},
@@ -22,13 +21,9 @@ async fn main() -> Result<(), ModelServiceError> {
         .expect("Incorrect private key bytes length");
 
     let private_key = PrivateKey::from(private_key_bytes);
-    let mut service = ModelService::start::<MambaModel, Api>(
-        model_config,
-        private_key,
-        req_receiver,
-        resp_sender,
-    )
-    .expect("Failed to start inference service");
+    let mut service =
+        ModelService::start::<MambaModel>(model_config, private_key, req_receiver, resp_sender)
+            .expect("Failed to start inference service");
 
     let pk = service.public_key();
 
