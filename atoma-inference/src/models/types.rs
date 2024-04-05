@@ -48,7 +48,7 @@ impl FromStr for ModelType {
         match s {
             "falcon_7b" => Ok(Self::Falcon7b),
             "falcon_40b" => Ok(Self::Falcon40b),
-            "falcon_180b" => Ok(Self::Falcon180b0),
+            "falcon_180b" => Ok(Self::Falcon180b),
             "llama_v1" => Ok(Self::LlamaV1),
             "llama_v2" => Ok(Self::LlamaV2),
             "llama_solar_10_7b" => Ok(Self::LlamaSolar10_7B),

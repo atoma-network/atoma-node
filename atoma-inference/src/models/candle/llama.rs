@@ -4,7 +4,7 @@ extern crate accelerate_src;
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -53,14 +53,14 @@ impl ModelTrait for LlamaModel {
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(config.api_key()))
-            .with_cache_dir(config.cache_dir())
+            .with_cache_dir(cache_dir)
             .build()?;
 
         let api = api.repo(Repo::with_revision(
@@ -96,9 +96,8 @@ impl ModelTrait for LlamaModel {
     }
 
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
-        let device = device(load_data.device_id)?;
-        let dtype =
-            DType::from_str(&load_data.dtype).map_err(|e| ModelError::Msg(e.to_string()))?;
+        let device = load_data.device;
+        let dtype = load_data.dtype;
         let (model, tokenizer_filename, cache) = {
             let config_filename = load_data.file_paths[0].clone();
             let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;

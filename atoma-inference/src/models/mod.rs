@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ::candle::{DTypeParseError, Error as CandleError};
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
@@ -16,7 +18,7 @@ pub trait ModelTrait {
     type Output;
     type LoadData;
 
-    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError>;
+    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError>;
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized;

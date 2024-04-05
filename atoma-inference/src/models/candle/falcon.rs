@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -51,17 +51,16 @@ impl ModelTrait for FalconModel {
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api_key = config.api_key();
-        let cache_dir = config.cache_dir();
 
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
-            .with_cache_dir(cache_dir.into())
+            .with_cache_dir(cache_dir)
             .build()?;
 
         let repo = api.repo(Repo::with_revision(

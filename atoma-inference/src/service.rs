@@ -19,7 +19,7 @@ pub struct ModelService {
     start_time: Instant,
     flush_storage: bool,
     public_key: PublicKey,
-    storage_path: PathBuf,
+    cache_dir: PathBuf,
     request_receiver: Receiver<serde_json::Value>,
     response_sender: Sender<serde_json::Value>,
 }
@@ -38,7 +38,7 @@ impl ModelService {
         let public_key = private_key.verification_key();
 
         let flush_storage = model_config.flush_storage();
-        let storage_path = model_config.storage_path();
+        let cache_dir = model_config.cache_dir();
 
         let (dispatcher, model_thread_handle) =
             ModelThreadDispatcher::start::<M, F>(model_config, public_key)
@@ -50,7 +50,7 @@ impl ModelService {
             model_thread_handle,
             start_time,
             flush_storage,
-            storage_path,
+            cache_dir,
             public_key,
             request_receiver,
             response_sender,
@@ -95,7 +95,7 @@ impl ModelService {
         );
 
         if self.flush_storage {
-            match std::fs::remove_dir(self.storage_path) {
+            match std::fs::remove_dir(self.cache_dir) {
                 Ok(()) => {}
                 Err(e) => error!("Failed to remove storage folder, on shutdown: {e}"),
             };
@@ -197,7 +197,7 @@ mod tests {
         type Output = ();
         type LoadData = ();
 
-        fn fetch(config: ModelConfig) -> Result<(), crate::models::ModelError> {
+        fn fetch(_: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
             Ok(())
         }
 
@@ -223,7 +223,7 @@ mod tests {
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
             models = [["Mamba3b", "F16", "", ""]]
-            storage_path = "./storage_path/"
+            cache_dir = "./cache_dir/"
             tokenizer_file_path = "./tokenizer_file_path/"
             flush_storage = true
             tracing = true

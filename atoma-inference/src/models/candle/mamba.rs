@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -56,9 +56,8 @@ impl ModelTrait for MambaModel {
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+    fn fetch(cache_dir: PathBuf, config: ModelConfig) -> Result<Self::LoadData, ModelError> {
         let api_key = config.api_key();
-        let cache_dir = config.cache_dir();
 
         let device = device(config.device_id())?;
         let dtype = DType::from_str(&config.dtype())?;
@@ -66,7 +65,7 @@ impl ModelTrait for MambaModel {
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
-            .with_cache_dir(config.cache_dir().into())
+            .with_cache_dir(cache_dir)
             .build()?;
 
         let repo = api.repo(Repo::with_revision(
@@ -114,7 +113,11 @@ impl ModelTrait for MambaModel {
 
         info!("Loading model weights..");
         let var_builder = unsafe {
-            VarBuilder::from_mmaped_safetensors(&weights_filenames, load_data.dtype, &device)?
+            VarBuilder::from_mmaped_safetensors(
+                &weights_filenames,
+                load_data.dtype,
+                &load_data.device,
+            )?
         };
         let model = Model::new(&config, var_builder.pp("backbone"))?;
         info!("Loaded Mamba model in {:?}", start.elapsed());

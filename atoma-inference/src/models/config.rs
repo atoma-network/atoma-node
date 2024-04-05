@@ -11,7 +11,6 @@ type Revision = String;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
     api_key: String,
-    cache_dir: String,
     device_id: usize,
     dtype: String,
     model_id: ModelId,
@@ -23,7 +22,6 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn new(
         api_key: String,
-        cache_dir: String,
         model_id: ModelId,
         dtype: String,
         revision: Revision,
@@ -33,7 +31,6 @@ impl ModelConfig {
     ) -> Self {
         Self {
             api_key,
-            cache_dir,
             dtype,
             model_id,
             revision,
@@ -45,10 +42,6 @@ impl ModelConfig {
 
     pub fn api_key(&self) -> String {
         self.api_key.clone()
-    }
-
-    pub fn cache_dir(&self) -> String {
-        self.cache_dir.clone()
     }
 
     pub fn dtype(&self) -> String {
@@ -78,18 +71,29 @@ impl ModelConfig {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelsConfig {
+    cache_dir: PathBuf,
     flush_storage: bool,
     models: Vec<ModelConfig>,
     tracing: bool,
 }
 
 impl ModelsConfig {
-    pub fn new(flush_storage: bool, models: Vec<ModelConfig>, tracing: bool) -> Self {
+    pub fn new(
+        cache_dir: PathBuf,
+        flush_storage: bool,
+        models: Vec<ModelConfig>,
+        tracing: bool,
+    ) -> Self {
         Self {
+            cache_dir,
             flush_storage,
             models,
             tracing,
         }
+    }
+
+    pub fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.clone()
     }
 
     pub fn flush_storage(&self) -> bool {
@@ -119,6 +123,10 @@ impl ModelsConfig {
     pub fn from_env_file() -> Self {
         dotenv().ok();
 
+        let cache_dir = std::env::var("CACHE_DIR")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
         let flush_storage = std::env::var("FLUSH_STORAGE")
             .unwrap_or_default()
             .parse()
@@ -133,6 +141,7 @@ impl ModelsConfig {
             .unwrap();
 
         Self {
+            cache_dir,
             flush_storage,
             models,
             tracing,
@@ -147,10 +156,10 @@ pub mod tests {
     #[test]
     fn test_config() {
         let config = ModelsConfig::new(
+            "/".to_string().into(),
             true,
             vec![ModelConfig::new(
                 "my_key".to_string(),
-                "/".to_string(),
                 "F16".to_string(),
                 "Llama2_7b".to_string(),
                 "".to_string(),
