@@ -3,7 +3,7 @@ use std::time::Duration;
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
     models::{
-        candle::llama::LlamaModel,
+        candle::{falcon::FalconModel, llama::LlamaModel},
         config::ModelsConfig,
         types::{TextRequest, TextResponse},
     },
@@ -26,7 +26,7 @@ async fn main() -> Result<(), ModelServiceError> {
 
     let private_key = PrivateKey::from(private_key_bytes);
     let mut service =
-        ModelService::start::<LlamaModel>(model_config, private_key, req_receiver, resp_sender)
+        ModelService::start::<FalconModel>(model_config, private_key, req_receiver, resp_sender)
             .expect("Failed to start inference service");
 
     let pk = service.public_key();
