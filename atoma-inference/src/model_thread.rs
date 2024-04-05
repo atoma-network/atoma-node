@@ -60,7 +60,7 @@ pub struct ModelThread<M: ModelTrait> {
     receiver: mpsc::Receiver<ModelThreadCommand>,
 }
 
-impl<'a, M> ModelThread<M>
+impl<M> ModelThread<M>
 where
     M: ModelTrait,
 {

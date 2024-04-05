@@ -150,7 +150,7 @@ pub mod tests {
             true,
             vec![ModelConfig::new(
                 "Llama2_7b".to_string(),
-                PrecisionBits::F16,
+                serde_json::to_value(PrecisionBits::F16).unwrap(),
                 "".to_string(),
                 0,
             )],

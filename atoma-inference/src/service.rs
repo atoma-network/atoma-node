@@ -146,7 +146,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::{models::types::PrecisionBits, models::ModelId};
+    use crate::models::{ModelId, Request, Response};
 
     use super::*;
 
@@ -196,6 +196,7 @@ mod tests {
         type Input = ();
         type Output = ();
         type Fetch = ();
+        type Load = ();
 
         fn fetch(_fetch: &Self::Fetch) -> Result<(), crate::models::ModelError> {
             Ok(())
@@ -203,7 +204,7 @@ mod tests {
 
         fn load(
             _: Vec<PathBuf>,
-            _: PrecisionBits,
+            _: Self::Load,
             _device_id: usize,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
@@ -239,12 +240,12 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, req_receiver) = tokio::sync::mpsc::channel::<()>(1);
-        let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
+        let (_, req_receiver) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
+        let (resp_sender, _) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
-        let _ = ModelService::<(), ()>::start::<TestModelInstance, MockApi>(
+        let _ = ModelService::start::<TestModelInstance, MockApi>(
             config,
             private_key,
             req_receiver,
