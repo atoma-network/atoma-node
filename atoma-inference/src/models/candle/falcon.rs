@@ -99,11 +99,10 @@ impl ModelTrait for FalconModel {
         let tokenizer_filename = load_data.file_paths[1].clone();
         let weights_filenames = load_data.file_paths[2..].to_vec();
 
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(ModelError::BoxedError)?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
         let config: Config =
-            serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
-                .map_err(ModelError::DeserializeError)?;
+            serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
 
         if load_data.dtype != DType::BF16 || load_data.dtype != DType::F32 {
@@ -150,8 +149,7 @@ impl ModelTrait for FalconModel {
         info!("Running inference on prompt: {:?}", prompt);
         let mut tokens = self
             .tokenizer
-            .encode(prompt, true)
-            .map_err(ModelError::BoxedError)?
+            .encode(prompt, true)?
             .get_ids()
             .to_vec();
 
@@ -184,8 +182,7 @@ impl ModelTrait for FalconModel {
             output.push_str(
                 &self
                     .tokenizer
-                    .decode(&[next_token], true)
-                    .map_err(ModelError::BoxedError)?,
+                    .decode(&[next_token], true)?,
             );
         }
         let dt = start_gen.elapsed();
@@ -194,8 +191,7 @@ impl ModelTrait for FalconModel {
             "{max_tokens} tokens generated ({} token/s)\n----\n{}\n----",
             max_tokens as f64 / dt.as_secs_f64(),
             self.tokenizer
-                .decode(&new_tokens, true)
-                .map_err(ModelError::BoxedError)?,
+                .decode(&new_tokens, true)?,
         );
 
         Ok(output)

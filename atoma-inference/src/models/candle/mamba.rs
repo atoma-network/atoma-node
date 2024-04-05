@@ -110,8 +110,7 @@ impl ModelTrait for MambaModel {
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
         let config: Config =
-            serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
-                .map_err(ModelError::DeserializeError)?;
+            serde_json::from_slice(&std::fs::read(config_filename)?)?;
 
         info!("Loading model weights..");
         let var_builder = unsafe {

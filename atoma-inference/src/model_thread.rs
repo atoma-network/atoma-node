@@ -98,8 +98,7 @@ where
             let model_input = request.into_model_input();
             let model_output = self
                 .model
-                .run(model_input)
-                .map_err(ModelThreadError::ModelError)?;
+                .run(model_input)?;
             let response = Response::from_model_output(model_output);
             response_sender.send(response).ok();
         }

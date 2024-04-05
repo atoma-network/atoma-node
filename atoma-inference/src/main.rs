@@ -3,7 +3,7 @@ use std::time::Duration;
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
     models::{
-        candle::{llama::LlamaModel, mamba::MambaModel},
+        candle::llama::LlamaModel,
         config::ModelsConfig,
         types::{TextRequest, TextResponse},
     },
@@ -42,7 +42,7 @@ async fn main() -> Result<(), ModelServiceError> {
         .send(TextRequest {
             request_id: 0,
             prompt: "Leon, the professional is a movie".to_string(),
-            model: "mamba_370m".to_string(),
+            model: "llama_tiny_llama_1_1b_chat".to_string(),
             max_tokens: 512,
             temperature: Some(0.0),
             random_seed: 42,

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use config::Config;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::models::ModelId;
 
@@ -115,9 +114,6 @@ impl ModelsConfig {
         ));
         let config = builder
             .build()
-            .map_err(|e| {
-                error!("{:?}", e);
-            })
             .expect("Failed to generate inference configuration file");
         config
             .try_deserialize::<Self>()
