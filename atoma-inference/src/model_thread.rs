@@ -73,6 +73,7 @@ where
                 response_sender,
             } = command;
 
+            // TODO: Implement node authorization
             // if !request.is_node_authorized(&public_key) {
             //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
             //     continue;
@@ -118,7 +119,6 @@ impl ModelThreadDispatcher {
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
             let model_name = model_config.model_id().clone();
-            println!("model_name {model_name}");
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = std::thread::spawn(move || {
