@@ -4,6 +4,8 @@ extern crate accelerate_src;
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
+use std::str::FromStr;
+
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -16,9 +18,10 @@ use candle_transformers::models::llama as model;
 use tokenizers::Tokenizer;
 
 use crate::models::{
+    config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmFetchData, LlmLoadData, TextModelInput},
-    ModelError, ModelId, ModelTrait,
+    types::{LlmLoadData, ModelType, TextModelInput},
+    ModelError, ModelTrait,
 };
 
 use super::{device, hub_load_safetensors};
@@ -41,52 +44,61 @@ pub struct LlamaModel {
     device: Device,
     dtype: DType,
     model: model::Llama,
-    model_id: ModelId,
+    model_type: ModelType,
     tokenizer: Tokenizer,
 }
 
 impl ModelTrait for LlamaModel {
     type Input = TextModelInput;
-    type FetchData = LlmFetchData;
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(fetch_data: &Self::FetchData) -> Result<(), ModelError> {
+    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
+
         let api = ApiBuilder::new()
             .with_progress(true)
-            .with_token(Some(fetch_data.api_key))
-            .with_cache_dir(fetch_data.cache_dir)
+            .with_token(Some(config.api_key()))
+            .with_cache_dir(config.cache_dir())
             .build()?;
 
         let api = api.repo(Repo::with_revision(
-            fetch_data.model_id,
+            config.model_id(),
             RepoType::Model,
-            fetch_data.revision,
+            config.revision(),
         ));
         let config_file_path = api.get("tokenizer.json")?;
         let tokenizer_file_path = api.get("config.json")?;
 
-        let model_weights_file_paths =
-            if &fetch_data.model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0" {
-                vec![api.get("model.safetensors")?]
-            } else {
-                hub_load_safetensors(&api, "model.safetensors.index.json")?
-            };
+        let model_weights_file_paths = if &config.model_id() == "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        {
+            vec![api.get("model.safetensors")?]
+        } else {
+            hub_load_safetensors(&api, "model.safetensors.index.json")?
+        };
 
-        let mut output = Vec::with_capacity(2 + model_weights_file_paths.len());
-        output.extend(vec![config_file_path, tokenizer_file_path]);
-        output.extend(model_weights_file_paths);
+        let mut file_paths = Vec::with_capacity(2 + model_weights_file_paths.len());
+        file_paths.extend(vec![config_file_path, tokenizer_file_path]);
+        file_paths.extend(model_weights_file_paths);
 
-        Ok(output)
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            file_paths,
+            model_type: ModelType::from_str(&config.model_id())?,
+            use_flash_attention: config.use_flash_attention(),
+        })
     }
 
-    fn model_id(&self) -> ModelId {
-        self.model_id.clone()
+    fn model_type(&self) -> ModelType {
+        self.model_type.clone()
     }
 
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
         let device = device(load_data.device_id)?;
-        let dtype = load_data.dtype;
+        let dtype =
+            DType::from_str(&load_data.dtype).map_err(|e| ModelError::Msg(e.to_string()))?;
         let (model, tokenizer_filename, cache) = {
             let config_filename = load_data.file_paths[0].clone();
             let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
@@ -106,7 +118,7 @@ impl ModelTrait for LlamaModel {
             device,
             dtype,
             model,
-            model_id: load_data.model_id,
+            model_type: load_data.model_type,
             tokenizer,
         })
     }
@@ -127,7 +139,7 @@ impl ModelTrait for LlamaModel {
         );
         let mut index_pos = 0;
         let mut res = String::new();
-        for index in 0..input.sample_len {
+        for index in 0..input.max_tokens {
             let (context_size, context_index) = if self.cache.use_kv_cache && index > 0 {
                 (1, index_pos)
             } else {
@@ -136,7 +148,7 @@ impl ModelTrait for LlamaModel {
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
             let input_tensor = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self
-                .llama
+                .model
                 .forward(&input_tensor, context_index, &mut self.cache)?;
             let logits = logits.squeeze(0)?;
             let logits = if input.repeat_penalty == 1. {

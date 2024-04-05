@@ -146,7 +146,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{ModelId, Request, Response};
+    use crate::models::{config::ModelConfig, ModelId, Request, Response};
 
     use super::*;
 
@@ -195,23 +195,18 @@ mod tests {
     impl ModelTrait for TestModelInstance {
         type Input = ();
         type Output = ();
-        type FetchData = ();
         type LoadData = ();
 
-        fn fetch(_fetch: &Self::FetchData) -> Result<(), crate::models::ModelError> {
+        fn fetch(config: ModelConfig) -> Result<(), crate::models::ModelError> {
             Ok(())
         }
 
-        fn load(
-            _: Vec<PathBuf>,
-            _: Self::LoadData,
-            _device_id: usize,
-        ) -> Result<Self, crate::models::ModelError> {
+        fn load(_: Self::LoadData) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
 
-        fn model_id(&self) -> crate::models::ModelId {
-            String::from("")
+        fn model_type(&self) -> crate::models::types::ModelType {
+            crate::models::types::ModelType::LlamaV1
         }
 
         fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {

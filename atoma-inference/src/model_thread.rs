@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{mpsc, Arc},
-};
+use std::{collections::HashMap, sync::mpsc};
 
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
@@ -106,16 +103,11 @@ impl ModelThreadDispatcher {
         F: ApiTrait + Send + Sync + 'static,
         M: ModelTrait, //<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
     {
-        let api_key = config.api_key();
-        let storage_path = config.storage_path();
-        let api = Arc::new(F::create(api_key, storage_path)?);
-
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
 
         for model_config in config.models() {
             info!("Spawning new thread for model: {}", model_config.model_id());
-            let api = api.clone();
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
             let model_name = model_config.model_id().clone();
@@ -123,10 +115,9 @@ impl ModelThreadDispatcher {
 
             let join_handle = std::thread::spawn(move || {
                 info!("Fetching files for model: {model_name}");
-                let filenames = api.fetch(model_name, model_config.revision())?;
-                let x = serde_json::from_value(model_config.params().clone()).unwrap();
+                let load_data = M::fetch(model_config)?;
 
-                let model = M::load(filenames, x, model_config.device_id())?;
+                let model = M::load(load_data)?;
                 let model_thread = ModelThread {
                     model,
                     receiver: model_receiver,

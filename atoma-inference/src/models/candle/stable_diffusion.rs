@@ -4,13 +4,16 @@ extern crate accelerate_src;
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
+use std::path::PathBuf;
+
 use candle_transformers::models::stable_diffusion::{self};
 
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
+use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
 
-use crate::models::{types::PrecisionBits, ModelError, ModelId, ModelTrait};
+use crate::models::{config::ModelConfig, types::{ModelType, PrecisionBits}, ModelError, ModelId, ModelTrait};
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
@@ -99,46 +102,30 @@ impl From<&Input> for Fetch {
         }
     }
 }
+
 pub struct StableDiffusion {
-    device_id: usize,
-}
-
-pub struct Fetch {
-    tokenizer: Option<String>,
-    sd_version: StableDiffusionVersion,
-    use_f16: bool,
-    clip_weights: Option<String>,
-    vae_weights: Option<String>,
-    unet_weights: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Load {
-    pub filenames: Vec<std::path::PathBuf>,
-    pub precision: PrecisionBits,
-    pub device_id: usize,
+    device: Device,
+    dtype: DType,
 }
 
 impl ModelTrait for StableDiffusion {
     type Input = Input;
-    type Fetch = Fetch;
     type Output = Vec<(Vec<u8>, usize, usize)>;
-    type Load = Load;
+    type LoadData = Self;
 
     fn load(
-        _filenames: Vec<std::path::PathBuf>,
-        _precision: Self::Load,
-        device_id: usize,
+        load_data: Self::LoadData
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
-        Ok(Self { device_id })
+        Ok(load_data)
     }
 
-    fn fetch(fetch: &Self::Fetch) -> Result<(), ModelError> {
-        let which = match fetch.sd_version {
-            StableDiffusionVersion::Xl | StableDiffusionVersion::Turbo => vec![true, false],
+    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let which = match model_type {
+            ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => vec![true, false],
             _ => vec![true],
         };
         for first in which {
@@ -148,16 +135,20 @@ impl ModelTrait for StableDiffusion {
                 (ModelFile::Clip2, ModelFile::Tokenizer2)
             };
 
-            clip_weights_file.get(fetch.clip_weights.clone(), fetch.sd_version, false)?;
-            ModelFile::Vae.get(fetch.vae_weights.clone(), fetch.sd_version, fetch.use_f16)?;
-            tokenizer_file.get(fetch.tokenizer.clone(), fetch.sd_version, fetch.use_f16)?;
-            ModelFile::Unet.get(fetch.unet_weights.clone(), fetch.sd_version, fetch.use_f16)?;
+            let api_key = config.api_key();
+            let cache_dir = config.cache_dir().into();
+            let use_f16 = config.dtype() == "f16";
+
+            clip_weights_file.get(api_key, cache_dir,model_type, false)?;
+            ModelFile::Vae.get(api_key, cache_dir, model_type, use_f16)?;
+            tokenizer_file.get(api_key, cache_dir, model_type, use_f16)?;
+            ModelFile::Unet.get(api_key, cache_dir, model_type, use_f16)?;
         }
-        Ok(())
+        Ok(Load)
     }
 
-    fn model_id(&self) -> ModelId {
-        "candle/stable_diffusion".to_string()
+    fn model_type(&self) -> ModelType {
+        self.model_type
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
@@ -358,61 +349,56 @@ enum ModelFile {
     Vae,
 }
 
-impl StableDiffusionVersion {
-    fn repo(&self) -> &'static str {
-        match self {
-            Self::Xl => "stabilityai/stable-diffusion-xl-base-1.0",
-            Self::V2_1 => "stabilityai/stable-diffusion-2-1",
-            Self::V1_5 => "runwayml/stable-diffusion-v1-5",
-            Self::Turbo => "stabilityai/sdxl-turbo",
-        }
-    }
-
+impl ModelType {
     fn unet_file(&self, use_f16: bool) -> &'static str {
         match self {
-            Self::V1_5 | Self::V2_1 | Self::Xl | Self::Turbo => {
+            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => {
                 if use_f16 {
                     "unet/diffusion_pytorch_model.fp16.safetensors"
                 } else {
                     "unet/diffusion_pytorch_model.safetensors"
                 }
             }
+            _ => panic!("Invalid stable diffusion model type")
         }
     }
 
     fn vae_file(&self, use_f16: bool) -> &'static str {
         match self {
-            Self::V1_5 | Self::V2_1 | Self::Xl | Self::Turbo => {
+            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => {
                 if use_f16 {
                     "vae/diffusion_pytorch_model.fp16.safetensors"
                 } else {
                     "vae/diffusion_pytorch_model.safetensors"
                 }
             }
+            _ => panic!("Invalid stable diffusion model type")
         }
     }
 
     fn clip_file(&self, use_f16: bool) -> &'static str {
         match self {
-            Self::V1_5 | Self::V2_1 | Self::Xl | Self::Turbo => {
+            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => { 
                 if use_f16 {
                     "text_encoder/model.fp16.safetensors"
                 } else {
                     "text_encoder/model.safetensors"
                 }
             }
+            _ => panic!("Invalid stable diffusion model type")
         }
     }
 
     fn clip2_file(&self, use_f16: bool) -> &'static str {
         match self {
-            Self::V1_5 | Self::V2_1 | Self::Xl | Self::Turbo => {
+            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => { 
                 if use_f16 {
                     "text_encoder_2/model.fp16.safetensors"
                 } else {
                     "text_encoder_2/model.safetensors"
                 }
             }
+            _ => panic!("Invalid stable diffusion model type")
         }
     }
 }
@@ -420,17 +406,15 @@ impl StableDiffusionVersion {
 impl ModelFile {
     fn get(
         &self,
-        filename: Option<String>,
-        version: StableDiffusionVersion,
+        api_key: String,
+        cache_dir: PathBuf,
+
+        model_type: ModelType,
         use_f16: bool,
     ) -> Result<std::path::PathBuf, ModelError> {
-        use hf_hub::api::sync::Api;
-        match filename {
-            Some(filename) => Ok(std::path::PathBuf::from(filename)),
-            None => {
                 let (repo, path) = match self {
                     Self::Tokenizer => {
-                        let tokenizer_repo = match version {
+                        let tokenizer_repo = match model_type {
                             StableDiffusionVersion::V1_5 | StableDiffusionVersion::V2_1 => {
                                 "openai/clip-vit-base-patch32"
                             }
@@ -445,15 +429,15 @@ impl ModelFile {
                     Self::Tokenizer2 => {
                         ("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k", "tokenizer.json")
                     }
-                    Self::Clip => (version.repo(), version.clip_file(use_f16)),
-                    Self::Clip2 => (version.repo(), version.clip2_file(use_f16)),
-                    Self::Unet => (version.repo(), version.unet_file(use_f16)),
+                    Self::Clip => (model_type.repo(), model_type.clip_file(use_f16)),
+                    Self::Clip2 => (model_type.repo(), model_type.clip2_file(use_f16)),
+                    Self::Unet => (model_type.repo(), model_type.unet_file(use_f16)),
                     Self::Vae => {
                         // Override for SDXL when using f16 weights.
                         // See https://github.com/huggingface/candle/issues/1060
                         if matches!(
-                            version,
-                            StableDiffusionVersion::Xl | StableDiffusionVersion::Turbo,
+                            model_type,
+                            ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo,
                         ) && use_f16
                         {
                             (
@@ -461,14 +445,16 @@ impl ModelFile {
                                 "diffusion_pytorch_model.safetensors",
                             )
                         } else {
-                            (version.repo(), version.vae_file(use_f16))
+                            (model_type.repo(), model_type.vae_file(use_f16))
                         }
                     }
                 };
-                let filename = Api::new()?.model(repo.to_string()).get(path)?;
+                let filename = ApiBuilder::new()
+                .with_progress(true)
+                .with_token(Some(api_key))
+                .with_cache_dir(cache_dir)
+                .build()?;
                 Ok(filename)
-            }
-        }
     }
 }
 

@@ -1,9 +1,6 @@
-use std::{path::PathBuf, time::Instant};
+use std::{str::FromStr, time::Instant};
 
-use candle::{
-    utils::{cuda_is_available, metal_is_available},
-    DType, Device, Tensor,
-};
+use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
@@ -14,14 +11,20 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
-use crate::models::{types::{LlmFetchData, LlmLoadData, TextModelInput}, ModelError, ModelId, ModelTrait};
+use crate::models::{
+    config::ModelConfig,
+    types::{LlmLoadData, ModelType, TextModelInput},
+    ModelError, ModelTrait,
+};
+
+use super::device;
 
 pub struct FalconModel {
     model: Falcon,
     device: Device,
     dtype: DType,
+    model_type: ModelType,
     tokenizer: Tokenizer,
-    which: Which,
 }
 
 impl FalconModel {
@@ -30,55 +33,61 @@ impl FalconModel {
         config: Config,
         device: Device,
         dtype: DType,
+        model_type: ModelType,
         tokenizer: Tokenizer,
     ) -> Self {
-        let which = Which::from_config(&config);
         Self {
             model,
             device,
             dtype,
             tokenizer,
-            which,
+            model_type,
         }
     }
 }
 
 impl ModelTrait for FalconModel {
-    type FetchData = LlmFetchData;
     type Input = TextModelInput;
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(fetch_data: &Self::FetchData) -> Result<Vec<PathBuf>, ModelError> {
-        let api_key = fetch_data.api_key;
-        let cache_dir = fetch_data.cache_dir;
+    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
+
+        let api_key = config.api_key();
+        let cache_dir = config.cache_dir();
 
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
-            .with_cache_dir(cache_dir)
+            .with_cache_dir(cache_dir.into())
             .build()?;
 
         let repo = api.repo(Repo::with_revision(
-            fetch_data.model_id.clone(),
+            config.model_id(),
             RepoType::Model,
-            fetch_data.revision,
+            config.revision(),
         ));
 
         let config_file_path = repo.get("config.json")?;
         let tokenizer_file_path = repo.get("tokenizer.json")?;
         let model_weights_file_path = repo.get("model.safetensors")?;
 
-        Ok(vec![
-            config_file_path,
-            tokenizer_file_path,
-            model_weights_file_path,
-        ])
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            file_paths: vec![
+                config_file_path,
+                tokenizer_file_path,
+                model_weights_file_path,
+            ],
+            model_type: ModelType::from_str(&config.model_id())?,
+            use_flash_attention: config.use_flash_attention(),
+        })
     }
 
-    fn load(
-        load_data: Self::LoadData
-    ) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -97,28 +106,32 @@ impl ModelTrait for FalconModel {
                 .map_err(ModelError::DeserializeError)?;
         config.validate()?;
 
-        let device = if cuda_is_available() {
-            Device::new_cuda(load_data.device_id).map_err(ModelError::CandleError)?
-        } else if metal_is_available() {
-            Device::new_metal(load_data.device_id).map_err(ModelError::CandleError)?
-        } else {
-            Device::Cpu
-        };
-
         if load_data.dtype != DType::BF16 || load_data.dtype != DType::F32 {
             panic!("Invalid dtype, it must be either BF16 or F32 precision");
         }
 
-        let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, load_data.dtype, &device)? };
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(
+                &weights_filenames,
+                load_data.dtype,
+                &load_data.device,
+            )?
+        };
         let model = Falcon::load(vb, config.clone())?;
         info!("loaded the model in {:?}", start.elapsed());
 
-        Ok(Self::new(model, config, device, load_data.dtype, tokenizer))
+        Ok(Self::new(
+            model,
+            config,
+            load_data.device,
+            load_data.dtype,
+            load_data.model_type,
+            tokenizer,
+        ))
     }
 
-    fn model_id(&self) -> ModelId {
-        self.which.model_id().to_string()
+    fn model_type(&self) -> ModelType {
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {

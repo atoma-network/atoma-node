@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::{str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -15,9 +15,10 @@ use crate::{
     bail,
     models::{
         candle::device,
+        config::ModelConfig,
         token_output_stream::TokenOutputStream,
-        types::{LlmFetchData, LlmLoadData, TextModelInput},
-        ModelError, ModelId, ModelTrait,
+        types::{LlmLoadData, ModelType, TextModelInput},
+        ModelError, ModelTrait,
     },
 };
 
@@ -51,25 +52,27 @@ impl MambaModel {
 }
 
 impl ModelTrait for MambaModel {
-    type FetchData = LlmFetchData;
     type Input = TextModelInput;
     type Output = String;
     type LoadData = LlmLoadData;
 
-    fn fetch(fetch_data: &Self::FetchData) -> Result<Vec<PathBuf>, ModelError> {
-        let api_key = fetch_data.api_key;
-        let cache_dir = fetch_data.cache_dir;
+    fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+        let api_key = config.api_key();
+        let cache_dir = config.cache_dir();
+
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
-            .with_cache_dir(cache_dir)
+            .with_cache_dir(config.cache_dir().into())
             .build()?;
 
         let repo = api.repo(Repo::with_revision(
-            fetch_data.model_id.clone(),
+            config.model_id(),
             RepoType::Model,
-            fetch_data.revision,
+            config.revision(),
         ));
 
         let config_file_path = repo.get("config.json")?;
@@ -78,11 +81,17 @@ impl ModelTrait for MambaModel {
             .get("tokenizer.json")?;
         let model_weights_file_path = repo.get("model.safetensors")?;
 
-        Ok(vec![
-            config_file_path,
-            tokenizer_file_path,
-            model_weights_file_path,
-        ])
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            file_paths: vec![
+                config_file_path,
+                tokenizer_file_path,
+                model_weights_file_path,
+            ],
+            model_type: ModelType::from_str(&config.model_id())?,
+            use_flash_attention: config.use_flash_attention(),
+        })
     }
 
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
@@ -102,20 +111,25 @@ impl ModelTrait for MambaModel {
         let config: Config =
             serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
                 .map_err(ModelError::DeserializeError)?;
-        let device = device(load_data.device_id)?;
-        let dtype = load_data.dtype;
 
         info!("Loading model weights..");
-        let var_builder =
-            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)? };
+        let var_builder = unsafe {
+            VarBuilder::from_mmaped_safetensors(&weights_filenames, load_data.dtype, &device)?
+        };
         let model = Model::new(&config, var_builder.pp("backbone"))?;
         info!("Loaded Mamba model in {:?}", start.elapsed());
 
-        Ok(Self::new(model, config, device, dtype, tokenizer))
+        Ok(Self::new(
+            model,
+            config,
+            load_data.device,
+            load_data.dtype,
+            tokenizer,
+        ))
     }
 
-    fn model_id(&self) -> ModelId {
-        self.which.model_id().to_string()
+    fn model_type(&self) -> ModelType {
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {

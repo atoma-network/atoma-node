@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use candle::{DType, Device};
 use ed25519_consensus::VerificationKey as PublicKey;
@@ -6,23 +6,145 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{ModelId, Request, Response};
 
+use super::ModelError;
+
 pub type NodeId = PublicKey;
 
-#[derive(Debug, Deserialize)]
-pub struct LlmFetchData {
-    pub api_key: String,
-    pub cache_dir: PathBuf,
-    pub model_id: ModelId,
-    pub revision: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct LlmLoadData {
-    pub device_id: Device,
+    pub device: Device,
     pub dtype: DType,
     pub file_paths: Vec<PathBuf>,
-    pub model_id: ModelId,
+    pub model_type: ModelType,
     pub use_flash_attention: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub enum ModelType {
+    Falcon7b,
+    Falcon40b,
+    Falcon180b,
+    LlamaV1,
+    LlamaV2,
+    LlamaSolar10_7B,
+    LlamaTinyLlama1_1BChat,
+    Mamba130m,
+    Mamba370m,
+    Mamba790m,
+    Mamba1_4b,
+    Mamba2_8b,
+    Mistral7b,
+    Mixtral8x7b,
+    StableDiffusionV1_5,
+    StableDiffusionV2_1,
+    StableDiffusionXl,
+    StableDiffusionTurbo,
+}
+
+impl FromStr for ModelType {
+    type Err = ModelError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "falcon_7b" => Ok(Self::Falcon7b),
+            "falcon_40b" => Ok(Self::Falcon40b),
+            "falcon_180b" => Ok(Self::Falcon180b0),
+            "llama_v1" => Ok(Self::LlamaV1),
+            "llama_v2" => Ok(Self::LlamaV2),
+            "llama_solar_10_7b" => Ok(Self::LlamaSolar10_7B),
+            "llama_tiny_llama_1_1b_chat" => Ok(Self::LlamaTinyLlama1_1BChat),
+            "mamba_130m" => Ok(Self::Mamba130m),
+            "mamba_370m" => Ok(Self::Mamba370m),
+            "mamba_790m" => Ok(Self::Mamba790m),
+            "mamba_1-4b" => Ok(Self::Mamba1_4b),
+            "mamba_2-8b" => Ok(Self::Mamba2_8b),
+            "mistral_7b" => Ok(Self::Mistral7b),
+            "mixtral_8x7b" => Ok(Self::Mixtral8x7b),
+            "stable_diffusion_v1-5" => Ok(Self::StableDiffusionV1_5),
+            "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
+            "stable_diffusion_xl" => Ok(Self::StableDiffusionXl),
+            "stable_diffusion_turbo" => Ok(Self::StableDiffusionTurbo),
+            _ => {
+                return Err(ModelError::InvalidModelType(format!(
+                    "Invalid string model type descryption"
+                )))
+            }
+        }
+    }
+}
+
+impl ModelType {
+    pub fn repo(&self) -> &'static str {
+        match self {
+            Self::Falcon7b => "tiiuae/falcon-7b",
+            Self::Falcon40b => "tiiuae/falcon-40b",
+            Self::Falcon180b => "tiiuae/falcon-180b",
+            Self::LlamaV1 => "Narsil/amall-7b",
+            Self::LlamaV2 => "meta-llama/Llama-2-7b-hf",
+            Self::LlamaSolar10_7B => "upstage/SOLAR-10.7B-v1.0",
+            Self::LlamaTinyLlama1_1BChat => "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            Self::Mamba130m => "state-spaces/mamba-130m",
+            Self::Mamba370m => "state-spaces/mamba-370m",
+            Self::Mamba790m => "state-spaces/mamba-790m",
+            Self::Mamba1_4b => "state-spaces/mamba-1.4b",
+            Self::Mamba2_8b => "state-spaces/mamba-2.8b",
+            Self::Mistral7b => "TODO",
+            Self::Mixtral8x7b => "TODO",
+            Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
+            Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
+            Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
+            Self::StableDiffusionXl => "stabilityai/stable-diffusion-xl-base-1.0",
+            Self::StableDiffusionTurbo => "stabilityai/sdxl-turbo",
+        }
+    }
+
+    pub fn default_revision(&self) -> &'static str {
+        match self {
+            Self::Falcon7b => "refs/pr/43",
+            Self::Falcon40b => "refs/pr/43",
+            Self::Falcon180b => "refs/pr/43",
+            Self::LlamaV1 => "main",
+            Self::LlamaV2 => "main",
+            Self::LlamaSolar10_7B => "main",
+            Self::LlamaTinyLlama1_1BChat => "main",
+            Self::Mamba130m => "refs/pr/1",
+            Self::Mamba370m => "refs/pr/1",
+            Self::Mamba790m => "refs/pr/1",
+            Self::Mamba1_4b => "refs/pr/1",
+            Self::Mamba2_8b => "refs/pr/4",
+            Self::Mistral7b => "TODO",
+            Self::Mixtral8x7b => "TODO",
+            Self::StableDiffusionV1_5 => "",
+            Self::StableDiffusionV2_1 => "",
+            Self::StableDiffusionTurbo => "",
+            Self::StableDiffusionXl => "",
+        }
+    }
+}
+
+impl ToString for ModelType {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Falcon7b => "falcon_7b".to_string(),
+            Self::Falcon40b => "falcon_40b".to_string(),
+            Self::Falcon180b => "falcon_180b".to_string(),
+            Self::LlamaV1 => "llama_v1".to_string(),
+            Self::LlamaV2 => "llama_v2".to_string(),
+            Self::LlamaSolar10_7B => "llama_solar_10_7b".to_string(),
+            Self::LlamaTinyLlama1_1BChat => "llama_tiny_llama_1_1b_chat".to_string(),
+            Self::Mamba130m => "mamba_130m".to_string(),
+            Self::Mamba370m => "mamba_370m".to_string(),
+            Self::Mamba790m => "mamba_790m".to_string(),
+            Self::Mamba1_4b => "mamba_1-4b".to_string(),
+            Self::Mamba2_8b => "mamba_2-8b".to_string(),
+            Self::Mistral7b => "mistral_7b".to_string(),
+            Self::Mixtral8x7b => "mixtral_8x7b".to_string(),
+            Self::StableDiffusionV1_5 => "stable_diffusion_v1-5".to_string(),
+            Self::StableDiffusionV2_1 => "stable_diffusion_v2-1".to_string(),
+            Self::StableDiffusionXl => "stable_diffusion_xl".to_string(),
+            Self::StableDiffusionTurbo => "stable_diffusion_turbo".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

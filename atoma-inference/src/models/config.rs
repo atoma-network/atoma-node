@@ -10,36 +10,53 @@ type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
+    api_key: String,
+    cache_dir: String,
     device_id: usize,
+    dtype: String,
     model_id: ModelId,
-    params: serde_json::Value,
     revision: Revision,
     use_flash_attention: bool,
+    sliced_attention_size: Option<usize>,
 }
 
 impl ModelConfig {
     pub fn new(
+        api_key: String,
+        cache_dir: String,
         model_id: ModelId,
-        params: serde_json::Value,
+        dtype: String,
         revision: Revision,
         device_id: usize,
         use_flash_attention: bool,
+        sliced_attention_size: Option<usize>,
     ) -> Self {
         Self {
+            api_key,
+            cache_dir,
+            dtype,
             model_id,
-            params,
             revision,
             device_id,
-            use_flash_attention
+            use_flash_attention,
+            sliced_attention_size
         }
     }
 
-    pub fn model_id(&self) -> &ModelId {
-        &self.model_id
+    pub fn api_key(&self) -> String {
+        self.api_key.clone()
     }
 
-    pub fn params(&self) -> &serde_json::Value {
-        &self.params
+    pub fn cache_dir(&self) -> String {
+        self.cache_dir.clone()
+    }
+
+    pub fn dtype(&self) -> String {
+        self.dtype.clone()
+    }
+
+    pub fn model_id(&self) -> ModelId {
+        self.model_id.clone()
     }
 
     pub fn revision(&self) -> Revision {
@@ -53,36 +70,26 @@ impl ModelConfig {
     pub fn use_flash_attention(&self) -> bool {
         self.use_flash_attention
     }
+
+    pub fn sliced_attention_size(&self) -> Option<usize> { 
+        self.sliced_attention_size
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelsConfig {
-    api_key: String,
     flush_storage: bool,
     models: Vec<ModelConfig>,
-    storage_path: PathBuf,
     tracing: bool,
 }
 
 impl ModelsConfig {
-    pub fn new(
-        api_key: String,
-        flush_storage: bool,
-        models: Vec<ModelConfig>,
-        storage_path: PathBuf,
-        tracing: bool,
-    ) -> Self {
+    pub fn new(flush_storage: bool, models: Vec<ModelConfig>, tracing: bool) -> Self {
         Self {
-            api_key,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
-    }
-
-    pub fn api_key(&self) -> String {
-        self.api_key.clone()
     }
 
     pub fn flush_storage(&self) -> bool {
@@ -91,10 +98,6 @@ impl ModelsConfig {
 
     pub fn models(&self) -> Vec<ModelConfig> {
         self.models.clone()
-    }
-
-    pub fn storage_path(&self) -> PathBuf {
-        self.storage_path.clone()
     }
 
     pub fn tracing(&self) -> bool {
@@ -116,7 +119,6 @@ impl ModelsConfig {
     pub fn from_env_file() -> Self {
         dotenv().ok();
 
-        let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
         let flush_storage = std::env::var("FLUSH_STORAGE")
             .unwrap_or_default()
             .parse()
@@ -125,20 +127,14 @@ impl ModelsConfig {
             &std::env::var("MODELS").expect("Failed to retrieve models metadata, from .env file"),
         )
         .unwrap();
-        let storage_path = std::env::var("STORAGE_PATH")
-            .expect("Failed to retrieve storage path, from .env file")
-            .parse()
-            .unwrap();
         let tracing = std::env::var("TRACING")
             .unwrap_or_default()
             .parse()
             .unwrap();
 
         Self {
-            api_key,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
     }
@@ -146,23 +142,22 @@ impl ModelsConfig {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::models::types::PrecisionBits;
-
     use super::*;
 
     #[test]
     fn test_config() {
         let config = ModelsConfig::new(
-            String::from("my_key"),
             true,
             vec![ModelConfig::new(
+                "my_key".to_string(),
+                "/".to_string(),
+                "F16".to_string(),
                 "Llama2_7b".to_string(),
-                serde_json::to_value(PrecisionBits::F16).unwrap(),
                 "".to_string(),
                 0,
-                true
+                true,
+                Some(0)
             )],
-            "storage_path".parse().unwrap(),
             true,
         );
 
