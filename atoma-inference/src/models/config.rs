@@ -39,7 +39,7 @@ impl ModelConfig {
             revision,
             device_id,
             use_flash_attention,
-            sliced_attention_size
+            sliced_attention_size,
         }
     }
 
@@ -71,7 +71,7 @@ impl ModelConfig {
         self.use_flash_attention
     }
 
-    pub fn sliced_attention_size(&self) -> Option<usize> { 
+    pub fn sliced_attention_size(&self) -> Option<usize> {
         self.sliced_attention_size
     }
 }
@@ -156,7 +156,7 @@ pub mod tests {
                 "".to_string(),
                 0,
                 true,
-                Some(0)
+                Some(0),
             )],
             true,
         );

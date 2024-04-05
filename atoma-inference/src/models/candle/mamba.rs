@@ -27,8 +27,8 @@ pub struct MambaModel {
     config: Config,
     device: Device,
     dtype: DType,
+    model_type: ModelType,
     tokenizer: TokenOutputStream,
-    which: Which,
 }
 
 impl MambaModel {
@@ -37,16 +37,16 @@ impl MambaModel {
         config: Config,
         device: Device,
         dtype: DType,
+        model_type: ModelType,
         tokenizer: Tokenizer,
     ) -> Self {
-        let which = Which::from_config(&config);
         Self {
             model,
             config,
             device,
             dtype,
+            model_type,
             tokenizer: TokenOutputStream::new(tokenizer),
-            which,
         }
     }
 }
@@ -124,6 +124,7 @@ impl ModelTrait for MambaModel {
             config,
             load_data.device,
             load_data.dtype,
+            load_data.model_type,
             tokenizer,
         ))
     }

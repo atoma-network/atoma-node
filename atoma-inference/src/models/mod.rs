@@ -1,4 +1,4 @@
-use ::candle::Error as CandleError;
+use ::candle::{DTypeParseError, Error as CandleError};
 use ed25519_consensus::VerificationKey as PublicKey;
 use thiserror::Error;
 

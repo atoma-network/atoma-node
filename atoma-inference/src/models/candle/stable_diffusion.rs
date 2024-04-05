@@ -4,16 +4,24 @@ extern crate accelerate_src;
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
-use candle_transformers::models::stable_diffusion::{self};
+use candle_transformers::models::{
+    clip::text_model::ClipTextTransformer,
+    stable_diffusion::{
+        self, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL, StableDiffusionConfig,
+    },
+};
 
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
 
-use crate::models::{config::ModelConfig, types::{ModelType, PrecisionBits}, ModelError, ModelId, ModelTrait};
+use crate::{
+    bail,
+    models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait},
+};
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
@@ -90,44 +98,56 @@ impl Input {
     }
 }
 
-impl From<&Input> for Fetch {
-    fn from(input: &Input) -> Self {
-        Self {
-            tokenizer: input.tokenizer.clone(),
-            sd_version: input.sd_version,
-            use_f16: input.use_f16,
-            clip_weights: input.clip_weights.clone(),
-            vae_weights: input.vae_weights.clone(),
-            unet_weights: input.unet_weights.clone(),
-        }
-    }
+pub struct StableDiffusionLoadData {
+    device: Device,
+    dtype: DType,
+    model_type: ModelType,
+    sliced_attention_size: Option<usize>,
+    clip_weights_file_paths: Vec<PathBuf>,
+    tokenizer_file_paths: Vec<PathBuf>,
+    vae_weights_file_path: PathBuf,
+    unet_weights_file_path: PathBuf,
+    use_flash_attention: bool,
 }
 
 pub struct StableDiffusion {
+    config: StableDiffusionConfig,
     device: Device,
     dtype: DType,
+    model_type: ModelType,
+    text_model: ClipTextTransformer,
+    text_model_2: Option<ClipTextTransformer>,
+    tokenizer: Tokenizer,
+    tokenizer_2: Option<Tokenizer>,
+    unet: UNet2DConditionModel,
+    vae: AutoEncoderKL,
 }
 
 impl ModelTrait for StableDiffusion {
     type Input = Input;
     type Output = Vec<(Vec<u8>, usize, usize)>;
-    type LoadData = Self;
-
-    fn load(
-        load_data: Self::LoadData
-    ) -> Result<Self, ModelError>
-    where
-        Self: Sized,
-    {
-        Ok(load_data)
-    }
+    type LoadData = StableDiffusionLoadData;
 
     fn fetch(config: ModelConfig) -> Result<Self::LoadData, ModelError> {
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
         let model_type = ModelType::from_str(&config.model_id())?;
         let which = match model_type {
             ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => vec![true, false],
             _ => vec![true],
         };
+
+        let api_key = config.api_key();
+        let cache_dir = config.cache_dir().into();
+        let use_f16 = config.dtype() == "f16";
+
+        let vae_weights_file_path = ModelFile::Vae.get(api_key, cache_dir, model_type, use_f16)?;
+        let unet_weights_file_path =
+            ModelFile::Unet.get(api_key, cache_dir, model_type, use_f16)?;
+
+        let mut clip_weights_file_paths = vec![];
+        let mut tokenizer_file_paths = vec![];
+
         for first in which {
             let (clip_weights_file, tokenizer_file) = if first {
                 (ModelFile::Clip, ModelFile::Tokenizer)
@@ -135,16 +155,104 @@ impl ModelTrait for StableDiffusion {
                 (ModelFile::Clip2, ModelFile::Tokenizer2)
             };
 
-            let api_key = config.api_key();
-            let cache_dir = config.cache_dir().into();
-            let use_f16 = config.dtype() == "f16";
+            let clip_weights_file_path =
+                clip_weights_file.get(api_key, cache_dir, model_type, false)?;
+            let tokenizer_file_path =
+                tokenizer_file.get(api_key, cache_dir, model_type, use_f16)?;
 
-            clip_weights_file.get(api_key, cache_dir,model_type, false)?;
-            ModelFile::Vae.get(api_key, cache_dir, model_type, use_f16)?;
-            tokenizer_file.get(api_key, cache_dir, model_type, use_f16)?;
-            ModelFile::Unet.get(api_key, cache_dir, model_type, use_f16)?;
+            clip_weights_file_paths.push(clip_weights_file_path);
+            tokenizer_file_paths.push(tokenizer_file_path);
         }
-        Ok(Load)
+
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            model_type,
+            sliced_attention_size: config.sliced_attention_size(),
+            clip_weights_file_paths,
+            tokenizer_file_paths,
+            vae_weights_file_path,
+            unet_weights_file_path,
+            use_flash_attention: config.use_flash_attention(),
+        })
+    }
+
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    where
+        Self: Sized,
+    {
+        let sliced_attention_size = load_data.sliced_attention_size;
+        let config = match load_data.model_type {
+            ModelType::StableDiffusionV1_5 => {
+                stable_diffusion::StableDiffusionConfig::v1_5(sliced_attention_size, None, None)
+            }
+            ModelType::StableDiffusionV2_1 => {
+                stable_diffusion::StableDiffusionConfig::v2_1(sliced_attention_size, None, None)
+            }
+            ModelType::StableDiffusionXl => {
+                stable_diffusion::StableDiffusionConfig::sdxl(sliced_attention_size, None, None)
+            }
+            ModelType::StableDiffusionTurbo => stable_diffusion::StableDiffusionConfig::sdxl_turbo(
+                sliced_attention_size,
+                None,
+                None,
+            ),
+            _ => bail!("Invalid stable diffusion model type"),
+        };
+
+        let (tokenizer, tokenizer_2) = match load_data.model_type {
+            ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => (
+                Tokenizer::from_file(load_data.tokenizer_file_paths[0]),
+                Some(Tokenizer::from_file(load_data.tokenizer_file_paths[1])),
+            ),
+            _ => (
+                Tokenizer::from_file(load_data.tokenizer_file_paths[0]),
+                None,
+            ), // INTEGRITY: we have checked previously if the model type is valid for the family of stable diffusion models
+        };
+
+        let text_model = stable_diffusion::build_clip_transformer(
+            &config.clip,
+            load_data.clip_weights_file_paths,
+            &load_data.device,
+            load_data.dtype,
+        )?;
+        let text_model_2 = if let Some(clip_config_2) = config.clip2 {
+            Some(stable_diffusion::build_clip_transformer(
+                &clip_config_2,
+                load_data.clip_weights_file_paths,
+                &load_data.device,
+                load_data.dtype,
+            )?)
+        } else {
+            None
+        };
+
+        let vae = config.build_vae(
+            load_data.vae_weights_file_path,
+            &load_data.device,
+            load_data.dtype,
+        )?;
+        let unet = config.build_unet(
+            load_data.unet_weights_file_path,
+            &load_data.device,
+            4, // see https://github.com/huggingface/candle/blob/main/candle-examples/examples/stable-diffusion/main.rs#L492
+            load_data.use_flash_attention,
+            load_data.dtype,
+        );
+
+        Ok(Self {
+            config,
+            device: load_data.device,
+            dtype: load_data.dtype,
+            model_type: load_data.model_type,
+            tokenizer,
+            tokenizer_2,
+            text_model,
+            text_model_2,
+            vae,
+            unet,
+        })
     }
 
     fn model_type(&self) -> ModelType {
@@ -159,76 +267,59 @@ impl ModelTrait for StableDiffusion {
             )))?
         }
 
+        // self.config.height = input.height;
+        // self.config.width = input.width;
+
         let guidance_scale = match input.guidance_scale {
             Some(guidance_scale) => guidance_scale,
-            None => match input.sd_version {
-                StableDiffusionVersion::V1_5
-                | StableDiffusionVersion::V2_1
-                | StableDiffusionVersion::Xl => 7.5,
-                StableDiffusionVersion::Turbo => 0.,
+            None => match self.model_type {
+                ModelType::StableDiffusionV1_5
+                | ModelType::StableDiffusionV2_1
+                | ModelType::StableDiffusionXl => 7.5,
+                ModelType::StableDiffusionTurbo => 0.,
+                _ => bail!("Invalid stable diffusion model type"),
             },
         };
         let n_steps = match input.n_steps {
             Some(n_steps) => n_steps,
-            None => match input.sd_version {
-                StableDiffusionVersion::V1_5
-                | StableDiffusionVersion::V2_1
-                | StableDiffusionVersion::Xl => 30,
-                StableDiffusionVersion::Turbo => 1,
+            None => match self.model_type {
+                ModelType::StableDiffusionV1_5
+                | ModelType::StableDiffusionV2_1
+                | ModelType::StableDiffusionXl => 30,
+                ModelType::StableDiffusionTurbo => 1,
+                _ => bail!("Invalid stable diffusion model type"),
             },
         };
-        let dtype = if input.use_f16 {
-            DType::F16
-        } else {
-            DType::F32
-        };
-        let sd_config = match input.sd_version {
-            StableDiffusionVersion::V1_5 => stable_diffusion::StableDiffusionConfig::v1_5(
-                input.sliced_attention_size,
-                input.height,
-                input.width,
-            ),
-            StableDiffusionVersion::V2_1 => stable_diffusion::StableDiffusionConfig::v2_1(
-                input.sliced_attention_size,
-                input.height,
-                input.width,
-            ),
-            StableDiffusionVersion::Xl => stable_diffusion::StableDiffusionConfig::sdxl(
-                input.sliced_attention_size,
-                input.height,
-                input.width,
-            ),
-            StableDiffusionVersion::Turbo => stable_diffusion::StableDiffusionConfig::sdxl_turbo(
-                input.sliced_attention_size,
-                input.height,
-                input.width,
-            ),
-        };
 
-        let scheduler = sd_config.build_scheduler(n_steps)?;
-        let device = device(self.device_id)?;
+        let scheduler = self.config.build_scheduler(n_steps)?;
         if let Some(seed) = input.seed {
             device.set_seed(seed)?;
         }
         let use_guide_scale = guidance_scale > 1.0;
 
-        let which = match input.sd_version {
+        let which = match self.model_type {
             StableDiffusionVersion::Xl | StableDiffusionVersion::Turbo => vec![true, false],
-            _ => vec![true],
+            _ => vec![true], // INTEGRITY: we have checked previously if the model type is valid for the family of stable diffusion models
         };
         let text_embeddings = which
             .iter()
             .map(|first| {
+                let (tokenizer, text_model) = if first {
+                    (&self.tokenizer, &self.text_model)
+                } else {
+                    (&self.tokenizer_2.unwrap(), &self.text_model_2.unwrap())
+                };
+
                 Self::text_embeddings(
                     &input.prompt,
                     &input.uncond_prompt,
-                    input.tokenizer.clone(),
-                    input.clip_weights.clone(),
-                    input.sd_version,
-                    &sd_config,
+                    tokenizer,
+                    text_model,
+                    self.model_type,
+                    &self.config,
                     input.use_f16,
-                    &device,
-                    dtype,
+                    &self.device,
+                    self.dtype,
                     use_guide_scale,
                     *first,
                 )
@@ -237,18 +328,13 @@ impl ModelTrait for StableDiffusion {
 
         let text_embeddings = Tensor::cat(&text_embeddings, D::Minus1)?;
 
-        let vae_weights = ModelFile::Vae.get(input.vae_weights, input.sd_version, input.use_f16)?;
-        let vae = sd_config.build_vae(vae_weights, &device, dtype)?;
         let init_latent_dist = match &input.img2img {
             None => None,
             Some(image) => {
                 let image = Self::image_preprocess(image)?.to_device(&device)?;
-                Some(vae.encode(&image)?)
+                Some(self.vae.encode(&image)?)
             }
         };
-        let unet_weights =
-            ModelFile::Unet.get(input.unet_weights, input.sd_version, input.use_f16)?;
-        let unet = sd_config.build_unet(unet_weights, &device, 4, input.use_flash_attn, dtype)?;
 
         let t_start = if input.img2img.is_some() {
             n_steps - (n_steps as f64 * input.img2img_strength) as usize
@@ -281,14 +367,14 @@ impl ModelTrait for StableDiffusion {
                     let latents = Tensor::randn(
                         0f32,
                         1f32,
-                        (bsize, 4, sd_config.height / 8, sd_config.width / 8),
-                        &device,
+                        (bsize, 4, input.height / 8, input.width / 8),
+                        &self.device,
                     )?;
                     // scale the initial noise by the standard deviation required by the scheduler
                     (latents * scheduler.init_noise_sigma())?
                 }
             };
-            let mut latents = latents.to_dtype(dtype)?;
+            let mut latents = latents.to_dtype(self.dtype)?;
 
             for (timestep_index, &timestep) in timesteps.iter().enumerate() {
                 if timestep_index < t_start {
@@ -303,7 +389,8 @@ impl ModelTrait for StableDiffusion {
                 let latent_model_input =
                     scheduler.scale_model_input(latent_model_input, timestep)?;
                 let noise_pred =
-                    unet.forward(&latent_model_input, timestep as f64, &text_embeddings)?;
+                    self.unet
+                        .forward(&latent_model_input, timestep as f64, &text_embeddings)?;
 
                 let noise_pred = if use_guide_scale {
                     let noise_pred = noise_pred.chunk(2, 0)?;
@@ -318,7 +405,7 @@ impl ModelTrait for StableDiffusion {
                 latents = scheduler.step(&noise_pred, timestep, &latents)?;
             }
             save_tensor_to_file(&latents, "tensor1")?;
-            let image = vae.decode(&(&latents / vae_scale)?)?;
+            let image = self.vae.decode(&(&latents / vae_scale)?)?;
             save_tensor_to_file(&image, "tensor2")?;
             let image = ((image / 2.)? + 0.5)?.to_device(&Device::Cpu)?;
             save_tensor_to_file(&image, "tensor3")?;
@@ -339,6 +426,72 @@ enum StableDiffusionVersion {
     Turbo,
 }
 
+impl ModelType {
+    fn unet_file(&self, use_f16: bool) -> &'static str {
+        match self {
+            Self::StableDiffusionV1_5
+            | Self::StableDiffusionV2_1
+            | Self::StableDiffusionXl
+            | Self::StableDiffusionTurbo => {
+                if use_f16 {
+                    "unet/diffusion_pytorch_model.fp16.safetensors"
+                } else {
+                    "unet/diffusion_pytorch_model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn vae_file(&self, use_f16: bool) -> &'static str {
+        match self {
+            Self::StableDiffusionV1_5
+            | Self::StableDiffusionV2_1
+            | Self::StableDiffusionXl
+            | Self::StableDiffusionTurbo => {
+                if use_f16 {
+                    "vae/diffusion_pytorch_model.fp16.safetensors"
+                } else {
+                    "vae/diffusion_pytorch_model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn clip_file(&self, use_f16: bool) -> &'static str {
+        match self {
+            Self::StableDiffusionV1_5
+            | Self::StableDiffusionV2_1
+            | Self::StableDiffusionXl
+            | Self::StableDiffusionTurbo => {
+                if use_f16 {
+                    "text_encoder/model.fp16.safetensors"
+                } else {
+                    "text_encoder/model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn clip2_file(&self, use_f16: bool) -> &'static str {
+        match self {
+            Self::StableDiffusionV1_5
+            | Self::StableDiffusionV2_1
+            | Self::StableDiffusionXl
+            | Self::StableDiffusionTurbo => {
+                if use_f16 {
+                    "text_encoder_2/model.fp16.safetensors"
+                } else {
+                    "text_encoder_2/model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModelFile {
     Tokenizer,
@@ -347,60 +500,6 @@ enum ModelFile {
     Clip2,
     Unet,
     Vae,
-}
-
-impl ModelType {
-    fn unet_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "unet/diffusion_pytorch_model.fp16.safetensors"
-                } else {
-                    "unet/diffusion_pytorch_model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type")
-        }
-    }
-
-    fn vae_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "vae/diffusion_pytorch_model.fp16.safetensors"
-                } else {
-                    "vae/diffusion_pytorch_model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type")
-        }
-    }
-
-    fn clip_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => { 
-                if use_f16 {
-                    "text_encoder/model.fp16.safetensors"
-                } else {
-                    "text_encoder/model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type")
-        }
-    }
-
-    fn clip2_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5 | Self::StableDiffusionV2_1 | Self::StableDiffusionXl | Self::StableDiffusionTurbo => { 
-                if use_f16 {
-                    "text_encoder_2/model.fp16.safetensors"
-                } else {
-                    "text_encoder_2/model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type")
-        }
-    }
 }
 
 impl ModelFile {
@@ -412,49 +511,47 @@ impl ModelFile {
         model_type: ModelType,
         use_f16: bool,
     ) -> Result<std::path::PathBuf, ModelError> {
-                let (repo, path) = match self {
-                    Self::Tokenizer => {
-                        let tokenizer_repo = match model_type {
-                            StableDiffusionVersion::V1_5 | StableDiffusionVersion::V2_1 => {
-                                "openai/clip-vit-base-patch32"
-                            }
-                            StableDiffusionVersion::Xl | StableDiffusionVersion::Turbo => {
-                                // This seems similar to the patch32 version except some very small
-                                // difference in the split regex.
-                                "openai/clip-vit-large-patch14"
-                            }
-                        };
-                        (tokenizer_repo, "tokenizer.json")
+        let (repo, path) = match self {
+            Self::Tokenizer => {
+                let tokenizer_repo = match model_type {
+                    StableDiffusionVersion::V1_5 | StableDiffusionVersion::V2_1 => {
+                        "openai/clip-vit-base-patch32"
                     }
-                    Self::Tokenizer2 => {
-                        ("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k", "tokenizer.json")
-                    }
-                    Self::Clip => (model_type.repo(), model_type.clip_file(use_f16)),
-                    Self::Clip2 => (model_type.repo(), model_type.clip2_file(use_f16)),
-                    Self::Unet => (model_type.repo(), model_type.unet_file(use_f16)),
-                    Self::Vae => {
-                        // Override for SDXL when using f16 weights.
-                        // See https://github.com/huggingface/candle/issues/1060
-                        if matches!(
-                            model_type,
-                            ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo,
-                        ) && use_f16
-                        {
-                            (
-                                "madebyollin/sdxl-vae-fp16-fix",
-                                "diffusion_pytorch_model.safetensors",
-                            )
-                        } else {
-                            (model_type.repo(), model_type.vae_file(use_f16))
-                        }
+                    StableDiffusionVersion::Xl | StableDiffusionVersion::Turbo => {
+                        // This seems similar to the patch32 version except some very small
+                        // difference in the split regex.
+                        "openai/clip-vit-large-patch14"
                     }
                 };
-                let filename = ApiBuilder::new()
-                .with_progress(true)
-                .with_token(Some(api_key))
-                .with_cache_dir(cache_dir)
-                .build()?;
-                Ok(filename)
+                (tokenizer_repo, "tokenizer.json")
+            }
+            Self::Tokenizer2 => ("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k", "tokenizer.json"),
+            Self::Clip => (model_type.repo(), model_type.clip_file(use_f16)),
+            Self::Clip2 => (model_type.repo(), model_type.clip2_file(use_f16)),
+            Self::Unet => (model_type.repo(), model_type.unet_file(use_f16)),
+            Self::Vae => {
+                // Override for SDXL when using f16 weights.
+                // See https://github.com/huggingface/candle/issues/1060
+                if matches!(
+                    model_type,
+                    ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo,
+                ) && use_f16
+                {
+                    (
+                        "madebyollin/sdxl-vae-fp16-fix",
+                        "diffusion_pytorch_model.safetensors",
+                    )
+                } else {
+                    (model_type.repo(), model_type.vae_file(use_f16))
+                }
+            }
+        };
+        let filename = ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?;
+        Ok(filename)
     }
 }
 
@@ -463,23 +560,16 @@ impl StableDiffusion {
     fn text_embeddings(
         prompt: &str,
         uncond_prompt: &str,
-        tokenizer: Option<String>,
-        clip_weights: Option<String>,
-        sd_version: StableDiffusionVersion,
-        sd_config: &stable_diffusion::StableDiffusionConfig,
+        tokenizer: &Tokenizer,
+        text_model: &ClipTextTransformer,
+        model_type: ModelType,
+        sd_config: &StableDiffusionConfig,
         use_f16: bool,
         device: &Device,
         dtype: DType,
         use_guide_scale: bool,
         first: bool,
     ) -> Result<Tensor, ModelError> {
-        let (clip_weights_file, tokenizer_file) = if first {
-            (ModelFile::Clip, ModelFile::Tokenizer)
-        } else {
-            (ModelFile::Clip2, ModelFile::Tokenizer2)
-        };
-        let tokenizer = tokenizer_file.get(tokenizer, sd_version, use_f16)?;
-        let tokenizer = Tokenizer::from_file(tokenizer)?;
         let pad_id = match &sd_config.clip.pad_with {
             Some(padding) => {
                 *tokenizer
@@ -500,18 +590,6 @@ impl StableDiffusion {
         }
         let tokens = Tensor::new(tokens.as_slice(), device)?.unsqueeze(0)?;
 
-        let clip_weights = clip_weights_file.get(clip_weights, sd_version, false)?;
-        let clip_config = if first {
-            &sd_config.clip
-        } else {
-            sd_config.clip2.as_ref().unwrap()
-        };
-        let text_model = stable_diffusion::build_clip_transformer(
-            clip_config,
-            clip_weights,
-            device,
-            DType::F64,
-        )?;
         let text_embeddings = text_model.forward(&tokens)?;
 
         let text_embeddings = if use_guide_scale {
