@@ -4,14 +4,14 @@ use config::Config;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 
-use crate::{models::types::PrecisionBits, models::ModelId};
+use crate::models::ModelId;
 
 type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
     model_id: ModelId,
-    precision: PrecisionBits,
+    params: serde_json::Value,
     revision: Revision,
     device_id: usize,
 }
@@ -19,13 +19,13 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn new(
         model_id: ModelId,
-        precision: PrecisionBits,
+        params: serde_json::Value,
         revision: Revision,
         device_id: usize,
     ) -> Self {
         Self {
             model_id,
-            precision,
+            params,
             revision,
             device_id,
         }
@@ -35,8 +35,8 @@ impl ModelConfig {
         &self.model_id
     }
 
-    pub fn precision(&self) -> PrecisionBits {
-        self.precision
+    pub fn params(&self) -> &serde_json::Value {
+        &self.params
     }
 
     pub fn revision(&self) -> Revision {
@@ -139,6 +139,8 @@ impl ModelsConfig {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::models::types::PrecisionBits;
+
     use super::*;
 
     #[test]
@@ -148,7 +150,7 @@ pub mod tests {
             true,
             vec![ModelConfig::new(
                 "Llama2_7b".to_string(),
-                PrecisionBits::F16,
+                serde_json::to_value(PrecisionBits::F16).unwrap(),
                 "".to_string(),
                 0,
             )],

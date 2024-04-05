@@ -2,9 +2,8 @@ use std::path::PathBuf;
 
 use ::candle::Error as CandleError;
 use ed25519_consensus::VerificationKey as PublicKey;
+use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
-
-use crate::models::types::PrecisionBits;
 
 pub mod candle;
 pub mod config;
@@ -15,15 +14,16 @@ pub type ModelId = String;
 
 pub trait ModelTrait {
     type Fetch;
-    type Input;
-    type Output;
+    type Input: DeserializeOwned;
+    type Output: Serialize;
+    type Load: DeserializeOwned;
 
     fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
         Ok(())
     }
     fn load(
         filenames: Vec<PathBuf>,
-        precision: PrecisionBits,
+        params: Self::Load,
         device_id: usize,
     ) -> Result<Self, ModelError>
     where

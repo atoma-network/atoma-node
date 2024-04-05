@@ -7,12 +7,14 @@ extern crate intel_mkl_src;
 use candle_transformers::models::stable_diffusion::{self};
 
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
+use serde::Deserialize;
 use tokenizers::Tokenizer;
 
 use crate::models::{types::PrecisionBits, ModelError, ModelId, ModelTrait};
 
-use super::{device, save_tensor_to_file};
+use super::{convert_to_image, device, save_tensor_to_file};
 
+#[derive(Deserialize)]
 pub struct Input {
     prompt: String,
     uncond_prompt: String,
@@ -110,14 +112,22 @@ pub struct Fetch {
     unet_weights: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Load {
+    pub filenames: Vec<std::path::PathBuf>,
+    pub precision: PrecisionBits,
+    pub device_id: usize,
+}
+
 impl ModelTrait for StableDiffusion {
     type Input = Input;
     type Fetch = Fetch;
-    type Output = Vec<Tensor>;
+    type Output = Vec<(Vec<u8>, usize, usize)>;
+    type Load = Load;
 
     fn load(
         _filenames: Vec<std::path::PathBuf>,
-        _precision: PrecisionBits,
+        _precision: Self::Load,
         device_id: usize,
     ) -> Result<Self, ModelError>
     where
@@ -323,14 +333,14 @@ impl ModelTrait for StableDiffusion {
             save_tensor_to_file(&image, "tensor3")?;
             let image = (image.clamp(0f32, 1.)? * 255.)?.to_dtype(DType::U8)?.i(0)?;
             save_tensor_to_file(&image, "tensor4")?;
-            res.push(image);
+            res.push(convert_to_image(&image)?);
         }
         Ok(res)
     }
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize)]
 enum StableDiffusionVersion {
     V1_5,
     V2_1,

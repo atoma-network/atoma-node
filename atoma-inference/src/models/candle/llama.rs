@@ -6,7 +6,7 @@ extern crate intel_mkl_src;
 
 use std::path::PathBuf;
 
-use candle::{DType, Device, Tensor};
+use candle::{Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
@@ -15,6 +15,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::Api, Repo, RepoType};
 
 use candle_transformers::models::llama as model;
+use serde::Deserialize;
 use tokenizers::Tokenizer;
 
 use crate::models::{
@@ -43,6 +44,7 @@ pub struct Llama {
     cache: Cache,
 }
 
+#[derive(Deserialize)]
 pub struct Input {
     prompt: String,
     temperature: Option<f64>,
@@ -71,8 +73,6 @@ pub struct Fetch {
     model_id: Option<String>,
     revision: Option<String>,
     which: Which,
-    use_flash_attn: bool,
-    dtype: Option<String>,
 }
 
 impl Default for Fetch {
@@ -81,8 +81,6 @@ impl Default for Fetch {
             model_id: None,
             revision: None,
             which: Which::TinyLlama1_1BChat,
-            use_flash_attn: false,
-            dtype: None,
         }
     }
 }
@@ -90,17 +88,10 @@ impl Default for Fetch {
 impl ModelTrait for Llama {
     type Input = Input;
     type Fetch = Fetch;
-    type Output = Vec<Tensor>;
+    type Output = String;
+    type Load = PrecisionBits;
 
     fn fetch(fetch: &Self::Fetch) -> Result<(), ModelError> {
-        let device = device()?;
-        let dtype = match fetch.dtype.as_deref() {
-            Some("f16") => DType::F16,
-            Some("bf16") => DType::BF16,
-            Some("f32") => DType::F32,
-            Some(dtype) => Err(ModelError::Config(format!("Invalid dtype : {dtype}")))?,
-            None => DType::F16,
-        };
         let api = Api::new()?;
         let model_id = fetch.model_id.clone().unwrap_or_else(|| match fetch.which {
             Which::V1 => "Narsil/amall-7b".to_string(),
@@ -111,17 +102,15 @@ impl ModelTrait for Llama {
         let revision = fetch.revision.clone().unwrap_or("main".to_string());
         let api = api.repo(Repo::with_revision(model_id, RepoType::Model, revision));
         api.get("tokenizer.json")?;
-        let config_filename = api.get("config.json")?;
-        let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
-        let config = config.into_config(fetch.use_flash_attn);
-        let filenames = match fetch.which {
+        api.get("config.json")?;
+        match fetch.which {
             Which::V1 | Which::V2 | Which::Solar10_7B => {
-                hub_load_safetensors(&api, "model.safetensors.index.json")?
+                hub_load_safetensors(&api, "model.safetensors.index.json")?;
             }
-            Which::TinyLlama1_1BChat => vec![api.get("model.safetensors")?],
+            Which::TinyLlama1_1BChat => {
+                api.get("model.safetensors")?;
+            }
         };
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-        model::Llama::load(vb, &config)?;
         Ok(())
     }
 
@@ -129,8 +118,12 @@ impl ModelTrait for Llama {
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string()
     }
 
-    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError> {
-        let device = device()?;
+    fn load(
+        filenames: Vec<PathBuf>,
+        precision: PrecisionBits,
+        device_id: usize,
+    ) -> Result<Self, ModelError> {
+        let device = device(device_id)?;
         let dtype = precision.into_dtype();
         let (llama, tokenizer_filename, cache) = {
             let tokenizer_filename = filenames[0].clone();
@@ -164,7 +157,6 @@ impl ModelTrait for Llama {
         let mut logits_processor = LogitsProcessor::new(input.seed, input.temperature, input.top_p);
         let mut index_pos = 0;
         let mut res = String::new();
-        let mut result = Vec::new();
         for index in 0..input.sample_len {
             let (context_size, context_index) = if self.cache.use_kv_cache && index > 0 {
                 (1, index_pos)
@@ -189,7 +181,6 @@ impl ModelTrait for Llama {
             };
             index_pos += ctxt.len();
             let next_token = logits_processor.sample(&logits)?;
-            result.push(logits);
             tokens.push(next_token);
 
             if Some(next_token) == eos_token_id {
@@ -202,7 +193,6 @@ impl ModelTrait for Llama {
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
         }
-        println!("Result {}", res);
-        Ok(result)
+        Ok(res)
     }
 }
