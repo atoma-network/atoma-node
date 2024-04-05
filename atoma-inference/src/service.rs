@@ -158,10 +158,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{
-        config::ModelConfig,
-        Request, Response,
-    };
+    use crate::models::{config::ModelConfig, Request, Response};
 
     use super::*;
 
@@ -222,7 +219,7 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = [["Mamba370m", 0, "f16", "", "", true, 0]]
+            models = [[0, "f32", "mamba_370m", "", false, 0]]
             cache_dir = "./cache_dir/"
             tokenizer_file_path = "./tokenizer_file_path/"
             flush_storage = true
