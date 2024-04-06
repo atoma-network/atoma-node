@@ -5,9 +5,7 @@ use inference::{
     models::{
         candle::stable_diffusion::StableDiffusion,
         config::ModelsConfig,
-        types::{
-            ModelType, StableDiffusionRequest, StableDiffusionResponse, 
-        },
+        types::{ModelType, StableDiffusionRequest, StableDiffusionResponse},
     },
     service::{ModelService, ModelServiceError},
 };
@@ -66,13 +64,13 @@ async fn main() -> Result<(), ModelServiceError> {
     req_sender
         .send(StableDiffusionRequest {
             request_id: 0,
-            prompt: "A portrait of young Natalie Portman".to_string(),
+            prompt: "A depiction of Natalie Portman".to_string(),
             uncond_prompt: "".to_string(),
             height: None,
             width: None,
             num_samples: 1,
             n_steps: None,
-            model_type: ModelType::StableDiffusionV2_1,
+            model_type: ModelType::StableDiffusionV1_5,
             guidance_scale: None,
             img2img: None,
             img2img_strength: 0.8,

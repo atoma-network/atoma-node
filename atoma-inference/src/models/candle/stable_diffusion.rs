@@ -9,11 +9,11 @@ use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     bail,
-    models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait},
+    models::{candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelTrait},
 };
 
 use super::{convert_to_image, device, save_tensor_to_file};
@@ -136,7 +136,7 @@ impl ModelTrait for StableDiffusion {
             device,
             dtype,
             model_type,
-            sliced_attention_size: config.sliced_attention_size(),
+            sliced_attention_size: None,
             clip_weights_file_paths,
             tokenizer_file_paths,
             vae_weights_file_path,
@@ -181,6 +181,7 @@ impl ModelTrait for StableDiffusion {
             ), // INTEGRITY: we have checked previously if the model type is valid for the family of stable diffusion models
         };
 
+        info!("Loading text model...");
         let text_model = stable_diffusion::build_clip_transformer(
             &config.clip,
             load_data.clip_weights_file_paths[0].clone(),
@@ -188,6 +189,7 @@ impl ModelTrait for StableDiffusion {
             load_data.dtype,
         )?;
         let text_model_2 = if let Some(clip_config_2) = &config.clip2 {
+            info!("Loading second text model...");
             Some(stable_diffusion::build_clip_transformer(
                 clip_config_2,
                 load_data.clip_weights_file_paths[1].clone(),
@@ -198,11 +200,13 @@ impl ModelTrait for StableDiffusion {
             None
         };
 
+        info!("Loading variational auto encoder model...");
         let vae = config.build_vae(
             load_data.vae_weights_file_path,
             &load_data.device,
             load_data.dtype,
         )?;
+        info!("Loading unet model...");
         let unet = config.build_unet(
             load_data.unet_weights_file_path,
             &load_data.device,
@@ -237,8 +241,8 @@ impl ModelTrait for StableDiffusion {
             )))?
         }
 
-        // self.config.height = input.height.unwrap_or(512);
-        // self.config.width = input.width.unwrap_or(512);
+        let height = input.height.unwrap_or(512);
+        let width = input.width.unwrap_or(512);
 
         let guidance_scale = match input.guidance_scale {
             Some(guidance_scale) => guidance_scale,
@@ -271,6 +275,8 @@ impl ModelTrait for StableDiffusion {
             ModelType::StableDiffusionXl | ModelType::StableDiffusionTurbo => vec![true, false],
             _ => vec![true], // INTEGRITY: we have checked previously if the model type is valid for the family of stable diffusion models
         };
+
+        debug!("Computing text embeddings...");
         let text_embeddings = which
             .iter()
             .map(|first| {
@@ -316,7 +322,7 @@ impl ModelTrait for StableDiffusion {
         };
         let mut res = Vec::new();
 
-        for _ in 0..input.num_samples {
+        for idx in 0..input.num_samples {
             let timesteps = scheduler.timesteps();
             let latents = match &init_latent_dist {
                 Some(init_latent_dist) => {
@@ -336,8 +342,8 @@ impl ModelTrait for StableDiffusion {
                         (
                             bsize,
                             4,
-                            input.height.unwrap_or(512) / 8,
-                            input.width.unwrap_or(512) / 8,
+                            height / 8,
+                            width / 8,
                         ),
                         &self.device,
                     )?;
@@ -351,6 +357,7 @@ impl ModelTrait for StableDiffusion {
                 if timestep_index < t_start {
                     continue;
                 }
+                let start_time = std::time::Instant::now();
                 let latent_model_input = if use_guide_scale {
                     Tensor::cat(&[&latents, &latents], 0)?
                 } else {
@@ -359,6 +366,7 @@ impl ModelTrait for StableDiffusion {
 
                 let latent_model_input =
                     scheduler.scale_model_input(latent_model_input, timestep)?;
+                debug!("Computing noise prediction...");
                 let noise_pred =
                     self.unet
                         .forward(&latent_model_input, timestep as f64, &text_embeddings)?;
@@ -374,13 +382,24 @@ impl ModelTrait for StableDiffusion {
                 };
 
                 latents = scheduler.step(&noise_pred, timestep, &latents)?;
+                let dt = start_time.elapsed().as_secs_f32();
+                debug!("step {}/{n_steps} done, {:.2}s", timestep_index + 1, dt);
             }
+
+            debug!(
+                "Generating the final image for sample {}/{}.",
+                idx + 1,
+                input.num_samples
+            );
             save_tensor_to_file(&latents, "tensor1")?;
             let image = self.vae.decode(&(&latents / vae_scale)?)?;
             save_tensor_to_file(&image, "tensor2")?;
             let image = ((image / 2.)? + 0.5)?.to_device(&Device::Cpu)?;
             save_tensor_to_file(&image, "tensor3")?;
             let image = (image.clamp(0f32, 1.)? * 255.)?.to_dtype(DType::U8)?.i(0)?;
+            if idx == input.num_samples - 1 {
+                save_image(&image, "./image.png").unwrap();
+            }
             save_tensor_to_file(&image, "tensor4")?;
             res.push(convert_to_image(&image)?);
         }
