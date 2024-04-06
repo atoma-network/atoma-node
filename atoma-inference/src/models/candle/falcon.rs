@@ -9,10 +9,13 @@ use candle_transformers::{
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::models::{
-    candle::hub_load_safetensors, config::ModelConfig, types::{LlmLoadData, ModelType, TextModelInput}, ModelError, ModelTrait
+    candle::hub_load_safetensors,
+    config::ModelConfig,
+    types::{LlmLoadData, ModelType, TextModelInput},
+    ModelError, ModelTrait,
 };
 
 use super::device;
@@ -68,12 +71,19 @@ impl ModelTrait for FalconModel {
 
         info!("{repo_id} <> {revision}");
 
-        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
-
         let mut file_paths = vec![];
+        let repo = api.repo(Repo::new(repo_id.clone(), RepoType::Model));
         file_paths.push(repo.get("config.json")?);
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
         file_paths.push(repo.get("tokenizer.json")?);
-        file_paths.extend(hub_load_safetensors(&repo, "model.safetensors.index.json")?);
+
+        file_paths.extend(
+            hub_load_safetensors(&repo, "model.safetensors.index.json").map_err(|e| {
+                error!("{e}");
+                e
+            })?,
+        );
 
         Ok(Self::LoadData {
             device,
@@ -97,11 +107,10 @@ impl ModelTrait for FalconModel {
         let weights_filenames = load_data.file_paths[2..].to_vec();
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
-
         let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
 
-        if load_data.dtype != DType::BF16 || load_data.dtype != DType::F32 {
+        if load_data.dtype != DType::BF16 && load_data.dtype != DType::F32 {
             panic!("Invalid dtype, it must be either BF16 or F32 precision");
         }
 

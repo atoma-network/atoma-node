@@ -9,6 +9,7 @@ use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
+use tracing::info;
 
 use crate::{
     bail,
@@ -18,32 +19,32 @@ use crate::{
 use super::{convert_to_image, device, save_tensor_to_file};
 
 #[derive(Deserialize)]
-pub struct Input {
-    prompt: String,
-    uncond_prompt: String,
+pub struct StableDiffusionInput {
+    pub prompt: String,
+    pub uncond_prompt: String,
 
-    height: Option<usize>,
-    width: Option<usize>,
+    pub height: Option<usize>,
+    pub width: Option<usize>,
 
     /// The number of steps to run the diffusion for.
-    n_steps: Option<usize>,
+    pub n_steps: Option<usize>,
 
     /// The number of samples to generate.
-    num_samples: i64,
+    pub num_samples: i64,
 
-    sd_version: StableDiffusionVersion,
+    pub model_type: ModelType,
 
-    guidance_scale: Option<f64>,
+    pub guidance_scale: Option<f64>,
 
-    img2img: Option<String>,
+    pub img2img: Option<String>,
 
     /// The strength, indicates how much to transform the initial image. The
     /// value must be between 0 and 1, a value of 1 discards the initial image
     /// information.
-    img2img_strength: f64,
+    pub img2img_strength: f64,
 
     /// The seed to use when generating random samples.
-    seed: Option<u64>,
+    pub random_seed: Option<u64>,
 }
 
 pub struct StableDiffusionLoadData {
@@ -72,7 +73,7 @@ pub struct StableDiffusion {
 }
 
 impl ModelTrait for StableDiffusion {
-    type Input = Input;
+    type Input = StableDiffusionInput;
     type Output = Vec<(Vec<u8>, usize, usize)>;
     type LoadData = StableDiffusionLoadData;
 
@@ -236,8 +237,8 @@ impl ModelTrait for StableDiffusion {
             )))?
         }
 
-        // self.config.height = input.height;
-        // self.config.width = input.width;
+        // self.config.height = input.height.unwrap_or(512);
+        // self.config.width = input.width.unwrap_or(512);
 
         let guidance_scale = match input.guidance_scale {
             Some(guidance_scale) => guidance_scale,
@@ -261,7 +262,7 @@ impl ModelTrait for StableDiffusion {
         };
 
         let scheduler = self.config.build_scheduler(n_steps)?;
-        if let Some(seed) = input.seed {
+        if let Some(seed) = input.random_seed {
             self.device.set_seed(seed)?;
         }
         let use_guide_scale = guidance_scale > 1.0;
@@ -306,11 +307,12 @@ impl ModelTrait for StableDiffusion {
         };
         let bsize = 1;
 
-        let vae_scale = match input.sd_version {
-            StableDiffusionVersion::V1_5
-            | StableDiffusionVersion::V2_1
-            | StableDiffusionVersion::Xl => 0.18215,
-            StableDiffusionVersion::Turbo => 0.13025,
+        let vae_scale = match input.model_type {
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionXl => 0.18215,
+            ModelType::StableDiffusionTurbo => 0.13025,
+            _ => bail!("Invalid stable diffusion model type"),
         };
         let mut res = Vec::new();
 
@@ -355,6 +357,7 @@ impl ModelTrait for StableDiffusion {
                     latents.clone()
                 };
 
+                info!("FLAG: {:?}", latent_model_input.shape());
                 let latent_model_input =
                     scheduler.scale_model_input(latent_model_input, timestep)?;
                 let noise_pred =
@@ -384,15 +387,6 @@ impl ModelTrait for StableDiffusion {
         }
         Ok(res)
     }
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Deserialize)]
-enum StableDiffusionVersion {
-    V1_5,
-    V2_1,
-    Xl,
-    Turbo,
 }
 
 impl ModelType {

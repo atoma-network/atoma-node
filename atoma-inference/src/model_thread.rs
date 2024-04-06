@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, sync::mpsc};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::mpsc, thread::JoinHandle};
 
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
@@ -8,7 +8,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     apis::ApiError,
-    models::{config::ModelsConfig, ModelError, ModelId, ModelTrait, Request, Response},
+    models::{
+        config::{ModelConfig, ModelsConfig},
+        ModelError, ModelId, ModelTrait, Request, Response,
+    },
 };
 
 pub struct ModelThreadCommand<Req, Resp>
@@ -134,31 +137,19 @@ where
         for model_config in config.models() {
             info!("Spawning new thread for model: {}", model_config.model_id());
 
-            let model_api_key = api_key.clone();
-            let model_cache_dir = cache_dir.clone();
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand<_, _>>();
             let model_name = model_config.model_id().clone();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
-            let join_handle = std::thread::spawn(move || {
-                info!("Fetching files for model: {model_name}");
-                let load_data = M::fetch(model_api_key, model_cache_dir, model_config)?;
+            let join_handle = Self::start_model_thread::<M>(
+                model_name,
+                api_key.clone(),
+                cache_dir.clone(),
+                model_config,
+                public_key,
+                model_receiver,
+            );
 
-                let model = M::load(load_data)?;
-                let model_thread = ModelThread {
-                    model,
-                    receiver: model_receiver,
-                };
-
-                if let Err(e) = model_thread.run(public_key) {
-                    error!("Model thread error: {e}");
-                    if !matches!(e, ModelThreadError::Shutdown(_)) {
-                        panic!("Fatal error occurred: {e}");
-                    }
-                }
-
-                Ok(())
-            });
             handles.push(ModelThreadHandle {
                 join_handle,
                 sender: model_sender.clone(),
@@ -171,6 +162,38 @@ where
         };
 
         Ok((model_dispatcher, handles))
+    }
+
+    fn start_model_thread<M>(
+        model_name: String,
+        api_key: String,
+        cache_dir: PathBuf,
+        model_config: ModelConfig,
+        public_key: PublicKey,
+        model_receiver: mpsc::Receiver<ModelThreadCommand<Req, Resp>>,
+    ) -> JoinHandle<Result<(), ModelThreadError>>
+    where
+        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
+    {
+        std::thread::spawn(move || {
+            info!("Fetching files for model: {model_name}");
+            let load_data = M::fetch(api_key, cache_dir, model_config)?;
+
+            let model = M::load(load_data)?;
+            let model_thread = ModelThread {
+                model,
+                receiver: model_receiver,
+            };
+
+            if let Err(e) = model_thread.run(public_key) {
+                error!("Model thread error: {e}");
+                if !matches!(e, ModelThreadError::Shutdown(_)) {
+                    panic!("Fatal error occurred: {e}");
+                }
+            }
+
+            Ok(())
+        })
     }
 
     fn send(&self, command: ModelThreadCommand<Req, Resp>) {

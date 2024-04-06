@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{ModelId, Request, Response};
 
-use super::ModelError;
+use super::{candle::stable_diffusion::StableDiffusionInput, ModelError};
 
 pub type NodeId = PublicKey;
 
@@ -234,6 +234,89 @@ pub struct TextResponse {
 
 impl Response for TextResponse {
     type ModelOutput = String;
+
+    fn from_model_output(model_output: Self::ModelOutput) -> Self {
+        Self {
+            output: model_output,
+            is_success: true,
+            status: "Successful".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct StableDiffusionRequest {
+    pub request_id: usize,
+    pub prompt: String,
+    pub uncond_prompt: String,
+
+    pub height: Option<usize>,
+    pub width: Option<usize>,
+
+    /// The number of steps to run the diffusion for.
+    pub n_steps: Option<usize>,
+
+    /// The number of samples to generate.
+    pub num_samples: i64,
+
+    pub model_type: ModelType,
+
+    pub guidance_scale: Option<f64>,
+
+    pub img2img: Option<String>,
+
+    /// The strength, indicates how much to transform the initial image. The
+    /// value must be between 0 and 1, a value of 1 discards the initial image
+    /// information.
+    pub img2img_strength: f64,
+
+    /// The seed to use when generating random samples.
+    pub random_seed: Option<u64>,
+
+    pub sampled_nodes: Vec<NodeId>,
+}
+
+impl Request for StableDiffusionRequest {
+    type ModelInput = StableDiffusionInput;
+
+    fn into_model_input(self) -> Self::ModelInput {
+        Self::ModelInput {
+            prompt: self.prompt,
+            uncond_prompt: self.uncond_prompt,
+            height: self.height,
+            width: self.width,
+            n_steps: self.n_steps,
+            num_samples: self.num_samples,
+            model_type: self.model_type,
+            guidance_scale: self.guidance_scale,
+            img2img: self.img2img,
+            img2img_strength: self.img2img_strength,
+            random_seed: self.random_seed,
+        }
+    }
+
+    fn is_node_authorized(&self, public_key: &PublicKey) -> bool {
+        self.sampled_nodes.contains(public_key)
+    }
+
+    fn request_id(&self) -> usize {
+        self.request_id
+    }
+
+    fn requested_model(&self) -> ModelId {
+        self.model_type.to_string()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StableDiffusionResponse {
+    pub output: Vec<(Vec<u8>, usize, usize)>,
+    pub is_success: bool,
+    pub status: String,
+}
+
+impl Response for StableDiffusionResponse {
+    type ModelOutput = Vec<(Vec<u8>, usize, usize)>;
 
     fn from_model_output(model_output: Self::ModelOutput) -> Self {
         Self {
