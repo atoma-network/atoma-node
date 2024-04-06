@@ -13,7 +13,9 @@ use tracing::{debug, info};
 
 use crate::{
     bail,
-    models::{candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelTrait},
+    models::{
+        candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelId, ModelTrait,
+    },
 };
 
 use super::{convert_to_image, device, save_tensor_to_file};
@@ -32,7 +34,7 @@ pub struct StableDiffusionInput {
     /// The number of samples to generate.
     pub num_samples: i64,
 
-    pub model_type: ModelType,
+    pub model: ModelId,
 
     pub guidance_scale: Option<f64>,
 
@@ -313,7 +315,8 @@ impl ModelTrait for StableDiffusion {
         };
         let bsize = 1;
 
-        let vae_scale = match input.model_type {
+        let model_type = ModelType::from_str(&input.model)?;
+        let vae_scale = match model_type {
             ModelType::StableDiffusionV1_5
             | ModelType::StableDiffusionV2_1
             | ModelType::StableDiffusionXl => 0.18215,
@@ -336,17 +339,8 @@ impl ModelTrait for StableDiffusion {
                     }
                 }
                 None => {
-                    let latents = Tensor::randn(
-                        0f32,
-                        1f32,
-                        (
-                            bsize,
-                            4,
-                            height / 8,
-                            width / 8,
-                        ),
-                        &self.device,
-                    )?;
+                    let latents =
+                        Tensor::randn(0f32, 1f32, (bsize, 4, height / 8, width / 8), &self.device)?;
                     // scale the initial noise by the standard deviation required by the scheduler
                     (latents * scheduler.init_noise_sigma())?
                 }

@@ -11,45 +11,34 @@ use thiserror::Error;
 use crate::{
     apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
-    models::{config::ModelsConfig, ModelTrait, Request, Response},
+    models::config::ModelsConfig,
 };
 
-pub struct ModelService<Req, Resp>
-where
-    Req: Request,
-    Resp: Response,
-{
-    model_thread_handle: Vec<ModelThreadHandle<Req, Resp>>,
-    dispatcher: ModelThreadDispatcher<Req, Resp>,
+pub struct ModelService {
+    model_thread_handle: Vec<ModelThreadHandle>,
+    dispatcher: ModelThreadDispatcher,
     start_time: Instant,
     flush_storage: bool,
     public_key: PublicKey,
     cache_dir: PathBuf,
-    request_receiver: Receiver<Req>,
-    response_sender: Sender<Resp>,
+    request_receiver: Receiver<serde_json::Value>,
+    response_sender: Sender<serde_json::Value>,
 }
 
-impl<Req, Resp> ModelService<Req, Resp>
-where
-    Req: Clone + Debug + Request,
-    Resp: Debug + Response,
-{
-    pub fn start<M>(
+impl ModelService {
+    pub fn start(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        request_receiver: Receiver<Req>,
-        response_sender: Sender<Resp>,
-    ) -> Result<Self, ModelServiceError>
-    where
-        M: ModelTrait<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
-    {
+        request_receiver: Receiver<serde_json::Value>,
+        response_sender: Sender<serde_json::Value>,
+    ) -> Result<Self, ModelServiceError> {
         let public_key = private_key.verification_key();
 
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
 
         let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start::<M>(model_config, public_key)
+            ModelThreadDispatcher::start(model_config, public_key)
                 .map_err(ModelServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
@@ -65,7 +54,7 @@ where
         })
     }
 
-    pub async fn run(&mut self) -> Result<Resp, ModelServiceError> {
+    pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
                 message = self.request_receiver.recv() => {
@@ -95,11 +84,7 @@ where
     }
 }
 
-impl<Req, Resp> ModelService<Req, Resp>
-where
-    Req: Request,
-    Resp: Response,
-{
+impl ModelService {
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
@@ -158,7 +143,7 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, Request, Response};
+    use crate::models::{config::ModelConfig, ModelTrait, Request, Response};
 
     use super::*;
 
@@ -232,18 +217,12 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, req_receiver) = tokio::sync::mpsc::channel::<()>(1);
-        let (resp_sender, _) = tokio::sync::mpsc::channel::<()>(1);
+        let (_, req_receiver) = tokio::sync::mpsc::channel(1);
+        let (resp_sender, _) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
-        let _ = ModelService::start::<TestModelInstance>(
-            config,
-            private_key,
-            req_receiver,
-            resp_sender,
-        )
-        .unwrap();
+        let _ = ModelService::start(config, private_key, req_receiver, resp_sender).unwrap();
 
         std::fs::remove_file(CONFIG_FILE_PATH).unwrap();
     }

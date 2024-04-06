@@ -2,11 +2,7 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{
-        candle::stable_diffusion::StableDiffusion,
-        config::ModelsConfig,
-        types::{ModelType, StableDiffusionRequest, StableDiffusionResponse},
-    },
+    models::{config::ModelsConfig, types::StableDiffusionRequest},
     service::{ModelService, ModelServiceError},
 };
 
@@ -14,9 +10,8 @@ use inference::{
 async fn main() -> Result<(), ModelServiceError> {
     tracing_subscriber::fmt::init();
 
-    let (req_sender, req_receiver) = tokio::sync::mpsc::channel::<StableDiffusionRequest>(32);
-    let (resp_sender, mut resp_receiver) =
-        tokio::sync::mpsc::channel::<StableDiffusionResponse>(32);
+    let (req_sender, req_receiver) = tokio::sync::mpsc::channel(32);
+    let (resp_sender, mut resp_receiver) = tokio::sync::mpsc::channel(32);
 
     let model_config = ModelsConfig::from_file_path("../inference.toml".parse().unwrap());
     let private_key_bytes =
@@ -26,13 +21,7 @@ async fn main() -> Result<(), ModelServiceError> {
         .expect("Incorrect private key bytes length");
 
     let private_key = PrivateKey::from(private_key_bytes);
-    let mut service: ModelService<StableDiffusionRequest, StableDiffusionResponse> =
-        ModelService::start::<StableDiffusion>(
-            model_config,
-            private_key,
-            req_receiver,
-            resp_sender,
-        )
+    let mut service = ModelService::start(model_config, private_key, req_receiver, resp_sender)
         .expect("Failed to start inference service");
 
     let pk = service.public_key();
@@ -62,21 +51,24 @@ async fn main() -> Result<(), ModelServiceError> {
     //     .expect("Failed to send request");
 
     req_sender
-        .send(StableDiffusionRequest {
-            request_id: 0,
-            prompt: "A depiction of Natalie Portman".to_string(),
-            uncond_prompt: "".to_string(),
-            height: None,
-            width: None,
-            num_samples: 1,
-            n_steps: None,
-            model_type: ModelType::StableDiffusionV1_5,
-            guidance_scale: None,
-            img2img: None,
-            img2img_strength: 0.8,
-            random_seed: Some(42),
-            sampled_nodes: vec![pk],
-        })
+        .send(
+            serde_json::to_value(StableDiffusionRequest {
+                request_id: 0,
+                prompt: "A depiction of Natalie Portman".to_string(),
+                uncond_prompt: "".to_string(),
+                height: None,
+                width: None,
+                num_samples: 1,
+                n_steps: None,
+                model: "stable_diffusion_v1-5".to_string(),
+                guidance_scale: None,
+                img2img: None,
+                img2img_strength: 0.8,
+                random_seed: Some(42),
+                sampled_nodes: vec![pk],
+            })
+            .unwrap(),
+        )
         .await
         .expect("Failed to send request");
 

@@ -19,7 +19,7 @@ pub struct LlmLoadData {
     pub use_flash_attention: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ModelType {
     Falcon7b,
     Falcon40b,
@@ -244,7 +244,7 @@ impl Response for TextResponse {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StableDiffusionRequest {
     pub request_id: usize,
     pub prompt: String,
@@ -259,7 +259,7 @@ pub struct StableDiffusionRequest {
     /// The number of samples to generate.
     pub num_samples: i64,
 
-    pub model_type: ModelType,
+    pub model: ModelId,
 
     pub guidance_scale: Option<f64>,
 
@@ -287,7 +287,7 @@ impl Request for StableDiffusionRequest {
             width: self.width,
             n_steps: self.n_steps,
             num_samples: self.num_samples,
-            model_type: self.model_type,
+            model: self.model,
             guidance_scale: self.guidance_scale,
             img2img: self.img2img,
             img2img_strength: self.img2img_strength,
@@ -304,7 +304,7 @@ impl Request for StableDiffusionRequest {
     }
 
     fn requested_model(&self) -> ModelId {
-        self.model_type.to_string()
+        self.model.clone()
     }
 }
 
