@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -10,6 +10,7 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 
 use candle_transformers::models::llama as model;
 use tokenizers::Tokenizer;
+use tracing::info;
 
 use crate::models::{
     config::ModelConfig,
@@ -96,6 +97,10 @@ impl ModelTrait for LlamaModel {
     }
 
     fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
+        info!("Loading Llama model ...");
+
+        let start = Instant::now();
+
         let device = load_data.device;
         let dtype = load_data.dtype;
         let (model, tokenizer_filename, cache) = {
@@ -112,6 +117,8 @@ impl ModelTrait for LlamaModel {
             (model::Llama::load(vb, &config)?, tokenizer_filename, cache)
         };
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
+        info!("Loaded Llama model in {:?}", start.elapsed());
+        
         Ok(Self {
             cache,
             device,

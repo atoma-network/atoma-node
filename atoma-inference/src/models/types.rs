@@ -155,7 +155,7 @@ pub struct TextRequest {
     pub repeat_penalty: f32,
     pub sampled_nodes: Vec<NodeId>,
     pub temperature: Option<f32>,
-    pub top_k: usize,
+    pub _top_k: usize,
     pub top_p: Option<f32>,
 }
 
@@ -170,7 +170,7 @@ impl Request for TextRequest {
             self.repeat_penalty,
             self.repeat_last_n,
             self.max_tokens,
-            self.top_k,
+            self._top_k,
             self.top_p.unwrap_or_default() as f64,
         )
     }

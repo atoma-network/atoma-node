@@ -122,7 +122,7 @@ impl ModelTrait for FalconModel {
             )?
         };
         let model = Falcon::load(vb, config.clone())?;
-        info!("loaded the model in {:?}", start.elapsed());
+        info!("Loaded Falcon model in {:?}", start.elapsed());
 
         Ok(Self::new(
             model,

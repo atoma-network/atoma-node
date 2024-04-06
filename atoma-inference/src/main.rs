@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{config::ModelsConfig, types::StableDiffusionRequest},
+    models::{config::ModelsConfig, types::{StableDiffusionRequest}},
     service::{ModelService, ModelServiceError},
 };
 
@@ -34,10 +34,10 @@ async fn main() -> Result<(), ModelServiceError> {
     tokio::time::sleep(Duration::from_millis(5_000)).await;
 
     // req_sender
-    //     .send(TextRequest {
+    //     .send(serde_json::to_value(TextRequest {
     //         request_id: 0,
     //         prompt: "Leon, the professional is a movie".to_string(),
-    //         model: "falcon_7b".to_string(),
+    //         model: "llama_tiny_llama_1_1b_chat".to_string(),
     //         max_tokens: 512,
     //         temperature: Some(0.0),
     //         random_seed: 42,
@@ -45,8 +45,8 @@ async fn main() -> Result<(), ModelServiceError> {
     //         repeat_penalty: 1.1,
     //         sampled_nodes: vec![pk],
     //         top_p: Some(1.0),
-    //         top_k: 10,
-    //     })
+    //         _top_k: 10,
+    //     }).unwrap())
     //     .await
     //     .expect("Failed to send request");
 
@@ -56,8 +56,8 @@ async fn main() -> Result<(), ModelServiceError> {
                 request_id: 0,
                 prompt: "A depiction of Natalie Portman".to_string(),
                 uncond_prompt: "".to_string(),
-                height: None,
-                width: None,
+                height: Some(256),
+                width: Some(256),
                 num_samples: 1,
                 n_steps: None,
                 model: "stable_diffusion_v1-5".to_string(),
