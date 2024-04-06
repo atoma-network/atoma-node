@@ -72,10 +72,10 @@ async fn main() -> Result<(), ModelServiceError> {
             width: None,
             num_samples: 1,
             n_steps: None,
-            model_type: ModelType::StableDiffusionV1_5,
+            model_type: ModelType::StableDiffusionV2_1,
             guidance_scale: None,
             img2img: None,
-            img2img_strength: 0.5,
+            img2img_strength: 0.8,
             random_seed: Some(42),
             sampled_nodes: vec![pk],
         })
