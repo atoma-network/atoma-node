@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{config::ModelsConfig, types::{StableDiffusionRequest}},
+    models::{config::ModelsConfig, types::StableDiffusionRequest},
     service::{ModelService, ModelServiceError},
 };
 

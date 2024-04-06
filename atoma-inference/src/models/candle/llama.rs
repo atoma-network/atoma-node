@@ -118,7 +118,7 @@ impl ModelTrait for LlamaModel {
         };
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         info!("Loaded Llama model in {:?}", start.elapsed());
-        
+
         Ok(Self {
             cache,
             device,
