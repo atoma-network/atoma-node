@@ -357,7 +357,6 @@ impl ModelTrait for StableDiffusion {
                     latents.clone()
                 };
 
-                info!("FLAG: {:?}", latent_model_input.shape());
                 let latent_model_input =
                     scheduler.scale_model_input(latent_model_input, timestep)?;
                 let noise_pred =
