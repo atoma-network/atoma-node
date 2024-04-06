@@ -12,9 +12,7 @@ use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
 use crate::models::{
-    config::ModelConfig,
-    types::{LlmLoadData, ModelType, TextModelInput},
-    ModelError, ModelTrait,
+    candle::hub_load_safetensors, config::ModelConfig, types::{LlmLoadData, ModelType, TextModelInput}, ModelError, ModelTrait
 };
 
 use super::device;
@@ -68,20 +66,19 @@ impl ModelTrait for FalconModel {
         let repo_id = model_type.repo().to_string();
         let revision = model_type.default_revision().to_string();
 
+        info!("{repo_id} <> {revision}");
+
         let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
 
-        let config_file_path = repo.get("config.json")?;
-        let tokenizer_file_path = repo.get("tokenizer.json")?;
-        let model_weights_file_path = repo.get("model.safetensors")?;
+        let mut file_paths = vec![];
+        file_paths.push(repo.get("config.json")?);
+        file_paths.push(repo.get("tokenizer.json")?);
+        file_paths.extend(hub_load_safetensors(&repo, "model.safetensors.index.json")?);
 
         Ok(Self::LoadData {
             device,
             dtype,
-            file_paths: vec![
-                config_file_path,
-                tokenizer_file_path,
-                model_weights_file_path,
-            ],
+            file_paths,
             model_type: ModelType::from_str(&config.model_id())?,
             use_flash_attention: config.use_flash_attention(),
         })
@@ -101,8 +98,7 @@ impl ModelTrait for FalconModel {
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
-        let config: Config =
-            serde_json::from_slice(&std::fs::read(config_filename)?)?;
+        let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
 
         if load_data.dtype != DType::BF16 || load_data.dtype != DType::F32 {
@@ -147,11 +143,7 @@ impl ModelTrait for FalconModel {
         let mut logits_processor =
             LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
         info!("Running inference on prompt: {:?}", prompt);
-        let mut tokens = self
-            .tokenizer
-            .encode(prompt, true)?
-            .get_ids()
-            .to_vec();
+        let mut tokens = self.tokenizer.encode(prompt, true)?.get_ids().to_vec();
 
         let mut new_tokens = vec![];
         let mut output = String::new();
@@ -179,19 +171,14 @@ impl ModelTrait for FalconModel {
             tokens.push(next_token);
             new_tokens.push(next_token);
             debug!("> {:?}", start_gen);
-            output.push_str(
-                &self
-                    .tokenizer
-                    .decode(&[next_token], true)?,
-            );
+            output.push_str(&self.tokenizer.decode(&[next_token], true)?);
         }
         let dt = start_gen.elapsed();
 
         info!(
             "{max_tokens} tokens generated ({} token/s)\n----\n{}\n----",
             max_tokens as f64 / dt.as_secs_f64(),
-            self.tokenizer
-                .decode(&new_tokens, true)?,
+            self.tokenizer.decode(&new_tokens, true)?,
         );
 
         Ok(output)

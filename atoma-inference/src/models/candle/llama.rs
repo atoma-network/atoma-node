@@ -64,12 +64,15 @@ impl ModelTrait for LlamaModel {
         let repo_id = model_type.repo().to_string();
         let revision = model_type.default_revision().to_string();
 
-        let repo = api.repo(Repo::with_revision(repo_id.clone(), RepoType::Model, revision));
+        let repo = api.repo(Repo::with_revision(
+            repo_id.clone(),
+            RepoType::Model,
+            revision,
+        ));
         let config_file_path = repo.get("config.json")?;
         let tokenizer_file_path = repo.get("tokenizer.json")?;
 
-        let model_weights_file_paths = if &repo_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-        {
+        let model_weights_file_paths = if &repo_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0" {
             vec![repo.get("model.safetensors")?]
         } else {
             hub_load_safetensors(&repo, "model.safetensors.index.json")?

@@ -3,7 +3,7 @@ use std::time::Duration;
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
     models::{
-        candle::{falcon::FalconModel, llama::LlamaModel},
+        candle::falcon::FalconModel,
         config::ModelsConfig,
         types::{TextRequest, TextResponse},
     },
@@ -36,7 +36,7 @@ async fn main() -> Result<(), ModelServiceError> {
         Ok::<(), ModelServiceError>(())
     });
 
-    tokio::time::sleep(Duration::from_millis(5000)).await;
+    tokio::time::sleep(Duration::from_millis(50000000)).await;
 
     req_sender
         .send(TextRequest {

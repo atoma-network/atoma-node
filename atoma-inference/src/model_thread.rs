@@ -80,7 +80,7 @@ where
     Req: Request,
     Resp: Response,
 {
-    pub fn run(mut self, _public_key: PublicKey) -> Result<(), ModelThreadError> {
+    pub fn run(mut self, public_key: PublicKey) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
@@ -89,16 +89,13 @@ where
                 response_sender,
             } = command;
 
-            // TODO: Implement node authorization
-            // if !request.is_node_authorized(&public_key) {
-            //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
-            //     continue;
-            // }
+            if !request.is_node_authorized(&public_key) {
+                error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
+                continue;
+            }
 
             let model_input = request.into_model_input();
-            let model_output = self
-                .model
-                .run(model_input)?;
+            let model_output = self.model.run(model_input)?;
             let response = Response::from_model_output(model_output);
             response_sender.send(response).ok();
         }
