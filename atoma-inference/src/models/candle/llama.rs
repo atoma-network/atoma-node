@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn test_llama_model_interface() {
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_llama_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_llama_cache_dir/".into();
         let model_id = "llama_tiny_llama_1_1b_chat".to_string();
         let dtype = "f32".to_string();
         let revision = "main".to_string();
@@ -237,7 +237,7 @@ mod tests {
             panic!("Invalid device")
         }
 
-        assert_eq!(model.cache.use_kv_cache, true);
+        assert!(model.cache.use_kv_cache);
         assert_eq!(model.model_type, ModelType::LlamaTinyLlama1_1BChat);
 
         let prompt = "Write a hello world rust program: ".to_string();
@@ -263,7 +263,7 @@ mod tests {
         println!("output = {output}");
 
         assert!(output.len() > 1);
-        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.split(' ').collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }

@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_mamba_model_interface() {
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_mamba_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_mamba_cache_dir/".into();
         let model_id = "mamba_130m".to_string();
         let dtype = "f32".to_string();
         let revision = "refs/pr/1".to_string();
