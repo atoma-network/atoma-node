@@ -610,3 +610,85 @@ impl StableDiffusion {
         Ok(img)
     }
 }
+
+#[cfg(test)]
+mod tests { 
+    use super::*;
+
+    #[test]
+    fn test_stable_diffusion_model_interface() { 
+        let api_key = "".to_string();
+        let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
+        let model_id = "runwayml/stable-diffusion-v1-5".to_string();
+        let dtype = "f32".to_string();
+        let revision = "".to_string();
+        let device_id = 0;
+        let use_flash_attention = false;
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = StableDiffusion::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch mamba model");
+
+        println!("model device = {:?}", load_data.device);
+        let should_be_device = device(device_id).unwrap();
+        if should_be_device.is_cpu() {
+            assert!(load_data.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(load_data.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(load_data.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(load_data.use_flash_attention, use_flash_attention);
+        assert_eq!(load_data.model_type, ModelType::StableDiffusionV1_5);
+
+        let should_be_dtype = DType::from_str(&dtype).unwrap();
+        assert_eq!(load_data.dtype, should_be_dtype);
+        let mut model = StableDiffusion::load(load_data).expect("Failed to load model");
+
+        if should_be_device.is_cpu() {
+            assert!(model.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(model.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(model.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(model.dtype, should_be_dtype);
+        assert_eq!(model.model_type, ModelType::StableDiffusionV1_5);
+
+        let prompt = "A portrait of a flying cat: ".to_string();
+        let uncond_prompt = "".to_string();
+        let random_seed = 42;
+
+        let input = StableDiffusionInput {
+            prompt: prompt.clone(),
+            uncond_prompt,
+            height: None,
+            width: None,
+            random_seed: Some(random_seed),
+            n_steps: None,
+            num_samples: 1,
+            model: ModelType::StableDiffusionV1_5.to_string(),
+            guidance_scale: None,
+            img2img: None,
+            img2img_strength: 1.0,
+        };
+        let output = model.run(input).expect("Failed to run inference");
+        println!("{:?}", output);
+
+        assert_eq!(output[0].1, 512);
+        assert_eq!(output[0].2, 512);
+
+        std::fs::remove_dir_all(cache_dir).unwrap();
+    }
+}

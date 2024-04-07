@@ -237,9 +237,15 @@ mod tests {
         let revision = "refs/pr/1".to_string();
         let device_id = 0;
         let use_flash_attention = false;
-        let config = ModelConfig::new(model_id, dtype.clone(), revision, device_id, use_flash_attention);
-        let load_data =
-            MambaModel::fetch(api_key, cache_dir.clone(), config).expect("Failed to fetch mamba model");
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = MambaModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch mamba model");
 
         println!("model device = {:?}", load_data.device);
         let should_be_device = device(device_id).unwrap();
@@ -247,16 +253,16 @@ mod tests {
             assert!(load_data.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(load_data.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(load_data.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
         assert_eq!(load_data.file_paths.len(), 3);
         assert_eq!(load_data.use_flash_attention, use_flash_attention);
         assert_eq!(load_data.model_type, ModelType::Mamba130m);
-    
+
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
         let mut model = MambaModel::load(load_data).expect("Failed to load model");
@@ -265,9 +271,9 @@ mod tests {
             assert!(model.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(model.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(model.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
@@ -298,7 +304,7 @@ mod tests {
 
         assert!(output.contains(&prompt));
         assert!(output.len() > prompt.len());
-        
+
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }

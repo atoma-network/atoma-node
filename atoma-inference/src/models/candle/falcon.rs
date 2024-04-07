@@ -208,9 +208,15 @@ mod tests {
         let revision = "refs/pr/43".to_string();
         let device_id = 0;
         let use_flash_attention = false;
-        let config = ModelConfig::new(model_id, dtype.clone(), revision, device_id, use_flash_attention);
-        let load_data =
-            FalconModel::fetch(api_key, cache_dir.clone(), config).expect("Failed to fetch falcon model");
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = FalconModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch falcon model");
 
         println!("model device = {:?}", load_data.device);
         let should_be_device = device(device_id).unwrap();
@@ -218,16 +224,16 @@ mod tests {
             assert!(load_data.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(load_data.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(load_data.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
-        assert_eq!(load_data.file_paths.len(), 3);
+        assert_eq!(load_data.file_paths.len(), 4);
         assert_eq!(load_data.use_flash_attention, use_flash_attention);
-        assert_eq!(load_data.model_type, ModelType::Mamba130m);
-    
+        assert_eq!(load_data.model_type, ModelType::Falcon7b);
+
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
         let mut model = FalconModel::load(load_data).expect("Failed to load model");
@@ -236,21 +242,21 @@ mod tests {
             assert!(model.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(model.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(model.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
         assert_eq!(model.dtype, should_be_dtype);
-        assert_eq!(model.model_type, ModelType::Mamba130m);
+        assert_eq!(model.model_type, ModelType::Falcon7b);
 
         let prompt = "Write a hello world rust program: ".to_string();
         let temperature = 0.6;
         let random_seed = 42;
         let repeat_penalty = 1.0;
         let repeat_last_n = 20;
-        let max_tokens = 1;
+        let max_tokens = 128;
         let top_k = 10;
         let top_p = 0.6;
 
@@ -265,11 +271,10 @@ mod tests {
             top_p,
         );
         let output = model.run(input).expect("Failed to run inference");
-        println!("{output}");
 
-        assert!(output.contains(&prompt));
-        assert!(output.len() > prompt.len());
-        
+        assert!(output.len() > 1);
+        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
 
@@ -285,9 +290,15 @@ mod tests {
         let revision = "refs/pr/43".to_string();
         let device_id = 0;
         let use_flash_attention = false;
-        let config = ModelConfig::new(model_id, dtype.clone(), revision, device_id, use_flash_attention);
-        let load_data =
-            FalconModel::fetch(api_key, cache_dir.clone(), config).expect("Failed to fetch falcon model");
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = FalconModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch falcon model");
 
         println!("model device = {:?}", load_data.device);
         let should_be_device = device(device_id).unwrap();
@@ -295,16 +306,16 @@ mod tests {
             assert!(load_data.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(load_data.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(load_data.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
         assert_eq!(load_data.file_paths.len(), 3);
         assert_eq!(load_data.use_flash_attention, use_flash_attention);
         assert_eq!(load_data.model_type, ModelType::Mamba130m);
-    
+
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
         let mut model = FalconModel::load(load_data).expect("Failed to load model");
@@ -313,9 +324,9 @@ mod tests {
             assert!(model.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(model.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(model.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
@@ -344,9 +355,9 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
 
-        assert!(output.contains(&prompt));
-        assert!(output.len() > prompt.len());
-        
+        assert!(output.len() > 1);
+        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }

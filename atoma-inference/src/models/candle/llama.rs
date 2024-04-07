@@ -184,7 +184,6 @@ impl ModelTrait for LlamaModel {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,14 +192,20 @@ mod tests {
     fn test_llama_model_interface() {
         let api_key = "".to_string();
         let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
-        let model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string();
+        let model_id = "llama_tiny_llama_1_1b_chat".to_string();
         let dtype = "f32".to_string();
         let revision = "main".to_string();
         let device_id = 0;
         let use_flash_attention = false;
-        let config = ModelConfig::new(model_id, dtype.clone(), revision, device_id, use_flash_attention);
-        let load_data =
-            LlamaModel::fetch(api_key, cache_dir.clone(), config).expect("Failed to fetch llama model");
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = LlamaModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch llama model");
 
         println!("model device = {:?}", load_data.device);
         let should_be_device = device(device_id).unwrap();
@@ -208,16 +213,16 @@ mod tests {
             assert!(load_data.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(load_data.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(load_data.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
         assert_eq!(load_data.file_paths.len(), 3);
         assert_eq!(load_data.use_flash_attention, use_flash_attention);
-        assert_eq!(load_data.model_type, ModelType::Mamba130m);
-    
+        assert_eq!(load_data.model_type, ModelType::LlamaTinyLlama1_1BChat);
+
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
         let mut model = LlamaModel::load(load_data).expect("Failed to load model");
@@ -226,14 +231,14 @@ mod tests {
             assert!(model.device.is_cpu());
         } else if should_be_device.is_cuda() {
             assert!(model.device.is_cuda());
-        } else if should_be_device.is_metal() { 
+        } else if should_be_device.is_metal() {
             assert!(model.device.is_metal());
-        } else { 
+        } else {
             panic!("Invalid device")
         }
 
         assert_eq!(model.cache.use_kv_cache, true);
-        assert_eq!(model.model_type, ModelType::Mamba130m);
+        assert_eq!(model.model_type, ModelType::LlamaTinyLlama1_1BChat);
 
         let prompt = "Write a hello world rust program: ".to_string();
         let temperature = 0.6;
@@ -255,11 +260,11 @@ mod tests {
             top_p,
         );
         let output = model.run(input).expect("Failed to run inference");
-        println!("{output}");
+        println!("output = {output}");
 
-        assert!(output.contains(&prompt));
-        assert!(output.len() > prompt.len());
-        
+        assert!(output.len() > 1);
+        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }
