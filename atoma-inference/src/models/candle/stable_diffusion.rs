@@ -20,7 +20,7 @@ use crate::{
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct StableDiffusionInput {
     pub prompt: String,
     pub uncond_prompt: String,
@@ -685,6 +685,7 @@ mod tests {
             img2img: None,
             img2img_strength: 1.0,
         };
+        println!("Running inference on input: {:?}", input);
         let output = model.run(input).expect("Failed to run inference");
         println!("{:?}", output);
 

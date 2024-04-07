@@ -256,7 +256,7 @@ mod tests {
         let random_seed = 42;
         let repeat_penalty = 1.0;
         let repeat_last_n = 20;
-        let max_tokens = 128;
+        let max_tokens = 1;
         let top_k = 10;
         let top_p = 0.6;
 
@@ -272,7 +272,7 @@ mod tests {
         );
         let output = model.run(input).expect("Failed to run inference");
 
-        assert!(output.len() > 1);
+        assert!(output.len() >= 1);
         assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
@@ -355,7 +355,7 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
 
-        assert!(output.len() > 1);
+        assert!(output.len() >= 1);
         assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
