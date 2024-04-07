@@ -121,10 +121,10 @@ impl ModelThreadDispatcher {
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = dispatch_model_thread(
-                model_type,
-                model_name,
                 api_key.clone(),
                 cache_dir.clone(),
+                model_name,
+                model_type,
                 model_config,
                 public_key,
                 model_receiver,
@@ -178,10 +178,10 @@ impl ModelThreadDispatcher {
 }
 
 fn dispatch_model_thread(
-    model_type: ModelType,
-    model_name: String,
     api_key: String,
     cache_dir: PathBuf,
+    model_name: String,
+    model_type: ModelType,
     model_config: ModelConfig,
     public_key: PublicKey,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
