@@ -19,7 +19,7 @@ pub struct LlmLoadData {
     pub use_flash_attention: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ModelType {
     Falcon7b,
     Falcon40b,
