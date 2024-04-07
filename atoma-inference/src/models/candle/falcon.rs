@@ -202,7 +202,7 @@ mod tests {
         use super::*;
 
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_falcon_cache_dir/".try_into().unwrap();
         let model_id = "falcon_7b".to_string();
         let dtype = "f32".to_string();
         let revision = "refs/pr/43".to_string();
@@ -284,7 +284,7 @@ mod tests {
         use super::*;
 
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_falcon_cache_dir/".try_into().unwrap();
         let model_id = "falcon_7b".to_string();
         let dtype = "f32".to_string();
         let revision = "refs/pr/43".to_string();

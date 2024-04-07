@@ -612,14 +612,16 @@ impl StableDiffusion {
 }
 
 #[cfg(test)]
-mod tests { 
+mod tests {
+    use std::time::Duration;
+
     use super::*;
 
-    #[test]
-    fn test_stable_diffusion_model_interface() { 
+    #[tokio::test]
+    async fn test_stable_diffusion_model_interface() {
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
-        let model_id = "runwayml/stable-diffusion-v1-5".to_string();
+        let cache_dir: PathBuf = "./test_sd_cache_dir/".try_into().unwrap();
+        let model_id = "stable_diffusion_v1-5".to_string();
         let dtype = "f32".to_string();
         let revision = "".to_string();
         let device_id = 0;
@@ -690,5 +692,13 @@ mod tests {
         assert_eq!(output[0].2, 512);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
+        std::fs::remove_file("tensor1").unwrap();
+        std::fs::remove_file("tensor2").unwrap();
+        std::fs::remove_file("tensor3").unwrap();
+        std::fs::remove_file("tensor4").unwrap();
+
+        tokio::time::sleep(Duration::from_secs(5)).await; // give 5 seconds to look at the generated image
+
+        std::fs::remove_file("./image.png").unwrap();
     }
 }

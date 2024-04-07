@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn test_llama_model_interface() {
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_llama_cache_dir/".try_into().unwrap();
         let model_id = "llama_tiny_llama_1_1b_chat".to_string();
         let dtype = "f32".to_string();
         let revision = "main".to_string();
