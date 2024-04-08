@@ -3,7 +3,6 @@ use std::{
 };
 
 use ed25519_consensus::VerificationKey as PublicKey;
-use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, warn};
@@ -84,7 +83,7 @@ where
             //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
             //     continue;
             // }
-
+            println!("Request {:?}", request);
             let model_input = serde_json::from_value(request)?;
             let model_output = self.model.run(model_input)?;
             let response = serde_json::to_value(model_output)?;
@@ -97,7 +96,6 @@ where
 
 pub struct ModelThreadDispatcher {
     model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
-    pub(crate) responses: FuturesUnordered<oneshot::Receiver<serde_json::Value>>,
 }
 
 impl ModelThreadDispatcher {
@@ -136,10 +134,7 @@ impl ModelThreadDispatcher {
             });
         }
 
-        let model_dispatcher = ModelThreadDispatcher {
-            model_senders,
-            responses: FuturesUnordered::new(),
-        };
+        let model_dispatcher = ModelThreadDispatcher { model_senders };
 
         Ok((model_dispatcher, handles))
     }
@@ -149,7 +144,7 @@ impl ModelThreadDispatcher {
         let model_id = if let Some(model_id) = request.get("model") {
             model_id.as_str().unwrap().to_string()
         } else {
-            error!("Request malformed: Missing model_id from request");
+            error!("Request malformed: Missing 'model' from request");
             return;
         };
 
@@ -167,13 +162,14 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) fn run_inference(&self, request: serde_json::Value) {
-        let (sender, receiver) = oneshot::channel();
+    pub(crate) fn run_inference(
+        &self,
+        (request, sender): (serde_json::Value, oneshot::Sender<serde_json::Value>),
+    ) {
         self.send(ModelThreadCommand {
             request,
             response_sender: sender,
         });
-        self.responses.push(receiver);
     }
 }
 
