@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{config::ModelsConfig, types::{StableDiffusionRequest, TextRequest}},
+    models::{
+        config::ModelsConfig,
+        types::{StableDiffusionRequest, TextRequest},
+    },
     service::{ModelService, ModelServiceError},
 };
 
@@ -34,19 +37,22 @@ async fn main() -> Result<(), ModelServiceError> {
     tokio::time::sleep(Duration::from_millis(5_000)).await;
 
     req_sender
-        .send(serde_json::to_value(TextRequest {
-            request_id: 0,
-            prompt: "Leon, the professional is a movie".to_string(),
-            model: "mamba_370m".to_string(),
-            max_tokens: 512,
-            temperature: Some(0.0),
-            random_seed: 42,
-            repeat_last_n: 64,
-            repeat_penalty: 1.1,
-            sampled_nodes: vec![pk],
-            top_p: Some(1.0),
-            _top_k: 10,
-        }).unwrap())
+        .send(
+            serde_json::to_value(TextRequest {
+                request_id: 0,
+                prompt: "Leon, the professional is a movie".to_string(),
+                model: "mamba_370m".to_string(),
+                max_tokens: 512,
+                temperature: Some(0.0),
+                random_seed: 42,
+                repeat_last_n: 64,
+                repeat_penalty: 1.1,
+                sampled_nodes: vec![pk],
+                top_p: Some(1.0),
+                _top_k: 10,
+            })
+            .unwrap(),
+        )
         .await
         .expect("Failed to send request");
 
