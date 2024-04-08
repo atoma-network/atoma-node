@@ -78,6 +78,10 @@ impl TokenOutputStream {
         &self.tokenizer
     }
 
+    pub fn get_num_generated_tokens(&self) -> usize {
+        self.tokens.len()
+    }
+
     pub fn clear(&mut self) {
         self.tokens.clear();
         self.prev_index = 0;

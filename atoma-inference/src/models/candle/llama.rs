@@ -144,7 +144,7 @@ impl ModelTrait for LlamaModel {
         );
         let mut index_pos = 0;
         let mut res = String::new();
-        let mut tokens_generated = 0;
+        let mut generated_tokens = 0;
 
         let start_gen = Instant::now();
         for index in 0..input.max_tokens {
@@ -180,7 +180,7 @@ impl ModelTrait for LlamaModel {
                 res += &t;
             }
 
-            tokens_generated += 1;
+            generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
@@ -188,8 +188,8 @@ impl ModelTrait for LlamaModel {
 
         let dt = start_gen.elapsed();
         info!(
-            "{tokens_generated} tokens generated ({} token/s)\n",
-            tokens_generated as f64 / dt.as_secs_f64(),
+            "{generated_tokens} tokens generated ({} token/s)\n",
+            generated_tokens as f64 / dt.as_secs_f64(),
         );
 
         Ok(res)
