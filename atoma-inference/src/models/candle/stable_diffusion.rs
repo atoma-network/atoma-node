@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
@@ -243,6 +243,8 @@ impl ModelTrait for StableDiffusion {
             )))?
         }
 
+        let start_gen = Instant::now();
+        
         let height = input.height.unwrap_or(512);
         let width = input.width.unwrap_or(512);
 
@@ -380,11 +382,14 @@ impl ModelTrait for StableDiffusion {
                 debug!("step {}/{n_steps} done, {:.2}s", timestep_index + 1, dt);
             }
 
+            let dt = start_gen.elapsed();
+            info!("Generated response in {:?}", dt);
             debug!(
                 "Generating the final image for sample {}/{}.",
                 idx + 1,
                 input.num_samples
             );
+
             save_tensor_to_file(&latents, "tensor1")?;
             let image = self.vae.decode(&(&latents / vae_scale)?)?;
             save_tensor_to_file(&image, "tensor2")?;
