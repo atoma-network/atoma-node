@@ -244,7 +244,7 @@ impl ModelTrait for StableDiffusion {
         }
 
         let start_gen = Instant::now();
-        
+
         let height = input.height.unwrap_or(512);
         let width = input.width.unwrap_or(512);
 
