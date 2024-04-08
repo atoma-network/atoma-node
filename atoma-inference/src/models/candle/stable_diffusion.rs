@@ -20,7 +20,7 @@ use crate::{
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct StableDiffusionInput {
     pub prompt: String,
     pub uncond_prompt: String,

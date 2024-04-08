@@ -83,7 +83,6 @@ where
             //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
             //     continue;
             // }
-            println!("Request {:?}", request);
             let model_input = serde_json::from_value(request)?;
             let model_output = self.model.run(model_input)?;
             let response = serde_json::to_value(model_output)?;
