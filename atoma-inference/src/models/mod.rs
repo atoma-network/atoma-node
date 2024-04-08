@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
-use ::candle::Error as CandleError;
+use ::candle::{DTypeParseError, Error as CandleError};
 use ed25519_consensus::VerificationKey as PublicKey;
+use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
-use crate::models::types::PrecisionBits;
+use self::{config::ModelConfig, types::ModelType};
 
 pub mod candle;
 pub mod config;
@@ -14,13 +15,19 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Input;
-    type Output;
+    type Input: DeserializeOwned;
+    type Output: Serialize;
+    type LoadData;
 
-    fn load(filenames: Vec<PathBuf>, precision: PrecisionBits) -> Result<Self, ModelError>
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError>;
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized;
-    fn model_id(&self) -> ModelId;
+    fn model_type(&self) -> ModelType;
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
 }
 
@@ -41,22 +48,26 @@ pub trait Response: Send + 'static {
 
 #[derive(Debug, Error)]
 pub enum ModelError {
-    #[error("Tokenizer error: `{0}`")]
-    TokenizerError(Box<dyn std::error::Error + Send + Sync>),
-    #[error("IO error: `{0}`")]
-    IoError(std::io::Error),
     #[error("Deserialize error: `{0}`")]
-    DeserializeError(serde_json::Error),
-    #[error("Candle error: `{0}`")]
-    CandleError(CandleError),
+    DeserializeError(#[from] serde_json::Error),
     #[error("{0}")]
     Msg(String),
-}
-
-impl From<CandleError> for ModelError {
-    fn from(error: CandleError) -> Self {
-        Self::CandleError(error)
-    }
+    #[error("Candle error: `{0}`")]
+    CandleError(#[from] CandleError),
+    #[error("Config error: `{0}`")]
+    Config(String),
+    #[error("Image error: `{0}`")]
+    ImageError(#[from] image::ImageError),
+    #[error("Io error: `{0}`")]
+    IoError(#[from] std::io::Error),
+    #[error("Error: `{0}`")]
+    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error("ApiError error: `{0}`")]
+    ApiError(#[from] hf_hub::api::sync::ApiError),
+    #[error("DTypeParseError: `{0}`")]
+    DTypeParseError(#[from] DTypeParseError),
+    #[error("Invalid model type: `{0}`")]
+    InvalidModelType(String),
 }
 
 #[macro_export]

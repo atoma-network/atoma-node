@@ -4,37 +4,33 @@ use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
-    models::mamba::{Config, Model, State},
+    models::falcon::{Config, Falcon},
     utils::apply_repeat_penalty,
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
-use tracing::info;
+use tracing::{debug, error, info};
 
-use crate::{
-    bail,
-    models::{
-        candle::device,
-        config::ModelConfig,
-        token_output_stream::TokenOutputStream,
-        types::{LlmLoadData, ModelType, TextModelInput},
-        ModelError, ModelTrait,
-    },
+use crate::models::{
+    candle::hub_load_safetensors,
+    config::ModelConfig,
+    types::{LlmLoadData, ModelType, TextModelInput},
+    ModelError, ModelTrait,
 };
 
-pub struct MambaModel {
-    model: Model,
-    config: Config,
+use super::device;
+
+pub struct FalconModel {
+    model: Falcon,
     device: Device,
     dtype: DType,
     model_type: ModelType,
-    tokenizer: TokenOutputStream,
+    tokenizer: Tokenizer,
 }
 
-impl MambaModel {
+impl FalconModel {
     pub fn new(
-        model: Model,
-        config: Config,
+        model: Falcon,
         device: Device,
         dtype: DType,
         model_type: ModelType,
@@ -42,16 +38,15 @@ impl MambaModel {
     ) -> Self {
         Self {
             model,
-            config,
             device,
             dtype,
+            tokenizer,
             model_type,
-            tokenizer: TokenOutputStream::new(tokenizer),
         }
     }
 }
 
-impl ModelTrait for MambaModel {
+impl ModelTrait for FalconModel {
     type Input = TextModelInput;
     type Output = String;
     type LoadData = LlmLoadData;
@@ -74,22 +69,26 @@ impl ModelTrait for MambaModel {
         let repo_id = model_type.repo().to_string();
         let revision = model_type.default_revision().to_string();
 
-        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
+        info!("{repo_id} <> {revision}");
 
-        let config_file_path = repo.get("config.json")?;
-        let tokenizer_file_path = api
-            .model("EleutherAI/gpt-neox-20b".to_string())
-            .get("tokenizer.json")?;
-        let model_weights_file_path = repo.get("model.safetensors")?;
+        let mut file_paths = vec![];
+        let repo = api.repo(Repo::new(repo_id.clone(), RepoType::Model));
+        file_paths.push(repo.get("config.json")?);
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
+        file_paths.push(repo.get("tokenizer.json")?);
+
+        file_paths.extend(
+            hub_load_safetensors(&repo, "model.safetensors.index.json").map_err(|e| {
+                error!("{e}");
+                e
+            })?,
+        );
 
         Ok(Self::LoadData {
             device,
             dtype,
-            file_paths: vec![
-                config_file_path,
-                tokenizer_file_path,
-                model_weights_file_path,
-            ],
+            file_paths,
             model_type: ModelType::from_str(&config.model_id())?,
             use_flash_attention: config.use_flash_attention(),
         })
@@ -99,7 +98,7 @@ impl ModelTrait for MambaModel {
     where
         Self: Sized,
     {
-        info!("Loading Mamba model ...");
+        info!("Loading Falcon model ...");
 
         let start = Instant::now();
 
@@ -108,23 +107,25 @@ impl ModelTrait for MambaModel {
         let weights_filenames = load_data.file_paths[2..].to_vec();
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
-
         let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
+        config.validate()?;
 
-        info!("Loading model weights..");
-        let var_builder = unsafe {
+        if load_data.dtype != DType::BF16 && load_data.dtype != DType::F32 {
+            panic!("Invalid dtype, it must be either BF16 or F32 precision");
+        }
+
+        let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &weights_filenames,
                 load_data.dtype,
                 &load_data.device,
             )?
         };
-        let model = Model::new(&config, var_builder.pp("backbone"))?;
-        info!("Loaded Mamba model in {:?}", start.elapsed());
+        let model = Falcon::load(vb, config.clone())?;
+        info!("Loaded Falcon model in {:?}", start.elapsed());
 
         Ok(Self::new(
             model,
-            config,
             load_data.device,
             load_data.dtype,
             load_data.model_type,
@@ -148,48 +149,27 @@ impl ModelTrait for MambaModel {
             ..
         } = input;
 
-        info!("Running inference on prompt: {:?}", prompt);
-
-        self.tokenizer.clear();
-        let mut tokens = self
-            .tokenizer
-            .tokenizer()
-            .encode(prompt, true)?
-            .get_ids()
-            .to_vec();
         let mut logits_processor =
             LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
+        info!("Running inference on prompt: {:?}", prompt);
+        let mut tokens = self.tokenizer.encode(prompt, true)?.get_ids().to_vec();
 
-        let mut generated_tokens = 0_usize;
-        let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
-            Some(token) => token,
-            None => bail!("Invalid eos token"),
-        };
-
-        let mut state = State::new(1, &self.config, &self.device)?; // TODO: handle larger batch sizes
-
-        let mut next_logits = None;
+        let mut new_tokens = vec![];
         let mut output = String::new();
 
-        for &token in tokens.iter() {
-            let input = Tensor::new(&[token], &self.device)?;
-            let logits = self.model.forward(&input, &mut state)?;
-
-            next_logits = Some(logits);
-            if let Some(t) = self.tokenizer.next_token(token)? {
-                output.push_str(t.as_str());
-            }
-        }
-
         let start_gen = Instant::now();
-        for _ in 0..max_tokens {
-            let logits = match next_logits.as_ref() {
-                Some(logits) => logits,
-                None => bail!("cannot work on an empty prompt"),
+        for index in 0..max_tokens {
+            let start_gen = Instant::now();
+            let context_size = if self.model.config().use_cache && index > 0 {
+                1
+            } else {
+                tokens.len()
             };
-
+            let ctx = &tokens[tokens.len().saturating_sub(context_size)..];
+            let input = Tensor::new(ctx, &self.device)?.unsqueeze(0)?;
+            let logits = self.model.forward(&input)?;
             let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
-            let logits = if repeat_penalty == 1.0 {
+            let logits = if repeat_penalty == 1. {
                 logits
             } else {
                 let start_at = tokens.len().saturating_sub(repeat_last_n);
@@ -198,28 +178,18 @@ impl ModelTrait for MambaModel {
 
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
-            generated_tokens += 1;
-
-            if next_token == eos_token {
-                break;
-            }
-
-            if let Some(t) = self.tokenizer.next_token(next_token)? {
-                output.push_str(t.as_str());
-            }
-
-            let input = Tensor::new(&[next_token], &self.device)?;
-            next_logits = Some(self.model.forward(&input, &mut state)?);
+            new_tokens.push(next_token);
+            debug!("> {:?}", start_gen);
+            output.push_str(&self.tokenizer.decode(&[next_token], true)?);
         }
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest()? {
-            output.push_str(rest.as_str());
-        }
 
         info!(
-            "\n{generated_tokens} tokens generated ({:.2} token/s)",
-            generated_tokens as f64 / dt.as_secs_f64(),
+            "{max_tokens} tokens generated ({} token/s)\n----\n{}\n----",
+            max_tokens as f64 / dt.as_secs_f64(),
+            self.tokenizer.decode(&new_tokens, true)?,
         );
+
         Ok(output)
     }
 }

@@ -4,32 +4,79 @@ use config::Config;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 
-use crate::{models::types::PrecisionBits, models::ModelId};
+use crate::models::ModelId;
 
 type Revision = String;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
-    api_key: String,
-    flush_storage: bool,
-    models: Vec<(ModelId, PrecisionBits, Revision)>,
-    storage_path: PathBuf,
-    tracing: bool,
+    device_id: usize,
+    dtype: String,
+    model_id: ModelId,
+    revision: Revision,
+    use_flash_attention: bool,
 }
 
 impl ModelConfig {
     pub fn new(
+        model_id: ModelId,
+        dtype: String,
+        revision: Revision,
+        device_id: usize,
+        use_flash_attention: bool,
+    ) -> Self {
+        Self {
+            dtype,
+            model_id,
+            revision,
+            device_id,
+            use_flash_attention,
+        }
+    }
+
+    pub fn dtype(&self) -> String {
+        self.dtype.clone()
+    }
+
+    pub fn model_id(&self) -> ModelId {
+        self.model_id.clone()
+    }
+
+    pub fn revision(&self) -> Revision {
+        self.revision.clone()
+    }
+
+    pub fn device_id(&self) -> usize {
+        self.device_id
+    }
+
+    pub fn use_flash_attention(&self) -> bool {
+        self.use_flash_attention
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModelsConfig {
+    api_key: String,
+    cache_dir: PathBuf,
+    flush_storage: bool,
+    models: Vec<ModelConfig>,
+    tracing: bool,
+}
+
+impl ModelsConfig {
+    pub fn new(
         api_key: String,
+        cache_dir: PathBuf,
         flush_storage: bool,
-        models: Vec<(ModelId, PrecisionBits, Revision)>,
-        storage_path: PathBuf,
+        models: Vec<ModelConfig>,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
+            cache_dir,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
     }
@@ -38,16 +85,16 @@ impl ModelConfig {
         self.api_key.clone()
     }
 
+    pub fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.clone()
+    }
+
     pub fn flush_storage(&self) -> bool {
         self.flush_storage
     }
 
-    pub fn model_ids(&self) -> Vec<(ModelId, PrecisionBits, Revision)> {
+    pub fn models(&self) -> Vec<ModelConfig> {
         self.models.clone()
-    }
-
-    pub fn storage_path(&self) -> PathBuf {
-        self.storage_path.clone()
     }
 
     pub fn tracing(&self) -> bool {
@@ -69,7 +116,14 @@ impl ModelConfig {
     pub fn from_env_file() -> Self {
         dotenv().ok();
 
-        let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
+        let api_key = std::env::var("API_KEY")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+        let cache_dir = std::env::var("CACHE_DIR")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
         let flush_storage = std::env::var("FLUSH_STORAGE")
             .unwrap_or_default()
             .parse()
@@ -78,10 +132,6 @@ impl ModelConfig {
             &std::env::var("MODELS").expect("Failed to retrieve models metadata, from .env file"),
         )
         .unwrap();
-        let storage_path = std::env::var("STORAGE_PATH")
-            .expect("Failed to retrieve storage path, from .env file")
-            .parse()
-            .unwrap();
         let tracing = std::env::var("TRACING")
             .unwrap_or_default()
             .parse()
@@ -89,9 +139,9 @@ impl ModelConfig {
 
         Self {
             api_key,
+            cache_dir,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
     }
@@ -103,16 +153,22 @@ pub mod tests {
 
     #[test]
     fn test_config() {
-        let config = ModelConfig::new(
-            String::from("my_key"),
+        let config = ModelsConfig::new(
+            "my_key".to_string(),
+            "/".to_string().into(),
             true,
-            vec![("Llama2_7b".to_string(), PrecisionBits::F16, "".to_string())],
-            "storage_path".parse().unwrap(),
+            vec![ModelConfig::new(
+                "F16".to_string(),
+                "Llama2_7b".to_string(),
+                "".to_string(),
+                0,
+                true,
+            )],
             true,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nflush_storage = true\nmodels = [[\"Llama2_7b\", \"F16\", \"\"]]\nstorage_path = \"storage_path\"\ntracing = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\ntracing = true\n\n[[models]]\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
