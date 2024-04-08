@@ -13,7 +13,11 @@ pub struct SuiSubscriber {
 }
 
 impl SuiSubscriber {
-    pub async fn new(http_url: &str, ws_url: Option<&str>, object_id: ObjectID) -> Result<Self, SuiSubscriberError> {
+    pub async fn new(
+        http_url: &str,
+        ws_url: Option<&str>,
+        object_id: ObjectID,
+    ) -> Result<Self, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
         if let Some(url) = ws_url {
             sui_client_builder = sui_client_builder.ws_url(url);
@@ -26,13 +30,14 @@ impl SuiSubscriber {
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter).await?;
-        while let Some(event) = subscribe_event.next().await { 
-            match event { 
+        while let Some(event) = subscribe_event.next().await {
+            match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
-                    let request_type = serde_json::from_value::<RequestType>(event_data["type"].clone())?;
+                    let request_type =
+                        serde_json::from_value::<RequestType>(event_data["type"].clone())?;
                     info!("The request type is: {:?}", request_type);
-                },
+                }
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
                 }
@@ -47,5 +52,5 @@ pub enum SuiSubscriberError {
     #[error("Sui Builder error: `{0}`")]
     SuiBuilderError(#[from] sui_sdk::error::Error),
     #[error("Deserialize error: `{0}`")]
-    DeserializeError(#[from] serde_json::Error)
+    DeserializeError(#[from] serde_json::Error),
 }

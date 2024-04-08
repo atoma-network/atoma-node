@@ -4,5 +4,5 @@ pub mod subscriber;
 
 #[derive(Debug, Deserialize)]
 pub struct AtomaEvent {
-    pub model: String
+    pub model: String,
 }

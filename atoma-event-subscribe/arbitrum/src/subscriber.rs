@@ -1,4 +1,7 @@
-use ethers::{prelude::*, providers::{Provider, Ws}};
+use ethers::{
+    prelude::*,
+    providers::{Provider, Ws},
+};
 use thiserror::Error;
 use tracing::info;
 
@@ -10,10 +13,7 @@ pub struct EthSubscriber {
 }
 
 impl EthSubscriber {
-    pub async fn new(
-        ws_url: &str,
-        contract_address: Address,
-    ) -> Result<Self, EthSubscriberError> {
+    pub async fn new(ws_url: &str, contract_address: Address) -> Result<Self, EthSubscriberError> {
         let ws = Ws::connect(ws_url).await?;
         let provider = Provider::new(ws);
         let filter = Filter::new().address(contract_address);
@@ -27,8 +27,8 @@ impl EthSubscriber {
             info!("Received a new event: {:?}", event);
             let event_data = serde_json::from_slice::<AtomaEvent>(&event.data)?;
             info!("New model request: {}", event_data.model);
-        }   
-        
+        }
+
         Ok(())
     }
 }
