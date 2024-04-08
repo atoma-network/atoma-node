@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ed25519_consensus::SigningKey as PrivateKey;
 use inference::{
-    models::{config::ModelsConfig, types::StableDiffusionRequest},
+    models::{config::ModelsConfig, types::TextRequest},
     service::{ModelService, ModelServiceError},
 };
 
@@ -33,44 +33,47 @@ async fn main() -> Result<(), ModelServiceError> {
 
     tokio::time::sleep(Duration::from_millis(5_000)).await;
 
-    // req_sender
-    //     .send(serde_json::to_value(TextRequest {
-    //         request_id: 0,
-    //         prompt: "Leon, the professional is a movie".to_string(),
-    //         model: "llama_tiny_llama_1_1b_chat".to_string(),
-    //         max_tokens: 512,
-    //         temperature: Some(0.0),
-    //         random_seed: 42,
-    //         repeat_last_n: 64,
-    //         repeat_penalty: 1.1,
-    //         sampled_nodes: vec![pk],
-    //         top_p: Some(1.0),
-    //         _top_k: 10,
-    //     }).unwrap())
-    //     .await
-    //     .expect("Failed to send request");
-
     req_sender
         .send(
-            serde_json::to_value(StableDiffusionRequest {
+            serde_json::to_value(TextRequest {
                 request_id: 0,
-                prompt: "A depiction of Natalie Portman".to_string(),
-                uncond_prompt: "".to_string(),
-                height: Some(256),
-                width: Some(256),
-                num_samples: 1,
-                n_steps: None,
-                model: "stable_diffusion_v1-5".to_string(),
-                guidance_scale: None,
-                img2img: None,
-                img2img_strength: 0.8,
-                random_seed: Some(42),
+                prompt: "Leon, the professional is a movie".to_string(),
+                model: "mamba_370m".to_string(),
+                max_tokens: 512,
+                temperature: Some(0.0),
+                random_seed: 42,
+                repeat_last_n: 64,
+                repeat_penalty: 1.1,
                 sampled_nodes: vec![pk],
+                top_p: Some(1.0),
+                _top_k: 10,
             })
             .unwrap(),
         )
         .await
         .expect("Failed to send request");
+
+    // req_sender
+    //     .send(
+    //         serde_json::to_value(StableDiffusionRequest {
+    //             request_id: 0,
+    //             prompt: "A depiction of Natalie Portman".to_string(),
+    //             uncond_prompt: "".to_string(),
+    //             height: Some(256),
+    //             width: Some(256),
+    //             num_samples: 1,
+    //             n_steps: None,
+    //             model: "stable_diffusion_v1-5".to_string(),
+    //             guidance_scale: None,
+    //             img2img: None,
+    //             img2img_strength: 0.8,
+    //             random_seed: Some(42),
+    //             sampled_nodes: vec![pk],
+    //         })
+    //         .unwrap(),
+    //     )
+    //     .await
+    //     .expect("Failed to send request");
 
     if let Some(response) = resp_receiver.recv().await {
         println!("Got a response: {:?}", response);

@@ -144,6 +144,9 @@ impl ModelTrait for LlamaModel {
         );
         let mut index_pos = 0;
         let mut res = String::new();
+        let mut generated_tokens = 0;
+
+        let start_gen = Instant::now();
         for index in 0..input.max_tokens {
             let (context_size, context_index) = if self.cache.use_kv_cache && index > 0 {
                 (1, index_pos)
@@ -176,10 +179,19 @@ impl ModelTrait for LlamaModel {
             if let Some(t) = tokenizer.next_token(next_token)? {
                 res += &t;
             }
+
+            generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
         }
+
+        let dt = start_gen.elapsed();
+        info!(
+            "{generated_tokens} tokens generated ({} token/s)\n",
+            generated_tokens as f64 / dt.as_secs_f64(),
+        );
+
         Ok(res)
     }
 }
