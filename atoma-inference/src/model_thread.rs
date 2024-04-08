@@ -1,6 +1,5 @@
 use std::{
-    collections::HashMap,
-    sync::{mpsc, Arc},
+    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
 use ed25519_consensus::VerificationKey as PublicKey;
@@ -10,8 +9,16 @@ use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    apis::{ApiError, ApiTrait},
-    models::{config::ModelsConfig, ModelError, ModelId, ModelTrait},
+    apis::ApiError,
+    models::{
+        candle::{
+            falcon::FalconModel, llama::LlamaModel, mamba::MambaModel,
+            stable_diffusion::StableDiffusion,
+        },
+        config::{ModelConfig, ModelsConfig},
+        types::ModelType,
+        ModelError, ModelId, ModelTrait,
+    },
 };
 
 pub struct ModelThreadCommand {
@@ -73,17 +80,13 @@ where
                 response_sender,
             } = command;
 
-            // TODO: Implement node authorization
             // if !request.is_node_authorized(&public_key) {
             //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
             //     continue;
             // }
 
-            let model_input = serde_json::from_value(request).unwrap();
-            let model_output = self
-                .model
-                .run(model_input)
-                .map_err(ModelThreadError::ModelError)?;
+            let model_input = serde_json::from_value(request)?;
+            let model_output = self.model.run(model_input)?;
             let response = serde_json::to_value(model_output)?;
             response_sender.send(response).ok();
         }
@@ -98,49 +101,35 @@ pub struct ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) fn start<M, F>(
+    pub(crate) fn start(
         config: ModelsConfig,
         public_key: PublicKey,
-    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError>
-    where
-        F: ApiTrait + Send + Sync + 'static,
-        M: ModelTrait, //<Input = Req::ModelInput, Output = Resp::ModelOutput> + Send + 'static,
-    {
-        let api_key = config.api_key();
-        let storage_path = config.storage_path();
-        let api = Arc::new(F::create(api_key, storage_path)?);
-
+    ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
 
+        let api_key = config.api_key();
+        let cache_dir = config.cache_dir();
+
         for model_config in config.models() {
             info!("Spawning new thread for model: {}", model_config.model_id());
-            let api = api.clone();
+
+            let model_name = model_config.model_id().clone();
+            let model_type = ModelType::from_str(&model_name)?;
 
             let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
-            let model_name = model_config.model_id().clone();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
-            let join_handle = std::thread::spawn(move || {
-                info!("Fetching files for model: {model_name}");
-                let filenames = api.fetch(model_name, model_config.revision())?;
-                let x = serde_json::from_value(model_config.params().clone()).unwrap();
+            let join_handle = dispatch_model_thread(
+                api_key.clone(),
+                cache_dir.clone(),
+                model_name,
+                model_type,
+                model_config,
+                public_key,
+                model_receiver,
+            );
 
-                let model = M::load(filenames, x, model_config.device_id())?;
-                let model_thread = ModelThread {
-                    model,
-                    receiver: model_receiver,
-                };
-
-                if let Err(e) = model_thread.run(public_key) {
-                    error!("Model thread error: {e}");
-                    if !matches!(e, ModelThreadError::Shutdown(_)) {
-                        panic!("Fatal error occurred: {e}");
-                    }
-                }
-
-                Ok(())
-            });
             handles.push(ModelThreadHandle {
                 join_handle,
                 sender: model_sender.clone(),
@@ -157,10 +146,15 @@ impl ModelThreadDispatcher {
 
     fn send(&self, command: ModelThreadCommand) {
         let request = command.request.clone();
-        let model_id = request.get("model").unwrap().as_str().unwrap().to_string();
-        println!("model_id {model_id}");
+        let model_id = if let Some(model_id) = request.get("model") {
+            model_id.as_str().unwrap().to_string()
+        } else {
+            error!("Request malformed: Missing model_id from request");
+            return;
+        };
 
-        println!("{:?}", self.model_senders);
+        info!("model_id {model_id}");
+
         let sender = self
             .model_senders
             .get(&model_id)
@@ -181,4 +175,95 @@ impl ModelThreadDispatcher {
         });
         self.responses.push(receiver);
     }
+}
+
+fn dispatch_model_thread(
+    api_key: String,
+    cache_dir: PathBuf,
+    model_name: String,
+    model_type: ModelType,
+    model_config: ModelConfig,
+    public_key: PublicKey,
+    model_receiver: mpsc::Receiver<ModelThreadCommand>,
+) -> JoinHandle<Result<(), ModelThreadError>> {
+    match model_type {
+        ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
+            spawn_model_thread::<FalconModel>(
+                model_name,
+                api_key.clone(),
+                cache_dir.clone(),
+                model_config,
+                public_key,
+                model_receiver,
+            )
+        }
+        ModelType::LlamaV1
+        | ModelType::LlamaV2
+        | ModelType::LlamaTinyLlama1_1BChat
+        | ModelType::LlamaSolar10_7B => spawn_model_thread::<LlamaModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
+        ModelType::Mamba130m
+        | ModelType::Mamba370m
+        | ModelType::Mamba790m
+        | ModelType::Mamba1_4b
+        | ModelType::Mamba2_8b => spawn_model_thread::<MambaModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
+        ModelType::Mistral7b => todo!(),
+        ModelType::Mixtral8x7b => todo!(),
+        ModelType::StableDiffusionV1_5
+        | ModelType::StableDiffusionV2_1
+        | ModelType::StableDiffusionTurbo
+        | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
+    }
+}
+
+fn spawn_model_thread<M>(
+    model_name: String,
+    api_key: String,
+    cache_dir: PathBuf,
+    model_config: ModelConfig,
+    public_key: PublicKey,
+    model_receiver: mpsc::Receiver<ModelThreadCommand>,
+) -> JoinHandle<Result<(), ModelThreadError>>
+where
+    M: ModelTrait + Send + 'static,
+{
+    std::thread::spawn(move || {
+        info!("Fetching files for model: {model_name}");
+        let load_data = M::fetch(api_key, cache_dir, model_config)?;
+
+        let model = M::load(load_data)?;
+        let model_thread = ModelThread {
+            model,
+            receiver: model_receiver,
+        };
+
+        if let Err(e) = model_thread.run(public_key) {
+            error!("Model thread error: {e}");
+            if !matches!(e, ModelThreadError::Shutdown(_)) {
+                panic!("Fatal error occurred: {e}");
+            }
+        }
+
+        Ok(())
+    })
 }

@@ -1,6 +1,7 @@
 use candle::Error as CandleError;
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
+use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
@@ -8,9 +9,9 @@ use tracing::{error, info};
 use thiserror::Error;
 
 use crate::{
-    apis::{ApiError, ApiTrait},
+    apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
-    models::{config::ModelsConfig, ModelTrait},
+    models::config::ModelsConfig,
 };
 
 pub struct ModelService {
@@ -19,29 +20,25 @@ pub struct ModelService {
     start_time: Instant,
     flush_storage: bool,
     public_key: PublicKey,
-    storage_path: PathBuf,
+    cache_dir: PathBuf,
     request_receiver: Receiver<serde_json::Value>,
     response_sender: Sender<serde_json::Value>,
 }
 
 impl ModelService {
-    pub fn start<M, F>(
+    pub fn start(
         model_config: ModelsConfig,
         private_key: PrivateKey,
         request_receiver: Receiver<serde_json::Value>,
         response_sender: Sender<serde_json::Value>,
-    ) -> Result<Self, ModelServiceError>
-    where
-        M: ModelTrait + Send + 'static,
-        F: ApiTrait + Send + Sync + 'static,
-    {
+    ) -> Result<Self, ModelServiceError> {
         let public_key = private_key.verification_key();
 
         let flush_storage = model_config.flush_storage();
-        let storage_path = model_config.storage_path();
+        let cache_dir = model_config.cache_dir();
 
         let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start::<M, F>(model_config, public_key)
+            ModelThreadDispatcher::start(model_config, public_key)
                 .map_err(ModelServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
@@ -50,14 +47,14 @@ impl ModelService {
             model_thread_handle,
             start_time,
             flush_storage,
-            storage_path,
+            cache_dir,
             public_key,
             request_receiver,
             response_sender,
         })
     }
 
-    pub async fn run(&mut self) -> Result<serde_json::Value, ModelServiceError> {
+    pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
                 message = self.request_receiver.recv() => {
@@ -95,7 +92,7 @@ impl ModelService {
         );
 
         if self.flush_storage {
-            match std::fs::remove_dir(self.storage_path) {
+            match std::fs::remove_dir(self.cache_dir) {
                 Ok(()) => {}
                 Err(e) => error!("Failed to remove storage folder, on shutdown: {e}"),
             };
@@ -146,24 +143,9 @@ mod tests {
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{ModelId, Request, Response};
+    use crate::models::{config::ModelConfig, ModelTrait, Request, Response};
 
     use super::*;
-
-    struct MockApi {}
-
-    impl ApiTrait for MockApi {
-        fn create(_: String, _: PathBuf) -> Result<Self, ApiError>
-        where
-            Self: Sized,
-        {
-            Ok(Self {})
-        }
-
-        fn fetch(&self, _: ModelId, _: String) -> Result<Vec<PathBuf>, ApiError> {
-            Ok(vec![])
-        }
-    }
 
     impl Request for () {
         type ModelInput = ();
@@ -195,23 +177,18 @@ mod tests {
     impl ModelTrait for TestModelInstance {
         type Input = ();
         type Output = ();
-        type Fetch = ();
-        type Load = ();
+        type LoadData = ();
 
-        fn fetch(_fetch: &Self::Fetch) -> Result<(), crate::models::ModelError> {
+        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
             Ok(())
         }
 
-        fn load(
-            _: Vec<PathBuf>,
-            _: Self::Load,
-            _device_id: usize,
-        ) -> Result<Self, crate::models::ModelError> {
+        fn load(_: Self::LoadData) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
 
-        fn model_id(&self) -> crate::models::ModelId {
-            String::from("")
+        fn model_type(&self) -> crate::models::types::ModelType {
+            crate::models::types::ModelType::LlamaV1
         }
 
         fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
@@ -227,8 +204,8 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = [["Mamba3b", "F16", "", ""]]
-            storage_path = "./storage_path/"
+            models = [[0, "f32", "mamba_370m", "", false, 0]]
+            cache_dir = "./cache_dir/"
             tokenizer_file_path = "./tokenizer_file_path/"
             flush_storage = true
             tracing = true
@@ -240,18 +217,12 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, req_receiver) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
-        let (resp_sender, _) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
+        let (_, req_receiver) = tokio::sync::mpsc::channel(1);
+        let (resp_sender, _) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
-        let _ = ModelService::start::<TestModelInstance, MockApi>(
-            config,
-            private_key,
-            req_receiver,
-            resp_sender,
-        )
-        .unwrap();
+        let _ = ModelService::start(config, private_key, req_receiver, resp_sender).unwrap();
 
         std::fs::remove_file(CONFIG_FILE_PATH).unwrap();
     }

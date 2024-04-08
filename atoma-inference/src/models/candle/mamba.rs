@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -7,7 +7,7 @@ use candle_transformers::{
     models::mamba::{Config, Model, State},
     utils::apply_repeat_penalty,
 };
-use serde::Deserialize;
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::info;
 
@@ -15,9 +15,10 @@ use crate::{
     bail,
     models::{
         candle::device,
+        config::ModelConfig,
         token_output_stream::TokenOutputStream,
-        types::{PrecisionBits, TextModelInput},
-        ModelError, ModelId, ModelTrait,
+        types::{LlmLoadData, ModelType, TextModelInput},
+        ModelError, ModelTrait,
     },
 };
 
@@ -26,8 +27,8 @@ pub struct MambaModel {
     config: Config,
     device: Device,
     dtype: DType,
+    model_type: ModelType,
     tokenizer: TokenOutputStream,
-    which: Which,
 }
 
 impl MambaModel {
@@ -36,36 +37,65 @@ impl MambaModel {
         config: Config,
         device: Device,
         dtype: DType,
+        model_type: ModelType,
         tokenizer: Tokenizer,
     ) -> Self {
-        let which = Which::from_config(&config);
         Self {
             model,
             config,
             device,
             dtype,
+            model_type,
             tokenizer: TokenOutputStream::new(tokenizer),
-            which,
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Load {
-    pub precision: PrecisionBits,
-}
-
 impl ModelTrait for MambaModel {
-    type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
-    type Load = Load;
+    type LoadData = LlmLoadData;
 
-    fn load(
-        filenames: Vec<PathBuf>,
-        params: Self::Load,
-        device_id: usize,
-    ) -> Result<Self, ModelError>
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError> {
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
+
+        let api = ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?;
+
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let repo_id = model_type.repo().to_string();
+        let revision = model_type.default_revision().to_string();
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
+
+        let config_file_path = repo.get("config.json")?;
+        let tokenizer_file_path = api
+            .model("EleutherAI/gpt-neox-20b".to_string())
+            .get("tokenizer.json")?;
+        let model_weights_file_path = repo.get("model.safetensors")?;
+
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            file_paths: vec![
+                config_file_path,
+                tokenizer_file_path,
+                model_weights_file_path,
+            ],
+            model_type: ModelType::from_str(&config.model_id())?,
+            use_flash_attention: config.use_flash_attention(),
+        })
+    }
+
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -73,29 +103,37 @@ impl ModelTrait for MambaModel {
 
         let start = Instant::now();
 
-        let config_filename = filenames[0].clone();
-        let tokenizer_filename = filenames[1].clone();
-        let weights_filenames = filenames[2..].to_vec();
+        let config_filename = load_data.file_paths[0].clone();
+        let tokenizer_filename = load_data.file_paths[1].clone();
+        let weights_filenames = load_data.file_paths[2..].to_vec();
 
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
-        let config: Config =
-            serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
-                .map_err(ModelError::DeserializeError)?;
-        let device = device(device_id)?;
-        let dtype = params.precision.into_dtype();
+        let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
 
         info!("Loading model weights..");
-        let var_builder =
-            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)? };
+        let var_builder = unsafe {
+            VarBuilder::from_mmaped_safetensors(
+                &weights_filenames,
+                load_data.dtype,
+                &load_data.device,
+            )?
+        };
         let model = Model::new(&config, var_builder.pp("backbone"))?;
         info!("Loaded Mamba model in {:?}", start.elapsed());
 
-        Ok(Self::new(model, config, device, dtype, tokenizer))
+        Ok(Self::new(
+            model,
+            config,
+            load_data.device,
+            load_data.dtype,
+            load_data.model_type,
+            tokenizer,
+        ))
     }
 
-    fn model_id(&self) -> ModelId {
-        self.which.model_id().to_string()
+    fn model_type(&self) -> ModelType {
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
@@ -183,39 +221,5 @@ impl ModelTrait for MambaModel {
             generated_tokens as f64 / dt.as_secs_f64(),
         );
         Ok(output)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Which {
-    Mamba130m,
-    Mamba370m,
-    Mamba790m,
-    Mamba1_4b,
-    Mamba2_8b,
-    // Mamba2_8bSlimPj, TODO: add this
-}
-
-impl Which {
-    fn model_id(&self) -> &'static str {
-        match self {
-            Self::Mamba130m => "state-spaces/mamba-130m",
-            Self::Mamba370m => "state-spaces/mamba-370m",
-            Self::Mamba790m => "state-spaces/mamba-790m",
-            Self::Mamba1_4b => "state-spaces/mamba-1.4b",
-            Self::Mamba2_8b => "state-spaces/mamba-2.8b",
-            // Self::Mamba2_8bSlimPj => "state-spaces/mamba-2.8b-slimpj'",
-        }
-    }
-
-    fn from_config(config: &Config) -> Self {
-        match config.d_model {
-            768 => Self::Mamba130m,
-            1024 => Self::Mamba370m,
-            1536 => Self::Mamba790m,
-            2048 => Self::Mamba1_4b,
-            2560 => Self::Mamba2_8b,
-            _ => panic!("Invalid config d_model value"),
-        }
     }
 }

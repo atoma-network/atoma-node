@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
-use ::candle::Error as CandleError;
+use ::candle::{DTypeParseError, Error as CandleError};
 use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
+
+use self::{config::ModelConfig, types::ModelType};
 
 pub mod candle;
 pub mod config;
@@ -13,22 +15,19 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Fetch;
     type Input: DeserializeOwned;
     type Output: Serialize;
-    type Load: DeserializeOwned;
+    type LoadData;
 
-    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
-        Ok(())
-    }
-    fn load(
-        filenames: Vec<PathBuf>,
-        params: Self::Load,
-        device_id: usize,
-    ) -> Result<Self, ModelError>
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError>;
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized;
-    fn model_id(&self) -> ModelId;
+    fn model_type(&self) -> ModelType;
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
 }
 
@@ -65,6 +64,10 @@ pub enum ModelError {
     BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
     #[error("ApiError error: `{0}`")]
     ApiError(#[from] hf_hub::api::sync::ApiError),
+    #[error("DTypeParseError: `{0}`")]
+    DTypeParseError(#[from] DTypeParseError),
+    #[error("Invalid model type: `{0}`")]
+    InvalidModelType(String),
 }
 
 #[macro_export]

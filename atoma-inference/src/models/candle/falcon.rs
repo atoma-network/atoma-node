@@ -1,65 +1,100 @@
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use candle::{
-    utils::{cuda_is_available, metal_is_available},
-    DType, Device, Tensor,
-};
+use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
     models::falcon::{Config, Falcon},
     utils::apply_repeat_penalty,
 };
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
-use crate::{
-    models::types::{PrecisionBits, TextModelInput},
-    models::{ModelError, ModelId, ModelTrait},
+use crate::models::{
+    candle::hub_load_safetensors,
+    config::ModelConfig,
+    types::{LlmLoadData, ModelType, TextModelInput},
+    ModelError, ModelTrait,
 };
+
+use super::device;
 
 pub struct FalconModel {
     model: Falcon,
     device: Device,
     dtype: DType,
+    model_type: ModelType,
     tokenizer: Tokenizer,
-    which: Which,
 }
 
 impl FalconModel {
     pub fn new(
         model: Falcon,
-        config: Config,
         device: Device,
         dtype: DType,
+        model_type: ModelType,
         tokenizer: Tokenizer,
     ) -> Self {
-        let which = Which::from_config(&config);
         Self {
             model,
             device,
             dtype,
             tokenizer,
-            which,
+            model_type,
         }
     }
 }
 
 impl ModelTrait for FalconModel {
-    type Fetch = ();
     type Input = TextModelInput;
     type Output = String;
-    type Load = PrecisionBits;
+    type LoadData = LlmLoadData;
 
-    fn fetch(_fetch: &Self::Fetch) -> Result<(), ModelError> {
-        Ok(())
+    fn fetch(
+        api_key: String,
+        cache_dir: PathBuf,
+        config: ModelConfig,
+    ) -> Result<Self::LoadData, ModelError> {
+        let device = device(config.device_id())?;
+        let dtype = DType::from_str(&config.dtype())?;
+
+        let api = ApiBuilder::new()
+            .with_progress(true)
+            .with_token(Some(api_key))
+            .with_cache_dir(cache_dir)
+            .build()?;
+
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let repo_id = model_type.repo().to_string();
+        let revision = model_type.default_revision().to_string();
+
+        info!("{repo_id} <> {revision}");
+
+        let mut file_paths = vec![];
+        let repo = api.repo(Repo::new(repo_id.clone(), RepoType::Model));
+        file_paths.push(repo.get("config.json")?);
+
+        let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
+        file_paths.push(repo.get("tokenizer.json")?);
+
+        file_paths.extend(
+            hub_load_safetensors(&repo, "model.safetensors.index.json").map_err(|e| {
+                error!("{e}");
+                e
+            })?,
+        );
+
+        Ok(Self::LoadData {
+            device,
+            dtype,
+            file_paths,
+            model_type: ModelType::from_str(&config.model_id())?,
+            use_flash_attention: config.use_flash_attention(),
+        })
     }
 
-    fn load(
-        filenames: Vec<PathBuf>,
-        precision: Self::Load,
-        device_id: usize,
-    ) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -67,40 +102,39 @@ impl ModelTrait for FalconModel {
 
         let start = Instant::now();
 
-        let config_filename = filenames[0].clone();
-        let tokenizer_filename = filenames[1].clone();
-        let weights_filenames = filenames[2..].to_vec();
+        let config_filename = load_data.file_paths[0].clone();
+        let tokenizer_filename = load_data.file_paths[1].clone();
+        let weights_filenames = load_data.file_paths[2..].to_vec();
 
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(ModelError::BoxedError)?;
-
-        let config: Config =
-            serde_json::from_slice(&std::fs::read(config_filename).map_err(ModelError::IoError)?)
-                .map_err(ModelError::DeserializeError)?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
+        let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
 
-        let device = if cuda_is_available() {
-            Device::new_cuda(device_id).map_err(ModelError::CandleError)?
-        } else if metal_is_available() {
-            Device::new_metal(device_id).map_err(ModelError::CandleError)?
-        } else {
-            Device::Cpu
-        };
-
-        let dtype = precision.into_dtype();
-        if dtype != DType::BF16 || dtype != DType::F32 {
+        if load_data.dtype != DType::BF16 && load_data.dtype != DType::F32 {
             panic!("Invalid dtype, it must be either BF16 or F32 precision");
         }
 
-        let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&weights_filenames, dtype, &device)? };
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(
+                &weights_filenames,
+                load_data.dtype,
+                &load_data.device,
+            )?
+        };
         let model = Falcon::load(vb, config.clone())?;
-        info!("loaded the model in {:?}", start.elapsed());
+        info!("Loaded Falcon model in {:?}", start.elapsed());
 
-        Ok(Self::new(model, config, device, dtype, tokenizer))
+        Ok(Self::new(
+            model,
+            load_data.device,
+            load_data.dtype,
+            load_data.model_type,
+            tokenizer,
+        ))
     }
 
-    fn model_id(&self) -> ModelId {
-        self.which.model_id().to_string()
+    fn model_type(&self) -> ModelType {
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
@@ -118,12 +152,7 @@ impl ModelTrait for FalconModel {
         let mut logits_processor =
             LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
         info!("Running inference on prompt: {:?}", prompt);
-        let mut tokens = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(ModelError::BoxedError)?
-            .get_ids()
-            .to_vec();
+        let mut tokens = self.tokenizer.encode(prompt, true)?.get_ids().to_vec();
 
         let mut new_tokens = vec![];
         let mut output = String::new();
@@ -151,48 +180,16 @@ impl ModelTrait for FalconModel {
             tokens.push(next_token);
             new_tokens.push(next_token);
             debug!("> {:?}", start_gen);
-            output.push_str(
-                &self
-                    .tokenizer
-                    .decode(&[next_token], true)
-                    .map_err(ModelError::BoxedError)?,
-            );
+            output.push_str(&self.tokenizer.decode(&[next_token], true)?);
         }
         let dt = start_gen.elapsed();
 
         info!(
             "{max_tokens} tokens generated ({} token/s)\n----\n{}\n----",
             max_tokens as f64 / dt.as_secs_f64(),
-            self.tokenizer
-                .decode(&new_tokens, true)
-                .map_err(ModelError::BoxedError)?,
+            self.tokenizer.decode(&new_tokens, true)?,
         );
 
         Ok(output)
-    }
-}
-
-enum Which {
-    Falcon7b,
-    Falcon40b,
-    Falcon180b,
-}
-
-impl Which {
-    fn model_id(&self) -> &'static str {
-        match self {
-            Self::Falcon7b => "tiiuae/falcon-7b",
-            Self::Falcon40b => "tiiuae/falcon-40b",
-            Self::Falcon180b => "tiiuae/falcon-180b",
-        }
-    }
-
-    fn from_config(config: &Config) -> Self {
-        match config.hidden_size {
-            4544 => Self::Falcon7b,
-            8192 => Self::Falcon40b,
-            14848 => Self::Falcon180b,
-            _ => panic!("Invalid config hidden size value"),
-        }
     }
 }

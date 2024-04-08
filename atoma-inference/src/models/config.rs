@@ -10,33 +10,36 @@ type Revision = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfig {
-    model_id: ModelId,
-    params: serde_json::Value,
-    revision: Revision,
     device_id: usize,
+    dtype: String,
+    model_id: ModelId,
+    revision: Revision,
+    use_flash_attention: bool,
 }
 
 impl ModelConfig {
     pub fn new(
         model_id: ModelId,
-        params: serde_json::Value,
+        dtype: String,
         revision: Revision,
         device_id: usize,
+        use_flash_attention: bool,
     ) -> Self {
         Self {
+            dtype,
             model_id,
-            params,
             revision,
             device_id,
+            use_flash_attention,
         }
     }
 
-    pub fn model_id(&self) -> &ModelId {
-        &self.model_id
+    pub fn dtype(&self) -> String {
+        self.dtype.clone()
     }
 
-    pub fn params(&self) -> &serde_json::Value {
-        &self.params
+    pub fn model_id(&self) -> ModelId {
+        self.model_id.clone()
     }
 
     pub fn revision(&self) -> Revision {
@@ -46,30 +49,34 @@ impl ModelConfig {
     pub fn device_id(&self) -> usize {
         self.device_id
     }
+
+    pub fn use_flash_attention(&self) -> bool {
+        self.use_flash_attention
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModelsConfig {
     api_key: String,
+    cache_dir: PathBuf,
     flush_storage: bool,
     models: Vec<ModelConfig>,
-    storage_path: PathBuf,
     tracing: bool,
 }
 
 impl ModelsConfig {
     pub fn new(
         api_key: String,
+        cache_dir: PathBuf,
         flush_storage: bool,
         models: Vec<ModelConfig>,
-        storage_path: PathBuf,
         tracing: bool,
     ) -> Self {
         Self {
             api_key,
+            cache_dir,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
     }
@@ -78,16 +85,16 @@ impl ModelsConfig {
         self.api_key.clone()
     }
 
+    pub fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.clone()
+    }
+
     pub fn flush_storage(&self) -> bool {
         self.flush_storage
     }
 
     pub fn models(&self) -> Vec<ModelConfig> {
         self.models.clone()
-    }
-
-    pub fn storage_path(&self) -> PathBuf {
-        self.storage_path.clone()
     }
 
     pub fn tracing(&self) -> bool {
@@ -109,7 +116,14 @@ impl ModelsConfig {
     pub fn from_env_file() -> Self {
         dotenv().ok();
 
-        let api_key = std::env::var("API_KEY").expect("Failed to retrieve api key, from .env file");
+        let api_key = std::env::var("API_KEY")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+        let cache_dir = std::env::var("CACHE_DIR")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
         let flush_storage = std::env::var("FLUSH_STORAGE")
             .unwrap_or_default()
             .parse()
@@ -118,10 +132,6 @@ impl ModelsConfig {
             &std::env::var("MODELS").expect("Failed to retrieve models metadata, from .env file"),
         )
         .unwrap();
-        let storage_path = std::env::var("STORAGE_PATH")
-            .expect("Failed to retrieve storage path, from .env file")
-            .parse()
-            .unwrap();
         let tracing = std::env::var("TRACING")
             .unwrap_or_default()
             .parse()
@@ -129,9 +139,9 @@ impl ModelsConfig {
 
         Self {
             api_key,
+            cache_dir,
             flush_storage,
             models,
-            storage_path,
             tracing,
         }
     }
@@ -139,27 +149,26 @@ impl ModelsConfig {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::models::types::PrecisionBits;
-
     use super::*;
 
     #[test]
     fn test_config() {
         let config = ModelsConfig::new(
-            String::from("my_key"),
+            "my_key".to_string(),
+            "/".to_string().into(),
             true,
             vec![ModelConfig::new(
+                "F16".to_string(),
                 "Llama2_7b".to_string(),
-                serde_json::to_value(PrecisionBits::F16).unwrap(),
                 "".to_string(),
                 0,
+                true,
             )],
-            "storage_path".parse().unwrap(),
             true,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\nflush_storage = true\nmodels = [[\"Llama2_7b\", \"F16\", \"\"]]\nstorage_path = \"storage_path\"\ntracing = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\ntracing = true\n\n[[models]]\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
