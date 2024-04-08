@@ -4,9 +4,9 @@ use axum::{extract::State, routing::post, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
-pub type OurState = mpsc::Sender<(Value, oneshot::Sender<Value>)>;
+pub type RequestSender = mpsc::Sender<(Value, oneshot::Sender<Value>)>;
 
-pub async fn run(sender: OurState) {
+pub async fn run(sender: RequestSender) {
     let app = Router::new()
         .route("/", post(jrpc_call))
         .with_state(Arc::new(sender));
@@ -15,7 +15,10 @@ pub async fn run(sender: OurState) {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn jrpc_call(State(sender): State<Arc<OurState>>, Json(input): Json<Value>) -> Json<Value> {
+async fn jrpc_call(
+    State(sender): State<Arc<RequestSender>>,
+    Json(input): Json<Value>,
+) -> Json<Value> {
     let request = input.get("request").expect("Request not found");
     let (one_sender, one_receiver) = oneshot::channel();
     sender
