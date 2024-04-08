@@ -1,9 +1,9 @@
 use candle::Error as CandleError;
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
-use futures::StreamExt;
 use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Receiver;
+use tokio::sync::oneshot;
 use tracing::{error, info};
 
 use thiserror::Error;
@@ -21,16 +21,14 @@ pub struct ModelService {
     flush_storage: bool,
     public_key: PublicKey,
     cache_dir: PathBuf,
-    request_receiver: Receiver<serde_json::Value>,
-    response_sender: Sender<serde_json::Value>,
+    request_receiver: Receiver<(serde_json::Value, oneshot::Sender<serde_json::Value>)>,
 }
 
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        request_receiver: Receiver<serde_json::Value>,
-        response_sender: Sender<serde_json::Value>,
+        request_receiver: Receiver<(serde_json::Value, oneshot::Sender<serde_json::Value>)>,
     ) -> Result<Self, ModelServiceError> {
         let public_key = private_key.verification_key();
 
@@ -50,7 +48,6 @@ impl ModelService {
             cache_dir,
             public_key,
             request_receiver,
-            response_sender,
         })
     }
 
@@ -60,19 +57,6 @@ impl ModelService {
                 message = self.request_receiver.recv() => {
                     if let Some(request) = message {
                         self.dispatcher.run_inference(request);
-                    }
-                }
-                response = self.dispatcher.responses.next() => {
-                    if let Some(resp) = response {
-                        match resp {
-                            Ok(response) => {
-                                info!("Received a new inference response: {:?}", response);
-                                self.response_sender.send(response).await.map_err(|e| ModelServiceError::SendError(e.to_string()))?;
-                            }
-                            Err(e) => {
-                                error!("Found error in generating inference response: {e}");
-                            }
-                        }
                     }
                 }
             }
@@ -218,11 +202,10 @@ mod tests {
             .expect("Failed to write to file");
 
         let (_, req_receiver) = tokio::sync::mpsc::channel(1);
-        let (resp_sender, _) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
 
-        let _ = ModelService::start(config, private_key, req_receiver, resp_sender).unwrap();
+        let _ = ModelService::start(config, private_key, req_receiver).unwrap();
 
         std::fs::remove_file(CONFIG_FILE_PATH).unwrap();
     }
