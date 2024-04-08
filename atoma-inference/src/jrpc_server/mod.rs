@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
@@ -27,7 +27,7 @@ async fn jrpc_call(
             "jsonrpc": "2.0",
             "id": 1,
             "error": {
-                "code": -32600,
+                "code": StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
                 "message": err
             }
         })),
