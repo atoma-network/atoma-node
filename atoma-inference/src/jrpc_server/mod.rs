@@ -1,6 +1,6 @@
-use std::{net::Shutdown, sync::Arc};
+use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, routing::post, Extension, Json, Router};
+use axum::{http::StatusCode, routing::post, Extension, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
