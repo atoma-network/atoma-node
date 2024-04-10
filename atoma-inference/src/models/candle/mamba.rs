@@ -178,7 +178,7 @@ impl ModelTrait for MambaModel {
         let mut output = String::new();
 
         for &token in tokens.iter() {
-            let input = Tensor::new(&[token], &self.device)?.to_dtype(self.dtype)?;
+            let input = Tensor::new(&[token], &self.device)?;
             let logits = self.model.forward(&input, &mut state)?;
 
             next_logits = Some(logits);
@@ -213,7 +213,7 @@ impl ModelTrait for MambaModel {
                 output.push_str(t.as_str());
             }
 
-            let input = Tensor::new(&[next_token], &self.device)?.to_dtype(self.dtype)?;
+            let input = Tensor::new(&[next_token], &self.device)?;
             next_logits = Some(self.model.forward(&input, &mut state)?);
         }
         let dt = start_gen.elapsed();
