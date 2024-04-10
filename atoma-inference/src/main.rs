@@ -13,7 +13,7 @@ async fn main() -> Result<(), ModelServiceError> {
 
     let model_config = ModelsConfig::from_file_path("../inference.toml".parse().unwrap());
     let private_key_bytes =
-        std::fs::read("../private_key").map_err(ModelServiceError::PrivateKeyError)?;
+        std::fs::read("./private_key").map_err(ModelServiceError::PrivateKeyError)?;
     let private_key_bytes: [u8; 32] = private_key_bytes
         .try_into()
         .expect("Incorrect private key bytes length");

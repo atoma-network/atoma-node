@@ -119,6 +119,11 @@ impl ModelTrait for MambaModel {
                 &load_data.device,
             )?
         };
+
+        info!(
+            "Loaded model weights with precision: {:?}",
+            var_builder.dtype()
+        );
         let model = Model::new(&config, var_builder.pp("backbone"))?;
         info!("Loaded Mamba model in {:?}", start.elapsed());
 
