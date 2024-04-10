@@ -225,6 +225,23 @@ impl TextModelInput {
     }
 }
 
+#[derive(Serialize)]
+pub struct TextModelOutput {
+    pub text: String,
+    pub time: f64,
+    pub tokens_count: usize,
+}
+
+impl Display for TextModelOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Output: {}\nTime: {}\nTokens count: {}",
+            self.text, self.time, self.tokens_count
+        )
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TextResponse {
     pub output: String,

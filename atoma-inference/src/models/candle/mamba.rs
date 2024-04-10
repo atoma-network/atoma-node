@@ -17,7 +17,7 @@ use crate::{
         candle::device,
         config::ModelConfig,
         token_output_stream::TokenOutputStream,
-        types::{LlmLoadData, ModelType, TextModelInput},
+        types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
         ModelError, ModelTrait,
     },
 };
@@ -53,7 +53,7 @@ impl MambaModel {
 
 impl ModelTrait for MambaModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -222,7 +222,11 @@ impl ModelTrait for MambaModel {
             generated_tokens as f64 / dt.as_secs_f64(),
         );
 
-        Ok(output)
+        Ok(TextModelOutput {
+            text: output,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
     }
 }
 
@@ -304,8 +308,8 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
 
-        assert!(output.contains(&prompt));
-        assert!(output.len() > prompt.len());
+        assert!(output.text.contains(&prompt));
+        assert!(output.text.len() > prompt.len());
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
