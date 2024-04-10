@@ -148,9 +148,11 @@ impl ModelTrait for MambaModel {
             ..
         } = input;
 
+        // clean tokenizer state
+        self.tokenizer.clear();
+
         info!("Running inference on prompt: {:?}", prompt);
 
-        self.tokenizer.clear();
         let mut tokens = self
             .tokenizer
             .tokenizer()
@@ -160,7 +162,6 @@ impl ModelTrait for MambaModel {
         let mut logits_processor =
             LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
 
-        let mut generated_tokens = 0_usize;
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
             Some(token) => token,
             None => bail!("Invalid eos token"),
@@ -198,7 +199,6 @@ impl ModelTrait for MambaModel {
 
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
-            generated_tokens += 1;
 
             if next_token == eos_token {
                 break;
@@ -216,10 +216,12 @@ impl ModelTrait for MambaModel {
             output.push_str(rest.as_str());
         }
 
+        let generated_tokens = self.tokenizer.get_num_generated_tokens();
         info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
         Ok(output)
     }
 }

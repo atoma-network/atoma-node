@@ -4,6 +4,7 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
+axum.workspace = true
 async-trait.workspace = true
 candle.workspace = true
 candle-flash-attn = { workspace = true, optional = true }
