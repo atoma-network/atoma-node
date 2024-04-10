@@ -11,11 +11,14 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::{debug, error, info};
 
-use crate::models::{
-    candle::hub_load_safetensors,
-    config::ModelConfig,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
-    ModelError, ModelTrait,
+use crate::{
+    bail,
+    models::{
+        candle::hub_load_safetensors,
+        config::ModelConfig,
+        types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+        ModelError, ModelTrait,
+    },
 };
 
 use super::device;
@@ -109,6 +112,10 @@ impl ModelTrait for FalconModel {
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
+
+        if load_data.dtype != DType::BF16 && load_data.dtype != DType::F32 {
+            bail!("Invalid DType for Falcon model architecture");
+        }
 
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
