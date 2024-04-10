@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 
 pub type RequestSender = mpsc::Sender<(Value, oneshot::Sender<Value>)>;
 
-pub async fn run(sender: RequestSender) {
+pub async fn run(sender: RequestSender, port: u64) {
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel::<()>(1);
     let app = Router::new()
         .route("/", post(jrpc_call))
@@ -14,7 +14,7 @@ pub async fn run(sender: RequestSender) {
         .layer(Extension(Arc::new(sender)))
         .layer(Extension(Arc::new(shutdown_signal_sender)));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:21212")
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap();
     axum::serve(listener, app)
