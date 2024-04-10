@@ -15,7 +15,7 @@ use tracing::info;
 use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput},
+    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
     ModelError, ModelTrait,
 };
 
@@ -44,7 +44,7 @@ pub struct LlamaModel {
 
 impl ModelTrait for LlamaModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -192,7 +192,11 @@ impl ModelTrait for LlamaModel {
             generated_tokens as f64 / dt.as_secs_f64(),
         );
 
-        Ok(res)
+        Ok(TextModelOutput {
+            text: res,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
     }
 }
 
@@ -272,10 +276,10 @@ mod tests {
             top_p,
         );
         let output = model.run(input).expect("Failed to run inference");
-        println!("output = {output}");
+        println!("{output}");
 
-        assert!(output.len() > 1);
-        assert!(output.split(' ').collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.text.len() > 1);
+        assert!(output.text.split(' ').collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }

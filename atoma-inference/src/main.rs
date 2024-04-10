@@ -19,6 +19,7 @@ async fn main() -> Result<(), ModelServiceError> {
         .expect("Incorrect private key bytes length");
 
     let private_key = PrivateKey::from(private_key_bytes);
+    let jrpc_port = model_config.jrpc_port();
     let mut service = ModelService::start(model_config, private_key, req_receiver)
         .expect("Failed to start inference service");
 
@@ -27,7 +28,7 @@ async fn main() -> Result<(), ModelServiceError> {
         Ok::<(), ModelServiceError>(())
     });
 
-    jrpc_server::run(req_sender).await;
+    jrpc_server::run(req_sender, jrpc_port).await;
 
     Ok(())
 }

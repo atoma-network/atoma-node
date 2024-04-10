@@ -62,6 +62,7 @@ pub struct ModelsConfig {
     flush_storage: bool,
     models: Vec<ModelConfig>,
     tracing: bool,
+    jrpc_port: u64,
 }
 
 impl ModelsConfig {
@@ -71,6 +72,7 @@ impl ModelsConfig {
         flush_storage: bool,
         models: Vec<ModelConfig>,
         tracing: bool,
+        jrpc_port: u64,
     ) -> Self {
         Self {
             api_key,
@@ -78,6 +80,7 @@ impl ModelsConfig {
             flush_storage,
             models,
             tracing,
+            jrpc_port,
         }
     }
 
@@ -99,6 +102,10 @@ impl ModelsConfig {
 
     pub fn tracing(&self) -> bool {
         self.tracing
+    }
+
+    pub fn jrpc_port(&self) -> u64 {
+        self.jrpc_port
     }
 
     pub fn from_file_path(config_file_path: PathBuf) -> Self {
@@ -137,12 +144,18 @@ impl ModelsConfig {
             .parse()
             .unwrap();
 
+        let jrpc_port = std::env::var("JRPC_PORT")
+            .expect("Failed to retrieve jrpc port from .env file")
+            .parse()
+            .unwrap();
+
         Self {
             api_key,
             cache_dir,
             flush_storage,
             models,
             tracing,
+            jrpc_port,
         }
     }
 }
@@ -165,6 +178,7 @@ pub mod tests {
                 true,
             )],
             true,
+            18001,
         );
 
         let toml_str = toml::to_string(&config).unwrap();

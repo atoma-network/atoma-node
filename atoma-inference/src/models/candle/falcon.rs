@@ -14,7 +14,7 @@ use tracing::{debug, error, info};
 use crate::models::{
     candle::hub_load_safetensors,
     config::ModelConfig,
-    types::{LlmLoadData, ModelType, TextModelInput},
+    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
     ModelError, ModelTrait,
 };
 
@@ -48,7 +48,7 @@ impl FalconModel {
 
 impl ModelTrait for FalconModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -109,10 +109,6 @@ impl ModelTrait for FalconModel {
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         let config: Config = serde_json::from_slice(&std::fs::read(config_filename)?)?;
         config.validate()?;
-
-        if load_data.dtype != DType::BF16 && load_data.dtype != DType::F32 {
-            panic!("Invalid dtype, it must be either BF16 or F32 precision");
-        }
 
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
@@ -199,6 +195,10 @@ impl ModelTrait for FalconModel {
             self.tokenizer.decode(&new_tokens, true)?,
         );
 
-        Ok(output)
+        Ok(TextModelOutput {
+            text: output,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
     }
 }
