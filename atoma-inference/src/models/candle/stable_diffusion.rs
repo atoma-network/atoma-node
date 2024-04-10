@@ -625,7 +625,7 @@ mod tests {
     #[tokio::test]
     async fn test_stable_diffusion_model_interface() {
         let api_key = "".to_string();
-        let cache_dir: PathBuf = "./test_sd_cache_dir/".try_into().unwrap();
+        let cache_dir: PathBuf = "./test_sd_cache_dir/".into();
         let model_id = "stable_diffusion_v1-5".to_string();
         let dtype = "f32".to_string();
         let revision = "".to_string();
