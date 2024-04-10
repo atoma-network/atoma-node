@@ -37,7 +37,6 @@ pub struct Config {}
 pub struct LlamaModel {
     cache: Cache,
     device: Device,
-    dtype: DType,
     model: model::Llama,
     model_type: ModelType,
     tokenizer: Tokenizer,
@@ -123,7 +122,6 @@ impl ModelTrait for LlamaModel {
         Ok(Self {
             cache,
             device,
-            dtype,
             model,
             model_type: load_data.model_type,
             tokenizer,
@@ -156,9 +154,7 @@ impl ModelTrait for LlamaModel {
                 (tokens.len(), 0)
             };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input_tensor = Tensor::new(ctxt, &self.device)?
-                .unsqueeze(0)?
-                .to_dtype(self.dtype)?;
+            let input_tensor = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self
                 .model
                 .forward(&input_tensor, context_index, &mut self.cache)?;

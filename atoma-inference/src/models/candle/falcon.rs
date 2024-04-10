@@ -174,9 +174,7 @@ impl ModelTrait for FalconModel {
                 tokens.len()
             };
             let ctx = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctx, &self.device)?
-                .unsqueeze(0)?
-                .to_dtype(self.dtype)?;
+            let input = Tensor::new(ctx, &self.device)?.unsqueeze(0)?;
             let logits = self.model.forward(&input)?;
             let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
             let logits = if repeat_penalty == 1. {
