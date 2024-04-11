@@ -253,7 +253,6 @@ mod tests {
             panic!("Invalid device")
         }
 
-        assert!(model.cache.use_kv_cache);
         assert_eq!(model.model_type, ModelType::LlamaTinyLlama1_1BChat);
 
         let prompt = "Write a hello world rust program: ".to_string();

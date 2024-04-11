@@ -16,10 +16,10 @@ edition = "2021"
 [workspace.dependencies]
 async-trait = "0.1.78"
 axum = "0.7.5"
-candle = { git = "https://github.com/huggingface/candle", package = "candle-core", version = "0.5.0" }
-candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", version = "0.5.0" }
-candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-nn", version = "0.5.0" }
-candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", version = "0.5.0" }
+candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }
+candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", branch = "main" }
+candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-nn", branch = "main" }
+candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", branch = "main" }
 config = "0.14.0"
 dotenv = "0.15.0"
 ed25519-consensus = "2.1.0"

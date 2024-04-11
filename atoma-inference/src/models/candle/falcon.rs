@@ -278,8 +278,8 @@ mod tests {
         );
         let output = model.run(input).expect("Failed to run inference");
 
-        assert!(output.len() >= 1);
-        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
@@ -361,8 +361,8 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
 
-        assert!(output.len() >= 1);
-        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
