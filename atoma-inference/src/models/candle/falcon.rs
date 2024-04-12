@@ -14,7 +14,7 @@ use tracing::{debug, error, info};
 use crate::models::{
     candle::hub_load_safetensors,
     config::ModelConfig,
-    types::{LlmLoadData, ModelType, TextModelInput},
+    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
     ModelError, ModelTrait,
 };
 
@@ -48,7 +48,7 @@ impl FalconModel {
 
 impl ModelTrait for FalconModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -158,6 +158,7 @@ impl ModelTrait for FalconModel {
         let mut output = String::new();
 
         let start_gen = Instant::now();
+        let mut generated_tokens = 0;
         for index in 0..max_tokens {
             let start_gen = Instant::now();
             let context_size = if self.model.config().use_cache && index > 0 {
@@ -181,16 +182,21 @@ impl ModelTrait for FalconModel {
             new_tokens.push(next_token);
             debug!("> {:?}", start_gen);
             output.push_str(&self.tokenizer.decode(&[next_token], true)?);
+            generated_tokens += 1;
         }
         let dt = start_gen.elapsed();
 
         info!(
-            "{max_tokens} tokens generated ({} token/s)\n----\n{}\n----",
-            max_tokens as f64 / dt.as_secs_f64(),
+            "{generated_tokens} tokens generated ({} token/s)\n----\n{}\n----",
+            generated_tokens as f64 / dt.as_secs_f64(),
             self.tokenizer.decode(&new_tokens, true)?,
         );
 
-        Ok(output)
+        Ok(TextModelOutput {
+            text: output,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
     }
 }
 
@@ -272,8 +278,8 @@ mod tests {
         );
         let output = model.run(input).expect("Failed to run inference");
 
-        assert!(output.len() >= 1);
-        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
@@ -355,8 +361,8 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
 
-        assert!(output.len() >= 1);
-        assert!(output.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }

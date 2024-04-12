@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use candle::{DType, Device};
 use ed25519_consensus::VerificationKey as PublicKey;
@@ -119,27 +119,27 @@ impl ModelType {
     }
 }
 
-impl ToString for ModelType {
-    fn to_string(&self) -> String {
+impl Display for ModelType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Falcon7b => "falcon_7b".to_string(),
-            Self::Falcon40b => "falcon_40b".to_string(),
-            Self::Falcon180b => "falcon_180b".to_string(),
-            Self::LlamaV1 => "llama_v1".to_string(),
-            Self::LlamaV2 => "llama_v2".to_string(),
-            Self::LlamaSolar10_7B => "llama_solar_10_7b".to_string(),
-            Self::LlamaTinyLlama1_1BChat => "llama_tiny_llama_1_1b_chat".to_string(),
-            Self::Mamba130m => "mamba_130m".to_string(),
-            Self::Mamba370m => "mamba_370m".to_string(),
-            Self::Mamba790m => "mamba_790m".to_string(),
-            Self::Mamba1_4b => "mamba_1-4b".to_string(),
-            Self::Mamba2_8b => "mamba_2-8b".to_string(),
-            Self::Mistral7b => "mistral_7b".to_string(),
-            Self::Mixtral8x7b => "mixtral_8x7b".to_string(),
-            Self::StableDiffusionV1_5 => "stable_diffusion_v1-5".to_string(),
-            Self::StableDiffusionV2_1 => "stable_diffusion_v2-1".to_string(),
-            Self::StableDiffusionXl => "stable_diffusion_xl".to_string(),
-            Self::StableDiffusionTurbo => "stable_diffusion_turbo".to_string(),
+            Self::Falcon7b => write!(f, "falcon_7b"),
+            Self::Falcon40b => write!(f, "falcon_40b"),
+            Self::Falcon180b => write!(f, "falcon_180b"),
+            Self::LlamaV1 => write!(f, "llama_v1"),
+            Self::LlamaV2 => write!(f, "llama_v2"),
+            Self::LlamaSolar10_7B => write!(f, "llama_solar_10_7b"),
+            Self::LlamaTinyLlama1_1BChat => write!(f, "llama_tiny_llama_1_1b_chat"),
+            Self::Mamba130m => write!(f, "mamba_130m"),
+            Self::Mamba370m => write!(f, "mamba_370m"),
+            Self::Mamba790m => write!(f, "mamba_790m"),
+            Self::Mamba1_4b => write!(f, "mamba_1-4b"),
+            Self::Mamba2_8b => write!(f, "mamba_2-8b"),
+            Self::Mistral7b => write!(f, "mistral_7b"),
+            Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
+            Self::StableDiffusionV1_5 => write!(f, "stable_diffusion_v1-5"),
+            Self::StableDiffusionV2_1 => write!(f, "stable_diffusion_v2-1"),
+            Self::StableDiffusionXl => write!(f, "stable_diffusion_xl"),
+            Self::StableDiffusionTurbo => write!(f, "stable_diffusion_turbo"),
         }
     }
 }
@@ -222,6 +222,23 @@ impl TextModelInput {
             _top_k,
             top_p,
         }
+    }
+}
+
+#[derive(Serialize)]
+pub struct TextModelOutput {
+    pub text: String,
+    pub time: f64,
+    pub tokens_count: usize,
+}
+
+impl Display for TextModelOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Output: {}\nTime: {}\nTokens count: {}",
+            self.text, self.time, self.tokens_count
+        )
     }
 }
 
