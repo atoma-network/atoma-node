@@ -167,7 +167,7 @@ impl ModelTrait for MambaModel {
             None => bail!("Invalid eos token"),
         };
 
-        let mut state = State::new(1, &self.config, &self.device)?; // TODO: handle larger batch sizes
+        let mut state = State::new(1, &self.config, self.dtype, &self.device)?; // TODO: handle larger batch sizes
 
         let mut next_logits = None;
         let mut output = String::new();
