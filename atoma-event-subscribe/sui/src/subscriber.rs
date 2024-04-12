@@ -38,8 +38,12 @@ impl SuiSubscriber {
                     let event_data = event.parsed_json;
                     info!("Received event: {event_data}");
                     let sampled_nodes = &event_data["nodes"];
-                    let request = serde_json::from_value::<TextPromptParams>(event_data["params"].clone())?;
-                    info!("The request = {:?} and sampled_nodes = {:?}", request, sampled_nodes);
+                    let request =
+                        serde_json::from_value::<TextPromptParams>(event_data["params"].clone())?;
+                    info!(
+                        "The request = {:?} and sampled_nodes = {:?}",
+                        request, sampled_nodes
+                    );
                 }
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
@@ -57,5 +61,5 @@ pub enum SuiSubscriberError {
     #[error("Deserialize error: `{0}`")]
     DeserializeError(#[from] serde_json::Error),
     #[error("Object ID parse error: `{0}`")]
-    ObjectIDParseError(#[from] ObjectIDParseError)
+    ObjectIDParseError(#[from] ObjectIDParseError),
 }
