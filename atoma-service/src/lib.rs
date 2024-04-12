@@ -1,16 +1,18 @@
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::{io, path::Path};
 
 use atoma_inference::{
-    models::config::{ModelConfig, ModelsConfig},
+    models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
     PrivateKey,
 };
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
+use serde_json::Value;
 use thiserror::Error;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, mpsc::Receiver, oneshot},
+    task::JoinHandle,
+};
+use tracing::info;
 
 const CHANNEL_SIZE: usize = 32;
 
@@ -20,11 +22,15 @@ pub struct AtomaNode {
 }
 
 impl AtomaNode {
-    pub async fn start<P: AsRef<Path>>(
+    pub async fn start<P>(
         model_config_path: P,
         private_key_path: P,
         sui_subscriber_path: P,
-    ) -> Result<Self, AtomaNodeError> {
+        json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
+    ) -> Result<Self, AtomaNodeError>
+    where
+        P: AsRef<Path> + Send + 'static,
+    {
         let model_config = ModelsConfig::from_file_path(model_config_path);
 
         let private_key_bytes = std::fs::read(private_key_path)?;
@@ -34,10 +40,17 @@ impl AtomaNode {
 
         let private_key = PrivateKey::from(private_key_bytes);
 
-        let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
+        let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
+        let (atoma_node_resp_tx, mut atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
 
         let inference_service_handle = tokio::spawn(async move {
-            let model_service = ModelService::start(model_config, private_key, request_receiver)?;
+            let mut model_service = ModelService::start(
+                model_config,
+                private_key,
+                json_server_req_rx,
+                subscriber_req_rx,
+                atoma_node_resp_tx,
+            )?;
             model_service
                 .run()
                 .await
@@ -46,17 +59,21 @@ impl AtomaNode {
 
         let sui_subscriber_handle = tokio::spawn(async move {
             let sui_event_subscriber =
-                SuiSubscriber::new_from_config(sui_subscriber_path, request_sender).await?;
+                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx).await?;
             sui_event_subscriber
                 .subscribe()
                 .await
                 .map_err(AtomaNodeError::SuiSubscriberError)
         });
 
-        Self {
+        while let Some(response) = atoma_node_resp_rx.recv().await {
+            info!("Received new response: {response}");
+        }
+
+        Ok(Self {
             inference_service_handle,
             sui_subscriber_handle,
-        }
+        })
     }
 }
 

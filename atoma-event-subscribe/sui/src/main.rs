@@ -29,10 +29,15 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let ws_url = args
         .ws_socket_addr
         .unwrap_or("wss://fullnode.devnet.sui.io:443".to_string());
-    let event_subscriber = SuiSubscriber::new(&http_url, Some(&ws_url), package_id).await?;
-
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
-    event_subscriber.subscribe(event_sender).await?;
+
+    let event_subscriber =
+        SuiSubscriber::new(&http_url, Some(&ws_url), package_id, event_sender).await?;
+
+    tokio::spawn(async move {
+        event_subscriber.subscribe().await?;
+        Ok::<_, SuiSubscriberError>(())
+    });
 
     while let Some(event) = event_receiver.recv().await {
         info!("Processed a new event: {event}")

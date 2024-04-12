@@ -10,6 +10,8 @@ async fn main() -> Result<(), ModelServiceError> {
     tracing_subscriber::fmt::init();
 
     let (req_sender, req_receiver) = tokio::sync::mpsc::channel(32);
+    let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(32);
+    let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(32);
 
     let model_config = ModelsConfig::from_file_path("../inference.toml");
     let private_key_bytes =
@@ -20,8 +22,15 @@ async fn main() -> Result<(), ModelServiceError> {
 
     let private_key = PrivateKey::from(private_key_bytes);
     let jrpc_port = model_config.jrpc_port();
-    let mut service = ModelService::start(model_config, private_key, req_receiver)
-        .expect("Failed to start inference service");
+
+    let mut service = ModelService::start(
+        model_config,
+        private_key,
+        req_receiver,
+        subscriber_req_rx,
+        atoma_node_resp_tx,
+    )
+    .expect("Failed to start inference service");
 
     tokio::spawn(async move {
         service.run().await?;

@@ -6,7 +6,7 @@ use sui_sdk::rpc_types::EventFilter;
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::config::SuiSubscriberConfig;
@@ -15,8 +15,7 @@ use crate::TextPromptParams;
 pub struct SuiSubscriber {
     sui_client: SuiClient,
     filter: EventFilter,
-    event_sender: mpsc::Sender<(Value, oneshot::Sender<Value>)>,
-    end_channel_sender: mpsc::Sender<oneshot::Receiver<Value>>,
+    event_sender: mpsc::Sender<Value>,
 }
 
 impl SuiSubscriber {
@@ -24,8 +23,7 @@ impl SuiSubscriber {
         http_url: &str,
         ws_url: Option<&str>,
         object_id: ObjectID,
-        event_sender: mpsc::Sender<(Value, oneshot::Sender<Value>)>,
-        end_channel_sender: mpsc::Sender<oneshot::Receiver<Value>>,
+        event_sender: mpsc::Sender<Value>,
     ) -> Result<Self, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
         if let Some(url) = ws_url {
@@ -38,27 +36,18 @@ impl SuiSubscriber {
             sui_client,
             filter,
             event_sender,
-            end_channel_sender,
         })
     }
 
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
-        event_sender: mpsc::Sender<(Value, oneshot::Sender<Value>)>,
-        end_channel_sender: mpsc::Sender<oneshot::Receiver<Value>>,
+        event_sender: mpsc::Sender<Value>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let http_url = config.http_url();
         let ws_url = config.ws_url();
         let object_id = config.object_id();
-        Self::new(
-            &http_url,
-            Some(&ws_url),
-            object_id,
-            event_sender,
-            end_channel_sender,
-        )
-        .await
+        Self::new(&http_url, Some(&ws_url), object_id, event_sender).await
     }
 
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
@@ -77,9 +66,7 @@ impl SuiSubscriber {
                         "The request = {:?} and sampled_nodes = {:?}",
                         request, sampled_nodes
                     );
-                    let (oneshot_sender, oneshot_receiver) = oneshot::channel();
-                    self.event_sender.send((event_data, oneshot_sender)).await?;
-                    self.end_channel_sender.send(oneshot_receiver).await?;
+                    self.event_sender.send(event_data).await?;
                 }
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
@@ -99,7 +86,5 @@ pub enum SuiSubscriberError {
     #[error("Object ID parse error: `{0}`")]
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(Value, oneshot::Sender<Value>)>),
-    #[error("End channel sender error: `{0}`")]
-    EndChannelSenderError(#[from] mpsc::error::SendError<oneshot::Receiver<Value>>),
+    SendError(#[from] mpsc::error::SendError<Value>),
 }
