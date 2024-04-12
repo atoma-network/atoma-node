@@ -35,7 +35,7 @@ impl SuiSubscriber {
                 Ok(event) => {
                     let event_data = event.parsed_json;
                     let request_type =
-                        serde_json::from_value::<RequestType>(event_data["type"].clone())?;
+                        serde_json::from_value::<TextPromptParams>(event_data)?;
                     info!("The request type is: {:?}", request_type);
                 }
                 Err(e) => {
