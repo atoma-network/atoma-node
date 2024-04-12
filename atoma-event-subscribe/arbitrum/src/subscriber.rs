@@ -1,6 +1,5 @@
 use ethers::{
     prelude::*,
-    providers::{Provider, Ws},
 };
 use thiserror::Error;
 use tracing::info;
