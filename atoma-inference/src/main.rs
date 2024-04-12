@@ -1,9 +1,9 @@
-use ed25519_consensus::SigningKey as PrivateKey;
-use inference::{
+use atoma_inference::{
     jrpc_server,
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
 };
+use ed25519_consensus::SigningKey as PrivateKey;
 
 #[tokio::main]
 async fn main() -> Result<(), ModelServiceError> {

@@ -3,6 +3,7 @@ use sui_sdk::rpc_types::EventFilter;
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
+use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::TextPromptParams;
@@ -28,7 +29,10 @@ impl SuiSubscriber {
         Ok(Self { sui_client, filter })
     }
 
-    pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
+    pub async fn subscribe(
+        self,
+        event_sender: mpsc::Sender<serde_json::Value>,
+    ) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter).await?;
         info!("Starting event while loop");
@@ -44,6 +48,7 @@ impl SuiSubscriber {
                         "The request = {:?} and sampled_nodes = {:?}",
                         request, sampled_nodes
                     );
+                    event_sender.send(event_data).await?;
                 }
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
@@ -62,4 +67,6 @@ pub enum SuiSubscriberError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Object ID parse error: `{0}`")]
     ObjectIDParseError(#[from] ObjectIDParseError),
+    #[error("Sender error: `{0}`")]
+    SendError(#[from] mpsc::error::SendError<serde_json::Value>),
 }

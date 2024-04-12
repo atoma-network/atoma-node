@@ -1,6 +1,7 @@
+use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use clap::Parser;
-use sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use sui_sdk::types::base_types::ObjectID;
+use tracing::info;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -29,7 +30,13 @@ async fn main() -> Result<(), SuiSubscriberError> {
         .ws_socket_addr
         .unwrap_or("wss://fullnode.devnet.sui.io:443".to_string());
     let event_subscriber = SuiSubscriber::new(&http_url, Some(&ws_url), package_id).await?;
-    event_subscriber.subscribe().await?;
+
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
+    event_subscriber.subscribe(event_sender).await?;
+
+    while let Some(event) = event_receiver.recv().await {
+        info!("Processed a new event: {event}")
+    }
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 [package]
-name = "sui"
+name = "atoma-sui"
 edition = "2021"
 version.workspace = true
 
