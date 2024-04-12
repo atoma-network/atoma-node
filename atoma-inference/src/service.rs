@@ -203,7 +203,7 @@ mod tests {
 
         let (_, req_receiver) = tokio::sync::mpsc::channel(1);
 
-        let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
+        let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH);
 
         let _ = ModelService::start(config, private_key, req_receiver).unwrap();
 

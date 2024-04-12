@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use config::Config;
 use dotenv::dotenv;
@@ -108,9 +108,9 @@ impl ModelsConfig {
         self.jrpc_port
     }
 
-    pub fn from_file_path(config_file_path: PathBuf) -> Self {
+    pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(
-            config_file_path.to_str().as_ref().unwrap(),
+            config_file_path.as_ref().to_str().unwrap(),
         ));
         let config = builder
             .build()

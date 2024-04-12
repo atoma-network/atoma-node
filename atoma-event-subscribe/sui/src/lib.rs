@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+pub mod config;
 pub mod subscriber;
 
 #[derive(Debug, Deserialize)]
