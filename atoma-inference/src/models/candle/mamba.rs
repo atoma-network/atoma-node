@@ -17,7 +17,7 @@ use crate::{
         candle::device,
         config::ModelConfig,
         token_output_stream::TokenOutputStream,
-        types::{LlmLoadData, ModelType, TextModelInput},
+        types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
         ModelError, ModelTrait,
     },
 };
@@ -53,7 +53,7 @@ impl MambaModel {
 
 impl ModelTrait for MambaModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -148,9 +148,11 @@ impl ModelTrait for MambaModel {
             ..
         } = input;
 
+        // clean tokenizer state
+        self.tokenizer.clear();
+
         info!("Running inference on prompt: {:?}", prompt);
 
-        self.tokenizer.clear();
         let mut tokens = self
             .tokenizer
             .tokenizer()
@@ -160,13 +162,12 @@ impl ModelTrait for MambaModel {
         let mut logits_processor =
             LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
 
-        let mut generated_tokens = 0_usize;
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
             Some(token) => token,
             None => bail!("Invalid eos token"),
         };
 
-        let mut state = State::new(1, &self.config, &self.device)?; // TODO: handle larger batch sizes
+        let mut state = State::new(1, &self.config, self.dtype, &self.device)?; // TODO: handle larger batch sizes
 
         let mut next_logits = None;
         let mut output = String::new();
@@ -198,7 +199,6 @@ impl ModelTrait for MambaModel {
 
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
-            generated_tokens += 1;
 
             if next_token == eos_token {
                 break;
@@ -216,10 +216,101 @@ impl ModelTrait for MambaModel {
             output.push_str(rest.as_str());
         }
 
+        let generated_tokens = self.tokenizer.get_num_generated_tokens();
         info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
-        Ok(output)
+
+        Ok(TextModelOutput {
+            text: output,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mamba_model_interface() {
+        let api_key = "".to_string();
+        let cache_dir: PathBuf = "./test_mamba_cache_dir/".into();
+        let model_id = "mamba_130m".to_string();
+        let dtype = "f32".to_string();
+        let revision = "refs/pr/1".to_string();
+        let device_id = 0;
+        let use_flash_attention = false;
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = MambaModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch mamba model");
+
+        println!("model device = {:?}", load_data.device);
+        let should_be_device = device(device_id).unwrap();
+        if should_be_device.is_cpu() {
+            assert!(load_data.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(load_data.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(load_data.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(load_data.file_paths.len(), 3);
+        assert_eq!(load_data.use_flash_attention, use_flash_attention);
+        assert_eq!(load_data.model_type, ModelType::Mamba130m);
+
+        let should_be_dtype = DType::from_str(&dtype).unwrap();
+        assert_eq!(load_data.dtype, should_be_dtype);
+        let mut model = MambaModel::load(load_data).expect("Failed to load model");
+
+        if should_be_device.is_cpu() {
+            assert!(model.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(model.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(model.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(model.dtype, should_be_dtype);
+        assert_eq!(model.model_type, ModelType::Mamba130m);
+
+        let prompt = "Write a hello world rust program: ".to_string();
+        let temperature = 0.6;
+        let random_seed = 42;
+        let repeat_penalty = 1.0;
+        let repeat_last_n = 20;
+        let max_tokens = 128;
+        let top_k = 10;
+        let top_p = 0.6;
+
+        let input = TextModelInput::new(
+            prompt.clone(),
+            temperature,
+            random_seed,
+            repeat_penalty,
+            repeat_last_n,
+            max_tokens,
+            top_k,
+            top_p,
+        );
+        let output = model.run(input).expect("Failed to run inference");
+        println!("{output}");
+
+        assert!(output.text.contains(&prompt));
+        assert!(output.text.len() > prompt.len());
+
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }

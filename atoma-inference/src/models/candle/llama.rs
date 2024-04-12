@@ -4,7 +4,7 @@ use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
-    models::llama::{Cache, LlamaConfig},
+    models::llama::{Config, LlamaConfig},
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 
@@ -15,7 +15,7 @@ use tracing::info;
 use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput},
+    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
     ModelError, ModelTrait,
 };
 
@@ -32,19 +32,18 @@ enum Which {
     TinyLlama1_1BChat,
 }
 
-pub struct Config {}
-
 pub struct LlamaModel {
-    cache: Cache,
     device: Device,
     model: model::Llama,
     model_type: ModelType,
     tokenizer: Tokenizer,
+    config: Config,
+    dtype: DType,
 }
 
 impl ModelTrait for LlamaModel {
     type Input = TextModelInput;
-    type Output = String;
+    type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
     fn fetch(
@@ -103,7 +102,7 @@ impl ModelTrait for LlamaModel {
 
         let device = load_data.device;
         let dtype = load_data.dtype;
-        let (model, tokenizer_filename, cache) = {
+        let (model, tokenizer_filename, config) = {
             let config_filename = load_data.file_paths[0].clone();
             let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
 
@@ -113,18 +112,18 @@ impl ModelTrait for LlamaModel {
             let vb = unsafe {
                 VarBuilder::from_mmaped_safetensors(&load_data.file_paths[2..], dtype, &device)?
             };
-            let cache = model::Cache::new(true, dtype, &config, &device)?; // TODO: use from config
-            (model::Llama::load(vb, &config)?, tokenizer_filename, cache)
+            (model::Llama::load(vb, &config)?, tokenizer_filename, config)
         };
         let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         info!("Loaded Llama model in {:?}", start.elapsed());
 
         Ok(Self {
-            cache,
             device,
             model,
             model_type: load_data.model_type,
             tokenizer,
+            config,
+            dtype,
         })
     }
 
@@ -144,8 +143,12 @@ impl ModelTrait for LlamaModel {
         );
         let mut index_pos = 0;
         let mut res = String::new();
+        let mut generated_tokens = 0;
+
+        let start_gen = Instant::now();
+        let mut cache = model::Cache::new(true, self.dtype, &self.config, &self.device)?;
         for index in 0..input.max_tokens {
-            let (context_size, context_index) = if self.cache.use_kv_cache && index > 0 {
+            let (context_size, context_index) = if cache.use_kv_cache && index > 0 {
                 (1, index_pos)
             } else {
                 (tokens.len(), 0)
@@ -154,7 +157,7 @@ impl ModelTrait for LlamaModel {
             let input_tensor = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self
                 .model
-                .forward(&input_tensor, context_index, &mut self.cache)?;
+                .forward(&input_tensor, context_index, &mut cache)?;
             let logits = logits.squeeze(0)?;
             let logits = if input.repeat_penalty == 1. {
                 logits
@@ -176,10 +179,107 @@ impl ModelTrait for LlamaModel {
             if let Some(t) = tokenizer.next_token(next_token)? {
                 res += &t;
             }
+
+            generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
         }
-        Ok(res)
+
+        let dt = start_gen.elapsed();
+        info!(
+            "{generated_tokens} tokens generated ({} token/s)\n",
+            generated_tokens as f64 / dt.as_secs_f64(),
+        );
+
+        Ok(TextModelOutput {
+            text: res,
+            time: dt.as_secs_f64(),
+            tokens_count: generated_tokens,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_llama_model_interface() {
+        let api_key = "".to_string();
+        let cache_dir: PathBuf = "./test_llama_cache_dir/".into();
+        let model_id = "llama_tiny_llama_1_1b_chat".to_string();
+        let dtype = "f32".to_string();
+        let revision = "main".to_string();
+        let device_id = 0;
+        let use_flash_attention = false;
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = LlamaModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch llama model");
+
+        println!("model device = {:?}", load_data.device);
+        let should_be_device = device(device_id).unwrap();
+        if should_be_device.is_cpu() {
+            assert!(load_data.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(load_data.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(load_data.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(load_data.file_paths.len(), 3);
+        assert_eq!(load_data.use_flash_attention, use_flash_attention);
+        assert_eq!(load_data.model_type, ModelType::LlamaTinyLlama1_1BChat);
+
+        let should_be_dtype = DType::from_str(&dtype).unwrap();
+        assert_eq!(load_data.dtype, should_be_dtype);
+        let mut model = LlamaModel::load(load_data).expect("Failed to load model");
+
+        if should_be_device.is_cpu() {
+            assert!(model.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(model.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(model.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(model.model_type, ModelType::LlamaTinyLlama1_1BChat);
+
+        let prompt = "Write a hello world rust program: ".to_string();
+        let temperature = 0.6;
+        let random_seed = 42;
+        let repeat_penalty = 1.0;
+        let repeat_last_n = 20;
+        let max_tokens = 128;
+        let top_k = 10;
+        let top_p = 0.6;
+
+        let input = TextModelInput::new(
+            prompt.clone(),
+            temperature,
+            random_seed,
+            repeat_penalty,
+            repeat_last_n,
+            max_tokens,
+            top_k,
+            top_p,
+        );
+        let output = model.run(input).expect("Failed to run inference");
+        println!("{output}");
+
+        assert!(output.text.len() > 1);
+        assert!(output.text.split(' ').collect::<Vec<_>>().len() <= max_tokens);
+
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }
