@@ -6,7 +6,7 @@ pub mod subscriber;
 pub struct TextPromptParams {
     pub model: String,
     pub prompt: String,
-    pub max_tokens: u64,
+    pub max_tokens: String,
     /// Represents a floating point number between 0 and 1, big endian.
     pub temperature: u32,
 }
