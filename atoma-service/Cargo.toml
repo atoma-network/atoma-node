@@ -1,0 +1,13 @@
+[package]
+name = "atoma-service"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atoma-sui = { path = "../atoma-event-subscribe/sui/" }
+atoma-inference = { path = "../atoma-inference/" }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
