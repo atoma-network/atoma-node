@@ -1,6 +1,4 @@
-use ethers::{
-    prelude::*,
-};
+use ethers::prelude::*;
 use thiserror::Error;
 use tracing::info;
 
