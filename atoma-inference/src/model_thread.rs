@@ -21,8 +21,8 @@ use crate::{
 };
 
 pub struct ModelThreadCommand {
-    request: serde_json::Value,
-    response_sender: oneshot::Sender<serde_json::Value>,
+    pub(crate) request: serde_json::Value,
+    pub(crate) response_sender: oneshot::Sender<serde_json::Value>,
 }
 
 #[derive(Debug, Error)]
@@ -94,7 +94,7 @@ where
 }
 
 pub struct ModelThreadDispatcher {
-    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
 }
 
 impl ModelThreadDispatcher {
@@ -172,7 +172,7 @@ impl ModelThreadDispatcher {
     }
 }
 
-fn dispatch_model_thread(
+pub(crate) fn dispatch_model_thread(
     api_key: String,
     cache_dir: PathBuf,
     model_name: String,
@@ -231,7 +231,7 @@ fn dispatch_model_thread(
     }
 }
 
-fn spawn_model_thread<M>(
+pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
     cache_dir: PathBuf,
