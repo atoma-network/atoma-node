@@ -2,7 +2,7 @@
 
 // mod solana;
 
-// #[tokio::main]
-// async fn main() {
-//     solana().await.ok();
-// }
+#[tokio::main]
+async fn main() {
+    // solana().await.ok();
+}
