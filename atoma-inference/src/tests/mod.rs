@@ -180,11 +180,9 @@ mod tests {
             tokio::spawn(async move { jrpc_server::run(req_sender.clone(), JRPC_PORT).await });
 
         let client = Client::new();
+        tokio::time::sleep(Duration::from_secs(60)).await;
 
         for prompt in PROMPTS {
-            println!("FLAG: {prompt}");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-
             let params = json!({
                 "prompt": prompt,
                 "temperature": 0.5,
