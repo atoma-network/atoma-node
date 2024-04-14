@@ -2,46 +2,51 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use ed25519_consensus::SigningKey as PrivateKey;
 use std::{path::PathBuf, time::Duration};
 
+mod prompts;
+use prompts::PROMPTS;
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::mpsc};
 
+    use futures::{stream::FuturesUnordered, StreamExt};
     use rand::rngs::OsRng;
+    use reqwest::Client;
+    use serde_json::json;
     use tokio::sync::oneshot;
+    use serde_json::Value;
 
-    use crate::model_thread::{spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher};
+    use crate::{
+        jrpc_server,
+        model_thread::{spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher},
+        models::config::ModelsConfig,
+        service::ModelService,
+    };
 
     use super::*;
-
-    const DURATION_1_SECS: Duration = Duration::from_secs(1);
-    const DURATION_2_SECS: Duration = Duration::from_secs(2);
-    const DURATION_5_SECS: Duration = Duration::from_secs(5);
-    const DURATION_10_SECS: Duration = Duration::from_secs(10);
 
     struct TestModel {
         duration: Duration,
     }
 
     impl ModelTrait for TestModel {
-        type Input = ();
-        type Output = ();
-        type LoadData = ();
+        type Input = Value;
+        type Output = Value;
+        type LoadData = Duration;
 
         fn fetch(
-            api_key: String,
-            cache_dir: PathBuf,
-            config: ModelConfig,
+            duration: String,
+            _cache_dir: PathBuf,
+            _config: ModelConfig,
         ) -> Result<Self::LoadData, ModelError> {
-            Ok(())
+            Ok(Duration::from_secs(duration.parse().unwrap()))
         }
 
-        fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+        fn load(duration: Self::LoadData) -> Result<Self, ModelError>
         where
             Self: Sized,
         {
-            Ok(Self {
-                duration: DURATION_1_SECS,
-            })
+            Ok(Self { duration })
         }
 
         fn model_type(&self) -> ModelType {
@@ -50,26 +55,26 @@ mod tests {
 
         fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
             std::thread::sleep(self.duration);
-            Ok(())
+            println!(
+                "Finished waiting time for {:?} and input = {}",
+                self.duration, input
+            );
+            Ok(input)
         }
     }
 
     impl ModelThreadDispatcher {
         fn test_start() -> Self {
+            let duration_in_secs = vec![1, 2, 5, 10];
             let mut model_senders = HashMap::with_capacity(4);
 
-            for duration in [
-                DURATION_1_SECS,
-                DURATION_2_SECS,
-                DURATION_5_SECS,
-                DURATION_10_SECS,
-            ] {
-                let model_name = format!("test_model_{:?}", duration);
+            for i in duration_in_secs {
+                let model_name = format!("test_model_{:?}", i);
 
                 let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
                 model_senders.insert(model_name.clone(), model_sender.clone());
 
-                let api_key = "".to_string();
+                let duration = format!("{i}");
                 let cache_dir = "./".parse().unwrap();
                 let model_config =
                     ModelConfig::new(model_name.clone(), "".to_string(), "".to_string(), 0, false);
@@ -79,7 +84,7 @@ mod tests {
 
                 let _join_handle = spawn_model_thread::<TestModel>(
                     model_name,
-                    api_key,
+                    duration,
                     cache_dir,
                     model_config,
                     public_key,
@@ -91,18 +96,125 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_model_thread() {
-        let model_thread_dispatcher = ModelThreadDispatcher::test_start();
+    async fn test_mock_model_thread() {
+        const NUM_REQUESTS: usize = 16;
 
-        for _ in 0..10 {
+        let model_thread_dispatcher = ModelThreadDispatcher::test_start();
+        let mut responses = FuturesUnordered::new();
+
+        let mut should_be_received_responses = vec![];
+        for i in 0..NUM_REQUESTS {
             for sender in model_thread_dispatcher.model_senders.values() {
-                let (response_sender, response_request) = oneshot::channel();
+                let (response_sender, response_receiver) = oneshot::channel();
+                let request = json!(i);
                 let command = ModelThreadCommand {
-                    request: serde_json::Value::Null,
+                    request: request.clone(),
                     response_sender,
                 };
                 sender.send(command).expect("Failed to send command");
+                responses.push(response_receiver);
+                should_be_received_responses.push(request.as_u64().unwrap());
             }
+        }
+
+        let mut received_responses = vec![];
+        while let Some(response) = responses.next().await {
+            if let Ok(value) = response {
+                received_responses.push(value.as_u64().unwrap());
+            }
+        }
+
+        assert_eq!(
+            received_responses.sort(),
+            should_be_received_responses.sort()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_inference_service() {
+        const CHANNEL_BUFFER: usize = 32;
+        const JRPC_PORT: u64 = 3000;
+
+        let private_key = PrivateKey::new(OsRng);
+        let model_configs = vec![
+            ModelConfig::new(
+                "mamba_130m".to_string(),
+                "bf16".to_string(),
+                "refs/pr/1".to_string(),
+                0,
+                false,
+            ),
+            ModelConfig::new(
+                "mamba_370m".to_string(),
+                "bf16".to_string(),
+                "refs/pr/1".to_string(),
+                0,
+                false,
+            ),
+            ModelConfig::new(
+                "llama_tiny_llama_1_1b_chat".to_string(),
+                "bf16".to_string(),
+                "main".to_string(),
+                0,
+                false,
+            ),
+        ];
+        let config = ModelsConfig::new(
+            "".to_string(),
+            "./cache_dir".parse().unwrap(),
+            true,
+            model_configs,
+            true,
+            JRPC_PORT,
+        );
+
+        let (req_sender, req_receiver) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+
+        println!("Starting model service..");
+        let mut service =
+            ModelService::start(config.clone(), private_key.clone(), req_receiver).unwrap();
+
+        let _service_join_handle =
+            tokio::spawn(async move { service.run().await.expect("Failed to run service") });
+        let _jrpc_server_join_handle =
+            tokio::spawn(async move { jrpc_server::run(req_sender.clone(), JRPC_PORT).await });
+
+        let client = Client::new();
+
+        for prompt in PROMPTS {
+            println!("FLAG: {prompt}");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            let params = json!({
+                "prompt": prompt,
+                "temperature": 0.5,
+                "random_seed": 42,
+                "repeat_penalty": 1.0,
+                "repeat_last_n": 64,
+                "max_tokens": 32,
+                "_top_k": 10,
+                "top_p": 1.0
+            });
+
+            let request = json!({
+                "jsonrpc": "2.0",
+                "method": "/",
+                "params": params,
+                "id": 1 // You can use a unique identifier for each request
+            });
+
+            let response = client
+                .post(format!("http://localhost:{}/", JRPC_PORT))
+                .json(&request)
+                .send()
+                .await
+                .expect("Failed to receive response from JRPCs server");
+
+            let response_json: Value = response
+                .json()
+                .await
+                .expect("Failed to parse response to JSON");
+            println!("{}", response_json);
         }
     }
 }
