@@ -170,7 +170,7 @@ async fn test_inference_service() {
     println!("Starting model service..");
     let mut service =
         ModelService::start(config.clone(), private_key.clone(), req_receiver).unwrap();
-    
+
     let _service_join_handle = tokio::spawn(async move {
         service.run().await.expect("Failed to run service");
     });
