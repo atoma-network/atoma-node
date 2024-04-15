@@ -19,8 +19,8 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.81"
 async-trait = "0.1.78"
-atoma-inference = { path = "../atoma-inference/" }
-atoma-sui = { path = "../atoma-event-subscribe/sui/" }
+atoma-inference = { path = "./atoma-inference/" }
+atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 axum = "0.7.5"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }
 candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", branch = "main" }

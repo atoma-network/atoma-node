@@ -23,8 +23,8 @@ use crate::{
 };
 
 pub struct ModelThreadCommand {
-    request: Value,
-    sender: oneshot::Sender<Value>,
+    pub(crate) request: Value,
+    pub(crate) sender: oneshot::Sender<Value>,
 }
 
 #[derive(Debug, Error)]
@@ -93,7 +93,7 @@ where
 }
 
 pub struct ModelThreadDispatcher {
-    model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
     pub(crate) responses: FuturesUnordered<oneshot::Receiver<Value>>,
 }
 
