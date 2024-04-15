@@ -55,7 +55,7 @@ impl ModelConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelsConfig {
     api_key: String,
     cache_dir: PathBuf,
@@ -182,7 +182,7 @@ pub mod tests {
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\ntracing = true\n\n[[models]]\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\ntracing = true\njrpc_port = 18001\n\n[[models]]\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

@@ -174,7 +174,7 @@ impl ModelThreadDispatcher {
     }
 }
 
-fn dispatch_model_thread(
+pub(crate) fn dispatch_model_thread(
     api_key: String,
     cache_dir: PathBuf,
     model_name: String,
@@ -233,7 +233,7 @@ fn dispatch_model_thread(
     }
 }
 
-fn spawn_model_thread<M>(
+pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
     cache_dir: PathBuf,
