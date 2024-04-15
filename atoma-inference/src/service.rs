@@ -188,11 +188,18 @@ mod tests {
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
-            models = [[0, "f32", "mamba_370m", "", false, 0]]
             cache_dir = "./cache_dir/"
-            tokenizer_file_path = "./tokenizer_file_path/"
             flush_storage = true
+            models = [
+            [
+                0,
+                "bf16",
+                "mamba_370m",
+                "",
+                false
+            ]]
             tracing = true
+            jrpc_port = 3000
         });
         let toml_string =
             toml::to_string_pretty(&config_data).expect("Failed to serialize to TOML");
