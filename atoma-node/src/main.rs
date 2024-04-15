@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use atoma_node::{AtomaNode, AtomaNodeError};
 use clap::Parser;
 use tokio::sync::mpsc;
@@ -25,7 +27,7 @@ async fn main() -> Result<(), AtomaNodeError> {
 
     let (_, json_rpc_server_rx) = mpsc::channel(CHANNEL_BUFFER);
     tokio::spawn(async move {
-        let atoma_node = AtomaNode::start(
+        let _atoma_node = AtomaNode::start(
             model_config_path,
             private_key_path,
             sui_subscriber_path,
@@ -35,5 +37,6 @@ async fn main() -> Result<(), AtomaNodeError> {
         Ok::<(), AtomaNodeError>(())
     });
 
+    tokio::time::sleep(Duration::from_secs(20)).await;
     Ok(())
 }

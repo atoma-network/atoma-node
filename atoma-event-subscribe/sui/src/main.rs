@@ -22,9 +22,9 @@ async fn main() -> Result<(), SuiSubscriberError> {
 
     let args = Args::parse();
     let package_id = ObjectID::from_hex_literal(&args.package_id)?;
-
     let http_url = args.http_addr;
     let ws_url = args.ws_socket_addr;
+
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
 
     let event_subscriber =
