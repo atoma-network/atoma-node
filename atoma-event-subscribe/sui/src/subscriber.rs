@@ -52,7 +52,10 @@ impl SuiSubscriber {
 
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
-        let mut subscribe_event = event_api.subscribe_event(self.filter).await?;
+        let mut subscribe_event = event_api.subscribe_event(self.filter).await.map_err(|e| {
+            error!("Got error: {e}");
+            e
+        })?;
         info!("Starting event while loop");
         while let Some(event) = subscribe_event.next().await {
             match event {

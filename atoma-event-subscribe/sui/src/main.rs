@@ -31,6 +31,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
         SuiSubscriber::new(&http_url, Some(&ws_url), package_id, event_sender).await?;
 
     tokio::spawn(async move {
+        info!("initializing subscribe");
         event_subscriber.subscribe().await?;
         Ok::<_, SuiSubscriberError>(())
     });
