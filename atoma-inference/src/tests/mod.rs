@@ -180,11 +180,15 @@ mod tests {
             tokio::spawn(async move { jrpc_server::run(req_sender.clone(), JRPC_PORT).await });
 
         let client = Client::new();
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(4 * 60)).await;
 
-        for prompt in PROMPTS {
+        let mut responses = vec![];
+        for (idx, prompt) in PROMPTS.iter().enumerate() {
             let params = json!({
-                "prompt": prompt,
+                "request_id": idx,
+                "prompt": prompt.to_string(),
+                "model":, 
+                "sampled_nodes": vec![],
                 "temperature": 0.5,
                 "random_seed": 42,
                 "repeat_penalty": 1.0,
@@ -213,6 +217,8 @@ mod tests {
                 .await
                 .expect("Failed to parse response to JSON");
             println!("{}", response_json);
+            responses.push(response_json);
         }
+        assert_eq!(responses.len(), PROMPTS.len());
     }
 }
