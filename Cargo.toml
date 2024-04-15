@@ -7,9 +7,9 @@ members = [
     "atoma-event-subscribe/sui",
     "atoma-inference",
     "atoma-networking",
+    "atoma-node",
     "atoma-json-rpc",
-    "atoma-storage", 
-    "atoma-service"
+    "atoma-storage"
 ]
 
 [workspace.package]

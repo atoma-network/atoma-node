@@ -17,7 +17,7 @@ use tracing::info;
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {
-    pub inference_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
 }
 
@@ -43,7 +43,7 @@ impl AtomaNode {
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, mut atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
 
-        let inference_service_handle = tokio::spawn(async move {
+        let model_service_handle = tokio::spawn(async move {
             let mut model_service = ModelService::start(
                 model_config,
                 private_key,
@@ -71,7 +71,7 @@ impl AtomaNode {
         }
 
         Ok(Self {
-            inference_service_handle,
+            model_service_handle,
             sui_subscriber_handle,
         })
     }

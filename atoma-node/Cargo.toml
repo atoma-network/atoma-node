@@ -1,5 +1,5 @@
 [package]
-name = "atoma-service"
+name = "atoma-node"
 version.workspace = true
 edition.workspace = true
 
