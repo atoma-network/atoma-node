@@ -179,8 +179,6 @@ async fn test_inference_service() {
 
     let client = Client::new();
 
-    std::thread::sleep(Duration::from_secs(100));
-
     let mut responses = vec![];
     for (idx, prompt) in PROMPTS.iter().enumerate() {
         let model_id = model_ids[idx % 3];
