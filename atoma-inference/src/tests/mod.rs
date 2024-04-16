@@ -133,7 +133,7 @@ async fn test_mock_model_thread() {
 async fn test_inference_service() {
     const CHANNEL_BUFFER: usize = 32;
     const JRPC_PORT: u64 = 3000;
-
+    
     let private_key = PrivateKey::new(OsRng);
     let model_ids = ["mamba_130m", "mamba_370m", "llama_tiny_llama_1_1b_chat"];
     let model_configs = vec![
@@ -217,6 +217,7 @@ async fn test_inference_service() {
             "id": idx
         });
 
+        println!("Sending new request to client..");
         let response = client
             .post(format!("http://localhost:{}/", JRPC_PORT))
             .json(&request)
