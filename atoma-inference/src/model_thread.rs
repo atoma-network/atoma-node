@@ -167,7 +167,7 @@ impl ModelThreadDispatcher {
         self.send(ModelThreadCommand { request, sender });
     }
 
-    pub(crate) fn run_subsbriber_inference(&self, request: Value) {
+    pub(crate) fn run_subscriber_inference(&self, request: Value) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand { request, sender });
         self.responses.push(receiver);

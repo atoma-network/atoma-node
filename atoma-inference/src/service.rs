@@ -69,7 +69,7 @@ impl ModelService {
                 },
                 message = self.subscriber_req_rx.recv() => {
                     if let Some(request) = message {
-                        self.dispatcher.run_subsbriber_inference(request);
+                        self.dispatcher.run_subscriber_inference(request);
                     }
                 }
                 response = self.dispatcher.responses.next() => {
