@@ -138,6 +138,7 @@ impl ModelTrait for FalconModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        self.model.clear_kv_cache();
         let TextModelInput {
             prompt,
             temperature,
