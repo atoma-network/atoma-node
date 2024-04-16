@@ -184,25 +184,13 @@ async fn test_inference_service() {
     .unwrap();
 
     let _service_join_handle = tokio::spawn(async move {
-        println!("SERVICE FLAG");
         service.run().await.expect("Failed to run service");
     });
     let _jrpc_server_join_handle = tokio::spawn(async move {
-        println!("JRPC SERVER FLAG");
         jrpc_server::run(json_server_req_sender.clone(), JRPC_PORT).await;
     });
 
     let client = Client::new();
-
-    println!("Sending healthz request...");
-    let health_z_request = client
-        .post(format!("http://localhost:{}/healthz", JRPC_PORT))
-        .json(&json!(""))
-        .send()
-        .await
-        .unwrap();
-    let healthz: Value = health_z_request.json().await.unwrap();
-    println!("healthz = {}", healthz);
 
     let mut responses = vec![];
     for (idx, prompt) in PROMPTS.iter().enumerate() {

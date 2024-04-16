@@ -72,8 +72,7 @@ impl ModelService {
                         self.dispatcher.run_subscriber_inference(request);
                     }
                 }
-                response = self.dispatcher.responses.next() => {
-                    if let Some(resp) = response {
+                Some(resp) = self.dispatcher.responses.next() => {
                         match resp {
                             Ok(response) => {
                                 info!("Received a new inference response: {:?}", response);
@@ -83,7 +82,6 @@ impl ModelService {
                                 error!("Found error in generating inference response: {e}");
                             }
                         }
-                    }
                 }
             }
         }
