@@ -13,6 +13,7 @@ use super::ModelError;
 pub mod falcon;
 pub mod llama;
 pub mod mamba;
+pub mod mixtral;
 pub mod stable_diffusion;
 
 pub fn device(device_id: usize) -> Result<Device, candle::Error> {
