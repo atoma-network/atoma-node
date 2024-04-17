@@ -62,26 +62,22 @@ impl ModelService {
     pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
-                message = self.json_server_req_rx.recv() => {
-                    if let Some(request) = message {
-                        self.dispatcher.run_json_inference(request);
-                    }
+                Some(request) = self.json_server_req_rx.recv() => {
+                    self.dispatcher.run_json_inference(request);
                 },
-                message = self.subscriber_req_rx.recv() => {
-                    if let Some(request) = message {
-                        self.dispatcher.run_subscriber_inference(request);
-                    }
-                }
-                Some(resp) = self.dispatcher.responses.next() => {
-                        match resp {
-                            Ok(response) => {
-                                info!("Received a new inference response: {:?}", response);
-                                self.atoma_node_resp_tx.send(response).await.map_err(|e| ModelServiceError::SendError(e.to_string()))?;
-                            }
-                            Err(e) => {
-                                error!("Found error in generating inference response: {e}");
-                            }
+                Some(request) = self.subscriber_req_rx.recv() => {
+                    self.dispatcher.run_subscriber_inference(request);
+                },
+                Some(resp) = self.dispatcher.responses.next() => match resp {
+                    Ok(response) => {
+                        info!("Received a new inference response: {:?}", response);
+                        if let Err(e) = self.atoma_node_resp_tx.send(response).await {
+                            return Err(ModelServiceError::SendError(e.to_string()));
                         }
+                    },
+                    Err(e) => {
+                        error!("Found error in generating inference response: {}", e);
+                    }
                 }
             }
         }
