@@ -13,7 +13,7 @@ struct Args {
     pub http_addr: String,
     /// RPC node's web socket address for Sui client
     #[arg(long, default_value = "wss://fullnode.devnet.sui.io:443")]
-    pub ws_socket_addr: String,
+    pub ws_addr: String,
 }
 
 #[tokio::main]
@@ -23,7 +23,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let args = Args::parse();
     let package_id = ObjectID::from_hex_literal(&args.package_id)?;
     let http_url = args.http_addr;
-    let ws_url = args.ws_socket_addr;
+    let ws_url = args.ws_addr;
 
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
 
