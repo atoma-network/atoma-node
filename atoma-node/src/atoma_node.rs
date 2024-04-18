@@ -59,7 +59,7 @@ impl AtomaNode {
 
         let sui_subscriber_handle = tokio::spawn(async move {
             let sui_event_subscriber =
-                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx).await?;
+                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx, ).await?;
             sui_event_subscriber
                 .subscribe()
                 .await

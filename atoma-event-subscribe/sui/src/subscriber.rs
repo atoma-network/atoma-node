@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -24,8 +24,12 @@ impl SuiSubscriber {
         ws_url: Option<&str>,
         object_id: ObjectID,
         event_sender: mpsc::Sender<Value>,
+        request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
+        if let Some(duration) = request_timeout {
+            sui_client_builder = sui_client_builder.request_timeout(duration);
+        }
         if let Some(url) = ws_url {
             sui_client_builder = sui_client_builder.ws_url(url);
         }
@@ -47,7 +51,15 @@ impl SuiSubscriber {
         let http_url = config.http_url();
         let ws_url = config.ws_url();
         let object_id = config.object_id();
-        Self::new(&http_url, Some(&ws_url), object_id, event_sender).await
+        let request_timeout = config.request_timeout();
+        Self::new(
+            &http_url,
+            Some(&ws_url),
+            object_id,
+            event_sender,
+            Some(request_timeout),
+        )
+        .await
     }
 
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
