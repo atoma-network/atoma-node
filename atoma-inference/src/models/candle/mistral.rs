@@ -88,7 +88,7 @@ impl ModelTrait for MistralModel {
         };
 
         Ok(Self::LoadData {
-            model_type: ModelType::Mixtral8x7b,
+            model_type,
             file_paths,
             device,
             dtype,
@@ -199,16 +199,8 @@ mod tests {
         use std::path::PathBuf;
 
         use crate::models::config::ModelConfig;
-        // use clap::Parser;
 
-        // #[derive(Debug, Parser)]
-        // struct Args {
-        //     #[arg(long)]
-        //     api_key: String,
-        // }
-        // let args = Args::parse();
-
-        let api_key = "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".to_string();
+        let api_key = "my-api-key".to_string();
         let cache_dir: PathBuf = "./test_mistral_7bv01/".try_into().unwrap();
         let model_id = "mistral_7bv01".to_string();
         let dtype = "f32".to_string();
@@ -237,9 +229,9 @@ mod tests {
             panic!("Invalid device")
         }
 
-        assert_eq!(load_data.file_paths.len(), 4);
+        assert_eq!(load_data.file_paths.len(), 3);
         assert_eq!(load_data.use_flash_attention, use_flash_attention);
-        assert_eq!(load_data.model_type, ModelType::Falcon7b);
+        assert_eq!(load_data.model_type, ModelType::Mistral7bV01);
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
@@ -256,7 +248,7 @@ mod tests {
         }
 
         assert_eq!(model.dtype, should_be_dtype);
-        assert_eq!(model.model_type, ModelType::Falcon7b);
+        assert_eq!(model.model_type, ModelType::Mistral7bV01);
 
         let prompt = "Write a hello world rust program: ".to_string();
         let temperature = 0.6;
@@ -278,6 +270,8 @@ mod tests {
             top_p,
         );
         let output = model.run(input).expect("Failed to run inference");
+
+        println!("Output: {}", output.text);
 
         assert!(output.text.len() >= 1);
         assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
