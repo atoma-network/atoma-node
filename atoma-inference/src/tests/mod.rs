@@ -87,7 +87,10 @@ impl ModelThreadDispatcher {
                 model_receiver,
             );
         }
-        Self { model_senders }
+        Self {
+            model_senders,
+            responses: FuturesUnordered::new(),
+        }
     }
 }
 
@@ -105,7 +108,7 @@ async fn test_mock_model_thread() {
             let request = json!(i);
             let command = ModelThreadCommand {
                 request: request.clone(),
-                response_sender,
+                sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
             responses.push(response_receiver);
@@ -165,17 +168,27 @@ async fn test_inference_service() {
         JRPC_PORT,
     );
 
-    let (req_sender, req_receiver) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+    let (json_server_req_sender, json_server_req_receiver) =
+        tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+    let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+    let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
 
     println!("Starting model service..");
-    let mut service =
-        ModelService::start(config.clone(), private_key.clone(), req_receiver).unwrap();
+    let mut service = ModelService::start(
+        config.clone(),
+        private_key.clone(),
+        json_server_req_receiver,
+        subscriber_req_rx,
+        atoma_node_resp_tx,
+    )
+    .unwrap();
 
     let _service_join_handle = tokio::spawn(async move {
         service.run().await.expect("Failed to run service");
     });
-    let _jrpc_server_join_handle =
-        tokio::spawn(async move { jrpc_server::run(req_sender.clone(), JRPC_PORT).await });
+    let _jrpc_server_join_handle = tokio::spawn(async move {
+        jrpc_server::run(json_server_req_sender.clone(), JRPC_PORT).await;
+    });
 
     let client = Client::new();
 
@@ -203,6 +216,7 @@ async fn test_inference_service() {
             "id": idx
         });
 
+        println!("Sending new request to client..");
         let response = client
             .post(format!("http://localhost:{}/", JRPC_PORT))
             .json(&request)

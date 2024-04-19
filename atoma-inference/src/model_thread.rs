@@ -3,6 +3,8 @@ use std::{
 };
 
 use ed25519_consensus::VerificationKey as PublicKey;
+use futures::stream::FuturesUnordered;
+use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, warn};
@@ -21,8 +23,8 @@ use crate::{
 };
 
 pub struct ModelThreadCommand {
-    pub(crate) request: serde_json::Value,
-    pub(crate) response_sender: oneshot::Sender<serde_json::Value>,
+    pub(crate) request: Value,
+    pub(crate) sender: oneshot::Sender<Value>,
 }
 
 #[derive(Debug, Error)]
@@ -74,10 +76,7 @@ where
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
-            let ModelThreadCommand {
-                request,
-                response_sender,
-            } = command;
+            let ModelThreadCommand { request, sender } = command;
 
             // if !request.is_node_authorized(&public_key) {
             //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
@@ -86,7 +85,7 @@ where
             let model_input = serde_json::from_value(request)?;
             let model_output = self.model.run(model_input)?;
             let response = serde_json::to_value(model_output)?;
-            response_sender.send(response).ok();
+            sender.send(response).ok();
         }
 
         Ok(())
@@ -95,6 +94,7 @@ where
 
 pub struct ModelThreadDispatcher {
     pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<Value>>,
 }
 
 impl ModelThreadDispatcher {
@@ -133,14 +133,16 @@ impl ModelThreadDispatcher {
             });
         }
 
-        let model_dispatcher = ModelThreadDispatcher { model_senders };
+        let model_dispatcher = ModelThreadDispatcher {
+            model_senders,
+            responses: FuturesUnordered::new(),
+        };
 
         Ok((model_dispatcher, handles))
     }
 
     fn send(&self, command: ModelThreadCommand) {
-        let request = command.request.clone();
-        let model_id = if let Some(model_id) = request.get("model") {
+        let model_id = if let Some(model_id) = command.request.get("model") {
             model_id.as_str().unwrap().to_string()
         } else {
             error!("Request malformed: Missing 'model' from request");
@@ -161,14 +163,14 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
-    pub(crate) fn run_inference(
-        &self,
-        (request, sender): (serde_json::Value, oneshot::Sender<serde_json::Value>),
-    ) {
-        self.send(ModelThreadCommand {
-            request,
-            response_sender: sender,
-        });
+    pub(crate) fn run_json_inference(&self, (request, sender): (Value, oneshot::Sender<Value>)) {
+        self.send(ModelThreadCommand { request, sender });
+    }
+
+    pub(crate) fn run_subscriber_inference(&self, request: Value) {
+        let (sender, receiver) = oneshot::channel();
+        self.send(ModelThreadCommand { request, sender });
+        self.responses.push(receiver);
     }
 }
 

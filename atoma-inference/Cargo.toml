@@ -1,5 +1,5 @@
 [package]
-name = "inference"
+name = "atoma-inference"
 version.workspace = true
 edition = "2021"
 

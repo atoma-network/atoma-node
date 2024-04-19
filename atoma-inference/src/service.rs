@@ -1,8 +1,10 @@
 use candle::Error as CandleError;
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
+use futures::StreamExt;
+use serde_json::Value;
 use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
 use tracing::{error, info};
 
@@ -21,14 +23,18 @@ pub struct ModelService {
     flush_storage: bool,
     public_key: PublicKey,
     cache_dir: PathBuf,
-    request_receiver: Receiver<(serde_json::Value, oneshot::Sender<serde_json::Value>)>,
+    json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
+    subscriber_req_rx: Receiver<Value>,
+    atoma_node_resp_tx: Sender<Value>,
 }
 
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        request_receiver: Receiver<(serde_json::Value, oneshot::Sender<serde_json::Value>)>,
+        json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
+        subscriber_req_rx: Receiver<Value>,
+        atoma_node_resp_tx: Sender<Value>,
     ) -> Result<Self, ModelServiceError> {
         let public_key = private_key.verification_key();
 
@@ -47,16 +53,30 @@ impl ModelService {
             flush_storage,
             cache_dir,
             public_key,
-            request_receiver,
+            json_server_req_rx,
+            subscriber_req_rx,
+            atoma_node_resp_tx,
         })
     }
 
     pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
-                message = self.request_receiver.recv() => {
-                    if let Some(request) = message {
-                        self.dispatcher.run_inference(request);
+                Some(request) = self.json_server_req_rx.recv() => {
+                    self.dispatcher.run_json_inference(request);
+                },
+                Some(request) = self.subscriber_req_rx.recv() => {
+                    self.dispatcher.run_subscriber_inference(request);
+                },
+                Some(resp) = self.dispatcher.responses.next() => match resp {
+                    Ok(response) => {
+                        info!("Received a new inference response: {:?}", response);
+                        if let Err(e) = self.atoma_node_resp_tx.send(response).await {
+                            return Err(ModelServiceError::SendError(e.to_string()));
+                        }
+                    },
+                    Err(e) => {
+                        error!("Found error in generating inference response: {}", e);
                     }
                 }
             }
@@ -208,11 +228,20 @@ mod tests {
         file.write_all(toml_string.as_bytes())
             .expect("Failed to write to file");
 
-        let (_, req_receiver) = tokio::sync::mpsc::channel(1);
+        let (_, json_server_req_rx) = tokio::sync::mpsc::channel(1);
+        let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(1);
+        let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(1);
 
-        let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH.parse().unwrap());
+        let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH);
 
-        let _ = ModelService::start(config, private_key, req_receiver).unwrap();
+        let _ = ModelService::start(
+            config,
+            private_key,
+            json_server_req_rx,
+            subscriber_req_rx,
+            atoma_node_resp_tx,
+        )
+        .unwrap();
 
         std::fs::remove_file(CONFIG_FILE_PATH).unwrap();
     }

@@ -1,5 +1,5 @@
 [package]
-name = "solana"
+name = "atoma-solana"
 edition = "2021"
 version.workspace = true
 

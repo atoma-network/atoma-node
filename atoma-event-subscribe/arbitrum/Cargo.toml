@@ -1,5 +1,5 @@
 [package]
-name = "arbitrum"
+name = "atoma-arbitrum"
 edition = "2021"
 version.workspace = true
 
