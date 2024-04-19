@@ -39,7 +39,7 @@ impl SuiSubscriberConfig {
         self.object_id
     }
 
-    pub fn request_timeout(&self) -> Duration { 
+    pub fn request_timeout(&self) -> Duration {
         self.request_timeout
     }
 
@@ -65,8 +65,10 @@ pub mod tests {
         let config = SuiSubscriberConfig::new(
             "".to_string(),
             "".to_string(),
-            "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e".parse().unwrap(),
-            Duration::from_secs(5 * 60)
+            "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
+                .parse()
+                .unwrap(),
+            Duration::from_secs(5 * 60),
         );
 
         let toml_str = toml::to_string(&config).unwrap();
