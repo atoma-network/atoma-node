@@ -13,6 +13,7 @@ use super::ModelError;
 pub mod falcon;
 pub mod llama;
 pub mod mamba;
+pub mod mistral;
 pub mod mixtral;
 pub mod stable_diffusion;
 

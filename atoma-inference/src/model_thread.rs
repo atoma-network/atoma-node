@@ -13,7 +13,7 @@ use crate::{
     apis::ApiError,
     models::{
         candle::{
-            falcon::FalconModel, llama::LlamaModel, mamba::MambaModel,
+            falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
             stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
@@ -217,7 +217,17 @@ pub(crate) fn dispatch_model_thread(
             public_key,
             model_receiver,
         ),
-        ModelType::Mistral7b => todo!(),
+        ModelType::Mistral7bV01
+        | ModelType::Mistral7bV02
+        | ModelType::Mistral7bInstructV01
+        | ModelType::Mistral7bInstructV02 => spawn_model_thread::<MistralModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
         ModelType::Mixtral8x7b => todo!(),
         ModelType::StableDiffusionV1_5
         | ModelType::StableDiffusionV2_1
