@@ -191,15 +191,24 @@ impl ModelTrait for MistralModel {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use crate::models::config::ModelConfig;
-
     #[test]
-    fn test_falcon_model_interface_with_metal() {
+    #[cfg(feature = "metal")]
+    fn test_mistral_model_interface_with_metal() {
         use super::*;
 
-        let api_key = "".to_string();
+        use std::path::PathBuf;
+
+        use crate::models::config::ModelConfig;
+        // use clap::Parser;
+
+        // #[derive(Debug, Parser)]
+        // struct Args {
+        //     #[arg(long)]
+        //     api_key: String,
+        // }
+        // let args = Args::parse();
+
+        let api_key = "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".to_string();
         let cache_dir: PathBuf = "./test_mistral_7bv01/".try_into().unwrap();
         let model_id = "mistral_7bv01".to_string();
         let dtype = "f32".to_string();
