@@ -14,7 +14,7 @@ use crate::{
     models::{
         candle::{
             falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            stable_diffusion::StableDiffusion,
+            mixtral::MixtralModel, stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
         types::ModelType,
@@ -228,7 +228,14 @@ pub(crate) fn dispatch_model_thread(
             public_key,
             model_receiver,
         ),
-        ModelType::Mixtral8x7b => todo!(),
+        ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
         ModelType::StableDiffusionV1_5
         | ModelType::StableDiffusionV2_1
         | ModelType::StableDiffusionTurbo
