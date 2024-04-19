@@ -1,8 +1,10 @@
+use std::str::FromStr;
+
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
-    models::mixtral::{Config, Model},
+    models::mistral::{Config, Model},
     utils::apply_repeat_penalty,
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
@@ -19,16 +21,24 @@ use crate::{
     },
 };
 
-pub struct MixtralModel {
+pub struct MistralModel {
+    model_type: ModelType,
     model: Model,
     device: Device,
     dtype: DType,
     tokenizer: TokenOutputStream,
 }
 
-impl MixtralModel {
-    pub fn new(model: Model, device: Device, dtype: DType, tokenizer: TokenOutputStream) -> Self {
+impl MistralModel {
+    pub fn new(
+        model_type: ModelType,
+        model: Model,
+        device: Device,
+        dtype: DType,
+        tokenizer: TokenOutputStream,
+    ) -> Self {
         Self {
+            model_type,
             model,
             device,
             dtype,
@@ -37,7 +47,7 @@ impl MixtralModel {
     }
 }
 
-impl ModelTrait for MixtralModel {
+impl ModelTrait for MistralModel {
     type Input = TextModelInput;
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
@@ -59,8 +69,9 @@ impl ModelTrait for MixtralModel {
             .with_token(Some(api_key))
             .with_cache_dir(cache_dir)
             .build()?;
-        let repo_id = ModelType::Mixtral8x7b.repo().to_string();
-        let revision = ModelType::Mixtral8x7b.default_revision().to_string();
+        let model_type = ModelType::from_str(&config.model_id())?;
+        let repo_id = model_type.repo().to_string();
+        let revision = model_type.default_revision().to_string();
         let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
 
         let tokenizer_filename = repo.get("tokenizer.json")?;
@@ -94,7 +105,7 @@ impl ModelTrait for MixtralModel {
 
         let start = std::time::Instant::now();
 
-        let config = Config::v0_1_8x7b(load_data.use_flash_attention);
+        let config = Config::config_7b_v0_1(load_data.use_flash_attention);
         let tokenizer = Tokenizer::from_file(load_data.file_paths[0].clone())?;
         let var_builder = unsafe {
             VarBuilder::from_mmaped_safetensors(&load_data.file_paths[1..], dtype, &device)?
@@ -103,6 +114,7 @@ impl ModelTrait for MixtralModel {
 
         info!("Loaded the model in {:?}", start.elapsed());
         Ok(Self {
+            model_type: load_data.model_type,
             model,
             device,
             dtype,
@@ -111,7 +123,7 @@ impl ModelTrait for MixtralModel {
     }
 
     fn model_type(&self) -> ModelType {
-        ModelType::Mixtral8x7b
+        self.model_type.clone()
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
@@ -174,5 +186,93 @@ impl ModelTrait for MixtralModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::models::config::ModelConfig;
+
+    #[test]
+    fn test_falcon_model_interface_with_metal() {
+        use super::*;
+
+        let api_key = "".to_string();
+        let cache_dir: PathBuf = "./test_mistral_7bv01/".try_into().unwrap();
+        let model_id = "mistral_7bv01".to_string();
+        let dtype = "f32".to_string();
+        let revision = "main".to_string();
+        let device_id = 0;
+        let use_flash_attention = false;
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch falcon model");
+
+        println!("model device = {:?}", load_data.device);
+        let should_be_device = device(device_id).unwrap();
+        if should_be_device.is_cpu() {
+            assert!(load_data.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(load_data.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(load_data.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(load_data.file_paths.len(), 4);
+        assert_eq!(load_data.use_flash_attention, use_flash_attention);
+        assert_eq!(load_data.model_type, ModelType::Falcon7b);
+
+        let should_be_dtype = DType::from_str(&dtype).unwrap();
+        assert_eq!(load_data.dtype, should_be_dtype);
+        let mut model = MistralModel::load(load_data).expect("Failed to load model");
+
+        if should_be_device.is_cpu() {
+            assert!(model.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(model.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(model.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(model.dtype, should_be_dtype);
+        assert_eq!(model.model_type, ModelType::Falcon7b);
+
+        let prompt = "Write a hello world rust program: ".to_string();
+        let temperature = 0.6;
+        let random_seed = 42;
+        let repeat_penalty = 1.0;
+        let repeat_last_n = 20;
+        let max_tokens = 1;
+        let top_k = 10;
+        let top_p = 0.6;
+
+        let input = TextModelInput::new(
+            prompt.clone(),
+            temperature,
+            random_seed,
+            repeat_penalty,
+            repeat_last_n,
+            max_tokens,
+            top_k,
+            top_p,
+        );
+        let output = model.run(input).expect("Failed to run inference");
+
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+
+        std::fs::remove_dir_all(cache_dir).unwrap();
     }
 }
