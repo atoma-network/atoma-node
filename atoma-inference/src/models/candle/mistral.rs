@@ -278,4 +278,92 @@ mod tests {
 
         std::fs::remove_dir_all(cache_dir).unwrap();
     }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_mistral_model_interface_with_cuda() {
+        use super::*;
+
+        use std::path::PathBuf;
+
+        use crate::models::config::ModelConfig;
+
+        let api_key = "my-api-key".to_string();
+        let cache_dir: PathBuf = "./test_mistral_7bv01/".try_into().unwrap();
+        let model_id = "mistral_7bv01".to_string();
+        let dtype = "bf16".to_string();
+        let revision = "main".to_string();
+        let device_id = 0;
+        let use_flash_attention = false;
+        let config = ModelConfig::new(
+            model_id,
+            dtype.clone(),
+            revision,
+            device_id,
+            use_flash_attention,
+        );
+        let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
+            .expect("Failed to fetch falcon model");
+
+        println!("model device = {:?}", load_data.device);
+        let should_be_device = device(device_id).unwrap();
+        if should_be_device.is_cpu() {
+            assert!(load_data.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(load_data.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(load_data.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(load_data.file_paths.len(), 3);
+        assert_eq!(load_data.use_flash_attention, use_flash_attention);
+        assert_eq!(load_data.model_type, ModelType::Mistral7bV01);
+
+        let should_be_dtype = DType::from_str(&dtype).unwrap();
+        assert_eq!(load_data.dtype, should_be_dtype);
+        let mut model = MistralModel::load(load_data).expect("Failed to load model");
+
+        if should_be_device.is_cpu() {
+            assert!(model.device.is_cpu());
+        } else if should_be_device.is_cuda() {
+            assert!(model.device.is_cuda());
+        } else if should_be_device.is_metal() {
+            assert!(model.device.is_metal());
+        } else {
+            panic!("Invalid device")
+        }
+
+        assert_eq!(model.dtype, should_be_dtype);
+        assert_eq!(model.model_type, ModelType::Mistral7bV01);
+
+        let prompt = "Write a hello world rust program: ".to_string();
+        let temperature = 0.6;
+        let random_seed = 42;
+        let repeat_penalty = 1.0;
+        let repeat_last_n = 20;
+        let max_tokens = 1;
+        let top_k = 10;
+        let top_p = 0.6;
+
+        let input = TextModelInput::new(
+            prompt.clone(),
+            temperature,
+            random_seed,
+            repeat_penalty,
+            repeat_last_n,
+            max_tokens,
+            top_k,
+            top_p,
+        );
+        let output = model.run(input).expect("Failed to run inference");
+
+        println!("Output: {}", output.text);
+
+        assert!(output.text.len() >= 1);
+        assert!(output.text.split(" ").collect::<Vec<_>>().len() <= max_tokens);
+
+        std::fs::remove_dir_all(cache_dir).unwrap();
+    }
 }
