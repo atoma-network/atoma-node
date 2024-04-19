@@ -23,15 +23,6 @@ use super::{device, hub_load_safetensors};
 
 const EOS_TOKEN: &str = "</s>";
 
-#[allow(dead_code)]
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-enum Which {
-    V1,
-    V2,
-    Solar10_7B,
-    TinyLlama1_1BChat,
-}
-
 pub struct LlamaModel {
     device: Device,
     model: model::Llama,
@@ -128,7 +119,11 @@ impl ModelTrait for LlamaModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let eos_token_id = self.tokenizer.token_to_id(EOS_TOKEN);
+        let eos_token_id = self
+            .config
+            .eos_token_id
+            .or_else(|| self.tokenizer.token_to_id(EOS_TOKEN));
+        info!("EOS_TOKEN_ID = {:?}", eos_token_id);
         let mut tokens = self
             .tokenizer
             .encode(input.prompt.clone(), true)?
