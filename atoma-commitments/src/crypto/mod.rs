@@ -1,7 +1,9 @@
 mod keccak;
 
+pub use keccak::Keccak256;
+
 const COMMITMENT_SIZE: usize = 64;
-const HASH_SIZE: usize = 32;
+pub const HASH_SIZE: usize = 32;
 
 pub(crate) type Hash = [u8; HASH_SIZE];
 
@@ -17,6 +19,6 @@ impl Commitment {
     }
 }
 
-pub trait Hasher {
-    fn hash(data: &[u8]) -> [u8; HASH_SIZE];
+pub trait AtomaHasher {
+    fn hash_data(data: &[u8]) -> [u8; HASH_SIZE];
 }
