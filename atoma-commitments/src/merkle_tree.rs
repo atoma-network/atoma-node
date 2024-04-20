@@ -12,6 +12,10 @@ pub struct MerkleTree<H: Hasher> {
     _phantom_data: PhantomData<H>,
 }
 
+pub struct MerklePath {
+    path: Vec<Hash>,
+}
+
 impl<H: Hasher> MerkleTree<H> {
     /// Method `new`:
     ///
@@ -73,7 +77,22 @@ impl<H: Hasher> MerkleTree<H> {
         self.root
     }
 
-    pub fn path(&self, index: usize) -> Vec<Hash> { 
+    pub fn height(&self) -> usize {
+        (self.digests.len() + 1).ilog2() as usize - 1
+    }
+
+    pub fn num_leaves(&self) -> usize {
+        (self.digests.len() + 1) / 2
+    }
+
+    pub fn path(&self, index: usize) -> MerklePath {
+        assert!(index < self.num_leaves());
+        let mut path = Vec::with_capacity(self.height());
+        if index % 2 == 0 {
+            path.push(self.digests[index]);
+        } else {
+            path.push(self.digests[index - 1]);
+        }
         vec![]
     }
 }

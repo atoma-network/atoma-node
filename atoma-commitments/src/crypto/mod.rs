@@ -7,16 +7,16 @@ pub(crate) type Hash = [u8; HASH_SIZE];
 
 pub struct Commitment([u8; COMMITMENT_SIZE]);
 
-impl Commitment { 
-    pub fn new(data: [u8; COMMITMENT_SIZE]) -> Self { 
+impl Commitment {
+    pub fn new(data: [u8; COMMITMENT_SIZE]) -> Self {
         Self(data)
     }
 
-    pub fn to_bytes(self) -> [u8; COMMITMENT_SIZE] { 
+    pub fn to_bytes(self) -> [u8; COMMITMENT_SIZE] {
         self.0
     }
 }
 
-pub trait Hasher { 
+pub trait Hasher {
     fn hash(data: &[u8]) -> [u8; HASH_SIZE];
 }
