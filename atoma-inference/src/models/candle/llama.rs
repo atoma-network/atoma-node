@@ -21,6 +21,7 @@ use crate::models::{
 
 use super::{device, hub_load_safetensors};
 
+const BOS_TOKEN: &str = "<|begin_of_text|>";
 const EOS_TOKEN: &str = "</s>";
 
 pub struct LlamaModel {
@@ -93,19 +94,20 @@ impl ModelTrait for LlamaModel {
 
         let device = load_data.device;
         let dtype = load_data.dtype;
-        let (model, tokenizer_filename, config) = {
+        let (model, tokenizer, config) = {
             let config_filename = load_data.file_paths[0].clone();
             let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
 
-            let tokenizer_filename = load_data.file_paths[1].clone();
             let config = config.into_config(load_data.use_flash_attention);
+
+            let tokenizer_filename = load_data.file_paths[1].clone();
+            let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
             let vb = unsafe {
                 VarBuilder::from_mmaped_safetensors(&load_data.file_paths[2..], dtype, &device)?
             };
-            (model::Llama::load(vb, &config)?, tokenizer_filename, config)
+            (model::Llama::load(vb, &config)?, tokenizer, config)
         };
-        let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         info!("Loaded Llama model in {:?}", start.elapsed());
 
         Ok(Self {
@@ -119,16 +121,26 @@ impl ModelTrait for LlamaModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        let bos_token_id = self
+            .config
+            .bos_token_id
+            .or_else(|| self.tokenizer.token_to_id(BOS_TOKEN))
+            .unwrap();
         let eos_token_id = self
             .config
             .eos_token_id
             .or_else(|| self.tokenizer.token_to_id(EOS_TOKEN));
-        info!("EOS_TOKEN_ID = {:?}", eos_token_id);
-        let mut tokens = self
+        let prompt_ids = self
             .tokenizer
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
+        let mut tokens = if self.model_type == ModelType::Llama3_8b {
+            vec![bos_token_id].into_iter().chain(prompt_ids).collect()
+        } else {
+            prompt_ids
+        };
+        info!("tokens: {:?}", tokens);
 
         let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
         let mut logits_processor = LogitsProcessor::new(
