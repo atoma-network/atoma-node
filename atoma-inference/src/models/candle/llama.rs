@@ -140,7 +140,6 @@ impl ModelTrait for LlamaModel {
         } else {
             prompt_ids
         };
-        info!("tokens: {:?}", tokens);
 
         let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
         let mut logits_processor = LogitsProcessor::new(
@@ -185,12 +184,14 @@ impl ModelTrait for LlamaModel {
             }
             if let Some(t) = tokenizer.next_token(next_token)? {
                 res += &t;
+                info!("res: {res}");
             }
 
             generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
+            info!("res: {res}");
         }
 
         let dt = start_gen.elapsed();
