@@ -1,5 +1,5 @@
 use candle::Error as CandleError;
-use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
+use ed25519_consensus::VerificationKey as PublicKey;
 use futures::StreamExt;
 use serde_json::Value;
 use std::fmt::Debug;
@@ -31,13 +31,11 @@ pub struct ModelService {
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
-        private_key: PrivateKey,
+        public_key: PublicKey,
         json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
         subscriber_req_rx: Receiver<Value>,
         atoma_node_resp_tx: Sender<Value>,
     ) -> Result<Self, ModelServiceError> {
-        let public_key = private_key.verification_key();
-
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
 
@@ -142,7 +140,7 @@ impl From<CandleError> for ModelServiceError {
 
 #[cfg(test)]
 mod tests {
-    use ed25519_consensus::VerificationKey as PublicKey;
+    use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
     use rand::rngs::OsRng;
     use std::io::Write;
     use toml::{toml, Value};
@@ -205,6 +203,7 @@ mod tests {
         const CONFIG_FILE_PATH: &str = "./inference.toml";
 
         let private_key = PrivateKey::new(OsRng);
+        let public_key = private_key.verification_key();
 
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
@@ -236,7 +235,7 @@ mod tests {
 
         let _ = ModelService::start(
             config,
-            private_key,
+            public_key,
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,

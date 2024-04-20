@@ -1,5 +1,6 @@
 use std::{io, path::Path};
 
+use atoma_crypto::Committer;
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
@@ -19,6 +20,7 @@ const CHANNEL_SIZE: usize = 32;
 pub struct AtomaNode {
     pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub committer: Committer,
 }
 
 impl AtomaNode {
@@ -39,6 +41,7 @@ impl AtomaNode {
             .expect("Incorrect private key bytes length");
 
         let private_key = PrivateKey::from(private_key_bytes);
+        let committer = Committer::new(private_key.clone());
 
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, mut atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
@@ -46,7 +49,7 @@ impl AtomaNode {
         let model_service_handle = tokio::spawn(async move {
             let mut model_service = ModelService::start(
                 model_config,
-                private_key,
+                private_key.verification_key(),
                 json_server_req_rx,
                 subscriber_req_rx,
                 atoma_node_resp_tx,
@@ -73,6 +76,7 @@ impl AtomaNode {
         Ok(Self {
             model_service_handle,
             sui_subscriber_handle,
+            committer,
         })
     }
 }

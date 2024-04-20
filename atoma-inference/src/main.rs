@@ -25,7 +25,7 @@ async fn main() -> Result<(), ModelServiceError> {
 
     let mut service = ModelService::start(
         model_config,
-        private_key,
+        private_key.verification_key(),
         req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,

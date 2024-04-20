@@ -4,11 +4,11 @@ use rs_merkle::{Hasher, MerkleProof, MerkleTree};
 
 mod crypto;
 
-pub struct AtomaCommitment {
+pub struct Committer {
     private_key: PrivateKey,
 }
 
-impl AtomaCommitment {
+impl Committer {
     pub fn new(private_key: PrivateKey) -> Self {
         Self { private_key }
     }

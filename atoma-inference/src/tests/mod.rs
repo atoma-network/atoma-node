@@ -176,7 +176,7 @@ async fn test_inference_service() {
     println!("Starting model service..");
     let mut service = ModelService::start(
         config.clone(),
-        private_key.clone(),
+        private_key.verification_key(),
         json_server_req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
