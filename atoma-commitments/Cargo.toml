@@ -10,7 +10,6 @@ ed25519-consensus.workspace = true
 keccak-hash.workspace = true
 rayon.workspace = true
 rs_merkle.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
