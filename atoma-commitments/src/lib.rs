@@ -40,20 +40,3 @@ impl AtomaCommitment {
         (commitment, merkle_proof)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use rand::rngs::OsRng;
-    use rs_merkle::algorithms::Sha256;
-
-    use super::*;
-
-    #[test]
-    fn test_commitment() {
-        let private_key = PrivateKey::new(OsRng);
-        let commitment = AtomaCommitment::new(private_key);
-        let data = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let commitment_data = commitment.calculate_commitment::<Sha256, _>(&data, 0, 3);
-        
-    }
-}
