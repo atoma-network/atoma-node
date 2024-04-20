@@ -7,7 +7,6 @@ edition = "2021"
 axum.workspace = true
 async-trait.workspace = true
 candle.workspace = true
-candle-examples.workspace = true
 candle-flash-attn = { workspace = true, optional = true }
 candle-nn.workspace = true
 candle-transformers.workspace = true
