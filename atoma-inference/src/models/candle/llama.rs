@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use candle::{DType, Device, Tensor};
+use candle_examples::llama_multiprocess::model::Llama as ShardedLlama;
 use candle_nn::VarBuilder;
 use candle_transformers::{
     generation::LogitsProcessor,
