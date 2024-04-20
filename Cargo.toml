@@ -2,6 +2,7 @@
 resolver = "2"
 
 members = [
+    "atoma-commitments",
     "atoma-event-subscribe/arbitrum",
     "atoma-event-subscribe/solana",
     "atoma-event-subscribe/sui",
@@ -35,6 +36,7 @@ futures = "0.3.30"
 futures-util = "0.3.30"
 hf-hub = "0.3.2"
 image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
+keccak-hash = "0.10.0"
 serde = "1.0.197"
 serde_json = "1.0.114"
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk"}
