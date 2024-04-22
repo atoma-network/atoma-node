@@ -21,16 +21,8 @@ use crate::models::{
 
 use super::{device, hub_load_safetensors};
 
+const BOS_TOKEN: &str = "<|begin_of_text|>";
 const EOS_TOKEN: &str = "</s>";
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-enum Which {
-    V1,
-    V2,
-    Solar10_7B,
-    TinyLlama1_1BChat,
-}
 
 pub struct LlamaModel {
     device: Device,
@@ -102,19 +94,20 @@ impl ModelTrait for LlamaModel {
 
         let device = load_data.device;
         let dtype = load_data.dtype;
-        let (model, tokenizer_filename, config) = {
+        let (model, tokenizer, config) = {
             let config_filename = load_data.file_paths[0].clone();
             let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
 
-            let tokenizer_filename = load_data.file_paths[1].clone();
             let config = config.into_config(load_data.use_flash_attention);
+
+            let tokenizer_filename = load_data.file_paths[1].clone();
+            let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
 
             let vb = unsafe {
                 VarBuilder::from_mmaped_safetensors(&load_data.file_paths[2..], dtype, &device)?
             };
-            (model::Llama::load(vb, &config)?, tokenizer_filename, config)
+            (model::Llama::load(vb, &config)?, tokenizer, config)
         };
-        let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
         info!("Loaded Llama model in {:?}", start.elapsed());
 
         Ok(Self {
@@ -128,19 +121,29 @@ impl ModelTrait for LlamaModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let eos_token_id = self.tokenizer.token_to_id(EOS_TOKEN);
-        let mut tokens = self
+        let bos_token_id = self
+            .config
+            .bos_token_id
+            .or_else(|| self.tokenizer.token_to_id(BOS_TOKEN))
+            .unwrap();
+        let eos_token_id = self
+            .config
+            .eos_token_id
+            .or_else(|| self.tokenizer.token_to_id(EOS_TOKEN));
+        let prompt_ids = self
             .tokenizer
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
+        let mut tokens = if self.model_type == ModelType::Llama3_8b {
+            vec![bos_token_id].into_iter().chain(prompt_ids).collect()
+        } else {
+            prompt_ids
+        };
 
         let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
-        let mut logits_processor = LogitsProcessor::new(
-            input.random_seed,
-            Some(input.temperature),
-            Some(input.top_p),
-        );
+        let mut logits_processor =
+            LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut index_pos = 0;
         let mut res = String::new();
         let mut generated_tokens = 0;
@@ -178,12 +181,14 @@ impl ModelTrait for LlamaModel {
             }
             if let Some(t) = tokenizer.next_token(next_token)? {
                 res += &t;
+                info!("res: {res}");
             }
 
             generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
+            info!("res: {res}");
         }
 
         let dt = start_gen.elapsed();
@@ -271,8 +276,8 @@ mod tests {
             repeat_penalty,
             repeat_last_n,
             max_tokens,
-            top_k,
-            top_p,
+            Some(top_k),
+            Some(top_p),
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
