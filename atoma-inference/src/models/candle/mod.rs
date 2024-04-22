@@ -15,6 +15,7 @@ pub mod llama;
 pub mod mamba;
 pub mod mistral;
 pub mod mixtral;
+pub mod quantized;
 pub mod stable_diffusion;
 
 pub fn device(device_id: usize) -> Result<Device, candle::Error> {

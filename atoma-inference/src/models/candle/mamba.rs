@@ -159,8 +159,7 @@ impl ModelTrait for MambaModel {
             .encode(prompt, true)?
             .get_ids()
             .to_vec();
-        let mut logits_processor =
-            LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
+        let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
 
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
             Some(token) => token,
@@ -302,8 +301,8 @@ mod tests {
             repeat_penalty,
             repeat_last_n,
             max_tokens,
-            top_k,
-            top_p,
+            Some(top_k),
+            Some(top_p),
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");

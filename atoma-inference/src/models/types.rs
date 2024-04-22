@@ -45,6 +45,28 @@ pub enum ModelType {
     StableDiffusionV2_1,
     StableDiffusionXl,
     StableDiffusionTurbo,
+    // Quantized models
+    QuantizedLlamaV2_7b,
+    QuantizedLlamaV2_13b,
+    QuantizedLlamaV2_70b,
+    QuantizedLlamaV2_7bChat,
+    QuantizedLlamaV2_13bChat,
+    QuantizedLlamaV2_70bChat,
+    QuantizedLlama7b,
+    QuantizedLlama13b,
+    QuantizedLlama34b,
+    QuantizedLeo7b,
+    QuantizedLeo13b,
+    QuantizedMistral7b,
+    QuantizedMistral7bInstruct,
+    QuantizedMistral7bInstructV02,
+    QuantizedZephyr7bAlpha,
+    QuantizedZephyr7bBeta,
+    QuantizedOpenChat35,
+    QuantizedStarling7bAlpha,
+    QuantizedMixtral,
+    QuantizedMixtralInstruct,
+    QuantizedL8b,
 }
 
 impl FromStr for ModelType {
@@ -76,6 +98,27 @@ impl FromStr for ModelType {
             "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
             "stable_diffusion_xl" => Ok(Self::StableDiffusionXl),
             "stable_diffusion_turbo" => Ok(Self::StableDiffusionTurbo),
+            "quantized_7b" => Ok(Self::QuantizedLlamaV2_7b),
+            "quantized_13b" => Ok(Self::QuantizedLlamaV2_13b),
+            "quantized_70b" => Ok(Self::QuantizedLlamaV2_70b),
+            "quantized_7b-chat" => Ok(Self::QuantizedLlamaV2_7bChat),
+            "quantized_13b-chat" => Ok(Self::QuantizedLlamaV2_13bChat),
+            "quantized_70b-chat" => Ok(Self::QuantizedLlamaV2_70bChat),
+            "quantized_7b-code" => Ok(Self::QuantizedLlama7b),
+            "quantized_13b-code" => Ok(Self::QuantizedLlama13b),
+            "quantized_32b-code" => Ok(Self::QuantizedLlama34b),
+            "quantized_7b-leo" => Ok(Self::QuantizedLeo7b),
+            "quantized_13b-leo" => Ok(Self::QuantizedLeo13b),
+            "quantized_7b-mistral" => Ok(Self::QuantizedMistral7b),
+            "quantized_7b-mistral-instruct" => Ok(Self::QuantizedMistral7bInstruct),
+            "quantized_7b-mistral-instruct-v0.2" => Ok(Self::QuantizedMistral7bInstructV02),
+            "quantized_7b-zephyr-a" => Ok(Self::QuantizedZephyr7bAlpha),
+            "quantized_7b-zephyr-b" => Ok(Self::QuantizedZephyr7bBeta),
+            "quantized_7b-open-chat-3.5" => Ok(Self::QuantizedOpenChat35),
+            "quantized_7b-starling-a" => Ok(Self::QuantizedStarling7bAlpha),
+            "quantized_mixtral" => Ok(Self::QuantizedMixtral),
+            "quantized_mixtral-instruct" => Ok(Self::QuantizedMixtralInstruct),
+            "quantized_llama3-8b" => Ok(Self::QuantizedL8b),
             _ => Err(ModelError::InvalidModelType(
                 "Invalid string model type description".to_string(),
             )),
@@ -110,6 +153,27 @@ impl ModelType {
             Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
             Self::StableDiffusionXl => "stabilityai/stable-diffusion-xl-base-1.0",
             Self::StableDiffusionTurbo => "stabilityai/sdxl-turbo",
+            Self::QuantizedLlamaV2_7b => "TheBloke/Llama-2-7B-GGML",
+            Self::QuantizedLlamaV2_13b => "TheBloke/Llama-2-13B-GGML",
+            Self::QuantizedLlamaV2_70b => "TheBloke/Llama-2-70B-GGML",
+            Self::QuantizedLlamaV2_7bChat => "TheBloke/Llama-2-7B-Chat-GGML",
+            Self::QuantizedLlamaV2_13bChat => "TheBloke/Llama-2-13B-Chat-GGML",
+            Self::QuantizedLlamaV2_70bChat => "TheBloke/Llama-2-70B-Chat-GGML",
+            Self::QuantizedLlama7b => "TheBloke/CodeLlama-7B-GGUF",
+            Self::QuantizedLlama13b => "TheBloke/CodeLlama-13B-GGUF",
+            Self::QuantizedLlama34b => "TheBloke/CodeLlama-34B-GGUF",
+            Self::QuantizedLeo7b => "TheBloke/leo-hessianai-7B-GGUF",
+            Self::QuantizedLeo13b => "TheBloke/leo-hessianai-13B-GGUF",
+            Self::QuantizedMistral7b => "TheBloke/Mistral-7B-v0.1-GGUF",
+            Self::QuantizedMistral7bInstruct => "TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF",
+            Self::QuantizedMistral7bInstructV02 => "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+            Self::QuantizedZephyr7bAlpha => "TheBloke/zephyr-7B-alpha-GGUF",
+            Self::QuantizedZephyr7bBeta => "TheBloke/zephyr-7B-beta-GGUF",
+            Self::QuantizedOpenChat35 => "TheBloke/openchat_3.5-GGUF",
+            Self::QuantizedStarling7bAlpha => "TheBloke/Starling-LM-7B-alpha-GGUF",
+            Self::QuantizedMixtral => "TheBloke/Mixtral-8x7B-v0.1-GGUF",
+            Self::QuantizedMixtralInstruct => "TheBloke/Mistral-7B-Instruct-v0.1-GGUF",
+            Self::QuantizedL8b => "QuantFactory/Meta-Llama-3-8B-GGUF",
         }
     }
 
@@ -135,10 +199,7 @@ impl ModelType {
             Self::Mistral7bInstructV01 => "main",
             Self::Mistral7bInstructV02 => "main",
             Self::Mixtral8x7b => "main",
-            Self::StableDiffusionV1_5 => "",
-            Self::StableDiffusionV2_1 => "",
-            Self::StableDiffusionTurbo => "",
-            Self::StableDiffusionXl => "",
+            _ => "",
         }
     }
 }
@@ -170,6 +231,27 @@ impl Display for ModelType {
             Self::StableDiffusionV2_1 => write!(f, "stable_diffusion_v2-1"),
             Self::StableDiffusionXl => write!(f, "stable_diffusion_xl"),
             Self::StableDiffusionTurbo => write!(f, "stable_diffusion_turbo"),
+            Self::QuantizedLlamaV2_7b => write!(f, "quantized_7b"),
+            Self::QuantizedLlamaV2_13b => write!(f, "quantized_13b"),
+            Self::QuantizedLlamaV2_70b => write!(f, "quantized_70b"),
+            Self::QuantizedLlamaV2_7bChat => write!(f, "quantized_7b-chat"),
+            Self::QuantizedLlamaV2_13bChat => write!(f, "quantized_13b-chat"),
+            Self::QuantizedLlamaV2_70bChat => write!(f, "quantized_70b-chat"),
+            Self::QuantizedLlama7b => write!(f, "quantized_7b-code"),
+            Self::QuantizedLlama13b => write!(f, "quantized_13b-code"),
+            Self::QuantizedLlama34b => write!(f, "quantized_32b-code"),
+            Self::QuantizedLeo7b => write!(f, "quantized_7b-leo"),
+            Self::QuantizedLeo13b => write!(f, "quantized_13b-leo"),
+            Self::QuantizedMistral7b => write!(f, "quantized_7b-mistral"),
+            Self::QuantizedMistral7bInstruct => write!(f, "quantized_7b-mistral-instruct"),
+            Self::QuantizedMistral7bInstructV02 => write!(f, "quantized_7b-mistral-instruct-v0.2"),
+            Self::QuantizedZephyr7bAlpha => write!(f, "quantized_7b-zephyr-a"),
+            Self::QuantizedZephyr7bBeta => write!(f, "quantized_7b-zephyr-b"),
+            Self::QuantizedOpenChat35 => write!(f, "quantized_7b-open-chat-3.5"),
+            Self::QuantizedStarling7bAlpha => write!(f, "quantized_7b-starling-a"),
+            Self::QuantizedMixtral => write!(f, "quantized_mixtral"),
+            Self::QuantizedMixtralInstruct => write!(f, "quantized_mixtral-instruct"),
+            Self::QuantizedL8b => write!(f, "quantized_llama3-8b"),
         }
     }
 }
@@ -185,8 +267,8 @@ pub struct TextRequest {
     pub repeat_penalty: f32,
     pub sampled_nodes: Vec<NodeId>,
     pub temperature: Option<f32>,
-    pub _top_k: usize,
-    pub top_p: Option<f32>,
+    pub top_k: Option<usize>,
+    pub top_p: Option<f64>,
 }
 
 impl Request for TextRequest {
@@ -200,8 +282,8 @@ impl Request for TextRequest {
             self.repeat_penalty,
             self.repeat_last_n,
             self.max_tokens,
-            self._top_k,
-            self.top_p.unwrap_or_default() as f64,
+            self.top_k,
+            self.top_p,
         )
     }
 
@@ -226,8 +308,8 @@ pub struct TextModelInput {
     pub(crate) repeat_penalty: f32,
     pub(crate) repeat_last_n: usize,
     pub(crate) max_tokens: usize,
-    pub(crate) _top_k: usize,
-    pub(crate) top_p: f64,
+    pub(crate) top_k: Option<usize>,
+    pub(crate) top_p: Option<f64>,
 }
 
 impl TextModelInput {
@@ -239,8 +321,8 @@ impl TextModelInput {
         repeat_penalty: f32,
         repeat_last_n: usize,
         max_tokens: usize,
-        _top_k: usize,
-        top_p: f64,
+        top_k: Option<usize>,
+        top_p: Option<f64>,
     ) -> Self {
         Self {
             prompt,
@@ -249,7 +331,7 @@ impl TextModelInput {
             repeat_penalty,
             repeat_last_n,
             max_tokens,
-            _top_k,
+            top_k,
             top_p,
         }
     }

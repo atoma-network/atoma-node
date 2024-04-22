@@ -127,11 +127,8 @@ impl ModelTrait for MistralModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let mut logits_processor = LogitsProcessor::new(
-            input.random_seed,
-            Some(input.temperature),
-            Some(input.top_p),
-        );
+        let mut logits_processor =
+            LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut tokens = self
             .tokenizer
             .tokenizer()

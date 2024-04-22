@@ -142,11 +142,8 @@ impl ModelTrait for LlamaModel {
         };
 
         let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
-        let mut logits_processor = LogitsProcessor::new(
-            input.random_seed,
-            Some(input.temperature),
-            Some(input.top_p),
-        );
+        let mut logits_processor =
+            LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut index_pos = 0;
         let mut res = String::new();
         let mut generated_tokens = 0;
@@ -279,8 +276,8 @@ mod tests {
             repeat_penalty,
             repeat_last_n,
             max_tokens,
-            top_k,
-            top_p,
+            Some(top_k),
+            Some(top_p),
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
