@@ -1,5 +1,4 @@
 use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait};
-use ed25519_consensus::SigningKey as PrivateKey;
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
@@ -8,7 +7,6 @@ use prompts::PROMPTS;
 use std::{collections::HashMap, sync::mpsc};
 
 use futures::{stream::FuturesUnordered, StreamExt};
-use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
 use serde_json::Value;
@@ -75,15 +73,11 @@ impl ModelThreadDispatcher {
             let model_config =
                 ModelConfig::new(model_name.clone(), "".to_string(), "".to_string(), 0, false);
 
-            let private_key = PrivateKey::new(OsRng);
-            let public_key = private_key.verification_key();
-
             let _join_handle = spawn_model_thread::<TestModel>(
                 model_name,
                 duration,
                 cache_dir,
                 model_config,
-                public_key,
                 model_receiver,
             );
         }
@@ -134,7 +128,6 @@ async fn test_inference_service() {
     const CHANNEL_BUFFER: usize = 32;
     const JRPC_PORT: u64 = 3000;
 
-    let private_key = PrivateKey::new(OsRng);
     let model_ids = ["mamba_130m", "mamba_370m", "llama_tiny_llama_1_1b_chat"];
     let model_configs = vec![
         ModelConfig::new(
@@ -176,7 +169,6 @@ async fn test_inference_service() {
     println!("Starting model service..");
     let mut service = ModelService::start(
         config.clone(),
-        private_key.verification_key(),
         json_server_req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
@@ -200,7 +192,7 @@ async fn test_inference_service() {
             "request_id": idx,
             "prompt": prompt.to_string(),
             "model": model_id.to_string(),
-            "sampled_nodes": private_key.verification_key(),
+            "sampled_nodes": Vec::<Vec<u8>>::new(),
             "temperature": 0.5,
             "random_seed": 42,
             "repeat_penalty": 1.0,

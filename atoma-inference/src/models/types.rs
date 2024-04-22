@@ -1,14 +1,11 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use candle::{DType, Device};
-use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{ModelId, Request, Response};
 
 use super::{candle::stable_diffusion::StableDiffusionInput, ModelError};
-
-pub type NodeId = PublicKey;
 
 #[derive(Debug)]
 pub struct LlmLoadData {
@@ -265,7 +262,7 @@ pub struct TextRequest {
     pub random_seed: usize,
     pub repeat_last_n: usize,
     pub repeat_penalty: f32,
-    pub sampled_nodes: Vec<NodeId>,
+    pub sampled_nodes: Vec<Vec<u8>>,
     pub temperature: Option<f32>,
     pub top_k: Option<usize>,
     pub top_p: Option<f64>,
@@ -289,10 +286,6 @@ impl Request for TextRequest {
 
     fn request_id(&self) -> usize {
         self.request_id
-    }
-
-    fn is_node_authorized(&self, public_key: &PublicKey) -> bool {
-        self.sampled_nodes.contains(public_key)
     }
 
     fn requested_model(&self) -> ModelId {
@@ -402,7 +395,7 @@ pub struct StableDiffusionRequest {
     /// The seed to use when generating random samples.
     pub random_seed: Option<u64>,
 
-    pub sampled_nodes: Vec<NodeId>,
+    pub sampled_nodes: Vec<Vec<u8>>,
 }
 
 impl Request for StableDiffusionRequest {
@@ -422,10 +415,6 @@ impl Request for StableDiffusionRequest {
             img2img_strength: self.img2img_strength,
             random_seed: self.random_seed,
         }
-    }
-
-    fn is_node_authorized(&self, public_key: &PublicKey) -> bool {
-        self.sampled_nodes.contains(public_key)
     }
 
     fn request_id(&self) -> usize {

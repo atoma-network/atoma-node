@@ -146,7 +146,7 @@ impl AtomaSuiClient {
     }
 
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
-        while let Some(response) = self.response_receiver.recv().await { 
+        while let Some(response) = self.response_receiver.recv().await {
             self.submit_response_commitment(response).await?;
         }
         Ok(())

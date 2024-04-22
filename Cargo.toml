@@ -20,6 +20,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.81"
 async-trait = "0.1.78"
+atoma-client = { path = "./atoma-client/" }
 atoma-crypto = { path = "./atoma-crypto/" }
 atoma-inference = { path = "./atoma-inference/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
@@ -31,7 +32,6 @@ candle-transformers = { git = "https://github.com/huggingface/candle", package =
 clap = "4.5.4"
 config = "0.14.0"
 dotenv = "0.15.0"
-ed25519-consensus = "2.1.0"
 ethers = "2.0.14"
 futures = "0.3.30"
 futures-util = "0.3.30"
