@@ -3,10 +3,7 @@ use std::{path::Path, str::FromStr};
 use sui_sdk::{
     rpc_types::{SuiObjectDataOptions, SuiObjectResponseQuery, SuiTransactionBlockResponseOptions},
     types::{
-        base_types::SuiAddress,
-        programmable_transaction_builder::ProgrammableTransactionBuilder,
-        quorum_driver_types::ExecuteTransactionRequestType,
-        transaction::{Transaction, TransactionData},
+        base_types::{ObjectID, ObjectIDParseError, SuiAddress}, programmable_transaction_builder::ProgrammableTransactionBuilder, quorum_driver_types::ExecuteTransactionRequestType, transaction::{CallArg, Command, ObjectArg, Transaction, TransactionData}, Identifier, TypeTag
     },
     SuiClient, SuiClientBuilder,
 };
@@ -17,6 +14,10 @@ use crate::config::SuiConfig;
 
 const AMOUNT: u64 = 100_000_000; // 0.1 SUI
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
+
+const PACKAGE_ID: &str = "<TODO>";
+const MODULE_ID: &str = "";
+const METHOD: &str = "command";
 
 pub struct AtomaSuiClient {
     client: SuiClient,
@@ -52,7 +53,7 @@ impl AtomaSuiClient {
         Self::new(&address, &atoma_contract_address, &http_url, Some(&ws_url)).await
     }
 
-    pub async fn sign_transaction(
+    pub async fn sign_commitment(
         &self,
         response: serde_json::Value,
     ) -> Result<(), AtomaSuiClientError> {
@@ -88,8 +89,22 @@ impl AtomaSuiClient {
 
         let pt = {
             let mut builder = ProgrammableTransactionBuilder::new();
-            // TODO: we don't want to pay SUI, only submit the commitment
-            builder.pay_sui(vec![self.atoma_contract_address], vec![AMOUNT])?;
+            let obj_arg = ObjectArg;
+            let call_arg = CallArg::Object(());
+            builder.input(call_arg);
+            let argument = builder.obj(obj_arg)?;
+            let package = ObjectID::from_str(PACKAGE_ID)?;
+            let module = Identifier::from_str(MODULE_ID)?;
+            let type_arguments = vec![TypeTag::U256, TypeTag::Vector(Box::new(TypeTag::U256))];
+            let function = Identifier::from_str(METHOD)?;
+            let arguments = ;
+            builder.command(Command::move_call(
+                package,
+                module,
+                function,
+                type_arguments,
+                arguments,
+            ));
             builder.finish()
         };
 
@@ -130,6 +145,8 @@ pub enum AtomaSuiClientError {
     SuiBuilderError(#[from] sui_sdk::error::Error),
     #[error("Failed to parse address: `{0}`")]
     FailedParseAddress(#[from] anyhow::Error),
+    #[error("Object ID parse error: `{0}`")]
+    ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("No available funds")]
     NoAvailableFunds,
 }
