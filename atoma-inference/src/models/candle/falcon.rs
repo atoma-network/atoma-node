@@ -150,8 +150,7 @@ impl ModelTrait for FalconModel {
             ..
         } = input;
 
-        let mut logits_processor =
-            LogitsProcessor::new(random_seed, Some(temperature), Some(top_p));
+        let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
         info!("Running inference on prompt: {:?}", prompt);
         let mut tokens = self.tokenizer.encode(prompt, true)?.get_ids().to_vec();
 

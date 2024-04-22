@@ -1,6 +1,6 @@
 Cargo.lock
 target/
 .vscode/
-models/
+/models/
 inference.toml
 sui_subscriber.toml

@@ -14,7 +14,7 @@ use crate::{
     models::{
         candle::{
             falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, stable_diffusion::StableDiffusion,
+            mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
         types::ModelType,
@@ -240,6 +240,34 @@ pub(crate) fn dispatch_model_thread(
         | ModelType::StableDiffusionV2_1
         | ModelType::StableDiffusionTurbo
         | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            public_key,
+            model_receiver,
+        ),
+        ModelType::QuantizedL7b
+        | ModelType::QuantizedL13b
+        | ModelType::QuantizedL70b
+        | ModelType::QuantizedL7bChat
+        | ModelType::QuantizedL13bChat
+        | ModelType::QuantizedL70bChat
+        | ModelType::QuantizedL7bCode
+        | ModelType::QuantizedL13bCode
+        | ModelType::QuantizedL34bCode
+        | ModelType::QuantizedLeo7b
+        | ModelType::QuantizedLeo13b
+        | ModelType::QuantizedMistral7b
+        | ModelType::QuantizedMistral7bInstruct
+        | ModelType::QuantizedMistral7bInstructV02
+        | ModelType::QuantizedZephyr7bAlpha
+        | ModelType::QuantizedZephyr7bBeta
+        | ModelType::QuantizedOpenChat35
+        | ModelType::QuantizedStarling7bAlpha
+        | ModelType::QuantizedMixtral
+        | ModelType::QuantizedMixtralInstruct
+        | ModelType::QuantizedL8b => spawn_model_thread::<QuantizedModel>(
             model_name,
             api_key,
             cache_dir,
