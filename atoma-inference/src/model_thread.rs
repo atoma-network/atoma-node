@@ -199,7 +199,8 @@ pub(crate) fn dispatch_model_thread(
         | ModelType::LlamaTinyLlama1_1BChat
         | ModelType::LlamaSolar10_7B
         | ModelType::Llama3_8b
-        | ModelType::Llama3Instruct8b => spawn_model_thread::<LlamaModel>(
+        | ModelType::Llama3Instruct8b 
+        | ModelType::Llama3_70b => spawn_model_thread::<LlamaModel>(
             model_name,
             api_key,
             cache_dir,
