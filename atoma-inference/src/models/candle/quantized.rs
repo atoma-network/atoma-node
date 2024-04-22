@@ -67,15 +67,15 @@ impl ModelTrait for QuantizedModel {
         let repo_id = model_type.repo().to_string();
         let repo = api.model(repo_id);
         let filename = match model_type {
-            ModelType::QuantizedL7b => "llama-2-7b.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL13b => "llama-2-13b.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL70b => "llama-2-70b.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL7bChat => "llama-2-7b-chat.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL13bChat => "llama-2-13b-chat.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL70bChat => "llama-2-70b-chat.ggmlv3.q4_0.bin",
-            ModelType::QuantizedL7bCode => "codellama-7b.Q8_0.gguf",
-            ModelType::QuantizedL13bCode => "codellama-13b.Q8_0.gguf",
-            ModelType::QuantizedL34bCode => "codellama-34b.Q8_0.gguf",
+            ModelType::QuantizedLlamaV2_7b => "llama-2-7b.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlamaV2_13b => "llama-2-13b.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlamaV2_70b => "llama-2-70b.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlamaV2_7bChat => "llama-2-7b-chat.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlamaV2_13bChat => "llama-2-13b-chat.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlamaV2_70bChat => "llama-2-70b-chat.ggmlv3.q4_0.bin",
+            ModelType::QuantizedLlama7b => "codellama-7b.Q8_0.gguf",
+            ModelType::QuantizedLlama13b => "codellama-13b.Q8_0.gguf",
+            ModelType::QuantizedLlama34b => "codellama-34b.Q8_0.gguf",
             ModelType::QuantizedLeo7b => "leo-hessianai-7b.Q4_K_M.gguf",
             ModelType::QuantizedLeo13b => "leo-hessianai-13b.Q4_K_M.gguf",
             ModelType::QuantizedMixtral => "mixtral-8x7b-v0.1.Q4_K_M.gguf",
@@ -94,15 +94,15 @@ impl ModelTrait for QuantizedModel {
         let model_path = repo.get(filename)?;
 
         let repo_id = match model_type {
-            ModelType::QuantizedL7b
-            | ModelType::QuantizedL13b
-            | ModelType::QuantizedL70b
-            | ModelType::QuantizedL7bChat
-            | ModelType::QuantizedL13bChat
-            | ModelType::QuantizedL70bChat
-            | ModelType::QuantizedL7bCode
-            | ModelType::QuantizedL13bCode
-            | ModelType::QuantizedL34bCode => "hf-internal-testing/llama-tokenizer",
+            ModelType::QuantizedLlamaV2_7b
+            | ModelType::QuantizedLlamaV2_13b
+            | ModelType::QuantizedLlamaV2_70b
+            | ModelType::QuantizedLlamaV2_7bChat
+            | ModelType::QuantizedLlamaV2_13bChat
+            | ModelType::QuantizedLlamaV2_70bChat
+            | ModelType::QuantizedLlama7b
+            | ModelType::QuantizedLlama13b
+            | ModelType::QuantizedLlama34b => "hf-internal-testing/llama-tokenizer",
             ModelType::QuantizedLeo7b => "LeoLM/leo-hessianai-7b",
             ModelType::QuantizedLeo13b => "LeoLM/leo-hessianai-13b",
             ModelType::QuantizedMixtral => "mistralai/Mixtral-8x7B-v0.1",
@@ -145,13 +145,13 @@ impl ModelTrait for QuantizedModel {
                 let model = ggml_file::Content::read(&mut file, &load_data.device)
                     .map_err(|e| e.with_path(model_path))?;
                 let default_gqa = match load_data.model_type {
-                    ModelType::QuantizedL7b
-                    | ModelType::QuantizedL13b
-                    | ModelType::QuantizedL7bChat
-                    | ModelType::QuantizedL13bChat
-                    | ModelType::QuantizedL7bCode
-                    | ModelType::QuantizedL13bCode
-                    | ModelType::QuantizedL34bCode
+                    ModelType::QuantizedLlamaV2_7b
+                    | ModelType::QuantizedLlamaV2_13b
+                    | ModelType::QuantizedLlamaV2_7bChat
+                    | ModelType::QuantizedLlamaV2_13bChat
+                    | ModelType::QuantizedLlama7b
+                    | ModelType::QuantizedLlama13b
+                    | ModelType::QuantizedLlama34b
                     | ModelType::QuantizedLeo7b
                     | ModelType::QuantizedLeo13b
                     | ModelType::QuantizedL8b => 1,
@@ -162,8 +162,8 @@ impl ModelTrait for QuantizedModel {
                     | ModelType::QuantizedMistral7bInstructV02
                     | ModelType::QuantizedZephyr7bAlpha
                     | ModelType::QuantizedZephyr7bBeta
-                    | ModelType::QuantizedL70b
-                    | ModelType::QuantizedL70bChat
+                    | ModelType::QuantizedLlamaV2_70b
+                    | ModelType::QuantizedLlamaV2_70bChat
                     | ModelType::QuantizedOpenChat35
                     | ModelType::QuantizedStarling7bAlpha => 8,
                     _ => unreachable!("Model not supported"),

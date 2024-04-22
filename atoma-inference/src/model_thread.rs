@@ -247,15 +247,15 @@ pub(crate) fn dispatch_model_thread(
             public_key,
             model_receiver,
         ),
-        ModelType::QuantizedL7b
-        | ModelType::QuantizedL13b
-        | ModelType::QuantizedL70b
-        | ModelType::QuantizedL7bChat
-        | ModelType::QuantizedL13bChat
-        | ModelType::QuantizedL70bChat
-        | ModelType::QuantizedL7bCode
-        | ModelType::QuantizedL13bCode
-        | ModelType::QuantizedL34bCode
+        ModelType::QuantizedLlamaV2_7b
+        | ModelType::QuantizedLlamaV2_13b
+        | ModelType::QuantizedLlamaV2_70b
+        | ModelType::QuantizedLlamaV2_7bChat
+        | ModelType::QuantizedLlamaV2_13bChat
+        | ModelType::QuantizedLlamaV2_70bChat
+        | ModelType::QuantizedLlama7b
+        | ModelType::QuantizedLlama13b
+        | ModelType::QuantizedLlama34b
         | ModelType::QuantizedLeo7b
         | ModelType::QuantizedLeo13b
         | ModelType::QuantizedMistral7b
