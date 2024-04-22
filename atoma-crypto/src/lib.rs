@@ -1,42 +1,26 @@
-use crypto::Commitment;
-use ed25519_consensus::SigningKey as PrivateKey;
 use rs_merkle::{Hasher, MerkleProof, MerkleTree};
 
 mod crypto;
+pub use rs_merkle::algorithms::Sha256;
 
-pub struct Committer {
-    private_key: PrivateKey,
-}
+pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
+    data: T,
+    index: usize,
+    num_leaves: usize,
+) -> (H::Hash, MerkleProof<H>) {
+    let data = data.as_ref();
+    assert!(data.len() > 0);
+    let chunk_size = data.len() / num_leaves;
 
-impl Committer {
-    pub fn new(private_key: PrivateKey) -> Self {
-        Self { private_key }
-    }
+    let chunks = data
+        .chunks(chunk_size)
+        .map(|buf| H::hash(buf))
+        .collect::<Vec<_>>();
 
-    pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
-        &self,
-        data: T,
-        index: usize,
-        num_leaves: usize,
-    ) -> (Commitment, MerkleProof<H>) {
-        let data = data.as_ref();
-        let chunk_size = data.len() / num_leaves;
+    assert!(chunks.len() > 0);
 
-        let chunks = data
-            .chunks(chunk_size)
-            .map(|buf| H::hash(buf))
-            .collect::<Vec<_>>();
+    let merkle_tree = MerkleTree::<H>::from_leaves(&chunks);
+    let merkle_proof = merkle_tree.proof(&[index]);
 
-        assert!(chunks.len() > 0);
-
-        let merkle_tree = MerkleTree::<H>::from_leaves(&chunks);
-        let merkle_proof = merkle_tree.proof(&[index]);
-        let commitment = Commitment::new(
-            self.private_key
-                .sign(&merkle_tree.root().unwrap().into())
-                .to_bytes(),
-        );
-
-        (commitment, merkle_proof)
-    }
+    (merkle_tree.root().unwrap(), merkle_proof)
 }
