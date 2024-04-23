@@ -1,7 +1,7 @@
+use atoma_types::{Request, Response};
 use candle::Error as CandleError;
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
-use serde_json::Value;
 use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -23,18 +23,18 @@ pub struct ModelService {
     flush_storage: bool,
     public_key: PublicKey,
     cache_dir: PathBuf,
-    json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
-    subscriber_req_rx: Receiver<Value>,
-    atoma_node_resp_tx: Sender<Value>,
+    json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
+    subscriber_req_rx: Receiver<Request>,
+    atoma_node_resp_tx: Sender<Response>,
 }
 
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
         private_key: PrivateKey,
-        json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
-        subscriber_req_rx: Receiver<Value>,
-        atoma_node_resp_tx: Sender<Value>,
+        json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
+        subscriber_req_rx: Receiver<Request>,
+        atoma_node_resp_tx: Sender<Response>,
     ) -> Result<Self, ModelServiceError> {
         let public_key = private_key.verification_key();
 

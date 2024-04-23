@@ -9,7 +9,8 @@ members = [
     "atoma-networking",
     "atoma-node",
     "atoma-json-rpc",
-    "atoma-storage"
+    "atoma-storage",
+    "atoma-types"
 ]
 
 [workspace.package]
@@ -21,6 +22,7 @@ anyhow = "1.0.81"
 async-trait = "0.1.78"
 atoma-inference = { path = "./atoma-inference/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
+atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }
 candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", branch = "main" }

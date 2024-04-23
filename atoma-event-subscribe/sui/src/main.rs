@@ -30,6 +30,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
 
     let event_subscriber = SuiSubscriber::new(
+        0,
         &http_url,
         Some(&ws_url),
         package_id,
@@ -45,7 +46,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     });
 
     while let Some(event) = event_receiver.recv().await {
-        info!("Processed a new event: {event}")
+        info!("Processed a new event: {:?}", event);
     }
 
     Ok(())
