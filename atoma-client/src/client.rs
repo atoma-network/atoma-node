@@ -39,6 +39,7 @@ impl AtomaSuiClient {
         max_concurrent_requests: Option<u64>,
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
+        info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
             config_path.as_ref(),
             request_timeout,

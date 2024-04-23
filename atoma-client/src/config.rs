@@ -17,10 +17,10 @@ impl AtomaSuiClientConfig {
         ));
         let config = builder
             .build()
-            .expect("Failed to generate inference configuration file");
+            .expect("Failed to generate Atoma Sui client configuration file");
         config
             .try_deserialize::<Self>()
-            .expect("Failed to generated config file")
+            .expect("Failed to generated Atoma Sui client config file")
     }
 
     pub fn config_path(&self) -> String {
