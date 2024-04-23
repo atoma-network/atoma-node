@@ -6,7 +6,7 @@ use atoma_inference::{
     PrivateKey,
 };
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
-use serde_json::Value;
+use atoma_types::{Request, Response};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, mpsc::Receiver, oneshot},
@@ -23,10 +23,11 @@ pub struct AtomaNode {
 
 impl AtomaNode {
     pub async fn start<P>(
+        node_id: u64,
         model_config_path: P,
         private_key_path: P,
         sui_subscriber_path: P,
-        json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
+        json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     ) -> Result<Self, AtomaNodeError>
     where
         P: AsRef<Path> + Send + 'static,
@@ -59,7 +60,8 @@ impl AtomaNode {
 
         let sui_subscriber_handle = tokio::spawn(async move {
             let sui_event_subscriber =
-                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx).await?;
+                SuiSubscriber::new_from_config(node_id, sui_subscriber_path, subscriber_req_tx)
+                    .await?;
             sui_event_subscriber
                 .subscribe()
                 .await
@@ -67,7 +69,7 @@ impl AtomaNode {
         });
 
         while let Some(response) = atoma_node_resp_rx.recv().await {
-            info!("Received new response: {response}");
+            info!("Received new response: {:?}", response);
         }
 
         Ok(Self {

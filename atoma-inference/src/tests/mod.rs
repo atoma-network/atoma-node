@@ -7,6 +7,7 @@ use prompts::PROMPTS;
 
 use std::{collections::HashMap, sync::mpsc};
 
+use atoma_types::Request;
 use futures::{stream::FuturesUnordered, StreamExt};
 use rand::rngs::OsRng;
 use reqwest::Client;
@@ -105,21 +106,21 @@ async fn test_mock_model_thread() {
     for i in 0..NUM_REQUESTS {
         for sender in model_thread_dispatcher.model_senders.values() {
             let (response_sender, response_receiver) = oneshot::channel();
-            let request = json!(i);
+            let request = Request::new(0, vec![], "".to_string(), json!(i));
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
             responses.push(response_receiver);
-            should_be_received_responses.push(request.as_u64().unwrap());
+            should_be_received_responses.push(request.body().as_u64().unwrap());
         }
     }
 
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
         if let Ok(value) = response {
-            received_responses.push(value.as_u64().unwrap());
+            received_responses.push(value.response().as_u64().unwrap());
         }
     }
 

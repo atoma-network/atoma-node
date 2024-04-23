@@ -1,7 +1,6 @@
 use std::{path::Path, time::Duration};
 
 use futures::StreamExt;
-use serde_json::Value;
 use sui_sdk::rpc_types::EventFilter;
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
@@ -10,20 +9,22 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::config::SuiSubscriberConfig;
-use crate::TextPromptParams;
+use atoma_types::Request;
 
 pub struct SuiSubscriber {
+    id: u64,
     sui_client: SuiClient,
     filter: EventFilter,
-    event_sender: mpsc::Sender<Value>,
+    event_sender: mpsc::Sender<Request>,
 }
 
 impl SuiSubscriber {
     pub async fn new(
+        id: u64,
         http_url: &str,
         ws_url: Option<&str>,
         object_id: ObjectID,
-        event_sender: mpsc::Sender<Value>,
+        event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
@@ -37,6 +38,7 @@ impl SuiSubscriber {
         let sui_client = sui_client_builder.build(http_url).await?;
         let filter = EventFilter::Package(object_id);
         Ok(Self {
+            id,
             sui_client,
             filter,
             event_sender,
@@ -44,8 +46,9 @@ impl SuiSubscriber {
     }
 
     pub async fn new_from_config<P: AsRef<Path>>(
+        id: u64,
         config_path: P,
-        event_sender: mpsc::Sender<Value>,
+        event_sender: mpsc::Sender<Request>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let http_url = config.http_url();
@@ -53,6 +56,7 @@ impl SuiSubscriber {
         let object_id = config.object_id();
         let request_timeout = config.request_timeout();
         Self::new(
+            id,
             &http_url,
             Some(&ws_url),
             object_id,
@@ -70,15 +74,19 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
-                    info!("Received event: {event_data}");
-                    let sampled_nodes = &event_data["nodes"];
-                    let request =
-                        serde_json::from_value::<TextPromptParams>(event_data["params"].clone())?;
-                    info!(
-                        "The request = {:?} and sampled_nodes = {:?}",
-                        request, sampled_nodes
-                    );
-                    self.event_sender.send(event_data).await?;
+                    let request = serde_json::from_value::<Request>(event_data)?;
+                    info!("Received new request: {:?}", request);
+                    let request_id = request.id();
+                    let sampled_nodes = request.sampled_nodes();
+                    if sampled_nodes.contains(&self.id) {
+                        info!(
+                            "Current node has been sampled for request with id: {}",
+                            request_id
+                        );
+                        self.event_sender.send(request).await?;
+                    } else {
+                        info!("Current node has not been sampled for request with id: {}, ignoring it..", request_id);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
@@ -98,5 +106,5 @@ pub enum SuiSubscriberError {
     #[error("Object ID parse error: `{0}`")]
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<Value>),
+    SendError(#[from] mpsc::error::SendError<Request>),
 }
