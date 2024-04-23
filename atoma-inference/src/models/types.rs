@@ -444,29 +444,3 @@ impl Response for StableDiffusionResponse {
         }
     }
 }
-
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-pub enum PrecisionBits {
-    BF16,
-    F16,
-    F32,
-    F64,
-    I64,
-    U8,
-    U32,
-}
-
-impl PrecisionBits {
-    #[allow(dead_code)]
-    pub(crate) fn into_dtype(self) -> DType {
-        match self {
-            Self::BF16 => DType::BF16,
-            Self::F16 => DType::F16,
-            Self::F32 => DType::F32,
-            Self::F64 => DType::F64,
-            Self::I64 => DType::I64,
-            Self::U8 => DType::U8,
-            Self::U32 => DType::U32,
-        }
-    }
-}
