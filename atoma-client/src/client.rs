@@ -15,6 +15,8 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use crate::config::AtomaSuiClientConfig;
+
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
 const PACKAGE_ID: &str = "<TODO>";
@@ -46,6 +48,23 @@ impl AtomaSuiClient {
             wallet_ctx,
             response_receiver,
         })
+    }
+
+    pub fn new_from_config<P: AsRef<Path>>(
+        config_path: P,
+        response_receiver: mpsc::Receiver<serde_json::Value>,
+    ) -> Result<Self, AtomaSuiClientError> {
+        let config = AtomaSuiClientConfig::from_file_path(config_path);
+        let config_path = config.config_path();
+        let request_timeout = config.request_timeout();
+        let max_concurrent_requests = config.max_concurrent_requests();
+
+        Self::new(
+            config_path,
+            Some(request_timeout),
+            Some(max_concurrent_requests),
+            response_receiver,
+        )
     }
 
     fn get_index(

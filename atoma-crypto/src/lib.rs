@@ -1,6 +1,5 @@
 use rs_merkle::{Hasher, MerkleProof, MerkleTree};
 
-mod crypto;
 pub use rs_merkle::algorithms::Sha256;
 
 pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
@@ -9,7 +8,7 @@ pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
     num_leaves: usize,
 ) -> (H::Hash, MerkleProof<H>) {
     let data = data.as_ref();
-    assert!(data.len() > 0);
+    assert!(!data.is_empty());
     let chunk_size = data.len() / num_leaves;
 
     let chunks = data
@@ -17,7 +16,7 @@ pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
         .map(|buf| H::hash(buf))
         .collect::<Vec<_>>();
 
-    assert!(chunks.len() > 0);
+    assert!(!chunks.is_empty());
 
     let merkle_tree = MerkleTree::<H>::from_leaves(&chunks);
     let merkle_proof = merkle_tree.proof(&[index]);

@@ -1,9 +1,9 @@
 use std::{io, path::Path};
 
+use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
-    PrivateKey,
 };
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use serde_json::Value;
@@ -24,8 +24,8 @@ pub struct AtomaNode {
 
 impl AtomaNode {
     pub async fn start<P>(
+        atoma_sui_client_config_path: P,
         model_config_path: P,
-        private_key_path: P,
         sui_subscriber_path: P,
         json_server_req_rx: Receiver<(Value, oneshot::Sender<Value>)>,
     ) -> Result<Self, AtomaNodeError>
@@ -34,15 +34,8 @@ impl AtomaNode {
     {
         let model_config = ModelsConfig::from_file_path(model_config_path);
 
-        let private_key_bytes = std::fs::read(private_key_path)?;
-        let private_key_bytes: [u8; 32] = private_key_bytes
-            .try_into()
-            .expect("Incorrect private key bytes length");
-
-        let private_key = PrivateKey::from(private_key_bytes);
-
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
-        let (atoma_node_resp_tx, mut atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
+        let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
 
         let model_service_handle = tokio::spawn(async move {
             let mut model_service = ModelService::start(
@@ -67,12 +60,13 @@ impl AtomaNode {
         });
 
         let atoma_sui_client_handle = tokio::spawn(async move {
-            let atoma_sui_client = AtomaSuiClient::new();
+            let atoma_sui_client =
+                AtomaSuiClient::new_from_config(atoma_sui_client_config_path, atoma_node_resp_rx)?;
+            atoma_sui_client
+                .run()
+                .await
+                .map_err(AtomaNodeError::AtomaSuiClientError)
         });
-
-        while let Some(response) = atoma_node_resp_rx.recv().await {
-            info!("Received new response: {response}");
-        }
 
         Ok(Self {
             model_service_handle,
@@ -84,6 +78,8 @@ impl AtomaNode {
 
 #[derive(Debug, Error)]
 pub enum AtomaNodeError {
+    #[error("Atoma Sui client error: `{0}`")]
+    AtomaSuiClientError(#[from] AtomaSuiClientError),
     #[error("Model service error: `{0}`")]
     ModelServiceError(#[from] ModelServiceError),
     #[error("Sui subscriber error: `{0}`")]
