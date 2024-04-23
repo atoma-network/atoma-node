@@ -1,6 +1,7 @@
 use std::{path::Path, str::FromStr, time::Duration};
 
 use atoma_crypto::{calculate_commitment, Sha256};
+use atoma_types::Response;
 use sui_keys::keystore::AccountKeystore;
 use sui_sdk::{
     json::SuiJsonValue,
@@ -24,17 +25,19 @@ const MODULE_ID: &str = "";
 const METHOD: &str = "command";
 
 pub struct AtomaSuiClient {
+    node_id: u64,
     address: SuiAddress,
     wallet_ctx: WalletContext,
-    response_receiver: mpsc::Receiver<serde_json::Value>,
+    response_receiver: mpsc::Receiver<Response>,
 }
 
 impl AtomaSuiClient {
     pub fn new<P: AsRef<Path>>(
+        node_id: u64,
         config_path: P,
         request_timeout: Option<Duration>,
         max_concurrent_requests: Option<u64>,
-        response_receiver: mpsc::Receiver<serde_json::Value>,
+        response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
         let mut wallet_ctx = WalletContext::new(
             config_path.as_ref(),
@@ -44,6 +47,7 @@ impl AtomaSuiClient {
         let active_address = wallet_ctx.active_address()?;
         info!("Set Sui client, with active address: {}", active_address);
         Ok(Self {
+            node_id,
             address: active_address,
             wallet_ctx,
             response_receiver,
@@ -51,8 +55,9 @@ impl AtomaSuiClient {
     }
 
     pub fn new_from_config<P: AsRef<Path>>(
+        node_id: u64,
         config_path: P,
-        response_receiver: mpsc::Receiver<serde_json::Value>,
+        response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
         let config_path = config.config_path();
@@ -60,6 +65,7 @@ impl AtomaSuiClient {
         let max_concurrent_requests = config.max_concurrent_requests();
 
         Self::new(
+            node_id,
             config_path,
             Some(request_timeout),
             Some(max_concurrent_requests),
@@ -67,29 +73,14 @@ impl AtomaSuiClient {
         )
     }
 
-    fn get_index(
-        &self,
-        sampled_nodes: serde_json::Value,
-    ) -> Result<(usize, usize), AtomaSuiClientError> {
-        let (index, num_leaves) = if let Some(sampled_nodes) = sampled_nodes.as_array() {
-            let idx = sampled_nodes
-                .iter()
-                .enumerate()
-                .find(|(_, pk)| {
-                    let pk_bytes = pk
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|u| u.as_u64().unwrap() as u8)
-                        .collect::<Vec<_>>();
-                    self.address.as_ref() == pk_bytes
-                })
-                .unwrap()
-                .0;
-            (idx, sampled_nodes.len())
-        } else {
-            return Err(AtomaSuiClientError::InvalidSampledNode);
-        };
+    fn get_index(&self, sampled_nodes: Vec<u64>) -> Result<(usize, usize), AtomaSuiClientError> {
+        let num_leaves = sampled_nodes.len();
+        let index = sampled_nodes
+            .into_iter()
+            .enumerate()
+            .find(|(_, id)| self.node_id == *id)
+            .ok_or(AtomaSuiClientError::InvalidSampledNode)?
+            .0;
         Ok((index, num_leaves))
     }
 
@@ -121,13 +112,11 @@ impl AtomaSuiClient {
 
     pub async fn submit_response_commitment(
         &self,
-        response: serde_json::Value,
+        response: Response,
     ) -> Result<TransactionDigest, AtomaSuiClientError> {
-        let request_id = response["id"]
-            .as_u64()
-            .ok_or(AtomaSuiClientError::InvalidRequestId)?;
-        let data = self.get_data(response["data"].clone())?;
-        let (index, num_leaves) = self.get_index(response["sampled_nodes"].clone())?;
+        let request_id = response.id();
+        let data = self.get_data(response.response())?;
+        let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
         let (merkle_root, merkle_path) = calculate_commitment::<Sha256, _>(data, index, num_leaves);
         let signature = self.sign_merkle_root(merkle_root)?;
 
