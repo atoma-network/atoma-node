@@ -1,6 +1,5 @@
 use std::{io, path::Path};
 
-
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
