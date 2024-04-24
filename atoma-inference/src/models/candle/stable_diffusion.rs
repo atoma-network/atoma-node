@@ -413,11 +413,74 @@ enum ModelFile {
 }
 
 impl ModelFile {
+    fn unet_file(model_type: ModelType, use_f16: bool) -> &'static str {
+        match model_type {
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionXl
+            | ModelType::StableDiffusionTurbo => {
+                if use_f16 {
+                    "unet/diffusion_pytorch_model.fp16.safetensors"
+                } else {
+                    "unet/diffusion_pytorch_model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn vae_file(model_type: ModelType, use_f16: bool) -> &'static str {
+        match model_type {
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionXl
+            | ModelType::StableDiffusionTurbo => {
+                if use_f16 {
+                    "vae/diffusion_pytorch_model.fp16.safetensors"
+                } else {
+                    "vae/diffusion_pytorch_model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn clip_file(model_type: ModelType, use_f16: bool) -> &'static str {
+        match model_type {
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionXl
+            | ModelType::StableDiffusionTurbo => {
+                if use_f16 {
+                    "text_encoder/model.fp16.safetensors"
+                } else {
+                    "text_encoder/model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
+    fn clip2_file(model_type: ModelType, use_f16: bool) -> &'static str {
+        match model_type {
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionXl
+            | ModelType::StableDiffusionTurbo => {
+                if use_f16 {
+                    "text_encoder_2/model.fp16.safetensors"
+                } else {
+                    "text_encoder_2/model.safetensors"
+                }
+            }
+            _ => panic!("Invalid stable diffusion model type"),
+        }
+    }
+
     fn get(
         &self,
         api_key: String,
         cache_dir: PathBuf,
-
         model_type: ModelType,
         use_f16: bool,
     ) -> Result<PathBuf, ModelError> {
@@ -437,9 +500,9 @@ impl ModelFile {
                 (tokenizer_repo, "tokenizer.json")
             }
             Self::Tokenizer2 => ("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k", "tokenizer.json"),
-            Self::Clip => (model_type.repo(), model_type.clip_file(use_f16)),
-            Self::Clip2 => (model_type.repo(), model_type.clip2_file(use_f16)),
-            Self::Unet => (model_type.repo(), model_type.unet_file(use_f16)),
+            Self::Clip => (model_type.repo(), Self::clip_file(model_type, use_f16)),
+            Self::Clip2 => (model_type.repo(), Self::clip2_file(model_type, use_f16)),
+            Self::Unet => (model_type.repo(), Self::unet_file(model_type, use_f16)),
             Self::Vae => {
                 // Override for SDXL when using f16 weights.
                 // See https://github.com/huggingface/candle/issues/1060
@@ -453,7 +516,7 @@ impl ModelFile {
                         "diffusion_pytorch_model.safetensors",
                     )
                 } else {
-                    (model_type.repo(), model_type.vae_file(use_f16))
+                    (model_type.repo(), Self::vae_file(model_type, use_f16))
                 }
             }
         };
