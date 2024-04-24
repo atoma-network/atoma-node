@@ -1,54 +1,24 @@
-use std::{
-    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
-};
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle};
 
-use atoma_types::{Request, Response};
+use atoma_types::{ModelThreadError, Request, Response};
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
-use thiserror::Error;
-use tokio::sync::oneshot::{self, error::RecvError};
+use tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
 
-use crate::{
-    apis::ApiError,
-    models::{
-        candle::{
-            falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
-        },
-        config::{ModelConfig, ModelsConfig},
-        types::ModelType,
-        ModelError, ModelId, ModelTrait,
+use crate::models::{
+    candle::{
+        falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
+        mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
     },
+    config::{ModelConfig, ModelsConfig},
+    types::ModelType,
+    ModelId, ModelTrait,
 };
 
 pub struct ModelThreadCommand {
     pub(crate) request: Request,
     pub(crate) sender: oneshot::Sender<Response>,
-}
-
-#[derive(Debug, Error)]
-pub enum ModelThreadError {
-    #[error("Model thread shutdown: `{0}`")]
-    ApiError(ApiError),
-    #[error("Model thread shutdown: `{0}`")]
-    ModelError(ModelError),
-    #[error("Core thread shutdown: `{0}`")]
-    Shutdown(RecvError),
-    #[error("Serde error: `{0}`")]
-    SerdeError(#[from] serde_json::Error),
-}
-
-impl From<ModelError> for ModelThreadError {
-    fn from(error: ModelError) -> Self {
-        Self::ModelError(error)
-    }
-}
-
-impl From<ApiError> for ModelThreadError {
-    fn from(error: ApiError) -> Self {
-        Self::ApiError(error)
-    }
 }
 
 pub struct ModelThreadHandle {

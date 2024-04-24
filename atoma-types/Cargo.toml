@@ -8,3 +8,8 @@ edition.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+hf-hub.workspace = true
+thiserror.workspace = true
+candle.workspace = true
+image.workspace = true
+tokio.workspace = true

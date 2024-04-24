@@ -1,5 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
+mod errors;
+pub use errors::*;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {

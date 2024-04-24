@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use atoma_types::ApiError;
 use hf_hub::{
     api::sync::{Api, ApiBuilder},
     Repo, RepoType,
@@ -9,7 +10,7 @@ use tracing::error;
 
 use crate::models::ModelId;
 
-use super::{ApiError, ApiTrait};
+use super::ApiTrait;
 
 #[async_trait]
 impl ApiTrait for Api {

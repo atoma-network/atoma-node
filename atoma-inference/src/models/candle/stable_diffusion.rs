@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
+use atoma_types::{bail, ModelError};
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -11,11 +12,8 @@ use serde::Deserialize;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
-use crate::{
-    bail,
-    models::{
-        candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelId, ModelTrait,
-    },
+use crate::models::{
+    candle::save_image, config::ModelConfig, types::ModelType, ModelId, ModelTrait,
 };
 
 use super::{convert_to_image, device, save_tensor_to_file};

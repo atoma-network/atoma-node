@@ -1,12 +1,8 @@
 use std::{io, path::Path};
 
-use atoma_inference::{
-    models::config::ModelsConfig,
-    service::{ModelService, ModelServiceError},
-    PrivateKey,
-};
+use atoma_inference::{models::config::ModelsConfig, service::ModelService, PrivateKey};
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
-use atoma_types::{Request, Response};
+use atoma_types::{ModelServiceError, Request, Response};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, mpsc::Receiver, oneshot},

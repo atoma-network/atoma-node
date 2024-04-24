@@ -1,18 +1,13 @@
-use atoma_types::{Request, Response};
-use candle::Error as CandleError;
+use atoma_types::{ModelServiceError, Request, Response};
 use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
-use std::fmt::Debug;
-use std::{io, path::PathBuf, time::Instant};
+use std::{path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
 use tracing::{error, info};
 
-use thiserror::Error;
-
 use crate::{
-    apis::ApiError,
-    model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
+    model_thread::{ModelThreadDispatcher, ModelThreadHandle},
     models::config::ModelsConfig,
 };
 
@@ -110,38 +105,9 @@ impl ModelService {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ModelServiceError {
-    #[error("Failed to run inference: `{0}`")]
-    FailedInference(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Failed to fecth model: `{0}`")]
-    FailedModelFetch(String),
-    #[error("Failed to generate private key: `{0}`")]
-    PrivateKeyError(io::Error),
-    #[error("Core error: `{0}`")]
-    ModelThreadError(ModelThreadError),
-    #[error("Api error: `{0}`")]
-    ApiError(ApiError),
-    #[error("Candle error: `{0}`")]
-    CandleError(CandleError),
-    #[error("Sender error: `{0}`")]
-    SendError(String),
-}
-
-impl From<ApiError> for ModelServiceError {
-    fn from(error: ApiError) -> Self {
-        Self::ApiError(error)
-    }
-}
-
-impl From<CandleError> for ModelServiceError {
-    fn from(error: CandleError) -> Self {
-        Self::CandleError(error)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use atoma_types::ModelError;
     use ed25519_consensus::VerificationKey as PublicKey;
     use rand::rngs::OsRng;
     use std::io::Write;
@@ -183,11 +149,11 @@ mod tests {
         type Output = ();
         type LoadData = ();
 
-        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
+        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), ModelError> {
             Ok(())
         }
 
-        fn load(_: Self::LoadData) -> Result<Self, crate::models::ModelError> {
+        fn load(_: Self::LoadData) -> Result<Self, ModelError> {
             Ok(Self {})
         }
 
@@ -195,7 +161,7 @@ mod tests {
             crate::models::types::ModelType::LlamaV1
         }
 
-        fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
+        fn run(&mut self, _: Self::Input) -> Result<Self::Output, ModelError> {
             Ok(())
         }
     }

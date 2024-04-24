@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use atoma_types::{bail, ModelError};
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -11,14 +12,11 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tracing::info;
 
-use crate::{
-    bail,
-    models::{
-        candle::{device, hub_load_safetensors},
-        token_output_stream::TokenOutputStream,
-        types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
-        ModelError, ModelTrait,
-    },
+use crate::models::{
+    candle::{device, hub_load_safetensors},
+    token_output_stream::TokenOutputStream,
+    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+    ModelTrait,
 };
 
 pub struct MistralModel {

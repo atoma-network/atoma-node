@@ -1,8 +1,5 @@
-use atoma_inference::{
-    jrpc_server,
-    models::config::ModelsConfig,
-    service::{ModelService, ModelServiceError},
-};
+use atoma_inference::{jrpc_server, models::config::ModelsConfig, service::ModelService};
+use atoma_types::ModelServiceError;
 use ed25519_consensus::SigningKey as PrivateKey;
 
 #[tokio::main]

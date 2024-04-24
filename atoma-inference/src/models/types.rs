@@ -1,12 +1,13 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
+use atoma_types::ModelError;
 use candle::{DType, Device};
 use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{ModelId, Request, Response};
 
-use super::{candle::stable_diffusion::StableDiffusionInput, ModelError};
+use super::candle::stable_diffusion::StableDiffusionInput;
 
 pub type NodeId = PublicKey;
 

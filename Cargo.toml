@@ -10,7 +10,7 @@ members = [
     "atoma-node",
     "atoma-json-rpc",
     "atoma-storage",
-    "atoma-types"
+    "atoma-types",
 ]
 
 [workspace.package]
@@ -36,10 +36,13 @@ ethers = "2.0.14"
 futures = "0.3.30"
 futures-util = "0.3.30"
 hf-hub = "0.3.2"
-image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25.0", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 serde = "1.0.197"
 serde_json = "1.0.114"
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk"}
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
 # solana-client = "1.18.9"
 # solana-sdk = "1.18.8"
 rand = "0.8.5"
