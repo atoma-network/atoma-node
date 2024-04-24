@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
+use atoma_types::ModelError;
 use candle::{
     quantized::{ggml_file, gguf_file},
     DType, Device, Tensor,
@@ -17,7 +18,7 @@ use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
     types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
-    ModelError, ModelTrait,
+    ModelTrait,
 };
 use candle_transformers::models::quantized_llama as model;
 

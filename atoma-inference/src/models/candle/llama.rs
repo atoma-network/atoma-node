@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
+use atoma_types::ModelError;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -16,7 +17,7 @@ use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
     types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
-    ModelError, ModelTrait,
+    ModelTrait,
 };
 
 use super::{device, hub_load_safetensors};

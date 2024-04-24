@@ -1,14 +1,11 @@
 use std::{fs::File, io::Write, path::PathBuf};
 
+use atoma_types::{bail, ModelError};
 use candle::{
     utils::{cuda_is_available, metal_is_available},
     DType, Device, Tensor,
 };
 use tracing::info;
-
-use crate::bail;
-
-use super::ModelError;
 
 pub mod falcon;
 pub mod llama;
