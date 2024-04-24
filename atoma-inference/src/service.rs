@@ -107,6 +107,7 @@ impl ModelService {
 
 #[cfg(test)]
 mod tests {
+    use atoma_types::ModelError;
     use ed25519_consensus::VerificationKey as PublicKey;
     use rand::rngs::OsRng;
     use std::io::Write;
@@ -148,11 +149,11 @@ mod tests {
         type Output = ();
         type LoadData = ();
 
-        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
+        fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), ModelError> {
             Ok(())
         }
 
-        fn load(_: Self::LoadData) -> Result<Self, crate::models::ModelError> {
+        fn load(_: Self::LoadData) -> Result<Self, ModelError> {
             Ok(Self {})
         }
 
@@ -160,7 +161,7 @@ mod tests {
             crate::models::types::ModelType::LlamaV1
         }
 
-        fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
+        fn run(&mut self, _: Self::Input) -> Result<Self::Output, ModelError> {
             Ok(())
         }
     }
