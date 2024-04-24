@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use self::{config::ModelConfig, types::ModelType};
-use atoma_types::ModelError;
+use self::config::ModelConfig;
+use atoma_types::{ModelError, ModelType};
 use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{de::DeserializeOwned, Serialize};
 

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::ModelError;
+use atoma_types::{ModelError, ModelType};
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -16,7 +16,7 @@ use tracing::info;
 use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+    types::{LlmLoadData, TextModelInput, TextModelOutput},
     ModelTrait,
 };
 

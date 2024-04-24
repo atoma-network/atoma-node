@@ -107,7 +107,7 @@ impl ModelService {
 
 #[cfg(test)]
 mod tests {
-    use atoma_types::ModelError;
+    use atoma_types::{ModelError, ModelType};
     use ed25519_consensus::VerificationKey as PublicKey;
     use rand::rngs::OsRng;
     use std::io::Write;
@@ -157,8 +157,8 @@ mod tests {
             Ok(Self {})
         }
 
-        fn model_type(&self) -> crate::models::types::ModelType {
-            crate::models::types::ModelType::LlamaV1
+        fn model_type(&self) -> ModelType {
+            ModelType::LlamaV1
         }
 
         fn run(&mut self, _: Self::Input) -> Result<Self::Output, ModelError> {

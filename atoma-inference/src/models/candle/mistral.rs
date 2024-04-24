@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use atoma_types::{bail, ModelError};
+use atoma_types::{bail, ModelError, ModelType};
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -15,7 +15,7 @@ use tracing::info;
 use crate::models::{
     candle::{device, hub_load_safetensors},
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+    types::{LlmLoadData, TextModelInput, TextModelOutput},
     ModelTrait,
 };
 

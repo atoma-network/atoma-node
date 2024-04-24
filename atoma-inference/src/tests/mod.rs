@@ -1,6 +1,6 @@
-use crate::models::types::ModelType;
 use crate::models::{config::ModelConfig, ModelTrait};
 use atoma_types::ModelError;
+use atoma_types::ModelType;
 use ed25519_consensus::SigningKey as PrivateKey;
 use std::{path::PathBuf, time::Duration};
 

@@ -1,7 +1,9 @@
 use serde::Deserialize;
 use serde_json::Value;
 mod errors;
+mod model_type;
 pub use errors::*;
+pub use model_type::*;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {

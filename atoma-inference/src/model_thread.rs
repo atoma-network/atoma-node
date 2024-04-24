@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle};
 
-use atoma_types::{ModelThreadError, Request, Response};
+use atoma_types::{ModelThreadError, ModelType, Request, Response};
 use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
 use tokio::sync::oneshot;
@@ -12,7 +12,6 @@ use crate::models::{
         mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
     },
     config::{ModelConfig, ModelsConfig},
-    types::ModelType,
     ModelId, ModelTrait,
 };
 

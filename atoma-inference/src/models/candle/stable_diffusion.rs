@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::{bail, ModelError};
+use atoma_types::{bail, ModelError, ModelType};
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -12,9 +12,7 @@ use serde::Deserialize;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
-use crate::models::{
-    candle::save_image, config::ModelConfig, types::ModelType, ModelId, ModelTrait,
-};
+use crate::models::{candle::save_image, config::ModelConfig, ModelId, ModelTrait};
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
@@ -401,72 +399,6 @@ impl ModelTrait for StableDiffusion {
             res.push(convert_to_image(&image)?);
         }
         Ok(res)
-    }
-}
-
-impl ModelType {
-    fn unet_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5
-            | Self::StableDiffusionV2_1
-            | Self::StableDiffusionXl
-            | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "unet/diffusion_pytorch_model.fp16.safetensors"
-                } else {
-                    "unet/diffusion_pytorch_model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type"),
-        }
-    }
-
-    fn vae_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5
-            | Self::StableDiffusionV2_1
-            | Self::StableDiffusionXl
-            | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "vae/diffusion_pytorch_model.fp16.safetensors"
-                } else {
-                    "vae/diffusion_pytorch_model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type"),
-        }
-    }
-
-    fn clip_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5
-            | Self::StableDiffusionV2_1
-            | Self::StableDiffusionXl
-            | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "text_encoder/model.fp16.safetensors"
-                } else {
-                    "text_encoder/model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type"),
-        }
-    }
-
-    fn clip2_file(&self, use_f16: bool) -> &'static str {
-        match self {
-            Self::StableDiffusionV1_5
-            | Self::StableDiffusionV2_1
-            | Self::StableDiffusionXl
-            | Self::StableDiffusionTurbo => {
-                if use_f16 {
-                    "text_encoder_2/model.fp16.safetensors"
-                } else {
-                    "text_encoder_2/model.safetensors"
-                }
-            }
-            _ => panic!("Invalid stable diffusion model type"),
-        }
     }
 }
 
