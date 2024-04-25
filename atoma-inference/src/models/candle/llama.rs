@@ -181,14 +181,12 @@ impl ModelTrait for LlamaModel {
             }
             if let Some(t) = tokenizer.next_token(next_token)? {
                 res += &t;
-                info!("res: {res}");
             }
 
             generated_tokens += 1;
         }
         if let Some(rest) = tokenizer.decode_rest()? {
             res += &rest;
-            info!("res: {res}");
         }
 
         let dt = start_gen.elapsed();
