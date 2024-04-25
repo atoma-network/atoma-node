@@ -12,7 +12,7 @@ impl Hasher for Blake2b<U32> {
         self.update(data);
         let output = self.finalize();
         let mut hash = Hash::default();
-        hash.copy_from_slice(&output.as_slice());
+        hash.copy_from_slice(output.as_slice());
         hash
     }
 }
@@ -63,12 +63,12 @@ mod tests {
         assert_eq!(root.len(), 32);
         assert_eq!(leaf.len(), 32);
 
-        // assert that leaves are constructed correctly 
+        // assert that leaves are constructed correctly
         let mut leaves = Vec::with_capacity(NUM_CHUNKS);
         for i in 0..NUM_CHUNKS {
             let mut hasher = Blake2b::<U32>::new();
             hasher.update(&data[(CHUNKS_SIZE * i)..(CHUNKS_SIZE * (i + 1))]);
-            let leaf: [u8; 32] = hasher.finalize().try_into().unwrap();
+            let leaf: [u8; 32] = hasher.finalize().into();
             leaves.push(leaf);
         }
         assert_eq!(leaf, leaves[INDEX]);
@@ -76,7 +76,7 @@ mod tests {
         // assert that root is properly constructed
         let mut hasher = Blake2b::<U32>::new();
         hasher.update(leaves.concat());
-        let should_be_root: [u8; 32] = hasher.finalize().try_into().unwrap();
+        let should_be_root: [u8; 32] = hasher.finalize().into();
         assert_eq!(root, should_be_root);
     }
 }

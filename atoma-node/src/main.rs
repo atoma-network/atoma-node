@@ -36,7 +36,5 @@ async fn main() -> Result<(), AtomaNodeError> {
     )
     .await?;
 
-    loop {}
-
     Ok(())
 }
