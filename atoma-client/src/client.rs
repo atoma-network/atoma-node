@@ -76,7 +76,10 @@ impl AtomaSuiClient {
 
     fn get_index(&self, sampled_nodes: Vec<u64>) -> Result<(usize, usize), AtomaSuiClientError> {
         let num_leaves = sampled_nodes.len();
-        let index = sampled_nodes.iter().position(|nid| nid == &self.node_id).ok_or(AtomaSuiClientError::InvalidSampledNode)?;
+        let index = sampled_nodes
+            .iter()
+            .position(|nid| nid == &self.node_id)
+            .ok_or(AtomaSuiClientError::InvalidSampledNode)?;
         Ok((index, num_leaves))
     }
 
@@ -98,7 +101,10 @@ impl AtomaSuiClient {
         Ok(data)
     }
 
-    fn sign_root_commitment(&self, merkle_root: [u8; 32]) -> Result<Signature, AtomaSuiClientError> {
+    fn sign_root_commitment(
+        &self,
+        merkle_root: [u8; 32],
+    ) -> Result<Signature, AtomaSuiClientError> {
         self.wallet_ctx
             .config
             .keystore
@@ -113,8 +119,8 @@ impl AtomaSuiClient {
     /// were sampled and produced an output `vec![1, 2, 3, 4, 5, 6, 7, 8]`, the Merkle tree
     /// would have leaves built directly from `vec![[1, 2, 3, 4], [5, 6, 7, 8]]`.
     /// Additionally, the commitment contains a Merkle path from the node's leaf index
-    /// (in the `sampled_nodes` vector) to the root. 
-    /// 
+    /// (in the `sampled_nodes` vector) to the root.
+    ///
     /// This data is then submitted to the Sui blockchain
     /// as a cryptographic commitment to the node's work on inference.
     pub async fn submit_response_commitment(
