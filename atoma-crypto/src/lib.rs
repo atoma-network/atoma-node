@@ -17,6 +17,36 @@ impl Hasher for Blake2b<U32> {
     }
 }
 
+/// Calculates cryptographic commitments for a given data chunk and its corresponding n-ary Merkle tree root.
+///
+/// This function takes input data, an index indicating the position of the data chunk
+/// in a larger dataset, and the total number of leaves in the Merkle tree.
+/// It computes cryptographic commitments for the data chunk and the Merkle tree root.
+///
+/// # Parameters
+///
+/// - `data`: The input data chunk represented as a byte slice (`&[u8]`).
+/// - `index`: The index of the data chunk within the larger dataset.
+/// - `num_leaves`: The total number of leaves (data chunks) in the Merkle tree.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The cryptographic hash of the Merkle tree root (`Hash`).
+/// - The cryptographic hash of the data chunk at the specified index (`Hash`).
+///
+/// # Panics
+///
+/// This function will panic if the input data slice is empty or if the computed chunks
+/// for the Merkle tree are empty.
+///
+/// # Notes
+///
+/// - This function requires the `Hasher` trait to be implemented for the chosen hash algorithm (`H`).
+/// - The data chunk size is determined based on the total number of leaves in the Merkle tree.
+/// - The function performs assertions to ensure that the input data slice and computed chunks are not empty.
+/// - The function returns the hash of the concatenated data chunks as the Merkle tree root hash,
+///   and the hash of the data chunk at the specified index.
 pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
     data: T,
     index: usize,
