@@ -11,10 +11,10 @@ struct Args {
     #[arg(long)]
     pub package_id: String,
     /// HTTP node's address for Sui client
-    #[arg(long, default_value = "https://fullnode.devnet.sui.io:443")]
+    #[arg(long, default_value = "https://fullnode.mainnet.sui.io:443")]
     pub http_addr: String,
     /// RPC node's web socket address for Sui client
-    #[arg(long, default_value = "wss://rpc.devnet.sui.io:443")]
+    #[arg(long, default_value = "wss://fullnode.mainnet.sui.io:443")]
     pub ws_addr: String,
 }
 
@@ -41,7 +41,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
 
     tokio::spawn(async move {
         info!("initializing subscribe");
-        event_subscriber.subscribe().await?;
+        event_subscriber.subscribe().await.unwrap();
         Ok::<_, SuiSubscriberError>(())
     });
 

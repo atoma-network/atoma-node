@@ -3,7 +3,6 @@ use std::{
 };
 
 use atoma_types::{Request, Response};
-use ed25519_consensus::VerificationKey as PublicKey;
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
@@ -72,7 +71,7 @@ impl<M> ModelThread<M>
 where
     M: ModelTrait,
 {
-    pub fn run(mut self, _public_key: PublicKey) -> Result<(), ModelThreadError> {
+    pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
@@ -104,7 +103,6 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     pub(crate) fn start(
         config: ModelsConfig,
-        public_key: PublicKey,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
@@ -127,7 +125,6 @@ impl ModelThreadDispatcher {
                 model_name,
                 model_type,
                 model_config,
-                public_key,
                 model_receiver,
             );
 
@@ -182,7 +179,6 @@ pub(crate) fn dispatch_model_thread(
     model_name: String,
     model_type: ModelType,
     model_config: ModelConfig,
-    public_key: PublicKey,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     match model_type {
@@ -192,7 +188,6 @@ pub(crate) fn dispatch_model_thread(
                 api_key.clone(),
                 cache_dir.clone(),
                 model_config,
-                public_key,
                 model_receiver,
             )
         }
@@ -207,7 +202,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
         ModelType::Mamba130m
@@ -219,7 +213,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
         ModelType::Mistral7bV01
@@ -230,7 +223,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
         ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
@@ -238,7 +230,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
         ModelType::StableDiffusionV1_5
@@ -249,7 +240,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
         ModelType::QuantizedLlamaV2_7b
@@ -277,7 +267,6 @@ pub(crate) fn dispatch_model_thread(
             api_key,
             cache_dir,
             model_config,
-            public_key,
             model_receiver,
         ),
     }
@@ -288,7 +277,6 @@ pub(crate) fn spawn_model_thread<M>(
     api_key: String,
     cache_dir: PathBuf,
     model_config: ModelConfig,
-    public_key: PublicKey,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
@@ -304,7 +292,7 @@ where
             receiver: model_receiver,
         };
 
-        if let Err(e) = model_thread.run(public_key) {
+        if let Err(e) = model_thread.run() {
             error!("Model thread error: {e}");
             if !matches!(e, ModelThreadError::Shutdown(_)) {
                 panic!("Fatal error occurred: {e}");

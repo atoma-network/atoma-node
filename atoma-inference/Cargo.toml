@@ -13,7 +13,6 @@ candle-nn.workspace = true
 candle-transformers.workspace = true
 config.workspace = true
 dotenv.workspace = true
-ed25519-consensus.workspace = true
 futures.workspace = true
 hf-hub.workspace = true
 serde = { workspace = true, features = ["derive"] }

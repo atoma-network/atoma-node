@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use ed25519_consensus::VerificationKey as PublicKey;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
@@ -37,7 +36,6 @@ pub trait Request: Send + 'static {
     fn into_model_input(self) -> Self::ModelInput;
     fn requested_model(&self) -> ModelId;
     fn request_id(&self) -> usize; // TODO: replace with Uuid
-    fn is_node_authorized(&self, public_key: &PublicKey) -> bool;
 }
 
 pub trait Response: Send + 'static {

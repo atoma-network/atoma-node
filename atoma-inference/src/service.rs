@@ -1,6 +1,5 @@
 use atoma_types::{Request, Response};
 use candle::Error as CandleError;
-use ed25519_consensus::{SigningKey as PrivateKey, VerificationKey as PublicKey};
 use futures::StreamExt;
 use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
@@ -21,7 +20,6 @@ pub struct ModelService {
     dispatcher: ModelThreadDispatcher,
     start_time: Instant,
     flush_storage: bool,
-    public_key: PublicKey,
     cache_dir: PathBuf,
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     subscriber_req_rx: Receiver<Request>,
@@ -31,19 +29,15 @@ pub struct ModelService {
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
-        private_key: PrivateKey,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
     ) -> Result<Self, ModelServiceError> {
-        let public_key = private_key.verification_key();
-
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
 
-        let (dispatcher, model_thread_handle) =
-            ModelThreadDispatcher::start(model_config, public_key)
-                .map_err(ModelServiceError::ModelThreadError)?;
+        let (dispatcher, model_thread_handle) = ModelThreadDispatcher::start(model_config)
+            .map_err(ModelServiceError::ModelThreadError)?;
         let start_time = Instant::now();
 
         Ok(Self {
@@ -52,7 +46,6 @@ impl ModelService {
             start_time,
             flush_storage,
             cache_dir,
-            public_key,
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,
@@ -78,13 +71,10 @@ impl ModelService {
                     Err(e) => {
                         error!("Found error in generating inference response: {}", e);
                     }
-                }
+                },
+                else => continue,
             }
         }
-    }
-
-    pub fn public_key(&self) -> PublicKey {
-        self.public_key
     }
 }
 
@@ -142,8 +132,6 @@ impl From<CandleError> for ModelServiceError {
 
 #[cfg(test)]
 mod tests {
-    use ed25519_consensus::VerificationKey as PublicKey;
-    use rand::rngs::OsRng;
     use std::io::Write;
     use toml::{toml, Value};
 
@@ -155,10 +143,6 @@ mod tests {
         type ModelInput = ();
 
         fn into_model_input(self) -> Self::ModelInput {}
-
-        fn is_node_authorized(&self, _: &PublicKey) -> bool {
-            true
-        }
 
         fn request_id(&self) -> usize {
             0
@@ -204,8 +188,6 @@ mod tests {
     async fn test_inference_service_initialization() {
         const CONFIG_FILE_PATH: &str = "./inference.toml";
 
-        let private_key = PrivateKey::new(OsRng);
-
         let config_data = Value::Table(toml! {
             api_key = "your_api_key"
             cache_dir = "./cache_dir/"
@@ -236,7 +218,6 @@ mod tests {
 
         let _ = ModelService::start(
             config,
-            private_key,
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,

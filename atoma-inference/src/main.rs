@@ -3,7 +3,6 @@ use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
 };
-use ed25519_consensus::SigningKey as PrivateKey;
 
 #[tokio::main]
 async fn main() -> Result<(), ModelServiceError> {
@@ -14,18 +13,10 @@ async fn main() -> Result<(), ModelServiceError> {
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(32);
 
     let model_config = ModelsConfig::from_file_path("../inference.toml");
-    let private_key_bytes =
-        std::fs::read("../../private_key").map_err(ModelServiceError::PrivateKeyError)?;
-    let private_key_bytes: [u8; 32] = private_key_bytes
-        .try_into()
-        .expect("Incorrect private key bytes length");
-
-    let private_key = PrivateKey::from(private_key_bytes);
     let jrpc_port = model_config.jrpc_port();
 
     let mut service = ModelService::start(
         model_config,
-        private_key,
         req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
