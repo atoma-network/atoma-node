@@ -71,7 +71,8 @@ impl ModelService {
                     Err(e) => {
                         error!("Found error in generating inference response: {}", e);
                     }
-                }
+                },
+                else => continue,
             }
         }
     }
