@@ -76,12 +76,7 @@ impl AtomaSuiClient {
 
     fn get_index(&self, sampled_nodes: Vec<u64>) -> Result<(usize, usize), AtomaSuiClientError> {
         let num_leaves = sampled_nodes.len();
-        let index = sampled_nodes
-            .into_iter()
-            .enumerate()
-            .find(|(_, id)| self.node_id == *id)
-            .ok_or(AtomaSuiClientError::InvalidSampledNode)?
-            .0;
+        let index = sampled_nodes.iter().position(|nid| nid == &self.node_id).ok_or(AtomaSuiClientError::InvalidSampledNode)?;
         Ok((index, num_leaves))
     }
 
@@ -103,7 +98,7 @@ impl AtomaSuiClient {
         Ok(data)
     }
 
-    fn sign_merkle_root(&self, merkle_root: [u8; 32]) -> Result<Signature, AtomaSuiClientError> {
+    fn sign_root_commitment(&self, merkle_root: [u8; 32]) -> Result<Signature, AtomaSuiClientError> {
         self.wallet_ctx
             .config
             .keystore
@@ -111,6 +106,17 @@ impl AtomaSuiClient {
             .map_err(|e| AtomaSuiClientError::FailedSignature(e.to_string()))
     }
 
+    /// Upon receiving a response from the `AtomaNode` service, this method extracts
+    /// the output data and computes a cryptographic commitment. The commitment includes
+    /// the root of an n-ary Merkle Tree built from the output data, represented as a `Vec<u8>`,
+    /// and the indices of the sampled nodes used for inference. For example, if two nodes
+    /// were sampled and produced an output `vec![1, 2, 3, 4, 5, 6, 7, 8]`, the Merkle tree
+    /// would have leaves built directly from `vec![[1, 2, 3, 4], [5, 6, 7, 8]]`.
+    /// Additionally, the commitment contains a Merkle path from the node's leaf index
+    /// (in the `sampled_nodes` vector) to the root. 
+    /// 
+    /// This data is then submitted to the Sui blockchain
+    /// as a cryptographic commitment to the node's work on inference.
     pub async fn submit_response_commitment(
         &self,
         response: Response,
@@ -119,7 +125,7 @@ impl AtomaSuiClient {
         let data = self.get_data(response.response())?;
         let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
         let (merkle_root, merkle_path) = calculate_commitment::<Sha256, _>(data, index, num_leaves);
-        let signature = self.sign_merkle_root(merkle_root)?;
+        let signature = self.sign_root_commitment(merkle_root)?;
 
         let client = self.wallet_ctx.get_client().await?;
         let tx = client
