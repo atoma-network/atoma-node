@@ -1,6 +1,6 @@
 use std::{path::Path, str::FromStr, time::Duration};
 
-use atoma_crypto::{calculate_commitment, Sha256};
+use atoma_crypto::{calculate_commitment, Blake2b};
 use atoma_types::Response;
 use sui_keys::keystore::AccountKeystore;
 use sui_sdk::{
