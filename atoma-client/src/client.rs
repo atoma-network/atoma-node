@@ -1,6 +1,6 @@
 use std::{path::Path, str::FromStr, time::Duration};
 
-use atoma_crypto::{calculate_commitment, Sha256};
+use atoma_crypto::{calculate_commitment, Blake2b};
 use atoma_types::Response;
 use sui_keys::keystore::AccountKeystore;
 use sui_sdk::{
@@ -130,8 +130,8 @@ impl AtomaSuiClient {
         let request_id = response.id();
         let data = self.get_data(response.response())?;
         let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
-        let (merkle_root, merkle_path) = calculate_commitment::<Sha256, _>(data, index, num_leaves);
-        let signature = self.sign_root_commitment(merkle_root)?;
+        let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
+        let signature = self.sign_root_commitment(root)?;
 
         let client = self.wallet_ctx.get_client().await?;
         let tx = client
@@ -145,14 +145,7 @@ impl AtomaSuiClient {
                 vec![
                     SuiJsonValue::new(request_id.into())?,
                     SuiJsonValue::new(signature.as_ref().into())?,
-                    SuiJsonValue::new(
-                        merkle_path
-                            .proof_hashes()
-                            .iter()
-                            .map(|u| u.to_vec())
-                            .collect::<Vec<_>>()
-                            .into(),
-                    )?,
+                    SuiJsonValue::new(pre_image.as_ref().into())?,
                 ],
                 None,
                 GAS_BUDGET,
