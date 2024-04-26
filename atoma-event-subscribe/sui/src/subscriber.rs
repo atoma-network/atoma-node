@@ -74,18 +74,19 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
+                    info!("Event received: {event_data}");
                     let request = serde_json::from_value::<Request>(event_data)?;
                     info!("Received new request: {:?}", request);
-                    let request_id = request.id();
+                    // let request_id = request.id();
                     let sampled_nodes = request.sampled_nodes();
                     if sampled_nodes.contains(&self.id) {
                         info!(
                             "Current node has been sampled for request with id: {}",
-                            request_id
+                            0 // request_id
                         );
                         self.event_sender.send(request).await?;
                     } else {
-                        info!("Current node has not been sampled for request with id: {}, ignoring it..", request_id);
+                        info!("Current node has not been sampled for request with id: {}, ignoring it..", 0); // request_id);
                     }
                 }
                 Err(e) => {

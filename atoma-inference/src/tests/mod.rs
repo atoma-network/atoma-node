@@ -100,7 +100,7 @@ async fn test_mock_model_thread() {
     for i in 0..NUM_REQUESTS {
         for sender in model_thread_dispatcher.model_senders.values() {
             let (response_sender, response_receiver) = oneshot::channel();
-            let request = Request::new(0, vec![], "".to_string(), json!(i));
+            let request = Request::new(vec![], "".to_string(), json!(i));
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,

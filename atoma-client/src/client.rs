@@ -127,7 +127,7 @@ impl AtomaSuiClient {
         &self,
         response: Response,
     ) -> Result<TransactionDigest, AtomaSuiClientError> {
-        let request_id = response.id();
+        // let request_id = response.id();
         let data = self.get_data(response.response())?;
         let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
         let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
@@ -143,7 +143,7 @@ impl AtomaSuiClient {
                 METHOD,
                 vec![],
                 vec![
-                    SuiJsonValue::new(request_id.into())?,
+                    // SuiJsonValue::new(request_id.into())?,
                     SuiJsonValue::new(signature.as_ref().into())?,
                     SuiJsonValue::new(pre_image.as_ref().into())?,
                 ],

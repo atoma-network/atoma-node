@@ -77,17 +77,13 @@ where
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
 
-            // if !request.is_node_authorized(&public_key) {
-            //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
-            //     continue;
-            // }
-            let request_id = request.id();
+            // let request_id = request.id();
             let sampled_nodes = request.sampled_nodes();
             let body = request.body();
             let model_input = serde_json::from_value(body)?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
-            let response = Response::new(request_id, sampled_nodes, output);
+            let response = Response::new(sampled_nodes, output);
             sender.send(response).ok();
         }
 
