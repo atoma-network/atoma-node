@@ -15,6 +15,7 @@ pub mod llama;
 pub mod mamba;
 pub mod mistral;
 pub mod mixtral;
+pub mod phi3;
 pub mod quantized;
 pub mod stable_diffusion;
 

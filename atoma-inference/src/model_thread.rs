@@ -13,7 +13,8 @@ use crate::{
     models::{
         candle::{
             falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
+            mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel,
+            stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
         types::ModelType,
@@ -226,6 +227,13 @@ pub(crate) fn dispatch_model_thread(
             model_receiver,
         ),
         ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            model_receiver,
+        ),
+        ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
             model_name,
             api_key,
             cache_dir,
