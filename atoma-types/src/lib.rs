@@ -4,8 +4,10 @@ use serde_json::Value;
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
     // id: usize,
+    #[serde(rename = "nodes")]
     sampled_nodes: Vec<u64>,
     model: String,
+    #[serde(rename = "params")] 
     body: Value,
 }
 
