@@ -22,6 +22,7 @@ use crate::{
 pub struct Phi3Model {
     model: Model,
     device: Device,
+    dtype: DType,
     tokenizer: TokenOutputStream,
 }
 
@@ -99,6 +100,7 @@ impl ModelTrait for Phi3Model {
         Ok(Self {
             model,
             device,
+            dtype,
             tokenizer: TokenOutputStream::new(tokenizer),
         })
     }
@@ -111,7 +113,7 @@ impl ModelTrait for Phi3Model {
         info!("Running inference on prompt: {}", input.prompt);
         // clean tokenizer state
         self.tokenizer.clear();
-        
+
         let tokens = self.tokenizer.tokenizer().encode(input.prompt, true)?;
         if tokens.is_empty() {
             bail!("Empty prompts are not supported in the phi model.")
@@ -133,7 +135,7 @@ impl ModelTrait for Phi3Model {
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
             let input_tensor = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self.model.forward(&input_tensor, pos)?.i((.., 0, ..))?;
-            let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
+            let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
             let logits = if input.repeat_penalty == 1. {
                 logits
             } else {
