@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -70,17 +72,12 @@ impl ModelTrait for MixtralModel {
         file_paths.extend(weight_filenames);
 
         let device = device(config.device_id())?;
-        let dtype = if device.is_cuda() {
-            DType::BF16
-        } else {
-            DType::F32
-        };
 
         Ok(Self::LoadData {
             model_type: ModelType::Mixtral8x7b,
             file_paths,
             device,
-            dtype,
+            dtype: DType::from_str(&config.dtype())?,
             use_flash_attention: config.use_flash_attention(),
         })
     }

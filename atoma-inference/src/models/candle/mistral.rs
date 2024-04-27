@@ -81,17 +81,12 @@ impl ModelTrait for MistralModel {
         file_paths.extend(weight_filenames);
 
         let device = device(config.device_id())?;
-        let dtype = if device.is_cuda() {
-            DType::BF16
-        } else {
-            DType::F32
-        };
 
         Ok(Self::LoadData {
             model_type,
             file_paths,
             device,
-            dtype,
+            dtype: DType::from_str(&config.dtype())?,
             use_flash_attention: config.use_flash_attention(),
         })
     }
