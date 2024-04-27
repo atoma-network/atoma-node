@@ -115,6 +115,10 @@ impl ModelTrait for MixtralModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {}", input.prompt);
+        // clean tokenizer state
+        self.tokenizer.clear();
+
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut tokens = self

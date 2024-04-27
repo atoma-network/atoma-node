@@ -108,7 +108,10 @@ impl ModelTrait for Phi3Model {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        println!("Running inference on prompt: {}", input.prompt);
+        info!("Running inference on prompt: {}", input.prompt);
+        // clean tokenizer state
+        self.tokenizer.clear();
+        
         let tokens = self.tokenizer.tokenizer().encode(input.prompt, true)?;
         if tokens.is_empty() {
             bail!("Empty prompts are not supported in the phi model.")
@@ -145,13 +148,12 @@ impl ModelTrait for Phi3Model {
                 break;
             }
             if let Some(token) = self.tokenizer.next_token(next_token)? {
-                println!("{}", token);
                 output.push_str(&token)
             }
             pos += context_size;
         }
         let dt = start_gen.elapsed();
-        println!(
+        info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );

@@ -77,11 +77,6 @@ where
 
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
-
-            // if !request.is_node_authorized(&public_key) {
-            //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
-            //     continue;
-            // }
             let request_id = request.id();
             let sampled_nodes = request.sampled_nodes();
             let body = request.body();
