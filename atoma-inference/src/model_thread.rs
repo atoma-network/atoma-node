@@ -13,7 +13,8 @@ use crate::{
     models::{
         candle::{
             falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, quantized::QuantizedModel, stable_diffusion::StableDiffusion,
+            mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel,
+            stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
         types::ModelType,
@@ -76,11 +77,6 @@ where
 
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
-
-            // if !request.is_node_authorized(&public_key) {
-            //     error!("Current node, with verification key = {:?} is not authorized to run request with id = {}", public_key, request.request_id());
-            //     continue;
-            // }
             let request_id = request.id();
             let sampled_nodes = request.sampled_nodes();
             let body = request.body();
@@ -226,6 +222,13 @@ pub(crate) fn dispatch_model_thread(
             model_receiver,
         ),
         ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            model_receiver,
+        ),
+        ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
             model_name,
             api_key,
             cache_dir,

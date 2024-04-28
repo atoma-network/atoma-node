@@ -38,6 +38,7 @@ pub enum ModelType {
     Mistral7bInstructV01,
     Mistral7bInstructV02,
     Mixtral8x7b,
+    Phi3Mini,
     StableDiffusionV1_5,
     StableDiffusionV2_1,
     StableDiffusionXl,
@@ -91,6 +92,7 @@ impl FromStr for ModelType {
             "mistral_7b-instruct-v01" => Ok(Self::Mistral7bInstructV01),
             "mistral_7b-instruct-v02" => Ok(Self::Mistral7bInstructV02),
             "mixtral_8x7b" => Ok(Self::Mixtral8x7b),
+            "phi_3-mini" => Ok(Self::Phi3Mini),
             "stable_diffusion_v1-5" => Ok(Self::StableDiffusionV1_5),
             "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
             "stable_diffusion_xl" => Ok(Self::StableDiffusionXl),
@@ -146,6 +148,7 @@ impl ModelType {
             Self::Mistral7bInstructV01 => "mistralai/Mistral-7B-Instruct-v0.1",
             Self::Mistral7bInstructV02 => "mistralai/Mistral-7B-Instruct-v0.2",
             Self::Mixtral8x7b => "mistralai/Mixtral-8x7B-v0.1",
+            Self::Phi3Mini => "microsoft/Phi-3-mini-4k-instruct",
             Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
             Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
             Self::StableDiffusionXl => "stabilityai/stable-diffusion-xl-base-1.0",
@@ -186,6 +189,7 @@ impl ModelType {
             Self::Llama3_8b => "main",
             Self::Llama3Instruct8b => "main",
             Self::Llama3_70b => "main",
+            Self::Phi3Mini => "main",
             Self::Mamba130m => "refs/pr/1",
             Self::Mamba370m => "refs/pr/1",
             Self::Mamba790m => "refs/pr/1",
@@ -196,7 +200,31 @@ impl ModelType {
             Self::Mistral7bInstructV01 => "main",
             Self::Mistral7bInstructV02 => "main",
             Self::Mixtral8x7b => "main",
-            _ => "",
+            Self::QuantizedL8b
+            | Self::QuantizedLeo13b
+            | Self::QuantizedLeo7b
+            | Self::QuantizedLlama13b
+            | Self::QuantizedLlama34b
+            | Self::QuantizedLlama7b
+            | Self::QuantizedLlamaV2_13b
+            | Self::QuantizedLlamaV2_13bChat
+            | Self::QuantizedLlamaV2_70b
+            | Self::QuantizedLlamaV2_70bChat
+            | Self::QuantizedLlamaV2_7b
+            | Self::QuantizedLlamaV2_7bChat
+            | Self::QuantizedMistral7b
+            | Self::QuantizedMistral7bInstruct
+            | Self::QuantizedMistral7bInstructV02
+            | Self::QuantizedMixtral
+            | Self::QuantizedMixtralInstruct
+            | Self::QuantizedOpenChat35
+            | Self::QuantizedStarling7bAlpha
+            | Self::QuantizedZephyr7bAlpha
+            | Self::QuantizedZephyr7bBeta
+            | Self::StableDiffusionTurbo
+            | Self::StableDiffusionV1_5
+            | Self::StableDiffusionV2_1
+            | Self::StableDiffusionXl => "",
         }
     }
 }
@@ -224,6 +252,7 @@ impl Display for ModelType {
             Self::Mistral7bInstructV01 => write!(f, "mistral_7b-instruct-v01"),
             Self::Mistral7bInstructV02 => write!(f, "mistral_7b-instruct-v02"),
             Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
+            Self::Phi3Mini => write!(f, "phi_3-mini"),
             Self::StableDiffusionV1_5 => write!(f, "stable_diffusion_v1-5"),
             Self::StableDiffusionV2_1 => write!(f, "stable_diffusion_v2-1"),
             Self::StableDiffusionXl => write!(f, "stable_diffusion_xl"),
