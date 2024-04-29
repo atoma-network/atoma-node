@@ -12,7 +12,7 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, trace};
 
 use crate::config::AtomaSuiClientConfig;
 
@@ -71,7 +71,7 @@ impl AtomaSuiClient {
 
     fn get_data(&self, data: serde_json::Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
-        let data = match data.as_str() {
+        let data = match data["text"].as_str() {
             Some(text) => text.as_bytes().to_owned(),
             None => {
                 if let Some(array) = data.as_array() {
@@ -131,13 +131,14 @@ impl AtomaSuiClient {
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
         let resp = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
-
+        trace!("Submitted transaction with response: {:?}", resp);
         Ok(resp.digest)
     }
 
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_receiver.recv().await {
-            self.submit_response_commitment(response).await?;
+            info!("Received new response: {:?}", response);
+            self.submit_response_commitment(response).await.unwrap();
         }
         Ok(())
     }
