@@ -4,3 +4,4 @@ target/
 /models/
 inference.toml
 sui_subscriber.toml
+sui_client.toml

@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::config::SuiSubscriberConfig;
-use atoma_types::Request;
+use atoma_types::{Request, SmallId};
 
 pub struct SuiSubscriber {
     id: u64,
@@ -76,9 +76,14 @@ impl SuiSubscriber {
                     let event_data = event.parsed_json;
                     let request = serde_json::from_value::<Request>(event_data)?;
                     info!("Received new request: {:?}", request);
-                    let request_id = request.id();
+                    let request_id = request
+                        .id()
+                        .iter()
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join("");
                     let sampled_nodes = request.sampled_nodes();
-                    if sampled_nodes.contains(&self.id) {
+                    if sampled_nodes.contains(&SmallId::new(self.id)) {
                         info!(
                             "Current node has been sampled for request with id: {}",
                             request_id

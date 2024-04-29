@@ -1,11 +1,15 @@
 use std::{path::Path, time::Duration};
 
+use atoma_types::SmallId;
 use config::Config;
 use serde::Deserialize;
+use sui_sdk::types::base_types::ObjectID;
 
 #[derive(Debug, Deserialize)]
 pub struct AtomaSuiClientConfig {
     config_path: String,
+    node_badge_id: ObjectID,
+    small_id: SmallId,
     request_timeout: Duration,
     max_concurrent_requests: u64,
 }
@@ -21,6 +25,14 @@ impl AtomaSuiClientConfig {
         config
             .try_deserialize::<Self>()
             .expect("Failed to generated Atoma Sui client config file")
+    }
+
+    pub fn node_badge_id(&self) -> ObjectID {
+        self.node_badge_id
+    }
+
+    pub fn small_id(&self) -> SmallId { 
+        self.small_id
     }
 
     pub fn config_path(&self) -> String {

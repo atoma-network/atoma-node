@@ -1,13 +1,11 @@
 use std::{path::Path, str::FromStr, time::Duration};
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::Response;
-use sui_keys::keystore::AccountKeystore;
+use atoma_types::{Response, SmallId};
 use sui_sdk::{
     json::SuiJsonValue,
     types::{
         base_types::{ObjectID, ObjectIDParseError, SuiAddress},
-        crypto::Signature,
         digests::TransactionDigest,
     },
     wallet_context::WalletContext,
@@ -20,12 +18,18 @@ use crate::config::AtomaSuiClientConfig;
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
-const PACKAGE_ID: &str = "<TODO>";
-const MODULE_ID: &str = "";
-const METHOD: &str = "command";
+const PACKAGE_ID: &str = "";
+const ATOMA_DB_ID: &str = "";
+const MODULE_ID: &str = "settlement";
+const METHOD: &str = "submit_commitment";
+
+pub struct NodeBadge {
+    id: ObjectID,
+    small_id: SmallId,
+}
 
 pub struct AtomaSuiClient {
-    node_id: u64,
+    node_badge: NodeBadge,
     address: SuiAddress,
     wallet_ctx: WalletContext,
     response_receiver: mpsc::Receiver<Response>,
@@ -33,7 +37,7 @@ pub struct AtomaSuiClient {
 
 impl AtomaSuiClient {
     pub fn new<P: AsRef<Path>>(
-        node_id: u64,
+        node_badge: NodeBadge,
         config_path: P,
         request_timeout: Option<Duration>,
         max_concurrent_requests: Option<u64>,
@@ -48,7 +52,7 @@ impl AtomaSuiClient {
         let active_address = wallet_ctx.active_address()?;
         info!("Set Sui client, with active address: {}", active_address);
         Ok(Self {
-            node_id,
+            node_badge,
             address: active_address,
             wallet_ctx,
             response_receiver,
@@ -56,7 +60,6 @@ impl AtomaSuiClient {
     }
 
     pub fn new_from_config<P: AsRef<Path>>(
-        node_id: u64,
         config_path: P,
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
@@ -64,9 +67,13 @@ impl AtomaSuiClient {
         let config_path = config.config_path();
         let request_timeout = config.request_timeout();
         let max_concurrent_requests = config.max_concurrent_requests();
+        let node_badge = NodeBadge {
+            id: config.node_badge_id(),
+            small_id: config.small_id(),
+        };
 
         Self::new(
-            node_id,
+            node_badge,
             config_path,
             Some(request_timeout),
             Some(max_concurrent_requests),
@@ -74,11 +81,11 @@ impl AtomaSuiClient {
         )
     }
 
-    fn get_index(&self, sampled_nodes: Vec<u64>) -> Result<(usize, usize), AtomaSuiClientError> {
+    fn get_index(&self, sampled_nodes: Vec<SmallId>) -> Result<(usize, usize), AtomaSuiClientError> {
         let num_leaves = sampled_nodes.len();
         let index = sampled_nodes
             .iter()
-            .position(|nid| nid == &self.node_id)
+            .position(|nid| nid == &self.node_badge.small_id)
             .ok_or(AtomaSuiClientError::InvalidSampledNode)?;
         Ok((index, num_leaves))
     }
@@ -101,17 +108,6 @@ impl AtomaSuiClient {
         Ok(data)
     }
 
-    fn sign_root_commitment(
-        &self,
-        merkle_root: [u8; 32],
-    ) -> Result<Signature, AtomaSuiClientError> {
-        self.wallet_ctx
-            .config
-            .keystore
-            .sign_hashed(&self.address, merkle_root.as_slice())
-            .map_err(|e| AtomaSuiClientError::FailedSignature(e.to_string()))
-    }
-
     /// Upon receiving a response from the `AtomaNode` service, this method extracts
     /// the output data and computes a cryptographic commitment. The commitment includes
     /// the root of an n-ary Merkle Tree built from the output data, represented as a `Vec<u8>`,
@@ -131,7 +127,6 @@ impl AtomaSuiClient {
         let data = self.get_data(response.response())?;
         let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
         let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
-        let signature = self.sign_root_commitment(root)?;
 
         let client = self.wallet_ctx.get_client().await?;
         let tx = client
@@ -143,8 +138,10 @@ impl AtomaSuiClient {
                 METHOD,
                 vec![],
                 vec![
+                    SuiJsonValue::from_object_id(ObjectID::from_str(ATOMA_DB_ID)?),
+                    SuiJsonValue::from_object_id(self.node_badge.id),
                     SuiJsonValue::new(request_id.into())?,
-                    SuiJsonValue::new(signature.as_ref().into())?,
+                    SuiJsonValue::new(root.as_ref().into())?,
                     SuiJsonValue::new(pre_image.as_ref().into())?,
                 ],
                 None,
