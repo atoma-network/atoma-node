@@ -10,8 +10,10 @@ pub struct AtomaSuiClientConfig {
     config_path: String,
     node_badge_id: ObjectID,
     small_id: SmallId,
-    request_timeout: Duration,
+    package_id: ObjectID,
+    atoma_db_id: ObjectID,
     max_concurrent_requests: u64,
+    request_timeout: Duration,
 }
 
 impl AtomaSuiClientConfig {
@@ -27,23 +29,31 @@ impl AtomaSuiClientConfig {
             .expect("Failed to generated Atoma Sui client config file")
     }
 
-    pub fn node_badge_id(&self) -> ObjectID {
-        self.node_badge_id
-    }
-
-    pub fn small_id(&self) -> SmallId { 
-        self.small_id
-    }
-
     pub fn config_path(&self) -> String {
         self.config_path.clone()
     }
 
-    pub fn request_timeout(&self) -> Duration {
-        self.request_timeout
+    pub fn node_badge_id(&self) -> ObjectID {
+        self.node_badge_id
+    }
+
+    pub fn small_id(&self) -> SmallId {
+        self.small_id
+    }
+
+    pub fn package_id(&self) -> ObjectID {
+        self.package_id
+    }
+
+    pub fn atoma_db_id(&self) -> ObjectID {
+        self.atoma_db_id
     }
 
     pub fn max_concurrent_requests(&self) -> u64 {
         self.max_concurrent_requests
+    }
+
+    pub fn request_timeout(&self) -> Duration {
+        self.request_timeout
     }
 }

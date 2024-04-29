@@ -1,11 +1,11 @@
-use std::{path::Path, str::FromStr, time::Duration};
+use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
 use atoma_types::{Response, SmallId};
 use sui_sdk::{
     json::SuiJsonValue,
     types::{
-        base_types::{ObjectID, ObjectIDParseError, SuiAddress},
+        base_types::{ObjectIDParseError, SuiAddress},
         digests::TransactionDigest,
     },
     wallet_context::WalletContext,
@@ -18,42 +18,32 @@ use crate::config::AtomaSuiClientConfig;
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
-const PACKAGE_ID: &str = "";
-const ATOMA_DB_ID: &str = "";
 const MODULE_ID: &str = "settlement";
 const METHOD: &str = "submit_commitment";
 
-pub struct NodeBadge {
-    id: ObjectID,
-    small_id: SmallId,
-}
-
 pub struct AtomaSuiClient {
-    node_badge: NodeBadge,
     address: SuiAddress,
+    config: AtomaSuiClientConfig,
     wallet_ctx: WalletContext,
     response_receiver: mpsc::Receiver<Response>,
 }
 
 impl AtomaSuiClient {
-    pub fn new<P: AsRef<Path>>(
-        node_badge: NodeBadge,
-        config_path: P,
-        request_timeout: Option<Duration>,
-        max_concurrent_requests: Option<u64>,
+    pub fn new(
+        config: AtomaSuiClientConfig,
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
-            config_path.as_ref(),
-            request_timeout,
-            max_concurrent_requests,
+            config.config_path().as_ref(),
+            Some(config.request_timeout()),
+            Some(config.max_concurrent_requests()),
         )?;
         let active_address = wallet_ctx.active_address()?;
         info!("Set Sui client, with active address: {}", active_address);
         Ok(Self {
-            node_badge,
             address: active_address,
+            config,
             wallet_ctx,
             response_receiver,
         })
@@ -64,28 +54,17 @@ impl AtomaSuiClient {
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
-        let config_path = config.config_path();
-        let request_timeout = config.request_timeout();
-        let max_concurrent_requests = config.max_concurrent_requests();
-        let node_badge = NodeBadge {
-            id: config.node_badge_id(),
-            small_id: config.small_id(),
-        };
-
-        Self::new(
-            node_badge,
-            config_path,
-            Some(request_timeout),
-            Some(max_concurrent_requests),
-            response_receiver,
-        )
+        Self::new(config, response_receiver)
     }
 
-    fn get_index(&self, sampled_nodes: Vec<SmallId>) -> Result<(usize, usize), AtomaSuiClientError> {
+    fn get_index(
+        &self,
+        sampled_nodes: Vec<SmallId>,
+    ) -> Result<(usize, usize), AtomaSuiClientError> {
         let num_leaves = sampled_nodes.len();
         let index = sampled_nodes
             .iter()
-            .position(|nid| nid == &self.node_badge.small_id)
+            .position(|nid| nid == &self.config.small_id())
             .ok_or(AtomaSuiClientError::InvalidSampledNode)?;
         Ok((index, num_leaves))
     }
@@ -133,13 +112,13 @@ impl AtomaSuiClient {
             .transaction_builder()
             .move_call(
                 self.address,
-                ObjectID::from_str(PACKAGE_ID)?,
+                self.config.package_id(),
                 MODULE_ID,
                 METHOD,
                 vec![],
                 vec![
-                    SuiJsonValue::from_object_id(ObjectID::from_str(ATOMA_DB_ID)?),
-                    SuiJsonValue::from_object_id(self.node_badge.id),
+                    SuiJsonValue::from_object_id(self.config.atoma_db_id()),
+                    SuiJsonValue::from_object_id(self.config.node_badge_id()),
                     SuiJsonValue::new(request_id.into())?,
                     SuiJsonValue::new(root.as_ref().into())?,
                     SuiJsonValue::new(pre_image.as_ref().into())?,

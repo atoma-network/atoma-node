@@ -65,10 +65,8 @@ impl AtomaNode {
 
         let atoma_sui_client_handle = tokio::spawn(async move {
             info!("Starting Atoma Sui client service..");
-            let atoma_sui_client = AtomaSuiClient::new_from_config(
-                atoma_sui_client_config_path,
-                atoma_node_resp_rx,
-            )?;
+            let atoma_sui_client =
+                AtomaSuiClient::new_from_config(atoma_sui_client_config_path, atoma_node_resp_rx)?;
             atoma_sui_client
                 .run()
                 .await

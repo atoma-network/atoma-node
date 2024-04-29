@@ -2,16 +2,16 @@ use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub struct SmallId { 
+pub struct SmallId {
     inner: u64,
 }
 
 impl SmallId {
-    pub fn new(inner: u64) -> Self { 
+    pub fn new(inner: u64) -> Self {
         Self { inner }
     }
 
-    pub fn inner(&self) -> u64 { 
+    pub fn inner(&self) -> u64 {
         self.inner
     }
 }
