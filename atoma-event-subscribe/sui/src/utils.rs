@@ -1,8 +1,7 @@
 use atoma_types::{Request, SmallId};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::subscriber::SuiSubscriberError;
-
 
 pub(crate) fn try_from_json(json: Value) -> Result<Request, SuiSubscriberError> {
     let id = hex::decode(json["ticket_id"].as_str().unwrap().replace("0x", ""))?;
