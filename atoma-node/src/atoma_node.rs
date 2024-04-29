@@ -24,7 +24,6 @@ pub struct AtomaNode {
 
 impl AtomaNode {
     pub async fn start<P>(
-        node_id: u64,
         atoma_sui_client_config_path: P,
         model_config_path: P,
         sui_subscriber_path: P,
@@ -55,8 +54,7 @@ impl AtomaNode {
         let sui_subscriber_handle = tokio::spawn(async move {
             info!("Starting Sui subscriber service..");
             let sui_event_subscriber =
-                SuiSubscriber::new_from_config(node_id, sui_subscriber_path, subscriber_req_tx)
-                    .await?;
+                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx).await?;
             sui_event_subscriber
                 .subscribe()
                 .await

@@ -1,5 +1,6 @@
 use std::{path::Path, time::Duration};
 
+use atoma_types::SmallId;
 use config::Config;
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
@@ -8,22 +9,25 @@ use sui_sdk::types::base_types::ObjectID;
 pub struct SuiSubscriberConfig {
     http_url: String,
     ws_url: String,
-    object_id: ObjectID,
+    package_id: ObjectID,
     request_timeout: Duration,
+    small_id: u64,
 }
 
 impl SuiSubscriberConfig {
     pub fn new(
         http_url: String,
         ws_url: String,
-        object_id: ObjectID,
+        package_id: ObjectID,
         request_timeout: Duration,
+        small_id: u64,
     ) -> Self {
         Self {
             http_url,
             ws_url,
-            object_id,
+            package_id,
             request_timeout,
+            small_id,
         }
     }
 
@@ -35,12 +39,16 @@ impl SuiSubscriberConfig {
         self.ws_url.clone()
     }
 
-    pub fn object_id(&self) -> ObjectID {
-        self.object_id
+    pub fn package_id(&self) -> ObjectID {
+        self.package_id
     }
 
     pub fn request_timeout(&self) -> Duration {
         self.request_timeout
+    }
+
+    pub fn small_id(&self) -> SmallId {
+        SmallId::new(self.small_id)
     }
 
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
@@ -69,10 +77,11 @@ pub mod tests {
                 .parse()
                 .unwrap(),
             Duration::from_secs(5 * 60),
+            0,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\nobject_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nsmall_id = 0\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
