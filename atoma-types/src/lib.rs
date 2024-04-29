@@ -18,10 +18,11 @@ impl SmallId {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
+    #[serde(rename(deserialize = "ticket_id"))]
     id: Vec<u8>,
-    #[serde(rename = "nodes")]
+    #[serde(rename(deserialize = "nodes"))]
     sampled_nodes: Vec<SmallId>,
-    #[serde(rename = "params")]
+    #[serde(rename(deserialize = "params"))]
     body: Value,
 }
 

@@ -1,14 +1,16 @@
 use std::{path::Path, time::Duration};
 
 use futures::StreamExt;
+use hex::FromHexError;
 use sui_sdk::rpc_types::EventFilter;
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
+use crate::utils::try_from_json;
 use atoma_types::{Request, SmallId};
 
 pub struct SuiSubscriber {
@@ -74,12 +76,13 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
-                    let request = serde_json::from_value::<Request>(event_data)?;
+                    debug!("event data: {}", event_data);
+                    let request = try_from_json(event_data)?;
                     info!("Received new request: {:?}", request);
                     let request_id = request
                         .id()
                         .iter()
-                        .map(|b| format!("{:02X}", b))
+                        .map(|b| format!("{:02x}", b))
                         .collect::<String>();
                     let sampled_nodes = request.sampled_nodes();
                     if sampled_nodes.contains(&self.id) {
@@ -111,4 +114,6 @@ pub enum SuiSubscriberError {
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Sender error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<Request>),
+    #[error("Hex error: `{0}`")]
+    HexError(#[from] FromHexError),
 }
