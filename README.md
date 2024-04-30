@@ -42,5 +42,21 @@ small_id = 28972375 # a unique identifier provided to the node, upon on-chain re
 [request_timeout] # a request timeout parameter
 secs = 300
 nanos = 0
+```
+
+5. The Atoma blockchain client service configuration file is specified as (in toml format):
+
+```toml
+config_path = "<SUI_CLIENT_CONFIG_PATH>" # the path to the sui client configuration path (for connecting the user's wallet)
+atoma_db_id = "<ATOMA_DB_ID>" # the Atoma db object id, this value is publicly available (see below)
+node_badge_id = "<NODE_BADGE_ID>" # the node's own badge object id, this value is provided to the node upon registration
+package_id = "<ATOMA_CALL_CONTRACT_ID>" # the Atoma's contract package id, this value is publicly available (see below)
+small_id = 28972375 # a unique identifier provided to the node, upon on-chain registration (same as above)
+
+max_concurrent_requests = 1000 # how many concurrent requests are supported by the Sui's client service
+
+[request_timeout] # a request timeout parameter
+secs = 300
+nanos = 0
 
 ```
