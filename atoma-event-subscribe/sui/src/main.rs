@@ -11,10 +11,10 @@ struct Args {
     #[arg(long)]
     pub package_id: String,
     /// HTTP node's address for Sui client
-    #[arg(long, default_value = "https://fullnode.mainnet.sui.io:443")]
+    #[arg(long, default_value = "https://fullnode.testnet.sui.io:443")]
     pub http_addr: String,
     /// RPC node's web socket address for Sui client
-    #[arg(long, default_value = "wss://fullnode.mainnet.sui.io:443")]
+    #[arg(long, default_value = "wss://fullnode.testnet.sui.io:443")]
     pub ws_addr: String,
 }
 
@@ -30,7 +30,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
 
     let event_subscriber = SuiSubscriber::new(
-        0,
+        1,
         &http_url,
         Some(&ws_url),
         package_id,

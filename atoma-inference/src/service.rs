@@ -111,23 +111,11 @@ pub enum ModelServiceError {
     #[error("Core error: `{0}`")]
     ModelThreadError(ModelThreadError),
     #[error("Api error: `{0}`")]
-    ApiError(ApiError),
+    ApiError(#[from] ApiError),
     #[error("Candle error: `{0}`")]
-    CandleError(CandleError),
+    CandleError(#[from] CandleError),
     #[error("Sender error: `{0}`")]
     SendError(String),
-}
-
-impl From<ApiError> for ModelServiceError {
-    fn from(error: ApiError) -> Self {
-        Self::ApiError(error)
-    }
-}
-
-impl From<CandleError> for ModelServiceError {
-    fn from(error: CandleError) -> Self {
-        Self::CandleError(error)
-    }
 }
 
 #[cfg(test)]

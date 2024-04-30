@@ -322,7 +322,7 @@ impl Request for TextRequest {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TextModelInput {
     pub(crate) prompt: String,
     pub(crate) temperature: f64,

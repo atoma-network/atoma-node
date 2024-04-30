@@ -105,7 +105,10 @@ impl ModelTrait for Phi3Model {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        info!("Running inference on prompt: {}", input.prompt);
+        info!(
+            "Running inference on prompt: {}, with inputs = {:?}",
+            input.prompt, input
+        );
         // clean tokenizer state
         self.tokenizer.clear();
 

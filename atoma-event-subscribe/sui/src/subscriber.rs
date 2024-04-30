@@ -6,13 +6,13 @@ use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
-use atoma_types::Request;
+use atoma_types::{Request, SmallId};
 
 pub struct SuiSubscriber {
-    id: u64,
+    id: SmallId,
     sui_client: SuiClient,
     filter: EventFilter,
     event_sender: mpsc::Sender<Request>,
@@ -20,10 +20,10 @@ pub struct SuiSubscriber {
 
 impl SuiSubscriber {
     pub async fn new(
-        id: u64,
+        id: SmallId,
         http_url: &str,
         ws_url: Option<&str>,
-        object_id: ObjectID,
+        package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
@@ -36,7 +36,7 @@ impl SuiSubscriber {
         }
         info!("Starting sui client..");
         let sui_client = sui_client_builder.build(http_url).await?;
-        let filter = EventFilter::Package(object_id);
+        let filter = EventFilter::Package(package_id);
         Ok(Self {
             id,
             sui_client,
@@ -46,20 +46,20 @@ impl SuiSubscriber {
     }
 
     pub async fn new_from_config<P: AsRef<Path>>(
-        id: u64,
         config_path: P,
         event_sender: mpsc::Sender<Request>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
+        let small_id = config.small_id();
         let http_url = config.http_url();
         let ws_url = config.ws_url();
-        let object_id = config.object_id();
+        let package_id = config.package_id();
         let request_timeout = config.request_timeout();
         Self::new(
-            id,
+            small_id,
             &http_url,
             Some(&ws_url),
-            object_id,
+            package_id,
             event_sender,
             Some(request_timeout),
         )
@@ -74,9 +74,14 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
-                    let request = serde_json::from_value::<Request>(event_data)?;
+                    debug!("event data: {}", event_data);
+                    let request = Request::try_from(event_data)?;
                     info!("Received new request: {:?}", request);
-                    let request_id = request.id();
+                    let request_id = request
+                        .id()
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
                     let sampled_nodes = request.sampled_nodes();
                     if sampled_nodes.contains(&self.id) {
                         info!(
@@ -107,4 +112,6 @@ pub enum SuiSubscriberError {
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Sender error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<Request>),
+    #[error("Type conversion error: `{0}`")]
+    TypeConversionError(#[from] anyhow::Error),
 }
