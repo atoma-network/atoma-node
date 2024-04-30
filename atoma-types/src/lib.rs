@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub type SmallId = u64;
 
@@ -40,19 +40,19 @@ impl Request {
     }
 }
 
-impl TryFrom<Value> for Request { 
+impl TryFrom<Value> for Request {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         let id = hex::decode(value["ticket_id"].as_str().unwrap().replace("0x", ""))?;
-    let sampled_nodes = value["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| parse_u64(&v["inner"]))
-        .collect::<Vec<_>>();
-    let body = parse_body(value["params"].clone())?;
-    Ok(Request::new(id, sampled_nodes, body))
+        let sampled_nodes = value["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| parse_u64(&v["inner"]))
+            .collect::<Vec<_>>();
+        let body = parse_body(value["params"].clone())?;
+        Ok(Request::new(id, sampled_nodes, body))
     }
 }
 
@@ -78,7 +78,6 @@ fn parse_f32(value: &Value) -> f32 {
 fn parse_u64(value: &Value) -> u64 {
     value.as_str().unwrap().parse::<u64>().unwrap()
 }
-
 
 #[derive(Debug)]
 pub struct Response {
