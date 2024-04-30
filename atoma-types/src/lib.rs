@@ -4,6 +4,14 @@ use serde_json::{json, Value};
 
 pub type SmallId = u64;
 
+/// Represents a request object containing information about a request
+/// Prompt event, emitted on a given blockchain, see https://github.com/atoma-network/atoma-contracts/blob/main/sui/packages/atoma/sources/gate.move#L45.
+/// It includes information about a ticket ID, sampled nodes, and request parameters.
+///
+/// Fields:
+/// id: Vec<u8> - The ticket ID associated with the request (or event).
+/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
+/// body: serde_json::Value - JSON value containing request parameters.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
     #[serde(rename(deserialize = "ticket_id"))]
@@ -61,6 +69,9 @@ impl TryFrom<Value> for Request {
     }
 }
 
+/// Parses the body of a JSON value. This JSON value is supposed to be obtained
+/// from a Sui `Text2TextPromptEvent`,
+/// see https://github.com/atoma-network/atoma-contracts/blob/main/sui/packages/atoma/sources/gate.move#L28
 fn parse_body(json: Value) -> Result<Value> {
     let output = json!({
             "max_tokens": parse_u64(&json["max_tokens"])?,
@@ -90,6 +101,8 @@ fn parse_f32_from_le_bytes(value: &Value) -> Result<f32> {
     Ok(f32::from_le_bytes(f32_le_bytes))
 }
 
+/// Parses an appropriate JSON value, representing a `u64` number, from a Sui
+/// `Text2TextPromptEvent` `u64` fields.
 fn parse_u64(value: &Value) -> Result<u64> {
     value
         .as_str()
@@ -98,6 +111,12 @@ fn parse_u64(value: &Value) -> Result<u64> {
         .map_err(|e| anyhow!("Failed to parse `u64` from string, with error: {e}"))
 }
 
+/// Represents a response object containing information about a response, including an ID, sampled nodes, and the response data.
+///
+/// Fields:
+/// id: Vec<u8> - The ticket id associated with the request, that lead to the generation of this response.
+/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
+/// response: serde_json::Value - JSON value containing the response data.
 #[derive(Debug)]
 pub struct Response {
     id: Vec<u8>,
