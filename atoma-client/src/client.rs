@@ -12,7 +12,7 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{info, trace};
+use tracing::{debug, info};
 
 use crate::config::AtomaSuiClientConfig;
 
@@ -131,7 +131,7 @@ impl AtomaSuiClient {
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
         let resp = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
-        trace!("Submitted transaction with response: {:?}", resp);
+        debug!("Submitted transaction with response: {:?}", resp);
         Ok(resp.digest)
     }
 
