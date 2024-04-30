@@ -58,5 +58,13 @@ max_concurrent_requests = 1000 # how many concurrent requests are supported by t
 [request_timeout] # a request timeout parameter
 secs = 300
 nanos = 0
-
 ```
+
+6. Once the node is registered and the configuration files set, the node then just needs to run the follow commands:
+
+```sh
+$ cd atoma-node
+$ RUST_LOG=info cargo run --release --features <YOUR_GPU_ENV> -- --atoma-sui-client-config-path <PATH_TO_ATOMA_SUI_CLIENT_CONFIG> --model-config-path <PATH_TO_MODEL_CONFIG> --sui-subscriber-path <PATH_TO_SUI_EVENT_SUBSCRIBER_CONFIG>
+```
+
+The value `<YOUR_GPU_ENV>` could be either `cuda`, `metal`, `flash-attn` or if you wish to run inference on the CPU, remove the `--features <YOUR_GPU_ENV>`.
