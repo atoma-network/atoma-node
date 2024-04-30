@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
-use atoma_types::SmallId;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
 use tracing::info;
@@ -31,7 +30,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
 
     let event_subscriber = SuiSubscriber::new(
-        SmallId::new(0),
+        1,
         &http_url,
         Some(&ws_url),
         package_id,

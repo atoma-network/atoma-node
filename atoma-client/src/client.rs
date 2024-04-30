@@ -29,7 +29,7 @@ pub struct AtomaSuiClient {
 }
 
 impl AtomaSuiClient {
-    pub fn new(
+    pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
@@ -49,12 +49,12 @@ impl AtomaSuiClient {
         })
     }
 
-    pub fn new_from_config<P: AsRef<Path>>(
+    pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_receiver: mpsc::Receiver<Response>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
-        Self::new(config, response_receiver)
+        Self::new_from_config(config, response_receiver)
     }
 
     fn get_index(
@@ -138,7 +138,7 @@ impl AtomaSuiClient {
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_receiver.recv().await {
             info!("Received new response: {:?}", response);
-            self.submit_response_commitment(response).await.unwrap();
+            self.submit_response_commitment(response).await?;
         }
         Ok(())
     }

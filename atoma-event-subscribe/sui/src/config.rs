@@ -48,7 +48,7 @@ impl SuiSubscriberConfig {
     }
 
     pub fn small_id(&self) -> SmallId {
-        SmallId::new(self.small_id)
+        self.small_id
     }
 
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {

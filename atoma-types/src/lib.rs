@@ -1,20 +1,8 @@
+use anyhow::{Error, Result};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub struct SmallId {
-    inner: u64,
-}
-
-impl SmallId {
-    pub fn new(inner: u64) -> Self {
-        Self { inner }
-    }
-
-    pub fn inner(&self) -> u64 {
-        self.inner
-    }
-}
+pub type SmallId = u64;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
@@ -51,6 +39,46 @@ impl Request {
         self.body.clone()
     }
 }
+
+impl TryFrom<Value> for Request { 
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let id = hex::decode(value["ticket_id"].as_str().unwrap().replace("0x", ""))?;
+    let sampled_nodes = value["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| parse_u64(&v["inner"]))
+        .collect::<Vec<_>>();
+    let body = parse_body(value["params"].clone())?;
+    Ok(Request::new(id, sampled_nodes, body))
+    }
+}
+
+fn parse_body(json: Value) -> Result<Value> {
+    let output = json!({
+            "max_tokens": parse_u64(&json["max_tokens"]),
+            "model": json["model"],
+            "prompt": json["prompt"],
+            "random_seed": parse_u64(&json["random_seed"]),
+            "repeat_last_n": parse_u64(&json["repeat_last_n"]),
+            "repeat_penalty": parse_f32(&json["repeat_penalty"]),
+            "temperature": parse_f32(&json["temperature"]),
+            "top_k": parse_u64(&json["top_k"]),
+            "top_p": parse_f32(&json["top_p"]),
+    });
+    Ok(output)
+}
+
+fn parse_f32(value: &Value) -> f32 {
+    f32::from_be_bytes((value.as_u64().unwrap() as u32).to_be_bytes())
+}
+
+fn parse_u64(value: &Value) -> u64 {
+    value.as_str().unwrap().parse::<u64>().unwrap()
+}
+
 
 #[derive(Debug)]
 pub struct Response {
