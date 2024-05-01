@@ -89,7 +89,7 @@ RUST_LOG=info cargo run --release --features flash-attn -- --atoma-sui-client-co
 
 The supported models currently are:
 
-| Model Name                     | Model Type                     |
+| Model Type                     | Hugging Face model name        |
 |--------------------------------|--------------------------------|
 | falcon_7b                      | tiiuae/falcon-7b               |
 | falcon_40b                     | tiiuae/falcon-40b              |
