@@ -32,7 +32,7 @@ models = [MODEL_CONFIG] # Specifications for each model the user wants to operat
 tracing = TRACING # bool value, allows for tracing
 ```
 
-4. In the above point, the `MODEL_CONFIG` refers to a set of a supported model (find a list of supported models here), as follows
+4. In the above point, the `MODEL_CONFIG` refers to a set of supported model configurations, see below, as follows
 
 ```
 [DEVICE, PRECISION, MODEL_TYPE, USE_FLASH_ATTENTION]
