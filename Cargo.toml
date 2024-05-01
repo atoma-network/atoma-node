@@ -13,7 +13,7 @@ members = [
     "atoma-json-rpc",
     "atoma-storage",
     "atoma-types"
-]
+, "atoma-output-manager"]
 
 [workspace.package]
 version = "0.1.0"
