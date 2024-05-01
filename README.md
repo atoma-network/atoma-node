@@ -26,25 +26,36 @@ that the event listener and blockchain client services need to be for the same b
 ```toml
 api_key = "<YOUR_HUGGING_FACE_API_KEY>" # for downloading models
 cache_dir = "<PATH_FOR_MODEL_STORAGE>" # where you want the downloaded models to be stored
-flush_storage = true # when the user stops the Atoma node, it flushes or not the downloaded models
-jrpc_port = 3000 # Atoma node JRPC port
-models = [[device, precision, model_type, revision, use_flash_attention], ...] # Specifications for each model the user wants to operate, as an Atoma Node
-tracing = true # Allows for tracing
+flush_storage = <FLUSH_STORAGE> # bool value, when the user stops the Atoma node, it flushes or not the downloaded models
+jrpc_port = <JRPC_PORT> # Atoma node port for JSON rpc service
+models = [<MODEL_CONFIG>] # Specifications for each model the user wants to operate, as an Atoma Node
+tracing = <TRACING> # bool value, allows for tracing
 ```
-4. The event subscriber service configuration file is specified as (in toml format):
+
+4. In the above point, the `<MODEL_CONFIG>` refers to a set of a supported model (find a list of supported models here), as follows
+
+```
+[<DEVICE>, <PRECISION>, <MODEL_TYPE>, <USE_FLASH_ATTENTION>]
+```
+
+where `<DEVICE>` is an integer referring to the device index of GPU operating (if your machine only supports one single GPU cards, device should be 0, or if using cpu or metal devices). `<PRECISION>` refers to the model inference precision, supported values are
+`"f32"`, `"bf16"`, `"f16"` (if you host quantized models, this field is not relevant). `<MODEL_TYPE>` is a string referring to the name
+of the model to be hosted (on the given device), a full list of model names can be found here. `<USE_FLASH_ATTENTION>` is a boolean value which allows to run inference with the optimized flash attention algorithm.
+
+5. The event subscriber service configuration file is specified as (in toml format):
 
 ```toml
 http_url = "RPC_NODE_HTTP_URL" # to connect via http to a rpc node on the blockchain
 ws_url = "RPC_NODE_WEB_SOCKET_URL" # to connect via web socket to a rpc node on the blockchain, relevant for listening to events
 package_id = "SUI_PACKAGE_ID" # the Atoma contract object id, on Sui.
-small_id = 28972375 # a unique identifier provided to the node, upon on-chain registration
+small_id = <JRPC_PORT> # a unique identifier provided to the node, upon on-chain registration
 
 [request_timeout] # a request timeout parameter
 secs = 300
 nanos = 0
 ```
 
-5. The Atoma blockchain client service configuration file is specified as (in toml format):
+6. The Atoma blockchain client service configuration file is specified as (in toml format):
 
 ```toml
 config_path = "<SUI_CLIENT_CONFIG_PATH>" # the path to the sui client configuration path (for connecting the user's wallet)
@@ -60,11 +71,16 @@ secs = 300
 nanos = 0
 ```
 
-6. Once the node is registered and the configuration files set, the node then just needs to run the follow commands:
+7. Once the node is registered and the configuration files set, the node then just needs to run the follow commands:
 
 ```sh
 $ cd atoma-node
 $ RUST_LOG=info cargo run --release --features <YOUR_GPU_ENV> -- --atoma-sui-client-config-path <PATH_TO_ATOMA_SUI_CLIENT_CONFIG> --model-config-path <PATH_TO_MODEL_CONFIG> --sui-subscriber-path <PATH_TO_SUI_EVENT_SUBSCRIBER_CONFIG>
 ```
 
-The value `<YOUR_GPU_ENV>` could be either `cuda`, `metal`, `flash-attn` or if you wish to run inference on the CPU, remove the `--features <YOUR_GPU_ENV>`.
+The value `<YOUR_GPU_ENV>` could be either `cuda`, `metal`, `flash-attn` or if you wish to run inference on the CPU, remove the `--features <YOUR_GPU_ENV>`. If you set `use_flash_attention = true` in 4. above, you should execute the binary as
+
+```sh
+$ 
+RUST_LOG=info cargo run --release --features flash-attn -- --atoma-sui-client-config-path <PATH_TO_ATOMA_SUI_CLIENT_CONFIG> --model-config-path <PATH_TO_MODEL_CONFIG> --sui-subscriber-path <PATH_TO_SUI_EVENT_SUBSCRIBER_CONFIG>
+```
