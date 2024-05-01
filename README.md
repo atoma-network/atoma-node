@@ -137,3 +137,9 @@ The supported models currently are:
 | quantized_mixtral              | TheBloke/Mixtral-8x7B-v0.1-GGUF |
 | quantized_mixtral-instruct     | TheBloke/Mistral-7B-Instruct-v0.1-GGUF |
 | quantized_llama3-8b            | QuantFactory/Meta-Llama-3-8B-GGUF |
+
+For example, if a user wants to run a node hosting a quantized 7b mistral model, it can do so simply by setting
+
+```
+MODEL_TYPE = "quantized_7b-mistral"
+```
