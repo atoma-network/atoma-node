@@ -89,7 +89,6 @@ RUST_LOG=info cargo run --release --features flash-attn -- --atoma-sui-client-co
 
 The supported models currently are:
 
-```
 | Model Name                     | Model Type                     |
 |--------------------------------|--------------------------------|
 | falcon_7b                      | tiiuae/falcon-7b               |
@@ -138,5 +137,3 @@ The supported models currently are:
 | quantized_mixtral              | TheBloke/Mixtral-8x7B-v0.1-GGUF |
 | quantized_mixtral-instruct     | TheBloke/Mistral-7B-Instruct-v0.1-GGUF |
 | quantized_llama3-8b            | QuantFactory/Meta-Llama-3-8B-GGUF |
-
-```
