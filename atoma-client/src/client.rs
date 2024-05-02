@@ -1,13 +1,10 @@
 use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{Response, SmallId};
+use atoma_types::{Digest, Response, SmallId};
 use sui_sdk::{
     json::SuiJsonValue,
-    types::{
-        base_types::{ObjectIDParseError, SuiAddress},
-        digests::TransactionDigest,
-    },
+    types::base_types::{ObjectIDParseError, SuiAddress},
     wallet_context::WalletContext,
 };
 use thiserror::Error;
@@ -25,13 +22,15 @@ pub struct AtomaSuiClient {
     address: SuiAddress,
     config: AtomaSuiClientConfig,
     wallet_ctx: WalletContext,
-    response_receiver: mpsc::Receiver<Response>,
+    response_rx: mpsc::Receiver<Response>,
+    output_manager_tx: mpsc::Sender<(Digest, Response)>,
 }
 
 impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
-        response_receiver: mpsc::Receiver<Response>,
+        response_rx: mpsc::Receiver<Response>,
+        output_manager_tx: mpsc::Sender<(Digest, Response)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
@@ -45,16 +44,18 @@ impl AtomaSuiClient {
             address: active_address,
             config,
             wallet_ctx,
-            response_receiver,
+            response_rx,
+            output_manager_tx,
         })
     }
 
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
-        response_receiver: mpsc::Receiver<Response>,
+        response_rx: mpsc::Receiver<Response>,
+        output_manager_tx: mpsc::Sender<(Digest, Response)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
-        Self::new_from_config(config, response_receiver)
+        Self::new_from_config(config, response_rx, output_manager_tx)
     }
 
     fn get_index(
@@ -101,7 +102,7 @@ impl AtomaSuiClient {
     pub async fn submit_response_commitment(
         &self,
         response: Response,
-    ) -> Result<TransactionDigest, AtomaSuiClientError> {
+    ) -> Result<Digest, AtomaSuiClientError> {
         let request_id = response.id();
         let data = self.get_data(response.response())?;
         let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
@@ -130,13 +131,25 @@ impl AtomaSuiClient {
             .await?;
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let resp = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
-        debug!("Submitted transaction with response: {:?}", resp);
-        Ok(resp.digest)
+        let tx_response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+
+        debug!("Submitted transaction with response: {:?}", tx_response);
+
+        let tx_digest = tx_response.digest.into_inner();
+        if let Some(events) = tx_response.events {
+            for event in events.data.iter() {
+                let event_value = &event.parsed_json;
+                if let Some(true) = event_value["is_first_submission"].as_bool() {
+                    let _ = self.output_manager_tx.send((tx_digest, response)).await?;
+                    break; // we don't need to check other events, as at this point the node knows it has been selected for
+                }
+            }
+        }
+        Ok(tx_digest)
     }
 
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
-        while let Some(response) = self.response_receiver.recv().await {
+        while let Some(response) = self.response_rx.recv().await {
             info!("Received new response: {:?}", response);
             self.submit_response_commitment(response).await?;
         }
@@ -154,6 +167,8 @@ pub enum AtomaSuiClientError {
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
+    #[error("Sender error: `{0}`")]
+    SendError(#[from] mpsc::error::SendError<(Digest, Response)>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]

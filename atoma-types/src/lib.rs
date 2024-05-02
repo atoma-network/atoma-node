@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+pub type Digest = [u8; 32];
 pub type SmallId = u64;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -98,7 +99,7 @@ fn parse_u64(value: &Value) -> Result<u64> {
         .map_err(|e| anyhow!("Failed to parse `u64` from string, with error: {e}"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Response {
     id: Vec<u8>,
     sampled_nodes: Vec<SmallId>,
