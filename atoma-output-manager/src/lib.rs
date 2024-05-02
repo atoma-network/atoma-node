@@ -1,14 +1,14 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+use atoma_types::Response;
+use tokio::sync::mpsc;
+
+pub struct AtomaOutputManager { 
+    output_receiver: mpsc::Receiver<Response>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl AtomaOutputManager { 
+    pub fn new(output_receiver: mpsc::Receiver<Response>) -> Self { 
+        Self  {
+            output_receiver
+        }
     }
 }
