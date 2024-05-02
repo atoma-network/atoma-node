@@ -32,15 +32,18 @@ models = [MODEL_CONFIG] # Specifications for each model the user wants to operat
 tracing = TRACING # bool value, allows for tracing
 ```
 
-4. In the above point, the `MODEL_CONFIG` refers to a set of supported model configurations, see below, as follows
+4. In the above paragraph, the `MODEL_CONFIG` refers to a set of supported model configurations, see below, as follows
 
 ```
 [DEVICE, PRECISION, MODEL_TYPE, USE_FLASH_ATTENTION]
 ```
 
-where `DEVICE` is an integer referring to the device index of GPU operating (if your machine only supports one single GPU cards, device should be 0, or if using cpu or metal devices). `PRECISION` refers to the model inference precision, supported values are
-`"f32"`, `"bf16"`, `"f16"` (if you host quantized models, this field is not relevant). `MODEL_TYPE` is a string referring to the name
-of the model to be hosted (on the given device), a full list of model names can be found here. `USE_FLASH_ATTENTION` is a boolean value which allows to run inference with the optimized flash attention algorithm.
+- `DEVICE` is an integer referring to the device index of GPU operating (if your machine only supports one single GPU cards, device should be 0, or if using cpu or metal devices). 
+- `PRECISION` refers to the model inference precision, supported values are
+`"f32"`, `"bf16"`, `"f16"` (if you host quantized models, this field is not relevant). 
+- `MODEL_TYPE` is a string referring to the name
+of the model to be hosted (on the given device), a full list of model names can be found here. 
+- `USE_FLASH_ATTENTION` is a boolean value which allows to run inference with the optimized flash attention algorithm.
 
 5. The event subscriber service configuration file is specified as (in toml format):
 
