@@ -74,6 +74,9 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
+                    if event_data["is_first_submission"].as_bool().is_some() { 
+                        continue;
+                    }
                     debug!("event data: {}", event_data);
                     let request = Request::try_from(event_data)?;
                     info!("Received new request: {:?}", request);
