@@ -13,7 +13,7 @@ members = [
     "atoma-json-rpc",
     "atoma-storage",
     "atoma-types"
-]
+, "atoma-output-manager"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,6 +25,7 @@ async-trait = "0.1.78"
 atoma-client = { path = "./atoma-client/" }
 atoma-crypto = { path = "./atoma-crypto/" }
 atoma-inference = { path = "./atoma-inference/" }
+atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"

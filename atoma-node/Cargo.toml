@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 atoma-client.workspace = true
 atoma-inference.workspace = true
+atoma-output-manager.workspace = true
 atoma-sui.workspace = true
 atoma-types.workspace = true
 clap.workspace = true

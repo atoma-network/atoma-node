@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+pub type Digest = [u8; 32];
 pub type SmallId = u64;
 
 /// Represents a request object containing information about a request
@@ -69,6 +70,41 @@ impl TryFrom<Value> for Request {
     }
 }
 
+/// Represents a response object containing information about a response, including an ID, sampled nodes, and the response data.
+///
+/// Fields:
+/// id: Vec<u8> - The ticket id associated with the request, that lead to the generation of this response.
+/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
+/// response: serde_json::Value - JSON value containing the response data.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Response {
+    id: Vec<u8>,
+    sampled_nodes: Vec<SmallId>,
+    response: Value,
+}
+
+impl Response {
+    pub fn new(id: Vec<u8>, sampled_nodes: Vec<SmallId>, response: Value) -> Self {
+        Self {
+            id,
+            sampled_nodes,
+            response,
+        }
+    }
+
+    pub fn id(&self) -> Vec<u8> {
+        self.id.clone()
+    }
+
+    pub fn sampled_nodes(&self) -> Vec<SmallId> {
+        self.sampled_nodes.clone()
+    }
+
+    pub fn response(&self) -> Value {
+        self.response.clone()
+    }
+}
+
 /// Parses the body of a JSON value. This JSON value is supposed to be obtained
 /// from a Sui `Text2TextPromptEvent`,
 /// see https://github.com/atoma-network/atoma-contracts/blob/main/sui/packages/atoma/sources/gate.move#L28
@@ -109,39 +145,4 @@ fn parse_u64(value: &Value) -> Result<u64> {
         .ok_or(anyhow!("Failed to extract `u64` number"))?
         .parse::<u64>()
         .map_err(|e| anyhow!("Failed to parse `u64` from string, with error: {e}"))
-}
-
-/// Represents a response object containing information about a response, including an ID, sampled nodes, and the response data.
-///
-/// Fields:
-/// id: Vec<u8> - The ticket id associated with the request, that lead to the generation of this response.
-/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
-/// response: serde_json::Value - JSON value containing the response data.
-#[derive(Debug)]
-pub struct Response {
-    id: Vec<u8>,
-    sampled_nodes: Vec<SmallId>,
-    response: Value,
-}
-
-impl Response {
-    pub fn new(id: Vec<u8>, sampled_nodes: Vec<SmallId>, response: Value) -> Self {
-        Self {
-            id,
-            sampled_nodes,
-            response,
-        }
-    }
-
-    pub fn id(&self) -> Vec<u8> {
-        self.id.clone()
-    }
-
-    pub fn sampled_nodes(&self) -> Vec<SmallId> {
-        self.sampled_nodes.clone()
-    }
-
-    pub fn response(&self) -> Value {
-        self.response.clone()
-    }
 }

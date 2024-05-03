@@ -1,10 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
 };
+use atoma_output_manager::{AtomaOutputManager, AtomaOutputManagerError};
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use atoma_types::{Request, Response};
 use thiserror::Error;
@@ -14,12 +15,14 @@ use tokio::{
 };
 use tracing::info;
 
+const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "https://atoma-demo-default-rtdb.firebaseio.com/"; // TODO: this is only valid for demo
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {
     pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub atoma_sui_client_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub atoma_output_manager_handle: JoinHandle<Result<(), AtomaNodeError>>,
 }
 
 impl AtomaNode {
@@ -36,6 +39,7 @@ impl AtomaNode {
 
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
+        let (output_manager_tx, output_manager_rx) = mpsc::channel(CHANNEL_SIZE);
 
         let model_service_handle = tokio::spawn(async move {
             info!("Spawning Model service..");
@@ -66,6 +70,7 @@ impl AtomaNode {
             let atoma_sui_client = AtomaSuiClient::new_from_config_file(
                 atoma_sui_client_config_path,
                 atoma_node_resp_rx,
+                output_manager_tx,
             )?;
             atoma_sui_client
                 .run()
@@ -73,10 +78,23 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::AtomaSuiClientError)
         });
 
+        let atoma_output_manager_handle = tokio::spawn(async move {
+            info!("Starting Atoma output manager service..");
+            let atoma_output_manager = AtomaOutputManager::new(
+                PathBuf::from(ATOMA_OUTPUT_MANAGER_FIREBASE_URL),
+                output_manager_rx,
+            );
+            atoma_output_manager
+                .run()
+                .await
+                .map_err(AtomaNodeError::AtomaOutputManagerError)
+        });
+
         Ok(Self {
             model_service_handle,
             sui_subscriber_handle,
             atoma_sui_client_handle,
+            atoma_output_manager_handle,
         })
     }
 }
@@ -89,4 +107,6 @@ pub enum AtomaNodeError {
     SuiSubscriberError(#[from] SuiSubscriberError),
     #[error("Atoma Sui client error: `{0}`")]
     AtomaSuiClientError(#[from] AtomaSuiClientError),
+    #[error("Atoma output manager error: `{0}`")]
+    AtomaOutputManagerError(#[from] AtomaOutputManagerError),
 }
