@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use serde::{de::DeserializeOwned, Serialize};
+use atoma_types::PromptParams;
+use serde::Serialize;
 use thiserror::Error;
 
 use self::{config::ModelConfig, types::ModelType};
@@ -14,7 +15,7 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Input: DeserializeOwned;
+    type Input: TryFrom<PromptParams, Error = ModelError>;
     type Output: Serialize;
     type LoadData;
 
@@ -66,6 +67,8 @@ pub enum ModelError {
     DTypeParseError(#[from] DTypeParseError),
     #[error("Invalid model type: `{0}`")]
     InvalidModelType(String),
+    #[error("Invalid model input")]
+    InvalidModelInput,
 }
 
 #[macro_export]

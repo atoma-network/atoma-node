@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use futures::StreamExt;
+use serde_json::Value;
 use sui_sdk::rpc_types::EventFilter;
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
@@ -68,38 +69,54 @@ impl SuiSubscriber {
 
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
-        let mut subscribe_event = event_api.subscribe_event(self.filter).await?;
+        let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
         info!("Starting event while loop");
         while let Some(event) = subscribe_event.next().await {
             match event {
-                Ok(event) => {
-                    let event_data = event.parsed_json;
-                    if event_data["is_first_submission"].as_bool().is_some() {
-                        continue;
+                Ok(event) => match event.type_.name.as_str() {
+                    "DisputeEvent" => todo!(),
+                    "FirstSubmission" | "NodeRegisteredEvent" | "NodeSubscribedToModelEvent" => {}
+                    "Text2TextPromptEvent" | "NewlySampledNodesEvent" => {
+                        let event_data = event.parsed_json;
+                        self.handle_text2text_prompt_event(event_data).await?;
                     }
-                    debug!("event data: {}", event_data);
-                    let request = Request::try_from(event_data)?;
-                    info!("Received new request: {:?}", request);
-                    let request_id = request
-                        .id()
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>();
-                    let sampled_nodes = request.sampled_nodes();
-                    if sampled_nodes.contains(&self.id) {
-                        info!(
-                            "Current node has been sampled for request with id: {}",
-                            request_id
-                        );
-                        self.event_sender.send(request).await?;
-                    } else {
-                        info!("Current node has not been sampled for request with id: {}, ignoring it..", request_id);
-                    }
-                }
+                    "Text2ImagePromptEvent" => todo!(),
+                    _ => panic!("Invalid Event type found!"),
+                },
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
                 }
             }
+        }
+        Ok(())
+    }
+}
+
+impl SuiSubscriber {
+    async fn handle_text2text_prompt_event(
+        &self,
+        event_data: Value,
+    ) -> Result<(), SuiSubscriberError> {
+        debug!("event data: {}", event_data);
+        let request = Request::try_from(event_data)?;
+        info!("Received new request: {:?}", request);
+        let request_id = request
+            .id()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        let sampled_nodes = request.sampled_nodes();
+        if sampled_nodes.contains(&self.id) {
+            info!(
+                "Current node has been sampled for request with id: {}",
+                request_id
+            );
+            self.event_sender.send(request).await?;
+        } else {
+            info!(
+                "Current node has not been sampled for request with id: {}, ignoring it..",
+                request_id
+            );
         }
         Ok(())
     }

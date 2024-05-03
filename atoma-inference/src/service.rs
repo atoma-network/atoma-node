@@ -120,10 +120,11 @@ pub enum ModelServiceError {
 
 #[cfg(test)]
 mod tests {
+    use atoma_types::PromptParams;
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, ModelTrait, Request, Response};
+    use crate::models::{config::ModelConfig, ModelError, ModelTrait, Request, Response};
 
     use super::*;
 
@@ -150,8 +151,18 @@ mod tests {
     #[derive(Clone)]
     struct TestModelInstance {}
 
+    struct MockInput {}
+
+    impl TryFrom<PromptParams> for MockInput {
+        type Error = ModelError;
+
+        fn try_from(_: PromptParams) -> Result<Self, Self::Error> {
+            Ok(Self {})
+        }
+    }
+
     impl ModelTrait for TestModelInstance {
-        type Input = ();
+        type Input = MockInput;
         type Output = ();
         type LoadData = ();
 

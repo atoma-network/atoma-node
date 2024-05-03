@@ -30,25 +30,13 @@ pub struct ModelThreadCommand {
 #[derive(Debug, Error)]
 pub enum ModelThreadError {
     #[error("Model thread shutdown: `{0}`")]
-    ApiError(ApiError),
+    ApiError(#[from] ApiError),
     #[error("Model thread shutdown: `{0}`")]
-    ModelError(ModelError),
+    ModelError(#[from] ModelError),
     #[error("Core thread shutdown: `{0}`")]
     Shutdown(RecvError),
     #[error("Serde error: `{0}`")]
     SerdeError(#[from] serde_json::Error),
-}
-
-impl From<ModelError> for ModelThreadError {
-    fn from(error: ModelError) -> Self {
-        Self::ModelError(error)
-    }
-}
-
-impl From<ApiError> for ModelThreadError {
-    fn from(error: ApiError) -> Self {
-        Self::ApiError(error)
-    }
 }
 
 pub struct ModelThreadHandle {
@@ -79,8 +67,8 @@ where
             let ModelThreadCommand { request, sender } = command;
             let request_id = request.id();
             let sampled_nodes = request.sampled_nodes();
-            let body = request.body();
-            let model_input = serde_json::from_value(body)?;
+            let params = request.params();
+            let model_input = M::Input::try_from(params)?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
             let response = Response::new(request_id, sampled_nodes, output);
