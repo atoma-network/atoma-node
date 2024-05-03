@@ -4,7 +4,7 @@ use atoma_types::{Digest, Response};
 use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{error, debug, info};
+use tracing::{debug, error, info};
 
 pub struct AtomaOutputManager {
     firebase_uri: PathBuf,
@@ -48,7 +48,10 @@ impl AtomaOutputManager {
         suffix.push_str(".json");
         url.push(suffix);
         info!("Firebase's output url: {:?}", url);
-        debug!("Submitting to Firebase's real time storage, the data: {}", data);
+        debug!(
+            "Submitting to Firebase's real time storage, the data: {}",
+            data
+        );
         let response = client
             .post(url.to_str().unwrap())
             .json(&data)

@@ -74,7 +74,7 @@ impl SuiSubscriber {
             match event {
                 Ok(event) => {
                     let event_data = event.parsed_json;
-                    if event_data["is_first_submission"].as_bool().is_some() { 
+                    if event_data["is_first_submission"].as_bool().is_some() {
                         continue;
                     }
                     debug!("event data: {}", event_data);
