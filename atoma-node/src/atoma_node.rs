@@ -15,7 +15,7 @@ use tokio::{
 };
 use tracing::info;
 
-const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "TODO";
+const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "https://atoma-demo-default-rtdb.firebaseio.com/"; // TODO: this is only valid for demo
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {
