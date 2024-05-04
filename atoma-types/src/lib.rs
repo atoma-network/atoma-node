@@ -86,6 +86,8 @@ impl PromptParams {
         }
     }
 
+    /// Extracts a `Text2TextPromptParams` from a `PromptParams` enum, or None
+    /// if `PromptParams` does not correspond to `PromptParams::Text2TextPromptParams`
     pub fn into_text2text_prompt_params(self) -> Option<Text2TextPromptParams> {
         match self {
             Self::Text2TextPromptParams(p) => Some(p),
@@ -93,6 +95,8 @@ impl PromptParams {
         }
     }
 
+    // Extracts a `Text2ImagePromptParams` from a `PromptParams` enum, or None
+    /// if `PromptParams` does not correspond to `PromptParams::Text2ImagePromptParams`
     pub fn into_text2image_prompt_params(self) -> Option<Text2ImagePromptParams> {
         match self {
             Self::Text2ImagePromptParams(p) => Some(p),
