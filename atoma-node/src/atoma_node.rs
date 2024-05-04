@@ -10,7 +10,11 @@ use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use atoma_types::{Request, Response};
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc::{self, Receiver}, oneshot}, task::JoinHandle
+    sync::{
+        mpsc::{self, Receiver},
+        oneshot,
+    },
+    task::JoinHandle,
 };
 use tracing::info;
 

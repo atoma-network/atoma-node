@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration, fmt::Write};
+use std::{fmt::Write, path::Path, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -117,13 +117,14 @@ impl SuiSubscriber {
         debug!("event data: {}", event_data);
         let request = Request::try_from(event_data)?;
         info!("Received new request: {:?}", request);
-        let request_id = request
-            .id()
-            .iter()
-            .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
-                write!(acc, "{:02x}", b).expect("Failed to write to request_id");
-                acc
-            });
+        let request_id =
+            request
+                .id()
+                .iter()
+                .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
+                    write!(acc, "{:02x}", b).expect("Failed to write to request_id");
+                    acc
+                });
         info!("request_id: {request_id}");
         let sampled_nodes = request.sampled_nodes();
         if sampled_nodes.contains(&self.id) {
