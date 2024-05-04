@@ -140,6 +140,7 @@ pub struct Text2TextPromptParams {
 }
 
 impl Text2TextPromptParams {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         prompt: String,
         model: String,
@@ -250,6 +251,7 @@ pub struct Text2ImagePromptParams {
 }
 
 impl Text2ImagePromptParams {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         prompt: String,
         model: String,
