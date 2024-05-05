@@ -36,7 +36,7 @@ impl TryFrom<PromptParams> for MockInputOutput {
 
     fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: value.as_text2text_prompt_params().unwrap().max_tokens(),
+            id: value.into_text2text_prompt_params().unwrap().max_tokens(),
         })
     }
 }
