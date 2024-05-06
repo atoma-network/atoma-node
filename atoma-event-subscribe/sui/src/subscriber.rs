@@ -92,7 +92,9 @@ impl SuiSubscriber {
             "FirstSubmissionEvent"
             | "NodeRegisteredEvent"
             | "NodeSubscribedToModelEvent"
-            | "SettledEvent" => {}
+            | "SettledEvent" => {
+                info!("Received event: {}", event.type_.name.as_str());
+            }
             "Text2TextPromptEvent" | "NewlySampledNodesEvent" => {
                 let event_data = event.parsed_json;
                 self.handle_text2text_prompt_event(event_data).await?;
