@@ -140,7 +140,7 @@ impl AtomaSuiClient {
             for event in events.data.iter() {
                 let event_value = &event.parsed_json;
                 if let Some(true) = event_value["is_first_submission"].as_bool() {
-                    let _ = self.output_manager_tx.send((tx_digest, response)).await?;
+                    self.output_manager_tx.send((tx_digest, response)).await?;
                     break; // we don't need to check other events, as at this point the node knows it has been selected for
                 }
             }

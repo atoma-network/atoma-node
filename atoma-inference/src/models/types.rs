@@ -1,5 +1,6 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
+use atoma_types::PromptParams;
 use candle::{DType, Device};
 use serde::{Deserialize, Serialize};
 
@@ -359,6 +360,26 @@ impl TextModelInput {
     }
 }
 
+impl TryFrom<PromptParams> for TextModelInput {
+    type Error = ModelError;
+
+    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+        match value {
+            PromptParams::Text2TextPromptParams(p) => Ok(Self {
+                prompt: p.prompt(),
+                temperature: p.temperature(),
+                random_seed: p.random_seed(),
+                repeat_penalty: p.repeat_penalty(),
+                repeat_last_n: p.repeat_last_n().try_into().unwrap(),
+                max_tokens: p.max_tokens().try_into().unwrap(),
+                top_k: p.top_k().map(|t| t.try_into().unwrap()),
+                top_p: p.top_p(),
+            }),
+            PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct TextModelOutput {
     pub text: String,
@@ -452,6 +473,29 @@ impl Request for StableDiffusionRequest {
 
     fn requested_model(&self) -> ModelId {
         self.model.clone()
+    }
+}
+
+impl TryFrom<PromptParams> for StableDiffusionInput {
+    type Error = ModelError;
+
+    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+        match value {
+            PromptParams::Text2ImagePromptParams(p) => Ok(Self {
+                prompt: p.prompt(),
+                uncond_prompt: p.uncond_prompt(),
+                height: p.height().map(|t| t.try_into().unwrap()),
+                width: p.width().map(|t| t.try_into().unwrap()),
+                n_steps: p.n_steps().map(|t| t.try_into().unwrap()),
+                num_samples: p.num_samples() as i64,
+                model: p.model(),
+                guidance_scale: p.guidance_scale(),
+                img2img: p.img2img(),
+                img2img_strength: p.img2img_strength(),
+                random_seed: p.random_seed(),
+            }),
+            _ => Err(ModelError::InvalidModelInput),
+        }
     }
 }
 

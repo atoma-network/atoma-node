@@ -10,7 +10,10 @@ use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use atoma_types::{Request, Response};
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc, mpsc::Receiver, oneshot},
+    sync::{
+        mpsc::{self, Receiver},
+        oneshot,
+    },
     task::JoinHandle,
 };
 use tracing::info;
@@ -19,10 +22,10 @@ const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "https://atoma-demo-default-rtdb
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {
-    pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
-    pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub atoma_sui_client_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub atoma_output_manager_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
 }
 
 impl AtomaNode {

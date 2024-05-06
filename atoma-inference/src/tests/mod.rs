@@ -2,11 +2,13 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
+use atoma_types::Text2TextPromptParams;
 use prompts::PROMPTS;
+use serde::Serialize;
 
 use std::{collections::HashMap, sync::mpsc};
 
-use atoma_types::Request;
+use atoma_types::{PromptParams, Request};
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::Client;
 use serde_json::json;
@@ -24,9 +26,24 @@ struct TestModel {
     duration: Duration,
 }
 
+#[derive(Debug, Serialize)]
+struct MockInputOutput {
+    id: u64,
+}
+
+impl TryFrom<PromptParams> for MockInputOutput {
+    type Error = ModelError;
+
+    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.into_text2text_prompt_params().unwrap().max_tokens(),
+        })
+    }
+}
+
 impl ModelTrait for TestModel {
-    type Input = Value;
-    type Output = Value;
+    type Input = MockInputOutput;
+    type Output = MockInputOutput;
     type LoadData = Duration;
 
     fn fetch(
@@ -51,7 +68,7 @@ impl ModelTrait for TestModel {
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         std::thread::sleep(self.duration);
         println!(
-            "Finished waiting time for {:?} and input = {}",
+            "Finished waiting time for {:?} and input = {:?}",
             self.duration, input
         );
         Ok(input)
@@ -100,14 +117,27 @@ async fn test_mock_model_thread() {
     for i in 0..NUM_REQUESTS {
         for sender in model_thread_dispatcher.model_senders.values() {
             let (response_sender, response_receiver) = oneshot::channel();
-            let request = Request::new(vec![0], vec![], json!(i));
+            let max_tokens = i as u64;
+            let prompt_params = PromptParams::Text2TextPromptParams(Text2TextPromptParams::new(
+                "".to_string(),
+                "".to_string(),
+                0.0,
+                1,
+                1.0,
+                0,
+                max_tokens,
+                Some(0),
+                Some(1.0),
+            ));
+            let request = Request::new(vec![0], vec![], prompt_params);
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
             responses.push(response_receiver);
-            should_be_received_responses.push(request.body().as_u64().unwrap());
+            should_be_received_responses
+                .push(MockInputOutput::try_from(request.params()).unwrap().id);
         }
     }
 

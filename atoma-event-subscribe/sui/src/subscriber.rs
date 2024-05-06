@@ -1,7 +1,8 @@
-use std::{path::Path, time::Duration};
+use std::{fmt::Write, path::Path, time::Duration};
 
 use futures::StreamExt;
-use sui_sdk::rpc_types::EventFilter;
+use serde_json::Value;
+use sui_sdk::rpc_types::{EventFilter, SuiEvent};
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
@@ -10,6 +11,8 @@ use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
 use atoma_types::{Request, SmallId};
+
+const REQUEST_ID_HEX_SIZE: usize = 64;
 
 pub struct SuiSubscriber {
     id: SmallId,
@@ -68,38 +71,73 @@ impl SuiSubscriber {
 
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
-        let mut subscribe_event = event_api.subscribe_event(self.filter).await?;
+        let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
         info!("Starting event while loop");
         while let Some(event) = subscribe_event.next().await {
             match event {
-                Ok(event) => {
-                    let event_data = event.parsed_json;
-                    if event_data["is_first_submission"].as_bool().is_some() {
-                        continue;
-                    }
-                    debug!("event data: {}", event_data);
-                    let request = Request::try_from(event_data)?;
-                    info!("Received new request: {:?}", request);
-                    let request_id = request
-                        .id()
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>();
-                    let sampled_nodes = request.sampled_nodes();
-                    if sampled_nodes.contains(&self.id) {
-                        info!(
-                            "Current node has been sampled for request with id: {}",
-                            request_id
-                        );
-                        self.event_sender.send(request).await?;
-                    } else {
-                        info!("Current node has not been sampled for request with id: {}, ignoring it..", request_id);
-                    }
-                }
+                Ok(event) => self.handle_event(event).await?,
                 Err(e) => {
                     error!("Failed to get event with error: {e}");
                 }
             }
+        }
+        Ok(())
+    }
+}
+
+impl SuiSubscriber {
+    async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+        match event.type_.name.as_str() {
+            "DisputeEvent" => todo!(),
+            "FirstSubmission" | "NodeRegisteredEvent" | "NodeSubscribedToModelEvent" => {}
+            "Text2TextPromptEvent" | "NewlySampledNodesEvent" => {
+                let event_data = event.parsed_json;
+                self.handle_text2text_prompt_event(event_data).await?;
+            }
+            "Text2ImagePromptEvent" => {
+                let event_data = event.parsed_json;
+                self.handle_text2image_prompt_event(event_data).await?;
+            }
+            _ => panic!("Invalid Event type found!"),
+        }
+        Ok(())
+    }
+
+    async fn handle_text2image_prompt_event(
+        &self,
+        _event_data: Value,
+    ) -> Result<(), SuiSubscriberError> {
+        Ok(())
+    }
+
+    async fn handle_text2text_prompt_event(
+        &self,
+        event_data: Value,
+    ) -> Result<(), SuiSubscriberError> {
+        debug!("event data: {}", event_data);
+        let request = Request::try_from(event_data)?;
+        info!("Received new request: {:?}", request);
+        let request_id =
+            request
+                .id()
+                .iter()
+                .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
+                    write!(acc, "{:02x}", b).expect("Failed to write to request_id");
+                    acc
+                });
+        info!("request_id: {request_id}");
+        let sampled_nodes = request.sampled_nodes();
+        if sampled_nodes.contains(&self.id) {
+            info!(
+                "Current node has been sampled for request with id: {}",
+                request_id
+            );
+            self.event_sender.send(request).await.map_err(Box::new)?;
+        } else {
+            info!(
+                "Current node has not been sampled for request with id: {}, ignoring it..",
+                request_id
+            );
         }
         Ok(())
     }
@@ -114,7 +152,7 @@ pub enum SuiSubscriberError {
     #[error("Object ID parse error: `{0}`")]
     ObjectIDParseError(#[from] ObjectIDParseError),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<Request>),
+    SendError(#[from] Box<mpsc::error::SendError<Request>>),
     #[error("Type conversion error: `{0}`")]
     TypeConversionError(#[from] anyhow::Error),
 }
