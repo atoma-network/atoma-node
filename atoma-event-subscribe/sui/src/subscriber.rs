@@ -89,7 +89,7 @@ impl SuiSubscriber {
     async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
         match event.type_.name.as_str() {
             "DisputeEvent" => todo!(),
-            "FirstSubmission" | "NodeRegisteredEvent" | "NodeSubscribedToModelEvent" => {}
+            "FirstSubmissionEvent" | "NodeRegisteredEvent" | "NodeSubscribedToModelEvent" => {}
             "Text2TextPromptEvent" | "NewlySampledNodesEvent" => {
                 let event_data = event.parsed_json;
                 self.handle_text2text_prompt_event(event_data).await?;
