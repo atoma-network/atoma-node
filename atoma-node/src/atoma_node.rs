@@ -15,8 +15,9 @@ use tokio::{
         oneshot,
     },
     task::JoinHandle,
+    try_join,
 };
-use tracing::info;
+use tracing::{error, info};
 
 const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "https://atoma-demo-default-rtdb.firebaseio.com/"; // TODO: this is only valid for demo
 const CHANNEL_SIZE: usize = 32;
@@ -34,7 +35,7 @@ impl AtomaNode {
         model_config_path: P,
         sui_subscriber_path: P,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
-    ) -> Result<Self, AtomaNodeError>
+    ) -> Result<(), AtomaNodeError>
     where
         P: AsRef<Path> + Send + 'static,
     {
@@ -93,12 +94,29 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::AtomaOutputManagerError)
         });
 
-        Ok(Self {
+        match try_join!(
             model_service_handle,
             sui_subscriber_handle,
             atoma_sui_client_handle,
-            atoma_output_manager_handle,
-        })
+            atoma_output_manager_handle
+        ) {
+            Ok((
+                model_service_result,
+                sui_subscriber_result,
+                atoma_sui_client_result,
+                atoma_output_manager_result,
+            )) => {
+                model_service_result?;
+                sui_subscriber_result?;
+                atoma_sui_client_result?;
+                atoma_output_manager_result?;
+            }
+            Err(e) => {
+                error!("Failed to join handles, with error: {e}")
+            }
+        }
+
+        Ok(())
     }
 }
 
