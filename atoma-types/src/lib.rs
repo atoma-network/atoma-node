@@ -2,7 +2,7 @@ use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub type Digest = [u8; 32];
+pub type Digest = String;
 pub type SmallId = u64;
 
 /// Represents a request object containing information about a request

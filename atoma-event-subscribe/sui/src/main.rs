@@ -3,7 +3,7 @@ use std::time::Duration;
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -41,7 +41,9 @@ async fn main() -> Result<(), SuiSubscriberError> {
 
     tokio::spawn(async move {
         info!("initializing subscribe");
-        event_subscriber.subscribe().await.unwrap();
+        if let Err(err) = event_subscriber.subscribe().await {
+            error!("Failed to subscribe: {:?}", err);
+        }
         Ok::<_, SuiSubscriberError>(())
     });
 

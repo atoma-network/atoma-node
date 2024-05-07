@@ -135,12 +135,14 @@ impl AtomaSuiClient {
 
         debug!("Submitted transaction with response: {:?}", tx_response);
 
-        let tx_digest = tx_response.digest.into_inner();
+        let tx_digest = tx_response.digest.base58_encode();
         if let Some(events) = tx_response.events {
             for event in events.data.iter() {
                 debug!("Got a transaction event: {:?}", event.type_.name.as_str());
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
-                    self.output_manager_tx.send((tx_digest, response)).await?;
+                    self.output_manager_tx
+                        .send((tx_digest.clone(), response))
+                        .await?;
                     break; // we don't need to check other events, as at this point the node knows it has been selected for
                 }
             }
