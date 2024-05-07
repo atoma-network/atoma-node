@@ -44,9 +44,7 @@ impl AtomaOutputManager {
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let mut url = self.firebase_uri.clone();
-        let mut suffix = hex::encode(tx_digest);
-        suffix.push_str(".json");
-        url.push(suffix);
+        url.push(format!("{tx_digest}.json"));
         info!("Firebase's output url: {:?}", url);
         debug!(
             "Submitting to Firebase's real time storage, the data: {}",
