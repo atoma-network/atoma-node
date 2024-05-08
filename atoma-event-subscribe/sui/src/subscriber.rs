@@ -73,7 +73,10 @@ impl SuiSubscriber {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = match event_api.subscribe_event(self.filter.clone()).await {
             Ok(subscriber) => subscriber,
-            Err(e) => { error!("Failed to start subscribe event, with error: {e}"); return Err(SuiSubscriberError::SuiBuilderError(e))}
+            Err(e) => {
+                error!("Failed to start subscribe event, with error: {e}");
+                return Err(SuiSubscriberError::SuiBuilderError(e));
+            }
         };
         info!("Starting event while loop");
         while let Some(event) = subscribe_event.next().await {
