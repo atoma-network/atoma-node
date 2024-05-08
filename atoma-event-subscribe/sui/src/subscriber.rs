@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
-use atoma_types::{Request, SmallId};
+use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 const REQUEST_ID_HEX_SIZE: usize = 64;
 
@@ -95,9 +95,30 @@ impl SuiSubscriber {
             | "SettledEvent" => {
                 info!("Received event: {}", event.type_.name.as_str());
             }
-            "Text2TextPromptEvent" | "NewlySampledNodesEvent" => {
+            "NewlySampledNodesEvent" => {
                 let event_data = event.parsed_json;
-                self.handle_text2text_prompt_event(event_data).await?;
+                match self.handle_newly_sampled_nodes_event(event_data).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        error!("Failed to process request, with error: {err}")
+                    }
+                }
+            }
+            "Text2TextPromptEvent" => {
+                let event_data = event.parsed_json;
+                match self.handle_text2text_prompt_event(event_data).await {
+                    Ok(()) => {}
+                    Err(SuiSubscriberError::TypeConversionError(err)) => {
+                        if err.to_string().contains(NON_SAMPLED_NODE_ERR) {
+                            info!("Node has not been sampled for current request");
+                        } else {
+                            error!("Failed to process request, with error: {err}")
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to process request, with error: {err}");
+                    }
+                }
             }
             "Text2ImagePromptEvent" => {
                 let event_data = event.parsed_json;
@@ -120,7 +141,7 @@ impl SuiSubscriber {
         event_data: Value,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
-        let request = Request::try_from(event_data)?;
+        let request = Request::try_from((self.id, event_data))?;
         info!("Received new request: {:?}", request);
         let request_id =
             request
@@ -130,20 +151,101 @@ impl SuiSubscriber {
                     write!(acc, "{:02x}", b).expect("Failed to write to request_id");
                     acc
                 });
-        info!("request_id: {request_id}");
-        let sampled_nodes = request.sampled_nodes();
-        if sampled_nodes.contains(&self.id) {
+        info!(
+            "Current node has been sampled for request with id: {}",
+            request_id
+        );
+        self.event_sender.send(request).await.map_err(Box::new)?;
+
+        Ok(())
+    }
+
+    async fn handle_newly_sampled_nodes_event(
+        &self,
+        event_data: Value,
+    ) -> Result<(), SuiSubscriberError> {
+        debug!("event data: {}", event_data);
+        let newly_sampled_nodes = event_data
+            .get("new_nodes")
+            .ok_or(SuiSubscriberError::MalformedEvent(
+                "missing `new_nodes` field".into(),
+            ))?
+            .as_array()
+            .ok_or(SuiSubscriberError::MalformedEvent(
+                "invalid `new_nodes` field".into(),
+            ))?
+            .iter()
+            .map(|n| {
+                let node_id = n
+                    .get("node_id")
+                    .ok_or(SuiSubscriberError::MalformedEvent(
+                        "missing `node_id` field".into(),
+                    ))?
+                    .get("inner")
+                    .ok_or(SuiSubscriberError::MalformedEvent(
+                        "invalid `inner` field".into(),
+                    ))?
+                    .as_u64()
+                    .ok_or(SuiSubscriberError::MalformedEvent(
+                        "invalid `node_id` `inner` field".into(),
+                    ))?;
+                let index = n
+                    .get("order")
+                    .ok_or(SuiSubscriberError::MalformedEvent(
+                        "missing `order` field".into(),
+                    ))?
+                    .as_u64()
+                    .ok_or(SuiSubscriberError::MalformedEvent(
+                        "invalid `order` field".into(),
+                    ))?;
+                Ok::<_, SuiSubscriberError>((node_id, index))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some((_, sampled_node_index)) =
+            newly_sampled_nodes.iter().find(|(id, _)| id == &self.id)
+        {
+            let ticket_id = event_data
+                .get("ticket_id")
+                .ok_or(SuiSubscriberError::MalformedEvent(
+                    "missing `ticket_id` field".into(),
+                ))?
+                .as_str()
+                .ok_or(SuiSubscriberError::MalformedEvent(
+                    "invalid `ticket_id` field".into(),
+                ))?;
+            let data = self
+                .sui_client
+                .event_api()
+                .query_events(
+                    EventFilter::MoveEventField {
+                        path: "ticket_id".to_string(),
+                        value: serde_json::from_str(ticket_id)?,
+                    },
+                    None,
+                    Some(1),
+                    false,
+                )
+                .await?;
+            let event = data
+                .data
+                .first()
+                .ok_or(SuiSubscriberError::MalformedEvent(format!(
+                    "Missing data from event with ticket id = {}",
+                    ticket_id
+                )))?;
+            let request = Request::try_from((
+                ticket_id,
+                *sampled_node_index as usize,
+                event.parsed_json.clone(),
+            ))?;
+            info!("Received new request: {:?}", request);
             info!(
-                "Current node has been sampled for request with id: {}",
-                request_id
+                "Current node has been newly sampled for request with id: {}",
+                ticket_id
             );
             self.event_sender.send(request).await.map_err(Box::new)?;
-        } else {
-            info!(
-                "Current node has not been sampled for request with id: {}, ignoring it..",
-                request_id
-            );
         }
+
         Ok(())
     }
 }
@@ -160,4 +262,6 @@ pub enum SuiSubscriberError {
     SendError(#[from] Box<mpsc::error::SendError<Request>>),
     #[error("Type conversion error: `{0}`")]
     TypeConversionError(#[from] anyhow::Error),
+    #[error("Malformed event: `{0}`")]
+    MalformedEvent(String),
 }

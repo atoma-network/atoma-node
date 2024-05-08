@@ -66,12 +66,13 @@ where
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
             let request_id = request.id();
-            let sampled_nodes = request.sampled_nodes();
+            let sampled_node_index = request.sampled_node_index();
+            let num_sampled_nodex = request.num_sampled_nodes();
             let params = request.params();
             let model_input = M::Input::try_from(params)?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
-            let response = Response::new(request_id, sampled_nodes, output);
+            let response = Response::new(request_id, sampled_node_index, num_sampled_nodex, output);
             sender.send(response).ok();
         }
 
