@@ -65,20 +65,20 @@ impl AtomaSuiClient {
             None => {
                 if let Some(array) = data.as_array() {
                     if !array.is_empty() {
-                        let mut img = array[0].as_array().ok_or(AtomaSuiClientError::MissingOutputData)?
-                        .iter()
-                        .map(|b| b.as_u64().unwrap() as u8)
-                        .collect::<Vec<_>>();
-                    let height = data[1].as_u64().unwrap().to_le_bytes();
-                    let width = data[2].as_u64().unwrap().to_le_bytes();
-                    img.extend([height, width].concat());
-                    img
-                    }  
-                    else { 
+                        let mut img = array[0]
+                            .as_array()
+                            .ok_or(AtomaSuiClientError::MissingOutputData)?
+                            .iter()
+                            .map(|b| b.as_u64().unwrap() as u8)
+                            .collect::<Vec<_>>();
+                        let height = data[1].as_u64().unwrap().to_le_bytes();
+                        let width = data[2].as_u64().unwrap().to_le_bytes();
+                        img.extend([height, width].concat());
+                        img
+                    } else {
                         error!("Empty image generation");
                         return Err(AtomaSuiClientError::MissingOutputData);
                     }
-                    
                 } else {
                     return Err(AtomaSuiClientError::FailedResponseJsonParsing);
                 }
