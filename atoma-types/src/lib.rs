@@ -2,6 +2,7 @@ use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const NON_SAMPLED_NODE_ERR: &str = "Node has not been selected";
 pub type Digest = String;
 pub type SmallId = u64;
 
@@ -11,22 +12,29 @@ pub type SmallId = u64;
 ///
 /// Fields:
 /// id: Vec<u8> - The ticket ID associated with the request (or event).
-/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
+/// sampled_node_index: usize - Current node id in the list of sampled nodes.
+///     This value should not be optional, as a request is only processed if a node has been selected, to begin with.
+/// num_sampled_nodes: usize - The total number of sampled nodes to process this request.
 /// body: serde_json::Value - JSON value containing request parameters.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
-    #[serde(rename(deserialize = "ticket_id"))]
     id: Vec<u8>,
-    #[serde(rename(deserialize = "nodes"))]
-    sampled_nodes: Vec<SmallId>,
+    sampled_node_index: usize,
+    num_sampled_nodes: usize,
     params: PromptParams,
 }
 
 impl Request {
-    pub fn new(id: Vec<u8>, sampled_nodes: Vec<SmallId>, params: PromptParams) -> Self {
+    pub fn new(
+        id: Vec<u8>,
+        sampled_node_index: usize,
+        num_sampled_nodes: usize,
+        params: PromptParams,
+    ) -> Self {
         Self {
             id,
-            sampled_nodes,
+            sampled_node_index,
+            num_sampled_nodes,
             params,
         }
     }
@@ -39,8 +47,12 @@ impl Request {
         self.params.model()
     }
 
-    pub fn sampled_nodes(&self) -> Vec<SmallId> {
-        self.sampled_nodes.clone()
+    pub fn sampled_node_index(&self) -> usize {
+        self.sampled_node_index
+    }
+
+    pub fn num_sampled_nodes(&self) -> usize {
+        self.num_sampled_nodes
     }
 
     pub fn params(&self) -> PromptParams {
@@ -48,10 +60,10 @@ impl Request {
     }
 }
 
-impl TryFrom<Value> for Request {
+impl TryFrom<(u64, Value)> for Request {
     type Error = Error;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from((node_id, value): (u64, Value)) -> Result<Self, Self::Error> {
         let id = hex::decode(
             value["ticket_id"]
                 .as_str()
@@ -60,12 +72,48 @@ impl TryFrom<Value> for Request {
         )?;
         let sampled_nodes = value["nodes"]
             .as_array()
-            .unwrap()
+            .ok_or(anyhow!("Request is malformed, missing `nodes` field"))?
             .iter()
             .map(|v| utils::parse_u64(&v["inner"]))
             .collect::<Result<Vec<_>>>()?;
+        let sampled_node_index = sampled_nodes
+            .iter()
+            .position(|n| n == &node_id)
+            .ok_or(anyhow!(NON_SAMPLED_NODE_ERR))?;
+        let num_sampled_nodes = sampled_nodes.len();
         let body = PromptParams::try_from(value["params"].clone())?;
-        Ok(Request::new(id, sampled_nodes, body))
+        Ok(Request::new(
+            id,
+            sampled_node_index,
+            num_sampled_nodes,
+            body,
+        ))
+    }
+}
+
+impl TryFrom<(&str, usize, Value)> for Request {
+    type Error = Error;
+
+    fn try_from(
+        (ticket_id, sampled_node_index, value): (&str, usize, Value),
+    ) -> Result<Self, Self::Error> {
+        let id = hex::decode(ticket_id.replace("0x", ""))?;
+        let num_sampled_nodes = value
+            .get("sampled_nodes")
+            .ok_or(anyhow!("missing `sampled_nodes` field",))?
+            .as_array()
+            .ok_or(anyhow!("invalid `sampled_nodes` field",))?
+            .len();
+        let prompt_params_value = value
+            .get("params")
+            .ok_or(anyhow!("invalid `params` field",))?;
+        let prompt_params = PromptParams::try_from(prompt_params_value.clone())?;
+        Ok(Request::new(
+            id,
+            sampled_node_index,
+            num_sampled_nodes,
+            prompt_params,
+        ))
     }
 }
 
@@ -353,20 +401,29 @@ impl TryFrom<Value> for Text2ImagePromptParams {
 ///
 /// Fields:
 /// id: Vec<u8> - The ticket id associated with the request, that lead to the generation of this response.
-/// sampled_nodes: Vec<SmallId> - A vector of sampled nodes, each represented by a SmallId structure.
+/// sampled_node_index: usize - The node's index position in the request's original vector of sampled nodes.
+///     This value should not be optional, as a node only processes a request if it was sampled to begin with.
+/// num_sampled_nodes: usize - The total number of sampled nodes, in the original request.
 /// response: serde_json::Value - JSON value containing the response data.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Response {
     id: Vec<u8>,
-    sampled_nodes: Vec<SmallId>,
+    sampled_node_index: usize,
+    num_sampled_nodes: usize,
     response: Value,
 }
 
 impl Response {
-    pub fn new(id: Vec<u8>, sampled_nodes: Vec<SmallId>, response: Value) -> Self {
+    pub fn new(
+        id: Vec<u8>,
+        sampled_node_index: usize,
+        num_sampled_nodes: usize,
+        response: Value,
+    ) -> Self {
         Self {
             id,
-            sampled_nodes,
+            sampled_node_index,
+            num_sampled_nodes,
             response,
         }
     }
@@ -375,8 +432,12 @@ impl Response {
         self.id.clone()
     }
 
-    pub fn sampled_nodes(&self) -> Vec<SmallId> {
-        self.sampled_nodes.clone()
+    pub fn sampled_node_index(&self) -> usize {
+        self.sampled_node_index
+    }
+
+    pub fn num_sampled_nodes(&self) -> usize {
+        self.num_sampled_nodes
     }
 
     pub fn response(&self) -> Value {

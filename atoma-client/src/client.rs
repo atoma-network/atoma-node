@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{Digest, Response, SmallId};
+use atoma_types::{Digest, Response};
 use sui_sdk::{
     json::SuiJsonValue,
     types::base_types::{ObjectIDParseError, SuiAddress},
@@ -58,18 +58,6 @@ impl AtomaSuiClient {
         Self::new_from_config(config, response_rx, output_manager_tx)
     }
 
-    fn get_index(
-        &self,
-        sampled_nodes: Vec<SmallId>,
-    ) -> Result<(usize, usize), AtomaSuiClientError> {
-        let num_leaves = sampled_nodes.len();
-        let index = sampled_nodes
-            .iter()
-            .position(|nid| nid == &self.config.small_id())
-            .ok_or(AtomaSuiClientError::InvalidSampledNode)?;
-        Ok((index, num_leaves))
-    }
-
     fn get_data(&self, data: serde_json::Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
         let data = match data["text"].as_str() {
@@ -105,7 +93,7 @@ impl AtomaSuiClient {
     ) -> Result<Digest, AtomaSuiClientError> {
         let request_id = response.id();
         let data = self.get_data(response.response())?;
-        let (index, num_leaves) = self.get_index(response.sampled_nodes())?;
+        let (index, num_leaves) = (response.sampled_node_index(), response.num_sampled_nodes());
         let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
 
         let client = self.wallet_ctx.get_client().await?;

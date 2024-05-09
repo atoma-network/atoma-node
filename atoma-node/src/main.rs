@@ -24,7 +24,7 @@ async fn main() -> Result<(), AtomaNodeError> {
     let sui_subscriber_path = args.sui_subscriber_path;
 
     let (_, json_rpc_server_rx) = mpsc::channel(CHANNEL_BUFFER);
-    let _atoma_node = AtomaNode::start(
+    AtomaNode::start(
         atoma_sui_client_config_path,
         model_config_path,
         sui_subscriber_path,
