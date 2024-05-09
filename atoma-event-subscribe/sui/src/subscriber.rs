@@ -175,35 +175,16 @@ impl SuiSubscriber {
                 "invalid `new_nodes` field".into(),
             ))?
             .iter()
-            .map(|n| {
-                let node_id = n
-                    .get("node_id")
-                    .ok_or(SuiSubscriberError::MalformedEvent(
-                        "missing `node_id` field".into(),
-                    ))?
-                    .get("inner")
-                    .ok_or(SuiSubscriberError::MalformedEvent(
-                        "invalid `inner` field".into(),
-                    ))?
-                    .as_u64()
-                    .ok_or(SuiSubscriberError::MalformedEvent(
-                        "invalid `node_id` `inner` field".into(),
-                    ))?;
-                let index = n
-                    .get("order")
-                    .ok_or(SuiSubscriberError::MalformedEvent(
-                        "missing `order` field".into(),
-                    ))?
-                    .as_u64()
-                    .ok_or(SuiSubscriberError::MalformedEvent(
-                        "invalid `order` field".into(),
-                    ))?;
-                Ok::<_, SuiSubscriberError>((node_id, index))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if let Some((_, sampled_node_index)) =
-            newly_sampled_nodes.iter().find(|(id, _)| id == &self.id)
-        {
+            .find_map(|n| {
+                let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
+                let index = n.get("order")?.as_u64()?;
+                if node_id == self.id {
+                    Some((node_id, index))
+                } else {
+                    None
+                }
+            });
+        if let Some((_, sampled_node_index)) = newly_sampled_nodes {
             let ticket_id = event_data
                 .get("ticket_id")
                 .ok_or(SuiSubscriberError::MalformedEvent(
@@ -235,7 +216,7 @@ impl SuiSubscriber {
                 )))?;
             let request = Request::try_from((
                 ticket_id,
-                *sampled_node_index as usize,
+                sampled_node_index as usize,
                 event.parsed_json.clone(),
             ))?;
             info!("Received new request: {:?}", request);
