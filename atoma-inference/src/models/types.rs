@@ -443,7 +443,7 @@ pub struct StableDiffusionRequest {
     pub img2img_strength: f64,
 
     /// The seed to use when generating random samples.
-    pub random_seed: Option<u64>,
+    pub random_seed: Option<u32>,
 
     pub sampled_nodes: Vec<Vec<u8>>,
 }

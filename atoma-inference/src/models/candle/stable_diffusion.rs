@@ -46,7 +46,7 @@ pub struct StableDiffusionInput {
     pub img2img_strength: f64,
 
     /// The seed to use when generating random samples.
-    pub random_seed: Option<u64>,
+    pub random_seed: Option<u32>,
 }
 
 pub struct StableDiffusionLoadData {
@@ -76,7 +76,7 @@ pub struct StableDiffusion {
 
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
-    type Output = Vec<(Vec<u8>, usize, usize)>;
+    type Output = (Vec<u8>, usize, usize);
     type LoadData = StableDiffusionLoadData;
 
     fn fetch(
@@ -271,7 +271,7 @@ impl ModelTrait for StableDiffusion {
 
         let scheduler = self.config.build_scheduler(n_steps)?;
         if let Some(seed) = input.random_seed {
-            self.device.set_seed(seed)?;
+            self.device.set_seed(seed as u64)?;
         }
         let use_guide_scale = guidance_scale > 1.0;
 
@@ -325,7 +325,7 @@ impl ModelTrait for StableDiffusion {
             ModelType::StableDiffusionTurbo => 0.13025,
             _ => bail!("Invalid stable diffusion model type"),
         };
-        let mut res = Vec::new();
+        let mut res = (vec![], 0, 0);
 
         for idx in 0..input.num_samples {
             let timesteps = scheduler.timesteps();
@@ -400,8 +400,10 @@ impl ModelTrait for StableDiffusion {
                 save_image(&image, "./image.png").unwrap();
             }
             save_tensor_to_file(&image, "tensor4")?;
-            res.push(convert_to_image(&image)?);
+
+            res = convert_to_image(&image)?;
         }
+
         Ok(res)
     }
 }
@@ -694,8 +696,8 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{:?}", output);
 
-        assert_eq!(output[0].1, 512);
-        assert_eq!(output[0].2, 512);
+        assert_eq!(output.1, 512);
+        assert_eq!(output.2, 512);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
         std::fs::remove_file("tensor1").unwrap();

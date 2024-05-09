@@ -9,7 +9,7 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::config::AtomaSuiClientConfig;
 
@@ -64,10 +64,21 @@ impl AtomaSuiClient {
             Some(text) => text.as_bytes().to_owned(),
             None => {
                 if let Some(array) = data.as_array() {
-                    array
+                    if !array.is_empty() {
+                        let mut img = array[0].as_array().ok_or(AtomaSuiClientError::MissingOutputData)?
                         .iter()
                         .map(|b| b.as_u64().unwrap() as u8)
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>();
+                    let height = data[1].as_u64().unwrap().to_le_bytes();
+                    let width = data[2].as_u64().unwrap().to_le_bytes();
+                    img.extend([height, width].concat());
+                    img
+                    }  
+                    else { 
+                        error!("Empty image generation");
+                        return Err(AtomaSuiClientError::MissingOutputData);
+                    }
+                    
                 } else {
                     return Err(AtomaSuiClientError::FailedResponseJsonParsing);
                 }
@@ -167,4 +178,6 @@ pub enum AtomaSuiClientError {
     InvalidSampledNode,
     #[error("Invalid request id")]
     InvalidRequestId,
+    #[error("Missing output data")]
+    MissingOutputData,
 }

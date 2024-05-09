@@ -299,7 +299,7 @@ pub struct Text2ImagePromptParams {
     guidance_scale: Option<f64>,
     img2img: Option<String>,
     img2img_strength: f64,
-    random_seed: Option<u64>,
+    random_seed: Option<u32>,
 }
 
 impl Text2ImagePromptParams {
@@ -315,7 +315,7 @@ impl Text2ImagePromptParams {
         guidance_scale: Option<f64>,
         img2img: Option<String>,
         img2img_strength: f64,
-        random_seed: Option<u64>,
+        random_seed: Option<u32>,
     ) -> Self {
         Self {
             prompt,
@@ -372,7 +372,7 @@ impl Text2ImagePromptParams {
         self.img2img_strength
     }
 
-    pub fn random_seed(&self) -> Option<u64> {
+    pub fn random_seed(&self) -> Option<u32> {
         self.random_seed
     }
 }
@@ -381,18 +381,19 @@ impl TryFrom<Value> for Text2ImagePromptParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
+        println!("got value:{value}");
         Ok(Self {
             prompt: utils::parse_str(&value["prompt"])?,
             model: utils::parse_str(&value["model"])?,
             uncond_prompt: utils::parse_str(&value["uncond_prompt"])?,
-            random_seed: Some(utils::parse_u64(&value["random_seed"])?),
+            random_seed: Some(utils::parse_u32(&value["random_seed"])?),
             height: Some(utils::parse_u64(&value["height"])?),
             width: Some(utils::parse_u64(&value["width"])?),
             n_steps: Some(utils::parse_u64(&value["n_steps"])?),
             num_samples: utils::parse_u64(&value["num_samples"])?,
             guidance_scale: Some(utils::parse_f32_from_le_bytes(&value["guidance_scale"])? as f64),
-            img2img: Some(utils::parse_str(&value["img2img"])?),
-            img2img_strength: utils::parse_f32_from_le_bytes(&value["img2img2_strength"])? as f64,
+            img2img: utils::parse_optional_str(&value["img2img"]),
+            img2img_strength: utils::parse_f32_from_le_bytes(&value["img2img_strength"])? as f64,
         })
     }
 }
@@ -452,6 +453,7 @@ mod utils {
     /// representing the extracted u32 value into little endian byte representation, and then applying `f32::from_le_bytes`.  
     /// See https://github.com/atoma-network/atoma-contracts/blob/main/sui/packages/atoma/sources/gate.move#L26
     pub(crate) fn parse_f32_from_le_bytes(value: &Value) -> Result<f32> {
+        println!("value got: {value}");
         let u32_value: u32 = value
             .as_u64()
             .ok_or(anyhow!(
@@ -462,14 +464,24 @@ mod utils {
         Ok(f32::from_le_bytes(f32_le_bytes))
     }
 
+    /// Parses an appropriate JSON value, representing a `u32` number, from a Sui
+    /// `Text2ImagePromptEvent` or `Text2TextPromptEvent` `u32` fields.
+    pub(crate) fn parse_u32(value: &Value) -> Result<u32> {
+        value
+            .as_u64()
+            .ok_or(anyhow!("Failed to extract `u32` number"))?
+            .try_into()
+            .map_err(|e| anyhow!("Failed to parse `u32` from `u64`, with error: {e}"))
+    }
+
     /// Parses an appropriate JSON value, representing a `u64` number, from a Sui
-    /// `Text2TextPromptEvent` `u64` fields.
+    /// `Text2ImagePromptEvent` or `Text2TextPromptEvent` `u64` fields.
     pub(crate) fn parse_u64(value: &Value) -> Result<u64> {
         value
             .as_str()
             .ok_or(anyhow!("Failed to extract `u64` number"))?
             .parse::<u64>()
-            .map_err(|e| anyhow!("Failed to parse `u64` from string, with error: {e}"))
+            .map_err(|e| anyhow!("Failed to parse `u64` from `String`, with error: {e}"))
     }
 
     /// Parses an appropriate JSON value, representing a `String` value, from a Sui
@@ -479,5 +491,9 @@ mod utils {
             .as_str()
             .ok_or(anyhow!("Failed to extract `String` from JSON value"))?
             .to_string())
+    }
+
+    pub(crate) fn parse_optional_str(value: &Value) -> Option<String> {
+        value.as_str().map(|s| s.to_string())
     }
 }
