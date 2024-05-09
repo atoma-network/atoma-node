@@ -179,12 +179,12 @@ impl SuiSubscriber {
                 let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
                 let index = n.get("order")?.as_u64()?;
                 if node_id == self.id {
-                    Some((node_id, index))
+                    Some(index)
                 } else {
                     None
                 }
             });
-        if let Some((_, sampled_node_index)) = newly_sampled_nodes {
+        if let Some(sampled_node_index) = newly_sampled_nodes {
             let ticket_id = event_data
                 .get("ticket_id")
                 .ok_or(SuiSubscriberError::MalformedEvent(
