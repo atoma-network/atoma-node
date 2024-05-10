@@ -153,10 +153,8 @@ impl SuiSubscriber {
         event_data: Value,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
-        let newly_sampled_nodes = extract_newly_sampled_nodes(&event_data)?;
-        if let Some((_, sampled_node_index)) =
-            newly_sampled_nodes.iter().find(|(id, _)| id == &self.id)
-        {
+        let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
+        if let Some(sampled_node_index) = newly_sampled_nodes {
             let ticket_id = extract_ticket_id(&event_data)?;
             let data = self
                 .sui_client
@@ -180,7 +178,7 @@ impl SuiSubscriber {
                 )))?;
             let request = Request::try_from((
                 ticket_id,
-                *sampled_node_index as usize,
+                sampled_node_index as usize,
                 event.parsed_json.clone(),
             ))?;
             info!("Received new request: {:?}", request);
@@ -195,8 +193,8 @@ impl SuiSubscriber {
     }
 }
 
-fn extract_newly_sampled_nodes(value: &Value) -> Result<Vec<(u64, u64)>, SuiSubscriberError> {
-    value
+fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, SuiSubscriberError> {
+    Ok(value
         .get("new_nodes")
         .ok_or(SuiSubscriberError::MalformedEvent(
             "missing `new_nodes` field".into(),
@@ -206,32 +204,15 @@ fn extract_newly_sampled_nodes(value: &Value) -> Result<Vec<(u64, u64)>, SuiSubs
             "invalid `new_nodes` field".into(),
         ))?
         .iter()
-        .map(|n| {
-            let node_id = n
-                .get("node_id")
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "missing `node_id` field".into(),
-                ))?
-                .get("inner")
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "invalid `inner` field".into(),
-                ))?
-                .as_u64()
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "invalid `node_id` `inner` field".into(),
-                ))?;
-            let index = n
-                .get("order")
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "missing `order` field".into(),
-                ))?
-                .as_u64()
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "invalid `order` field".into(),
-                ))?;
-            Ok::<_, SuiSubscriberError>((node_id, index))
-        })
-        .collect::<Result<Vec<_>, _>>()
+        .find_map(|n| {
+            let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
+            let index = n.get("order")?.as_u64()?;
+            if node_id == id {
+                Some(index)
+            } else {
+                None
+            }
+        }))
 }
 
 fn extract_ticket_id(value: &Value) -> Result<&str, SuiSubscriberError> {
