@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::{fmt::Write, path::Path, time::Duration};
 
 use futures::StreamExt;
@@ -10,6 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
+use crate::AtomaEvent;
 use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 const REQUEST_ID_HEX_SIZE: usize = 64;
@@ -87,15 +89,16 @@ impl SuiSubscriber {
 
 impl SuiSubscriber {
     async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
-        match event.type_.name.as_str() {
-            "DisputeEvent" => todo!(),
-            "FirstSubmissionEvent"
-            | "NodeRegisteredEvent"
-            | "NodeSubscribedToModelEvent"
-            | "SettledEvent" => {
-                info!("Received event: {}", event.type_.name.as_str());
+        let event_type = event.type_.name.as_str();
+        match AtomaEvent::from_str(event_type)? {
+            AtomaEvent::DisputeEvent => todo!(),
+            AtomaEvent::FirstSubmissionEvent
+            | AtomaEvent::NodeRegisteredEvent
+            | AtomaEvent::NodeSubscribedToModelEvent
+            | AtomaEvent::SettledEvent => {
+                info!("Received event: {}", event_type);
             }
-            "NewlySampledNodesEvent" => {
+            AtomaEvent::NewlySampledNodesEvent => {
                 let event_data = event.parsed_json;
                 match self.handle_newly_sampled_nodes_event(event_data).await {
                     Ok(()) => {}
@@ -104,42 +107,27 @@ impl SuiSubscriber {
                     }
                 }
             }
-            "Text2TextPromptEvent" => {
+            AtomaEvent::Text2ImagePromptEvent | AtomaEvent::Text2TextPromptEvent => {
                 let event_data = event.parsed_json;
-                match self.handle_text2text_prompt_event(event_data).await {
+                match self.handle_prompt_event(event_data).await {
                     Ok(()) => {}
                     Err(SuiSubscriberError::TypeConversionError(err)) => {
                         if err.to_string().contains(NON_SAMPLED_NODE_ERR) {
-                            info!("Node has not been sampled for current request");
+                            info!("Node has not been sampled for current request")
                         } else {
                             error!("Failed to process request, with error: {err}")
                         }
                     }
                     Err(err) => {
-                        error!("Failed to process request, with error: {err}");
+                        error!("Failed to process request, with error: {err}")
                     }
                 }
             }
-            "Text2ImagePromptEvent" => {
-                let event_data = event.parsed_json;
-                self.handle_text2image_prompt_event(event_data).await?;
-            }
-            _ => panic!("Invalid Event type found!"),
         }
         Ok(())
     }
 
-    async fn handle_text2image_prompt_event(
-        &self,
-        _event_data: Value,
-    ) -> Result<(), SuiSubscriberError> {
-        Ok(())
-    }
-
-    async fn handle_text2text_prompt_event(
-        &self,
-        event_data: Value,
-    ) -> Result<(), SuiSubscriberError> {
+    async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let request = Request::try_from((self.id, event_data))?;
         info!("Received new request: {:?}", request);
@@ -165,47 +153,17 @@ impl SuiSubscriber {
         event_data: Value,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
-        let newly_sampled_nodes = event_data
-            .get("new_nodes")
-            .ok_or(SuiSubscriberError::MalformedEvent(
-                "missing `new_nodes` field".into(),
-            ))?
-            .as_array()
-            .ok_or(SuiSubscriberError::MalformedEvent(
-                "invalid `new_nodes` field".into(),
-            ))?
-            .iter()
-            .find_map(|n| {
-                let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
-                let index = n.get("order")?.as_u64()?;
-                if node_id == self.id {
-                    Some(index)
-                } else {
-                    None
-                }
-            });
+        let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
         if let Some(sampled_node_index) = newly_sampled_nodes {
-            let ticket_id = event_data
-                .get("ticket_id")
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "missing `ticket_id` field".into(),
-                ))?
-                .as_str()
-                .ok_or(SuiSubscriberError::MalformedEvent(
-                    "invalid `ticket_id` field".into(),
-                ))?;
+            let ticket_id = extract_ticket_id(&event_data)?;
+            let event_filter = EventFilter::MoveEventField {
+                path: "ticket_id".to_string(),
+                value: serde_json::from_str(ticket_id)?,
+            };
             let data = self
                 .sui_client
                 .event_api()
-                .query_events(
-                    EventFilter::MoveEventField {
-                        path: "ticket_id".to_string(),
-                        value: serde_json::from_str(ticket_id)?,
-                    },
-                    None,
-                    Some(1),
-                    false,
-                )
+                .query_events(event_filter, None, Some(1), false)
                 .await?;
             let event = data
                 .data
@@ -229,6 +187,36 @@ impl SuiSubscriber {
 
         Ok(())
     }
+}
+
+fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, SuiSubscriberError> {
+    let new_nodes = value
+        .get("new_nodes")
+        .ok_or_else(|| SuiSubscriberError::MalformedEvent("missing `new_nodes` field".into()))?
+        .as_array()
+        .ok_or_else(|| SuiSubscriberError::MalformedEvent("invalid `new_nodes` field".into()))?;
+
+    Ok(new_nodes.iter().find_map(|n| {
+        let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
+        let index = n.get("order")?.as_u64()?;
+        if node_id == id {
+            Some(index)
+        } else {
+            None
+        }
+    }))
+}
+
+fn extract_ticket_id(value: &Value) -> Result<&str, SuiSubscriberError> {
+    value
+        .get("ticket_id")
+        .ok_or(SuiSubscriberError::MalformedEvent(
+            "missing `ticket_id` field".into(),
+        ))?
+        .as_str()
+        .ok_or(SuiSubscriberError::MalformedEvent(
+            "invalid `ticket_id` field".into(),
+        ))
 }
 
 #[derive(Debug, Error)]
