@@ -58,33 +58,56 @@ impl AtomaSuiClient {
         Self::new_from_config(config, response_rx, output_manager_tx)
     }
 
+    /// Extracts and processes data from a JSON response to generate a byte vector.
+    ///
+    /// This method handles two types of data structures within the JSON response:
+    /// - If the JSON contains a "text" field, it converts the text to a byte vector.
+    /// - If the JSON contains an array with at least three elements, it interprets:
+    ///   - The first element as an array of bytes (representing an image byte content),
+    ///   - The second element as the image height,
+    ///   - The third element as the image width.
+    ///   These are then combined into a single byte vector where the image data is followed by the height and width.
     fn get_data(&self, data: serde_json::Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
-        let data = match data["text"].as_str() {
-            Some(text) => text.as_bytes().to_owned(),
-            None => {
-                if let Some(array) = data.as_array() {
-                    if !array.is_empty() {
-                        let mut img = array[0]
-                            .as_array()
-                            .ok_or(AtomaSuiClientError::MissingOutputData)?
-                            .iter()
-                            .map(|b| b.as_u64().unwrap() as u8)
-                            .collect::<Vec<_>>();
-                        let height = data[1].as_u64().unwrap().to_le_bytes();
-                        let width = data[2].as_u64().unwrap().to_le_bytes();
-                        img.extend([height, width].concat());
-                        img
-                    } else {
-                        error!("Empty image generation");
-                        return Err(AtomaSuiClientError::MissingOutputData);
-                    }
-                } else {
-                    return Err(AtomaSuiClientError::FailedResponseJsonParsing);
-                }
+        if let Some(text) = data["text"].as_str() {
+            Ok(text.as_bytes().to_owned())
+        } else if let Some(array) = data.as_array() {
+            if array.len() < 3 {
+                error!("Incomplete image data");
+                return Err(AtomaSuiClientError::MissingOutputData);
             }
-        };
-        Ok(data)
+
+            let img_data = array
+                .get(0)
+                .and_then(|img| img.as_array())
+                .ok_or(AtomaSuiClientError::MissingOutputData)?;
+            let img = img_data
+                .iter()
+                .map(|b| b.as_u64().ok_or(AtomaSuiClientError::MissingOutputData))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|b| b as u8)
+                .collect::<Vec<_>>();
+            let height = array
+                .get(1)
+                .and_then(|h| h.as_u64())
+                .ok_or(AtomaSuiClientError::MissingOutputData)?
+                .to_le_bytes();
+            let width = array
+                .get(2)
+                .and_then(|w| w.as_u64())
+                .ok_or(AtomaSuiClientError::MissingOutputData)?
+                .to_le_bytes();
+
+            let mut result = img;
+            result.extend_from_slice(&height);
+            result.extend_from_slice(&width);
+
+            Ok(result)
+        } else {
+            error!("Invalid JSON structure for data extraction");
+            return Err(AtomaSuiClientError::FailedResponseJsonParsing);
+        }
     }
 
     /// Upon receiving a response from the `AtomaNode` service, this method extracts
