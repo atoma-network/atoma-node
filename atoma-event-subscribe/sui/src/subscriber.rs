@@ -156,18 +156,14 @@ impl SuiSubscriber {
         let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
         if let Some(sampled_node_index) = newly_sampled_nodes {
             let ticket_id = extract_ticket_id(&event_data)?;
+            let event_filter = EventFilter::MoveEventField {
+                path: "ticket_id".to_string(),
+                value: serde_json::from_str(ticket_id)?,
+            };
             let data = self
                 .sui_client
                 .event_api()
-                .query_events(
-                    EventFilter::MoveEventField {
-                        path: "ticket_id".to_string(),
-                        value: serde_json::from_str(ticket_id)?,
-                    },
-                    None,
-                    Some(1),
-                    false,
-                )
+                .query_events(event_filter, None, Some(1), false)
                 .await?;
             let event = data
                 .data
@@ -194,25 +190,21 @@ impl SuiSubscriber {
 }
 
 fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, SuiSubscriberError> {
-    Ok(value
+    let new_nodes = value
         .get("new_nodes")
-        .ok_or(SuiSubscriberError::MalformedEvent(
-            "missing `new_nodes` field".into(),
-        ))?
+        .ok_or_else(|| SuiSubscriberError::MalformedEvent("missing `new_nodes` field".into()))?
         .as_array()
-        .ok_or(SuiSubscriberError::MalformedEvent(
-            "invalid `new_nodes` field".into(),
-        ))?
-        .iter()
-        .find_map(|n| {
-            let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
-            let index = n.get("order")?.as_u64()?;
-            if node_id == id {
-                Some(index)
-            } else {
-                None
-            }
-        }))
+        .ok_or_else(|| SuiSubscriberError::MalformedEvent("invalid `new_nodes` field".into()))?;
+
+    Ok(new_nodes.iter().find_map(|n| {
+        let node_id = n.get("node_id")?.get("inner")?.as_u64()?;
+        let index = n.get("order")?.as_u64()?;
+        if node_id == id {
+            Some(index)
+        } else {
+            None
+        }
+    }))
 }
 
 fn extract_ticket_id(value: &Value) -> Result<&str, SuiSubscriberError> {

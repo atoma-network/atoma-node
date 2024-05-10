@@ -381,7 +381,6 @@ impl TryFrom<Value> for Text2ImagePromptParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        println!("got value:{value}");
         Ok(Self {
             prompt: utils::parse_str(&value["prompt"])?,
             model: utils::parse_str(&value["model"])?,
@@ -453,12 +452,9 @@ mod utils {
     /// representing the extracted u32 value into little endian byte representation, and then applying `f32::from_le_bytes`.  
     /// See https://github.com/atoma-network/atoma-contracts/blob/main/sui/packages/atoma/sources/gate.move#L26
     pub(crate) fn parse_f32_from_le_bytes(value: &Value) -> Result<f32> {
-        println!("value got: {value}");
         let u32_value: u32 = value
             .as_u64()
-            .ok_or(anyhow!(
-                "Failed to extract `f32` little endian bytes representation"
-            ))?
+            .ok_or_else(|| anyhow!("Expected a u64 for f32 conversion, found none"))?
             .try_into()?;
         let f32_le_bytes = u32_value.to_le_bytes();
         Ok(f32::from_le_bytes(f32_le_bytes))
@@ -469,9 +465,11 @@ mod utils {
     pub(crate) fn parse_u32(value: &Value) -> Result<u32> {
         value
             .as_u64()
-            .ok_or(anyhow!("Failed to extract `u32` number"))?
-            .try_into()
-            .map_err(|e| anyhow!("Failed to parse `u32` from `u64`, with error: {e}"))
+            .ok_or_else(|| anyhow!("Expected a u64 for u32 parsing, found none"))
+            .and_then(|v| {
+                v.try_into()
+                    .map_err(|_| anyhow!("u64 to u32 conversion failed"))
+            })
     }
 
     /// Parses an appropriate JSON value, representing a `u64` number, from a Sui
@@ -479,18 +477,20 @@ mod utils {
     pub(crate) fn parse_u64(value: &Value) -> Result<u64> {
         value
             .as_str()
-            .ok_or(anyhow!("Failed to extract `u64` number"))?
-            .parse::<u64>()
-            .map_err(|e| anyhow!("Failed to parse `u64` from `String`, with error: {e}"))
+            .ok_or_else(|| anyhow!("Expected a string for u64 parsing, found none"))
+            .and_then(|s| {
+                s.parse::<u64>()
+                    .map_err(|e| anyhow!("Failed to parse u64: {}", e))
+            })
     }
 
     /// Parses an appropriate JSON value, representing a `String` value, from a Sui
     /// `Text2TextPromptEvent` `String` fields.
     pub(crate) fn parse_str(value: &Value) -> Result<String> {
-        Ok(value
+        value
             .as_str()
-            .ok_or(anyhow!("Failed to extract `String` from JSON value"))?
-            .to_string())
+            .ok_or_else(|| anyhow!("Expected a string, found none"))
+            .map(|s| s.to_string())
     }
 
     pub(crate) fn parse_optional_str(value: &Value) -> Option<String> {
