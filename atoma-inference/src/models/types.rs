@@ -44,6 +44,13 @@ pub enum ModelType {
     StableDiffusionV2_1,
     StableDiffusionXl,
     StableDiffusionTurbo,
+    QwenW0_5b,
+    QwenW1_8b,
+    QwenW4b,
+    QwenW7b,
+    QwenW14b,
+    QwenW72b,
+    QwenMoeA27b,
     // Quantized models
     QuantizedLlamaV2_7b,
     QuantizedLlamaV2_13b,
@@ -66,13 +73,6 @@ pub enum ModelType {
     QuantizedMixtral,
     QuantizedMixtralInstruct,
     QuantizedL8b,
-    QwenW0_5b,
-    QwenW1_8b,
-    QwenW4b,
-    QwenW7b,
-    QwenW14b,
-    QwenW72b,
-    QwenMoeA27b,
 }
 
 impl FromStr for ModelType {
