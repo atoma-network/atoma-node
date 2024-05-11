@@ -5,3 +5,4 @@ target/
 inference.toml
 sui_subscriber.toml
 sui_client.toml
+output_manager.toml

@@ -66,6 +66,13 @@ pub enum ModelType {
     QuantizedMixtral,
     QuantizedMixtralInstruct,
     QuantizedL8b,
+    QwenW0_5b,
+    QwenW1_8b,
+    QwenW4b,
+    QwenW7b,
+    QwenW14b,
+    QwenW72b,
+    QwenMoeA27b,
 }
 
 impl FromStr for ModelType {
@@ -119,6 +126,13 @@ impl FromStr for ModelType {
             "quantized_mixtral" => Ok(Self::QuantizedMixtral),
             "quantized_mixtral-instruct" => Ok(Self::QuantizedMixtralInstruct),
             "quantized_llama3-8b" => Ok(Self::QuantizedL8b),
+            "qwen_w0.5b" => Ok(Self::QwenW0_5b),
+            "qwen_w1.8b" => Ok(Self::QwenW1_8b),
+            "qwen_w4b" => Ok(Self::QwenW4b),
+            "qwen_w7b" => Ok(Self::QwenW7b),
+            "qwen_w14b" => Ok(Self::QwenW14b),
+            "qwen_w72b" => Ok(Self::QwenW72b),
+            "qwen_moe_a2.7b" => Ok(Self::QwenMoeA27b),
             _ => Err(ModelError::InvalidModelType(
                 "Invalid string model type description".to_string(),
             )),
@@ -175,6 +189,13 @@ impl ModelType {
             Self::QuantizedMixtral => "TheBloke/Mixtral-8x7B-v0.1-GGUF",
             Self::QuantizedMixtralInstruct => "TheBloke/Mistral-7B-Instruct-v0.1-GGUF",
             Self::QuantizedL8b => "QuantFactory/Meta-Llama-3-8B-GGUF",
+            Self::QwenW0_5b => "Qwen/Qwen1.5-0.5B",
+            Self::QwenW1_8b => "Qwen/Qwen1.5-1.8B",
+            Self::QwenW4b => "Qwen/Qwen1.5-4B",
+            Self::QwenW7b => "Qwen/Qwen1.5-7B",
+            Self::QwenW14b => "Qwen/Qwen1.5-14B",
+            Self::QwenW72b => "Qwen/Qwen1.5-72B",
+            Self::QwenMoeA27b => "Qwen/Qwen1.5-MoE-A2.7B",
         }
     }
 
@@ -183,24 +204,31 @@ impl ModelType {
             Self::Falcon7b => "refs/pr/43",
             Self::Falcon40b => "refs/pr/43",
             Self::Falcon180b => "refs/pr/43",
-            Self::LlamaV1 => "main",
-            Self::LlamaV2 => "main",
-            Self::LlamaSolar10_7B => "main",
-            Self::LlamaTinyLlama1_1BChat => "main",
-            Self::Llama3_8b => "main",
-            Self::Llama3Instruct8b => "main",
-            Self::Llama3_70b => "main",
-            Self::Phi3Mini => "main",
+            Self::LlamaV1
+            | Self::LlamaV2
+            | Self::LlamaSolar10_7B
+            | Self::LlamaTinyLlama1_1BChat
+            | Self::Llama3_8b
+            | Self::Llama3Instruct8b
+            | Self::Llama3_70b
+            | Self::Mistral7bV01
+            | Self::Mistral7bV02
+            | Self::Mistral7bInstructV01
+            | Self::Mistral7bInstructV02
+            | Self::Mixtral8x7b
+            | Self::Phi3Mini
+            | Self::QwenW0_5b
+            | Self::QwenW1_8b
+            | Self::QwenW4b
+            | Self::QwenW7b
+            | Self::QwenW14b
+            | Self::QwenW72b
+            | Self::QwenMoeA27b => "main",
             Self::Mamba130m => "refs/pr/1",
             Self::Mamba370m => "refs/pr/1",
             Self::Mamba790m => "refs/pr/1",
             Self::Mamba1_4b => "refs/pr/1",
             Self::Mamba2_8b => "refs/pr/4",
-            Self::Mistral7bV01 => "main",
-            Self::Mistral7bV02 => "main",
-            Self::Mistral7bInstructV01 => "main",
-            Self::Mistral7bInstructV02 => "main",
-            Self::Mixtral8x7b => "main",
             Self::QuantizedL8b
             | Self::QuantizedLeo13b
             | Self::QuantizedLeo7b
@@ -254,6 +282,13 @@ impl Display for ModelType {
             Self::Mistral7bInstructV02 => write!(f, "mistral_7b-instruct-v02"),
             Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
             Self::Phi3Mini => write!(f, "phi_3-mini"),
+            Self::QwenW0_5b => write!(f, "qwen_w0.5b"),
+            Self::QwenW1_8b => write!(f, "qwen_w1.8b"),
+            Self::QwenW4b => write!(f, "qwen_w4b"),
+            Self::QwenW7b => write!(f, "qwen_w7b"),
+            Self::QwenW14b => write!(f, "qwen_w14b"),
+            Self::QwenW72b => write!(f, "qwen_w72b"),
+            Self::QwenMoeA27b => write!(f, "qwen_moe_a2.7b"),
             Self::StableDiffusionV1_5 => write!(f, "stable_diffusion_v1-5"),
             Self::StableDiffusionV2_1 => write!(f, "stable_diffusion_v2-1"),
             Self::StableDiffusionXl => write!(f, "stable_diffusion_xl"),

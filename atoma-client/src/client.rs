@@ -78,7 +78,7 @@ impl AtomaSuiClient {
             }
 
             let img_data = array
-                .get(0)
+                .first()
                 .and_then(|img| img.as_array())
                 .ok_or(AtomaSuiClientError::MissingOutputData)?;
             let img = img_data
@@ -98,6 +98,8 @@ impl AtomaSuiClient {
                 .and_then(|w| w.as_u64())
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
+
+            info!("Image data length: {:?}", img.len());
 
             let mut result = img;
             result.extend_from_slice(&height);
