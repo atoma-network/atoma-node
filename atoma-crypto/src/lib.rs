@@ -24,7 +24,7 @@ impl Hasher for Blake2b<U32> {
 
 /// Calculates cryptographic commitments for a given data buffer.
 ///
-/// This function takes input data, an index indicating the leaf position, 
+/// This function takes input data, an index indicating the leaf position,
 /// and the total number of leaves in the Merkle tree.
 ///
 /// # Parameters
