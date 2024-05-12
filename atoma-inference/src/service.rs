@@ -24,6 +24,7 @@ pub struct ModelService {
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     subscriber_req_rx: Receiver<Request>,
     atoma_node_resp_tx: Sender<Response>,
+    stream_tx: Sender<String>,
 }
 
 impl ModelService {
@@ -32,12 +33,13 @@ impl ModelService {
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
+        stream_tx: Sender<String>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
 
-        let (dispatcher, model_thread_handle) = ModelThreadDispatcher::start(model_config)
-            .map_err(ModelServiceError::ModelThreadError)?;
+        let (dispatcher, model_thread_handle) =
+            ModelThreadDispatcher::start(model_config, stream_tx)?;
         let start_time = Instant::now();
 
         Ok(Self {
@@ -49,6 +51,7 @@ impl ModelService {
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,
+            stream_tx,
         })
     }
 
@@ -109,7 +112,7 @@ pub enum ModelServiceError {
     #[error("Failed to generate private key: `{0}`")]
     PrivateKeyError(io::Error),
     #[error("Core error: `{0}`")]
-    ModelThreadError(ModelThreadError),
+    ModelThreadError(#[from] ModelThreadError),
     #[error("Api error: `{0}`")]
     ApiError(#[from] ApiError),
     #[error("Candle error: `{0}`")]
@@ -170,7 +173,10 @@ mod tests {
             Ok(())
         }
 
-        fn load(_: Self::LoadData) -> Result<Self, crate::models::ModelError> {
+        fn load(
+            _: Self::LoadData,
+            _: tokio::sync::mpsc::Sender<String>,
+        ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
 
@@ -212,6 +218,7 @@ mod tests {
         let (_, json_server_req_rx) = tokio::sync::mpsc::channel(1);
         let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(1);
         let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(1);
+        let (stream_tx, _) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH);
 
@@ -220,6 +227,7 @@ mod tests {
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,
+            stream_tx,
         )
         .unwrap();
 

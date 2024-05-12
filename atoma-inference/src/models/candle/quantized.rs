@@ -10,6 +10,7 @@ use candle_transformers::{
 };
 use hf_hub::api::sync::ApiBuilder;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc::{self, Sender};
 use tracing::info;
 
 use crate::models::{
@@ -34,12 +35,13 @@ impl QuantizedModel {
         device: Device,
         model_type: ModelType,
         tokenizer: Tokenizer,
+        stream_tx: Sender<String>,
     ) -> Self {
         Self {
             model,
             model_type,
             device,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         }
     }
 }
@@ -129,7 +131,7 @@ impl ModelTrait for QuantizedModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -177,6 +179,7 @@ impl ModelTrait for QuantizedModel {
             load_data.device,
             load_data.model_type,
             tokenizer,
+            stream_tx,
         ))
     }
 
@@ -184,7 +187,7 @@ impl ModelTrait for QuantizedModel {
         self.model_type.clone()
     }
 
-    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+    async fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         let prompt_str = input.prompt;
         let mut output = String::new();
         self.tokenizer.clear();
@@ -225,7 +228,7 @@ impl ModelTrait for QuantizedModel {
         let logits = logits.squeeze(0)?;
         let mut next_token = logits_processor.sample(&logits)?;
         all_tokens.push(next_token);
-        if let Some(t) = self.tokenizer.next_token(next_token)? {
+        if let Some(t) = self.tokenizer.next_token(next_token, input.stream).await? {
             output.push_str(t.as_str());
         }
 

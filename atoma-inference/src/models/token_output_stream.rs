@@ -1,3 +1,5 @@
+use tokio::sync::mpsc;
+
 use crate::{bail, models::ModelError};
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
@@ -7,15 +9,17 @@ pub struct TokenOutputStream {
     tokens: Vec<u32>,
     prev_index: usize,
     current_index: usize,
+    stream_tx: mpsc::Sender<String>,
 }
 
 impl TokenOutputStream {
-    pub fn new(tokenizer: tokenizers::Tokenizer) -> Self {
+    pub fn new(tokenizer: tokenizers::Tokenizer, stream_tx: mpsc::Sender<String>) -> Self {
         Self {
             tokenizer,
             tokens: Vec::new(),
             prev_index: 0,
             current_index: 0,
+            stream_tx,
         }
     }
 
@@ -31,7 +35,11 @@ impl TokenOutputStream {
     }
 
     // https://github.com/huggingface/text-generation-inference/blob/5ba53d44a18983a4de32d122f4cb46f4a17d9ef6/server/text_generation_server/models/model.py#L68
-    pub fn next_token(&mut self, token: u32) -> Result<Option<String>, ModelError> {
+    pub async fn next_token(
+        &mut self,
+        token: u32,
+        stream: bool,
+    ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -44,7 +52,14 @@ impl TokenOutputStream {
             let text = text.split_at(prev_text.len());
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
-            Ok(Some(text.1.to_string()))
+            let output = text.1.to_string();
+            if stream {
+                self.stream_tx
+                    .send(output.clone())
+                    .await
+                    .map_err(ModelError::SendError)?;
+            }
+            Ok(Some(output))
         } else {
             Ok(None)
         }
@@ -86,5 +101,11 @@ impl TokenOutputStream {
         self.tokens.clear();
         self.prev_index = 0;
         self.current_index = 0;
+    }
+}
+
+impl TokenOutputStream {
+    pub fn stream(&self) -> Result<(), ModelError> {
+        Ok(())
     }
 }

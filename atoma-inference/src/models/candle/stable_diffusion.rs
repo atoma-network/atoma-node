@@ -9,6 +9,7 @@ use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::{
@@ -147,7 +148,7 @@ impl ModelTrait for StableDiffusion {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, _: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -660,7 +661,9 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = StableDiffusion::load(load_data).expect("Failed to load model");
+
+        let (stream_tx, _) = mpsc::channel::<String>(1);
+        let mut model = StableDiffusion::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());

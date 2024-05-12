@@ -67,12 +67,12 @@ where
             let ModelThreadCommand { request, sender } = command;
             let request_id = request.id();
             let sampled_node_index = request.sampled_node_index();
-            let num_sampled_nodex = request.num_sampled_nodes();
+            let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();
             let model_input = M::Input::try_from(params)?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
-            let response = Response::new(request_id, sampled_node_index, num_sampled_nodex, output);
+            let response = Response::new(request_id, sampled_node_index, num_sampled_nodes, output);
             sender.send(response).ok();
         }
 
@@ -88,6 +88,7 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     pub(crate) fn start(
         config: ModelsConfig,
+        stream_tx: tokio::sync::mpsc::Sender<String>,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
@@ -111,6 +112,7 @@ impl ModelThreadDispatcher {
                 model_type,
                 model_config,
                 model_receiver,
+                stream_tx,
             );
 
             handles.push(ModelThreadHandle {
@@ -165,6 +167,7 @@ pub(crate) fn dispatch_model_thread(
     model_type: ModelType,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
+    stream_tx: tokio::sync::mpsc::Sender<String>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     match model_type {
         ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
@@ -174,6 +177,7 @@ pub(crate) fn dispatch_model_thread(
                 cache_dir.clone(),
                 model_config,
                 model_receiver,
+                stream_tx,
             )
         }
         ModelType::LlamaV1
@@ -188,6 +192,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::Mamba130m
         | ModelType::Mamba370m
@@ -199,6 +204,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::Mistral7bV01
         | ModelType::Mistral7bV02
@@ -209,6 +215,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
             model_name,
@@ -216,6 +223,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
             model_name,
@@ -223,6 +231,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::StableDiffusionV1_5
         | ModelType::StableDiffusionV2_1
@@ -233,6 +242,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
         ModelType::QuantizedLlamaV2_7b
         | ModelType::QuantizedLlamaV2_13b
@@ -260,6 +270,7 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
         ),
     }
 }
@@ -270,6 +281,7 @@ pub(crate) fn spawn_model_thread<M>(
     cache_dir: PathBuf,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
+    stream_tx: tokio::sync::mpsc::Sender<String>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,
@@ -278,7 +290,7 @@ where
         info!("Fetching files for model: {model_name}");
         let load_data = M::fetch(api_key, cache_dir, model_config)?;
 
-        let model = M::load(load_data)?;
+        let model = M::load(load_data, stream_tx)?;
         let model_thread = ModelThread {
             model,
             receiver: model_receiver,

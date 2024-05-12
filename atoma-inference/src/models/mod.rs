@@ -4,6 +4,7 @@ use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::PromptParams;
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use self::{config::ModelConfig, types::ModelType};
 
@@ -14,6 +15,7 @@ pub mod types;
 
 pub type ModelId = String;
 
+#[async_trait]
 pub trait ModelTrait {
     type Input: TryFrom<PromptParams, Error = ModelError>;
     type Output: Serialize;
@@ -24,11 +26,11 @@ pub trait ModelTrait {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError>;
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_type(&self) -> ModelType;
-    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
+    async fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
 }
 
 pub trait Request: Send + 'static {
@@ -69,6 +71,8 @@ pub enum ModelError {
     InvalidModelType(String),
     #[error("Invalid model input")]
     InvalidModelInput,
+    #[error("Send error: `{0}`")]
+    SendError(#[from] mpsc::error::SendError<String>),
 }
 
 #[macro_export]
