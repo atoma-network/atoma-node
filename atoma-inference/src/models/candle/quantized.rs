@@ -266,7 +266,11 @@ impl ModelTrait for QuantizedModel {
                 break;
             };
         }
-        if let Some(rest) = self.tokenizer.decode_rest(input.stream).map_err(candle::Error::msg)? {
+        if let Some(rest) = self
+            .tokenizer
+            .decode_rest(input.stream)
+            .map_err(candle::Error::msg)?
+        {
             output.push_str(rest.as_str());
         }
         let dt = start_post_prompt.elapsed();

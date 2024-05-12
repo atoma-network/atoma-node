@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant, sync::mpsc};
+use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -87,7 +87,10 @@ impl ModelTrait for LlamaModel {
         self.model_type.clone()
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError> {
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<String>,
+    ) -> Result<Self, ModelError> {
         info!("Loading Llama model ...");
 
         let start = Instant::now();
@@ -134,7 +137,8 @@ impl ModelTrait for LlamaModel {
             .eos_token_id
             .or_else(|| self.tokenizer.tokenizer().token_to_id(EOS_TOKEN));
         let prompt_ids = self
-            .tokenizer.tokenizer()
+            .tokenizer
+            .tokenizer()
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();

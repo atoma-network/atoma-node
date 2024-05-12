@@ -1,16 +1,16 @@
-use std::{path::PathBuf, str::FromStr, time::Instant, sync::mpsc};
+use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
 };
 
+use async_trait::async_trait;
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
-use async_trait::async_trait;
 
 use crate::{
     bail,

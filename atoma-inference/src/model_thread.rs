@@ -281,7 +281,7 @@ pub(crate) fn spawn_model_thread<M>(
     cache_dir: PathBuf,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx:  mpsc::Sender<String>,
+    stream_tx: mpsc::Sender<String>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,

@@ -293,7 +293,7 @@ pub struct TextModelInput {
     pub(crate) max_tokens: usize,
     pub(crate) top_k: Option<usize>,
     pub(crate) top_p: Option<f64>,
-    pub(crate) stream: bool
+    pub(crate) stream: bool,
 }
 
 impl TextModelInput {
@@ -337,7 +337,7 @@ impl TryFrom<PromptParams> for TextModelInput {
                 max_tokens: p.max_tokens().try_into().unwrap(),
                 top_k: p.top_k().map(|t| t.try_into().unwrap()),
                 top_p: p.top_p(),
-                stream: p.stream()
+                stream: p.stream(),
             }),
             PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
         }
