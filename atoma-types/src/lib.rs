@@ -189,6 +189,7 @@ pub struct Text2TextPromptParams {
     max_tokens: u64,
     top_k: Option<u64>,
     top_p: Option<f64>,
+    sample: bool,
 }
 
 impl Text2TextPromptParams {
@@ -203,6 +204,7 @@ impl Text2TextPromptParams {
         max_tokens: u64,
         top_k: Option<u64>,
         top_p: Option<f64>,
+        sample: bool,
     ) -> Self {
         Self {
             prompt,
@@ -214,6 +216,7 @@ impl Text2TextPromptParams {
             max_tokens,
             top_k,
             top_p,
+            sample,
         }
     }
 
@@ -252,6 +255,10 @@ impl Text2TextPromptParams {
     pub fn top_p(&self) -> Option<f64> {
         self.top_p
     }
+
+    pub fn sample(&self) -> bool {
+        self.sample
+    }
 }
 
 impl TryFrom<Value> for Text2TextPromptParams {
@@ -268,6 +275,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
             max_tokens: utils::parse_u64(&value["max_tokens"])?,
             top_k: Some(utils::parse_u64(&value["top_k"])?),
             top_p: Some(utils::parse_f32_from_le_bytes(&value["top_p"])? as f64),
+            sample: utils::parse_bool(&value["sample"])?,
         })
     }
 }
@@ -495,5 +503,11 @@ mod utils {
 
     pub(crate) fn parse_optional_str(value: &Value) -> Option<String> {
         value.as_str().map(|s| s.to_string())
+    }
+
+    pub(crate) fn parse_bool(value: &Value) -> Result<bool> {
+        value
+            .as_bool()
+            .ok_or_else(|| anyhow!("Expected a bool, found none"))
     }
 }

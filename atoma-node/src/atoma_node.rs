@@ -25,6 +25,7 @@ const CHANNEL_SIZE: usize = 32;
 pub struct AtomaNode {
     pub atoma_sui_client_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub atoma_output_manager_handle: JoinHandle<Result<(), AtomaNodeError>>,
+    pub atoma_streamer_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
     pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
 }
@@ -44,6 +45,7 @@ impl AtomaNode {
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
         let (output_manager_tx, output_manager_rx) = mpsc::channel(CHANNEL_SIZE);
+        let (streamer_tx, streamer_rx) = std::sync::mpsc::channel();
 
         let model_service_handle = tokio::spawn(async move {
             info!("Spawning Model service..");
@@ -52,6 +54,7 @@ impl AtomaNode {
                 json_server_req_rx,
                 subscriber_req_rx,
                 atoma_node_resp_tx,
+                streamer_tx,
             )?;
             model_service
                 .run()
@@ -94,22 +97,34 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::AtomaOutputManagerError)
         });
 
+        let atoma_streamer_handle = tokio::spawn(async move {
+            info!("Starting Atoma streamer service..");
+            let atoma_streamer = AtomaStreamer::new(streamer_rx);
+            atoma_streamer
+                .run()
+                .await
+                .map_err(AtomaNodeError::AtomaStreamerError)
+        });
+
         match try_join!(
             model_service_handle,
             sui_subscriber_handle,
             atoma_sui_client_handle,
-            atoma_output_manager_handle
+            atoma_output_manager_handle,
+            atoma_streamer_handle,
         ) {
             Ok((
                 model_service_result,
                 sui_subscriber_result,
                 atoma_sui_client_result,
                 atoma_output_manager_result,
+                atoma_streamer_result,
             )) => {
                 model_service_result?;
                 sui_subscriber_result?;
                 atoma_sui_client_result?;
                 atoma_output_manager_result?;
+                atoma_streamer_result?;
             }
             Err(e) => {
                 error!("Failed to join handles, with error: {e}")

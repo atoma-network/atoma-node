@@ -133,6 +133,7 @@ async fn test_mock_model_thread() {
                 max_tokens,
                 Some(0),
                 Some(1.0),
+                false,
             ));
             let request = Request::new(vec![0], 0, 1, prompt_params);
             let command = ModelThreadCommand {
