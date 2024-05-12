@@ -104,9 +104,3 @@ impl TokenOutputStream {
         self.current_index = 0;
     }
 }
-
-impl TokenOutputStream {
-    pub fn stream(&self) -> Result<(), ModelError> {
-        Ok(())
-    }
-}
