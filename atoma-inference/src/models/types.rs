@@ -283,46 +283,6 @@ impl Display for ModelType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TextRequest {
-    pub request_id: usize,
-    pub prompt: String,
-    pub model: ModelId,
-    pub max_tokens: usize,
-    pub random_seed: usize,
-    pub repeat_last_n: usize,
-    pub repeat_penalty: f32,
-    pub sampled_nodes: Vec<Vec<u8>>,
-    pub temperature: Option<f32>,
-    pub top_k: Option<usize>,
-    pub top_p: Option<f64>,
-}
-
-impl Request for TextRequest {
-    type ModelInput = TextModelInput;
-
-    fn into_model_input(self) -> Self::ModelInput {
-        TextModelInput::new(
-            self.prompt,
-            self.temperature.unwrap_or_default() as f64,
-            self.random_seed as u64,
-            self.repeat_penalty,
-            self.repeat_last_n,
-            self.max_tokens,
-            self.top_k,
-            self.top_p,
-        )
-    }
-
-    fn request_id(&self) -> usize {
-        self.request_id
-    }
-
-    fn requested_model(&self) -> ModelId {
-        self.model.clone()
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct TextModelInput {
     pub(crate) prompt: String,
@@ -333,6 +293,7 @@ pub struct TextModelInput {
     pub(crate) max_tokens: usize,
     pub(crate) top_k: Option<usize>,
     pub(crate) top_p: Option<f64>,
+    pub(crate) stream: bool
 }
 
 impl TextModelInput {
@@ -346,6 +307,7 @@ impl TextModelInput {
         max_tokens: usize,
         top_k: Option<usize>,
         top_p: Option<f64>,
+        stream: bool,
     ) -> Self {
         Self {
             prompt,
@@ -356,6 +318,7 @@ impl TextModelInput {
             max_tokens,
             top_k,
             top_p,
+            stream,
         }
     }
 }
@@ -374,6 +337,7 @@ impl TryFrom<PromptParams> for TextModelInput {
                 max_tokens: p.max_tokens().try_into().unwrap(),
                 top_k: p.top_k().map(|t| t.try_into().unwrap()),
                 top_p: p.top_p(),
+                stream: p.stream()
             }),
             PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
         }

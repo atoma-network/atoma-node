@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::mpsc};
 
 use candle::{
     quantized::{ggml_file, gguf_file},
@@ -10,7 +10,6 @@ use candle_transformers::{
 };
 use hf_hub::api::sync::ApiBuilder;
 use tokenizers::Tokenizer;
-use tokio::sync::mpsc::{self, Sender};
 use tracing::info;
 
 use crate::models::{
@@ -35,7 +34,7 @@ impl QuantizedModel {
         device: Device,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: Sender<String>,
+        stream_tx: mpsc::Sender<String>,
     ) -> Self {
         Self {
             model,
@@ -187,7 +186,7 @@ impl ModelTrait for QuantizedModel {
         self.model_type.clone()
     }
 
-    async fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         let prompt_str = input.prompt;
         let mut output = String::new();
         self.tokenizer.clear();
@@ -228,7 +227,7 @@ impl ModelTrait for QuantizedModel {
         let logits = logits.squeeze(0)?;
         let mut next_token = logits_processor.sample(&logits)?;
         all_tokens.push(next_token);
-        if let Some(t) = self.tokenizer.next_token(next_token, input.stream).await? {
+        if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
             output.push_str(t.as_str());
         }
 
@@ -260,14 +259,14 @@ impl ModelTrait for QuantizedModel {
             };
             next_token = logits_processor.sample(&logits)?;
             all_tokens.push(next_token);
-            if let Some(t) = self.tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
                 output.push_str(t.as_str());
             }
             if next_token == eos_token {
                 break;
             };
         }
-        if let Some(rest) = self.tokenizer.decode_rest().map_err(candle::Error::msg)? {
+        if let Some(rest) = self.tokenizer.decode_rest(input.stream).map_err(candle::Error::msg)? {
             output.push_str(rest.as_str());
         }
         let dt = start_post_prompt.elapsed();

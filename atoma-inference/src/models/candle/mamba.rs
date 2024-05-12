@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -39,6 +39,7 @@ impl MambaModel {
         dtype: DType,
         model_type: ModelType,
         tokenizer: Tokenizer,
+        stream_tx: mpsc::Sender<String>,
     ) -> Self {
         Self {
             model,
@@ -46,7 +47,7 @@ impl MambaModel {
             device,
             dtype,
             model_type,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         }
     }
 }
@@ -95,7 +96,7 @@ impl ModelTrait for MambaModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -129,6 +130,7 @@ impl ModelTrait for MambaModel {
             load_data.dtype,
             load_data.model_type,
             tokenizer,
+            stream_tx,
         ))
     }
 
@@ -172,11 +174,11 @@ impl ModelTrait for MambaModel {
         let mut output = String::new();
 
         for &token in tokens.iter() {
-            let input = Tensor::new(&[token], &self.device)?;
-            let logits = self.model.forward(&input, &mut state)?;
+            let input_tensor = Tensor::new(&[token], &self.device)?;
+            let logits = self.model.forward(&input_tensor, &mut state)?;
 
             next_logits = Some(logits);
-            if let Some(t) = self.tokenizer.next_token(token)? {
+            if let Some(t) = self.tokenizer.next_token(token, input.stream)? {
                 output.push_str(t.as_str());
             }
         }
@@ -203,7 +205,7 @@ impl ModelTrait for MambaModel {
                 break;
             }
 
-            if let Some(t) = self.tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
                 output.push_str(t.as_str());
             }
 
@@ -211,7 +213,7 @@ impl ModelTrait for MambaModel {
             next_logits = Some(self.model.forward(&input, &mut state)?);
         }
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
             output.push_str(rest.as_str());
         }
 
@@ -270,7 +272,9 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = MambaModel::load(load_data).expect("Failed to load model");
+
+        let (stream_tx, _) = mpsc::channel();
+        let mut model = MambaModel::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -303,6 +307,7 @@ mod tests {
             max_tokens,
             Some(top_k),
             Some(top_p),
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");

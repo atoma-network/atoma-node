@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant, sync::mpsc};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -12,10 +12,7 @@ use tokenizers::Tokenizer;
 use tracing::{debug, error, info};
 
 use crate::models::{
-    candle::hub_load_safetensors,
-    config::ModelConfig,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
-    ModelError, ModelTrait,
+    candle::hub_load_safetensors, config::ModelConfig, token_output_stream::TokenOutputStream, types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput}, ModelError, ModelTrait
 };
 
 use super::device;
@@ -25,7 +22,7 @@ pub struct FalconModel {
     device: Device,
     dtype: DType,
     model_type: ModelType,
-    tokenizer: Tokenizer,
+    tokenizer: TokenOutputStream,
 }
 
 impl FalconModel {
@@ -35,12 +32,13 @@ impl FalconModel {
         dtype: DType,
         model_type: ModelType,
         tokenizer: Tokenizer,
+        stream_tx: mpsc::Sender<String>,
     ) -> Self {
         Self {
             model,
             device,
             dtype,
-            tokenizer,
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
             model_type,
         }
     }
@@ -94,7 +92,7 @@ impl ModelTrait for FalconModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -129,7 +127,8 @@ impl ModelTrait for FalconModel {
             load_data.device,
             load_data.dtype,
             load_data.model_type,
-            tokenizer,
+            tokenizer, 
+            stream_tx,
         ))
     }
 
@@ -138,6 +137,9 @@ impl ModelTrait for FalconModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {:?}", input.prompt);
+        self.tokenizer.clear();
+
         self.model.clear_kv_cache();
         let TextModelInput {
             prompt,
@@ -152,7 +154,7 @@ impl ModelTrait for FalconModel {
 
         let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
         info!("Running inference on prompt: {:?}", prompt);
-        let mut tokens = self.tokenizer.encode(prompt, true)?.get_ids().to_vec();
+        let mut tokens = self.tokenizer.tokenizer().encode(prompt, true)?.get_ids().to_vec();
 
         let mut new_tokens = vec![];
         let mut output = String::new();
@@ -167,8 +169,8 @@ impl ModelTrait for FalconModel {
                 tokens.len()
             };
             let ctx = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctx, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input)?;
+            let input_tensor = Tensor::new(ctx, &self.device)?.unsqueeze(0)?;
+            let logits = self.model.forward(&input_tensor)?;
             let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
             let logits = if repeat_penalty == 1. {
                 logits
@@ -181,15 +183,18 @@ impl ModelTrait for FalconModel {
             tokens.push(next_token);
             new_tokens.push(next_token);
             debug!("> {:?}", start_gen);
-            output.push_str(&self.tokenizer.decode(&[next_token], true)?);
+            
+            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+                output += &t;
+            }
+
             generated_tokens += 1;
         }
         let dt = start_gen.elapsed();
 
         info!(
-            "{generated_tokens} tokens generated ({} token/s)\n----\n{}\n----",
+            "{generated_tokens} tokens generated ({} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
-            self.tokenizer.decode(&new_tokens, true)?,
         );
 
         Ok(TextModelOutput {

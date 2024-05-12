@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::mpsc};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -82,7 +82,7 @@ impl ModelTrait for MixtralModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -103,7 +103,7 @@ impl ModelTrait for MixtralModel {
             model,
             device,
             dtype,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         })
     }
 
@@ -153,13 +153,13 @@ impl ModelTrait for MixtralModel {
             if next_token == eos_token {
                 break;
             }
-            if let Some(word) = self.tokenizer.next_token(next_token)? {
+            if let Some(word) = self.tokenizer.next_token(next_token, input.stream)? {
                 output.push_str(&word);
             }
         }
 
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
             output.push_str(&rest);
         }
 

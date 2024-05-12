@@ -1,4 +1,4 @@
-use tokio::sync::mpsc;
+use std::sync::mpsc;
 
 use crate::{bail, models::ModelError};
 
@@ -35,7 +35,7 @@ impl TokenOutputStream {
     }
 
     // https://github.com/huggingface/text-generation-inference/blob/5ba53d44a18983a4de32d122f4cb46f4a17d9ef6/server/text_generation_server/models/model.py#L68
-    pub async fn next_token(
+    pub fn next_token(
         &mut self,
         token: u32,
         stream: bool,
@@ -56,7 +56,6 @@ impl TokenOutputStream {
             if stream {
                 self.stream_tx
                     .send(output.clone())
-                    .await
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -65,7 +64,7 @@ impl TokenOutputStream {
         }
     }
 
-    pub fn decode_rest(&self) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(&self, stream: bool) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -75,7 +74,13 @@ impl TokenOutputStream {
         let text = self.decode(&self.tokens[self.prev_index..])?;
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
-            Ok(Some(text.1.to_string()))
+            let output = text.1.to_string();
+            if stream {
+                self.stream_tx
+                    .send(output.clone())
+                    .map_err(ModelError::SendError)?;
+            }
+            Ok(Some(output))
         } else {
             Ok(None)
         }

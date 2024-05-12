@@ -54,7 +54,10 @@ impl ModelTrait for TestModel {
         Ok(Duration::from_secs(duration.parse().unwrap()))
     }
 
-    fn load(duration: Self::LoadData, _: tokio::sync::mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(
+        duration: Self::LoadData,
+        _: std::sync::mpsc::Sender<String>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -76,7 +79,7 @@ impl ModelTrait for TestModel {
 }
 
 impl ModelThreadDispatcher {
-    fn test_start(stream_tx: tokio::sync::mpsc::Sender<String>) -> Self {
+    fn test_start(stream_tx: std::sync::mpsc::Sender<String>) -> Self {
         let duration_in_secs = vec![1, 2, 5, 10];
         let mut model_senders = HashMap::with_capacity(4);
 
@@ -97,7 +100,7 @@ impl ModelThreadDispatcher {
                 cache_dir,
                 model_config,
                 model_receiver,
-                stream_tx
+                stream_tx,
             );
         }
         Self {
@@ -111,7 +114,7 @@ impl ModelThreadDispatcher {
 async fn test_mock_model_thread() {
     const NUM_REQUESTS: usize = 16;
 
-    let (stream_tx, _) = tokio::sync::mpsc::channel::<String>(1);
+    let (stream_tx, _) = std::sync::mpsc::channel::<String>();
     let model_thread_dispatcher = ModelThreadDispatcher::test_start(stream_tx);
     let mut responses = FuturesUnordered::new();
 
@@ -198,7 +201,7 @@ async fn test_inference_service() {
         tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
-    let (stream_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+    let (stream_tx, _) = std::sync::mpsc::channel();
 
     println!("Starting model service..");
     let mut service = ModelService::start(

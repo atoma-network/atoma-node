@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant, sync::mpsc};
 
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
@@ -9,8 +9,8 @@ use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
-use tokio::sync::mpsc;
 use tracing::{debug, info};
+use async_trait::async_trait;
 
 use crate::{
     bail,
@@ -75,6 +75,7 @@ pub struct StableDiffusion {
     vae: AutoEncoderKL,
 }
 
+#[async_trait]
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
     type Output = (Vec<u8>, usize, usize);
@@ -662,7 +663,7 @@ mod tests {
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
 
-        let (stream_tx, _) = mpsc::channel::<String>(1);
+        let (stream_tx, _) = mpsc::channel::<String>();
         let mut model = StableDiffusion::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {

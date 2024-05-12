@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::mpsc};
 
 use candle::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -72,7 +72,7 @@ impl ModelTrait for Phi3Model {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -96,7 +96,7 @@ impl ModelTrait for Phi3Model {
             model,
             device,
             dtype,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         })
     }
 
@@ -147,7 +147,7 @@ impl ModelTrait for Phi3Model {
             if next_token == eos_token {
                 break;
             }
-            if let Some(token) = self.tokenizer.next_token(next_token)? {
+            if let Some(token) = self.tokenizer.next_token(next_token, input.stream)? {
                 output.push_str(&token)
             }
             pos += context_size;

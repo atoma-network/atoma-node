@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::mpsc};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -91,7 +91,7 @@ impl ModelTrait for MistralModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -113,7 +113,7 @@ impl ModelTrait for MistralModel {
             model,
             device,
             dtype,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         })
     }
 
@@ -122,6 +122,9 @@ impl ModelTrait for MistralModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {}", input.prompt);
+        self.tokenizer.clear();
+
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut tokens = self
@@ -159,13 +162,13 @@ impl ModelTrait for MistralModel {
             if next_token == eos_token {
                 break;
             }
-            if let Some(word) = self.tokenizer.next_token(next_token)? {
+            if let Some(word) = self.tokenizer.next_token(next_token, input.stream)? {
                 output.push_str(&word);
             }
         }
 
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
             output.push_str(&rest);
         }
 

@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant, sync::mpsc};
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -28,7 +28,7 @@ pub struct LlamaModel {
     device: Device,
     model: model::Llama,
     model_type: ModelType,
-    tokenizer: Tokenizer,
+    tokenizer: TokenOutputStream,
     config: Config,
     dtype: DType,
 }
@@ -87,7 +87,7 @@ impl ModelTrait for LlamaModel {
         self.model_type.clone()
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError> {
         info!("Loading Llama model ...");
 
         let start = Instant::now();
@@ -114,24 +114,27 @@ impl ModelTrait for LlamaModel {
             device,
             model,
             model_type: load_data.model_type,
-            tokenizer,
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
             config,
             dtype,
         })
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {:?}", input.prompt);
+        self.tokenizer.clear();
+
         let bos_token_id = self
             .config
             .bos_token_id
-            .or_else(|| self.tokenizer.token_to_id(BOS_TOKEN))
+            .or_else(|| self.tokenizer.tokenizer().token_to_id(BOS_TOKEN))
             .unwrap();
         let eos_token_id = self
             .config
             .eos_token_id
-            .or_else(|| self.tokenizer.token_to_id(EOS_TOKEN));
+            .or_else(|| self.tokenizer.tokenizer().token_to_id(EOS_TOKEN));
         let prompt_ids = self
-            .tokenizer
+            .tokenizer.tokenizer()
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
@@ -141,7 +144,6 @@ impl ModelTrait for LlamaModel {
             prompt_ids
         };
 
-        let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut index_pos = 0;
@@ -179,13 +181,13 @@ impl ModelTrait for LlamaModel {
             if Some(next_token) == eos_token_id {
                 break;
             }
-            if let Some(t) = tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
                 res += &t;
             }
 
             generated_tokens += 1;
         }
-        if let Some(rest) = tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
             res += &rest;
         }
 
@@ -244,7 +246,9 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = LlamaModel::load(load_data).expect("Failed to load model");
+
+        let (stream_tx, _) = mpsc::channel();
+        let mut model = LlamaModel::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -276,6 +280,7 @@ mod tests {
             max_tokens,
             Some(top_k),
             Some(top_p),
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
