@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 atoma-types.workspace = true
 futures.workspace = true
+gql_client.workspace = true
 hex.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde_json.workspace = true
