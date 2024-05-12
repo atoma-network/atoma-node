@@ -79,7 +79,6 @@ mod tests {
         const SIZE: usize = 128;
         const INDEX: usize = 16;
         const NUM_CHUNKS: usize = 32;
-        const CHUNKS_SIZE: usize = 4;
 
         let mut rng = rand::thread_rng();
         let data = (0..SIZE).map(|_| rng.gen::<u8>()).collect::<Vec<_>>();
@@ -93,7 +92,7 @@ mod tests {
         let mut leaves = Vec::with_capacity(NUM_CHUNKS);
         for i in 0..NUM_CHUNKS {
             let mut hasher = Blake2b::<U32>::new();
-            hasher.update(&data[(CHUNKS_SIZE * i)..(CHUNKS_SIZE * (i + 1))]);
+            hasher.update([data.as_slice(), i.to_le_bytes().as_slice()].concat());
             let leaf: [u8; 32] = hasher.finalize().into();
             leaves.push(leaf);
         }
