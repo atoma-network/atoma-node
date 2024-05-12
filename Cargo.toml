@@ -12,8 +12,10 @@ members = [
     "atoma-node",
     "atoma-json-rpc",
     "atoma-storage",
-    "atoma-types"
-, "atoma-output-manager", "atoma-streamer"]
+    "atoma-types",
+    "atoma-output-manager",
+    "atoma-streamer"
+]
 
 [workspace.package]
 version = "0.1.0"
