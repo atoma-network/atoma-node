@@ -4,10 +4,15 @@ const HASH_SIZE: usize = 32;
 pub type Hash = [u8; HASH_SIZE];
 
 pub trait Hasher {
+    fn init() -> Self;
     fn hash<T: AsRef<[u8]>>(self, data: T) -> Hash;
 }
 
 impl Hasher for Blake2b<U32> {
+    fn init() -> Self {
+        Blake2b::new()
+    }
+
     fn hash<T: AsRef<[u8]>>(mut self, data: T) -> Hash {
         self.update(data);
         let output = self.finalize();
@@ -17,15 +22,14 @@ impl Hasher for Blake2b<U32> {
     }
 }
 
-/// Calculates cryptographic commitments for a given data chunk and its corresponding n-ary Merkle tree root.
+/// Calculates cryptographic commitments for a given data buffer.
 ///
-/// This function takes input data, an index indicating the position of the data chunk
-/// in a larger dataset, and the total number of leaves in the Merkle tree.
-/// It computes cryptographic commitments for the data chunk and the Merkle tree root.
+/// This function takes input data, an index indicating the leaf position, 
+/// and the total number of leaves in the Merkle tree.
 ///
 /// # Parameters
 ///
-/// - `data`: The input data chunk represented as a byte slice (`&[u8]`).
+/// - `data`: The input data buffer represented as a byte slice (`&[u8]`).
 /// - `index`: The index of the data chunk within the larger dataset.
 /// - `num_leaves`: The total number of leaves (data chunks) in the Merkle tree.
 ///
@@ -33,7 +37,7 @@ impl Hasher for Blake2b<U32> {
 ///
 /// A tuple containing:
 /// - The cryptographic hash of the Merkle tree root (`Hash`).
-/// - The cryptographic hash of the data chunk at the specified index (`Hash`).
+/// - The cryptographic hash of the data itself and its index (`H(data | index)`).
 ///
 /// # Panics
 ///
@@ -43,10 +47,6 @@ impl Hasher for Blake2b<U32> {
 /// # Notes
 ///
 /// - This function requires the `Hasher` trait to be implemented for the chosen hash algorithm (`H`).
-/// - The data chunk size is determined based on the total number of leaves in the Merkle tree.
-/// - The function performs assertions to ensure that the input data slice and computed chunks are not empty.
-/// - The function returns the hash of the concatenated data chunks as the Merkle tree root hash,
-///   and the hash of the data chunk at the specified index.
 pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
     data: T,
     index: usize,
@@ -54,22 +54,18 @@ pub fn calculate_commitment<H: Hasher, T: AsRef<[u8]>>(
 ) -> (Hash, Hash) {
     let data = data.as_ref();
     assert!(!data.is_empty());
-    let chunk_size = data.len() / num_leaves;
 
-    let chunks = data
-        .chunks(chunk_size)
-        .map(|buf| {
-            let hasher = Blake2b::new();
-            hasher.hash(buf)
+    let leaves = (0..num_leaves)
+        .map(|i| {
+            let hasher = H::init();
+            hasher.hash([data, &i.to_le_bytes()].concat())
         })
         .collect::<Vec<_>>();
 
-    assert!(!chunks.is_empty());
+    let hasher = H::init();
+    let root = hasher.hash(leaves.concat().as_slice());
 
-    let hasher = Blake2b::new();
-    let root = hasher.hash(chunks.concat().as_slice());
-
-    (root, chunks[index])
+    (root, leaves[index])
 }
 
 #[cfg(test)]
