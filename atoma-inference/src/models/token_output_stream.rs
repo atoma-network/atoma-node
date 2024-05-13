@@ -15,7 +15,10 @@ pub struct TokenOutputStream {
 }
 
 impl TokenOutputStream {
-    pub fn new(tokenizer: tokenizers::Tokenizer, stream_tx: mpsc::Sender<(Digest, String)>) -> Self {
+    pub fn new(
+        tokenizer: tokenizers::Tokenizer,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Self {
         Self {
             tokenizer,
             tokens: Vec::new(),
@@ -37,7 +40,11 @@ impl TokenOutputStream {
     }
 
     // https://github.com/huggingface/text-generation-inference/blob/5ba53d44a18983a4de32d122f4cb46f4a17d9ef6/server/text_generation_server/models/model.py#L68
-    pub fn next_token(&mut self, token: u32, request_id: Option<Digest>) -> Result<Option<String>, ModelError> {
+    pub fn next_token(
+        &mut self,
+        token: u32,
+        request_id: Option<Digest>,
+    ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {

@@ -1,26 +1,41 @@
-use std::{path::PathBuf, sync::mpsc};
+use std::path::{Path, PathBuf};
 
-use atoma_types::{Digest, Response};
+use atoma_types::Digest;
+use config::AtomaFirebaseStreamerConfig;
 use reqwest::Client;
 use thiserror::Error;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
+
+mod config;
 
 pub struct AtomaStreamer {
     firebase_uri: PathBuf,
-    streamer_rx: mpsc::Receiver<(Digest, Response)>,
+    streamer_rx: mpsc::Receiver<(Digest, String)>,
 }
 
 impl AtomaStreamer {
-    pub fn new(firebase_uri: PathBuf, streamer_rx: mpsc::Receiver<(Digest, Response)>) -> Self {
+    pub fn new(firebase_uri: PathBuf, streamer_rx: mpsc::Receiver<(Digest, String)>) -> Self {
         Self {
             firebase_uri,
             streamer_rx,
         }
     }
 
-    pub async fn run(self) -> Result<(), AtomaStreamerError> {
+    pub fn new_from_config<P: AsRef<Path>>(
+        config_path: P,
+        streamer_rx: mpsc::Receiver<(Digest, String)>,
+    ) -> Self {
+        let config = AtomaFirebaseStreamerConfig::from_file_path(config_path);
+        Self {
+            firebase_uri: config.firebase_uri(),
+            streamer_rx: streamer_rx,
+        }
+    }
+
+    pub async fn run(mut self) -> Result<(), AtomaStreamerError> {
         info!("Starting firebase service..");
-        while let Ok((tx_digest, response)) = self.streamer_rx.recv() {
+        while let Some((tx_digest, response)) = self.streamer_rx.recv().await {
             info!("Received a new output to be submitted to Firebase..");
             let data = serde_json::to_value(response)?;
             self.handle_post_request(tx_digest, data).await?;

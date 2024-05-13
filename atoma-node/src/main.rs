@@ -14,6 +14,8 @@ struct Args {
     sui_subscriber_path: String,
     #[arg(long)]
     output_manager_config_path: String,
+    #[arg(long)]
+    streamer_config_path: String,
 }
 
 #[tokio::main]
@@ -25,6 +27,7 @@ async fn main() -> Result<(), AtomaNodeError> {
     let model_config_path = args.model_config_path;
     let sui_subscriber_path = args.sui_subscriber_path;
     let output_manager_config_path = args.output_manager_config_path;
+    let streamer_config_path = args.streamer_config_path;
 
     let (_, json_rpc_server_rx) = mpsc::channel(CHANNEL_BUFFER);
     AtomaNode::start(
@@ -32,6 +35,7 @@ async fn main() -> Result<(), AtomaNodeError> {
         model_config_path,
         sui_subscriber_path,
         output_manager_config_path,
+        streamer_config_path,
         json_rpc_server_rx,
     )
     .await?;

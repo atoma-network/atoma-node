@@ -73,7 +73,10 @@ impl ModelTrait for Phi3Model {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {

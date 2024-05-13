@@ -143,8 +143,11 @@ async fn test_mock_model_thread() {
             };
             sender.send(command).expect("Failed to send command");
             responses.push(response_receiver);
-            should_be_received_responses
-                .push(MockInputOutput::try_from((String::new(), request.params())).unwrap().id);
+            should_be_received_responses.push(
+                MockInputOutput::try_from((String::new(), request.params()))
+                    .unwrap()
+                    .id,
+            );
         }
     }
 
