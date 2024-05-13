@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_inference::{
@@ -19,7 +19,6 @@ use tokio::{
 };
 use tracing::{error, info};
 
-const ATOMA_OUTPUT_MANAGER_FIREBASE_URL: &str = "https://atoma-demo-default-rtdb.firebaseio.com/"; // TODO: this is only valid for demo
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {
@@ -34,6 +33,7 @@ impl AtomaNode {
         atoma_sui_client_config_path: P,
         model_config_path: P,
         sui_subscriber_path: P,
+        output_manager_config_path: P,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     ) -> Result<(), AtomaNodeError>
     where
@@ -84,8 +84,8 @@ impl AtomaNode {
 
         let atoma_output_manager_handle = tokio::spawn(async move {
             info!("Starting Atoma output manager service..");
-            let atoma_output_manager = AtomaOutputManager::new(
-                PathBuf::from(ATOMA_OUTPUT_MANAGER_FIREBASE_URL),
+            let atoma_output_manager = AtomaOutputManager::new_from_config(
+                output_manager_config_path.as_ref(),
                 output_manager_rx,
             );
             atoma_output_manager
