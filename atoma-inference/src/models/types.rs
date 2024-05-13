@@ -417,6 +417,7 @@ impl TryFrom<PromptParams> for TextModelInput {
 
 #[derive(Serialize)]
 pub struct TextModelOutput {
+    pub input_tokens: usize,
     pub text: String,
     pub time: f64,
     pub tokens_count: usize,
@@ -426,8 +427,8 @@ impl Display for TextModelOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Output: {}\nTime: {}\nTokens count: {}",
-            self.text, self.time, self.tokens_count
+            "Output: {}\nInput tokens: {}\nTime: {}\nTokens count: {}",
+            self.text, self.input_tokens, self.time, self.tokens_count
         )
     }
 }
