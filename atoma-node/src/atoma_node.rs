@@ -100,7 +100,7 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::AtomaOutputManagerError)
         });
 
-        // TODO: this seems a waste of resources, spanning a thread just to send a message to the streamer. 
+        // TODO: this seems a waste of resources, spanning a thread just to send a message to the streamer.
         // However, this allows to have a workaround to the fact that a `std::sync::mpsc::Receiver` shared across tasks
         // cannot work (as the later is not thread-safe). To be improved.
         std::thread::spawn(move || {

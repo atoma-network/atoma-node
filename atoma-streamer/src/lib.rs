@@ -29,7 +29,7 @@ impl AtomaStreamer {
         let config = AtomaFirebaseStreamerConfig::from_file_path(config_path);
         Self {
             firebase_uri: config.firebase_uri(),
-            streamer_rx: streamer_rx,
+            streamer_rx,
         }
     }
 

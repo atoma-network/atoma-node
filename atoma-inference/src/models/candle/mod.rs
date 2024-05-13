@@ -17,6 +17,7 @@ pub mod mistral;
 pub mod mixtral;
 pub mod phi3;
 pub mod quantized;
+pub mod qwen;
 pub mod stable_diffusion;
 
 pub fn device(device_id: usize) -> Result<Device, candle::Error> {
