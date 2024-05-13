@@ -142,6 +142,7 @@ The supported models currently are:
 | quantized_llama3-8b            | QuantFactory/Meta-Llama-3-8B-GGUF |
 | qwen_w0.5b                     | Qwen/Qwen1.5-0.5B              |
 | qwen_w1.8b                     | Qwen/Qwen1.5-1.8B           |
+| qwen_w14b                      | Qwen/Qwen1.5-4B              |
 | qwen_w7b                       | qwen/Qwen1.5-7B              |
 | qwen_w14b                      | qwen/Qwen1.5-14B             |
 | qwen_w72b                      | qwen/Qwen1.5-72B             |
