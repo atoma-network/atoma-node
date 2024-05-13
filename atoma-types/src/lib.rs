@@ -178,6 +178,7 @@ impl TryFrom<Value> for PromptParams {
 /// - repeat last n: parameter to penalize last `n` token repetition
 /// - top_k: parameter controlling `k` top tokens for sampling
 /// - top_p: parameter controlling probabilities for top tokens
+/// - stream: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2TextPromptParams {
     prompt: String,
@@ -189,7 +190,7 @@ pub struct Text2TextPromptParams {
     max_tokens: u64,
     top_k: Option<u64>,
     top_p: Option<f64>,
-    sample: bool,
+    stream: bool,
 }
 
 impl Text2TextPromptParams {
@@ -204,7 +205,7 @@ impl Text2TextPromptParams {
         max_tokens: u64,
         top_k: Option<u64>,
         top_p: Option<f64>,
-        sample: bool,
+        stream: bool,
     ) -> Self {
         Self {
             prompt,
@@ -216,7 +217,7 @@ impl Text2TextPromptParams {
             max_tokens,
             top_k,
             top_p,
-            sample,
+            stream,
         }
     }
 
@@ -256,8 +257,8 @@ impl Text2TextPromptParams {
         self.top_p
     }
 
-    pub fn sample(&self) -> bool {
-        self.sample
+    pub fn stream(&self) -> bool {
+        self.stream
     }
 }
 
@@ -275,7 +276,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
             max_tokens: utils::parse_u64(&value["max_tokens"])?,
             top_k: Some(utils::parse_u64(&value["top_k"])?),
             top_p: Some(utils::parse_f32_from_le_bytes(&value["top_p"])? as f64),
-            sample: utils::parse_bool(&value["sample"])?,
+            stream: utils::parse_bool(&value["stream"])?,
         })
     }
 }

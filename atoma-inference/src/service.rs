@@ -24,7 +24,6 @@ pub struct ModelService {
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     subscriber_req_rx: Receiver<Request>,
     atoma_node_resp_tx: Sender<Response>,
-    stream_tx: std::sync::mpsc::Sender<String>,
 }
 
 impl ModelService {
@@ -51,7 +50,6 @@ impl ModelService {
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,
-            stream_tx,
         })
     }
 

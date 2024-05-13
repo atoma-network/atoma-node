@@ -29,6 +29,7 @@ atoma-crypto = { path = "./atoma-crypto/" }
 atoma-inference = { path = "./atoma-inference/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
+atoma-streamer = { path = "./atoma-streamer" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 blake2 = "0.10.6"

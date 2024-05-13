@@ -18,7 +18,7 @@ impl AtomaStreamer {
         }
     }
 
-    pub async fn run(self) -> Result<(), AtomaOutputManagerError> {
+    pub async fn run(self) -> Result<(), AtomaStreamerError> {
         info!("Starting firebase service..");
         while let Ok((tx_digest, response)) = self.streamer_rx.recv() {
             info!("Received a new output to be submitted to Firebase..");
@@ -35,7 +35,7 @@ impl AtomaStreamer {
         &self,
         tx_digest: Digest,
         data: serde_json::Value,
-    ) -> Result<(), AtomaOutputManagerError> {
+    ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
         let mut url = self.firebase_uri.clone();
         url.push(format!("{tx_digest}.json"));
@@ -56,7 +56,7 @@ impl AtomaStreamer {
 }
 
 #[derive(Debug, Error)]
-pub enum AtomaOutputManagerError {
+pub enum AtomaStreamerError {
     #[error("Deserialize JSON value error: `{0}`")]
     DeserializeError(#[from] serde_json::Error),
     #[error("Request error: `{0}`")]

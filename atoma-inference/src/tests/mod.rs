@@ -100,7 +100,7 @@ impl ModelThreadDispatcher {
                 cache_dir,
                 model_config,
                 model_receiver,
-                stream_tx,
+                stream_tx.clone(),
             );
         }
         Self {

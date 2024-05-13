@@ -7,6 +7,7 @@ use atoma_inference::{
 };
 use atoma_output_manager::{AtomaOutputManager, AtomaOutputManagerError};
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
+use atoma_streamer::{AtomaStreamer, AtomaStreamerError};
 use atoma_types::{Request, Response};
 use thiserror::Error;
 use tokio::{
@@ -99,7 +100,7 @@ impl AtomaNode {
 
         let atoma_streamer_handle = tokio::spawn(async move {
             info!("Starting Atoma streamer service..");
-            let atoma_streamer = AtomaStreamer::new(streamer_rx);
+            let atoma_streamer = AtomaStreamer::new(ATOMA_OUTPUT_MANAGER_FIREBASE_URL, streamer_rx);
             atoma_streamer
                 .run()
                 .await
@@ -145,4 +146,6 @@ pub enum AtomaNodeError {
     AtomaSuiClientError(#[from] AtomaSuiClientError),
     #[error("Atoma output manager error: `{0}`")]
     AtomaOutputManagerError(#[from] AtomaOutputManagerError),
+    #[error("Atoma streamer error: `{0}`")]
+    AtomaStreamerError(#[from] AtomaStreamerError),
 }

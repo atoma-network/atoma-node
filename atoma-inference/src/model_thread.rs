@@ -112,7 +112,7 @@ impl ModelThreadDispatcher {
                 model_type,
                 model_config,
                 model_receiver,
-                stream_tx,
+                stream_tx.clone(),
             );
 
             handles.push(ModelThreadHandle {
