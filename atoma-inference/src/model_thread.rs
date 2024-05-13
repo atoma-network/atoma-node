@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
-use atoma_types::{Request, Response};
+use atoma_types::{Digest, Request, Response};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
@@ -69,7 +69,7 @@ where
             let sampled_node_index = request.sampled_node_index();
             let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();
-            let model_input = M::Input::try_from(params)?;
+            let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
             let response = Response::new(request_id, sampled_node_index, num_sampled_nodes, output);
@@ -88,7 +88,7 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     pub(crate) fn start(
         config: ModelsConfig,
-        stream_tx: mpsc::Sender<String>,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
@@ -167,7 +167,7 @@ pub(crate) fn dispatch_model_thread(
     model_type: ModelType,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: mpsc::Sender<String>,
+    stream_tx: mpsc::Sender<(Digest, String)>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     match model_type {
         ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
@@ -281,7 +281,7 @@ pub(crate) fn spawn_model_thread<M>(
     cache_dir: PathBuf,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: mpsc::Sender<String>,
+    stream_tx: mpsc::Sender<(Digest, String)>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,

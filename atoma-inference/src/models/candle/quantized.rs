@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::mpsc};
 
+use atoma_types::Digest;
 use candle::{
     quantized::{ggml_file, gguf_file},
     DType, Device, Tensor,
@@ -34,7 +35,7 @@ impl QuantizedModel {
         device: Device,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: mpsc::Sender<String>,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
         Self {
             model,
@@ -130,7 +131,7 @@ impl ModelTrait for QuantizedModel {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -227,7 +228,8 @@ impl ModelTrait for QuantizedModel {
         let logits = logits.squeeze(0)?;
         let mut next_token = logits_processor.sample(&logits)?;
         all_tokens.push(next_token);
-        if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+
+        if let Some(t) = self.tokenizer.next_token(next_token, None)? {
             output.push_str(t.as_str());
         }
 
@@ -242,6 +244,9 @@ impl ModelTrait for QuantizedModel {
             .get_vocab(true)
             .get(eos_token)
             .unwrap();
+
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
+
         let start_post_prompt = std::time::Instant::now();
         for index in 0..to_sample {
             let input2 = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
@@ -259,7 +264,7 @@ impl ModelTrait for QuantizedModel {
             };
             next_token = logits_processor.sample(&logits)?;
             all_tokens.push(next_token);
-            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(t.as_str());
             }
             if next_token == eos_token {
@@ -268,7 +273,7 @@ impl ModelTrait for QuantizedModel {
         }
         if let Some(rest) = self
             .tokenizer
-            .decode_rest(input.stream)
+            .decode_rest(request_id)
             .map_err(candle::Error::msg)?
         {
             output.push_str(rest.as_str());

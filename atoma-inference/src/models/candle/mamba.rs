@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -39,7 +40,7 @@ impl MambaModel {
         dtype: DType,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: mpsc::Sender<String>,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
         Self {
             model,
@@ -96,7 +97,7 @@ impl ModelTrait for MambaModel {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -170,6 +171,7 @@ impl ModelTrait for MambaModel {
 
         let mut state = State::new(1, &self.config, self.dtype, &self.device)?; // TODO: handle larger batch sizes
 
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
         let mut next_logits = None;
         let mut output = String::new();
 
@@ -178,7 +180,7 @@ impl ModelTrait for MambaModel {
             let logits = self.model.forward(&input_tensor, &mut state)?;
 
             next_logits = Some(logits);
-            if let Some(t) = self.tokenizer.next_token(token, input.stream)? {
+            if let Some(t) = self.tokenizer.next_token(token, request_id.clone())? {
                 output.push_str(t.as_str());
             }
         }
@@ -205,7 +207,7 @@ impl ModelTrait for MambaModel {
                 break;
             }
 
-            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(t.as_str());
             }
 
@@ -213,7 +215,7 @@ impl ModelTrait for MambaModel {
             next_logits = Some(self.model.forward(&input, &mut state)?);
         }
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
             output.push_str(rest.as_str());
         }
 
@@ -299,6 +301,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            String::new(),
             prompt.clone(),
             temperature,
             random_seed,

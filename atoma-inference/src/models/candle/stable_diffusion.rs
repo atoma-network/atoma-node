@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
+use atoma_types::Digest;
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -23,6 +24,7 @@ use super::{convert_to_image, device, save_tensor_to_file};
 
 #[derive(Debug, Deserialize)]
 pub struct StableDiffusionInput {
+    pub request_id: Digest,
     pub prompt: String,
     pub uncond_prompt: String,
 
@@ -149,7 +151,7 @@ impl ModelTrait for StableDiffusion {
         })
     }
 
-    fn load(load_data: Self::LoadData, _: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, _: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -663,7 +665,7 @@ mod tests {
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
 
-        let (stream_tx, _) = mpsc::channel::<String>();
+        let (stream_tx, _) = mpsc::channel();
         let mut model = StableDiffusion::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
@@ -684,6 +686,7 @@ mod tests {
         let random_seed = 42;
 
         let input = StableDiffusionInput {
+            request_id: String::new(),
             prompt: prompt.clone(),
             uncond_prompt,
             height: None,

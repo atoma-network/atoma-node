@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::mpsc};
 
+use atoma_types::Digest;
 use candle::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -72,7 +73,7 @@ impl ModelTrait for Phi3Model {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -125,9 +126,12 @@ impl ModelTrait for Phi3Model {
             None => bail!("cannot find the endoftext token"),
         };
 
-        let start_gen = std::time::Instant::now();
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
         let mut pos = 0;
         let mut output = String::new();
+
+        let start_gen = std::time::Instant::now();
+
         for index in 0..input.max_tokens {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
@@ -147,7 +151,7 @@ impl ModelTrait for Phi3Model {
             if next_token == eos_token {
                 break;
             }
-            if let Some(token) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(token) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&token)
             }
             pos += context_size;

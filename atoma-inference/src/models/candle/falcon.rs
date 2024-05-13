@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -36,7 +37,7 @@ impl FalconModel {
         dtype: DType,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: mpsc::Sender<String>,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
         Self {
             model,
@@ -96,7 +97,7 @@ impl ModelTrait for FalconModel {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -165,11 +166,12 @@ impl ModelTrait for FalconModel {
             .get_ids()
             .to_vec();
 
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
+        let mut generated_tokens = 0;
         let mut new_tokens = vec![];
         let mut output = String::new();
 
         let start_gen = Instant::now();
-        let mut generated_tokens = 0;
         for index in 0..max_tokens {
             let start_gen = Instant::now();
             let context_size = if self.model.config().use_cache && index > 0 {
@@ -193,7 +195,7 @@ impl ModelTrait for FalconModel {
             new_tokens.push(next_token);
             debug!("> {:?}", start_gen);
 
-            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output += &t;
             }
 

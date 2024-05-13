@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::mpsc};
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -91,7 +92,7 @@ impl ModelTrait for MistralModel {
         })
     }
 
-    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<String>) -> Result<Self, ModelError>
+    fn load(load_data: Self::LoadData, stream_tx: mpsc::Sender<(Digest, String)>) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -140,6 +141,7 @@ impl ModelTrait for MistralModel {
             None => bail!("cannot find the </s> token"),
         };
 
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
         for index in 0..input.max_tokens {
@@ -162,13 +164,13 @@ impl ModelTrait for MistralModel {
             if next_token == eos_token {
                 break;
             }
-            if let Some(word) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&word);
             }
         }
 
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
             output.push_str(&rest);
         }
 

@@ -1,5 +1,7 @@
 use std::sync::mpsc;
 
+use atoma_types::Digest;
+
 use crate::{bail, models::ModelError};
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
@@ -9,11 +11,11 @@ pub struct TokenOutputStream {
     tokens: Vec<u32>,
     prev_index: usize,
     current_index: usize,
-    stream_tx: mpsc::Sender<String>,
+    stream_tx: mpsc::Sender<(Digest, String)>,
 }
 
 impl TokenOutputStream {
-    pub fn new(tokenizer: tokenizers::Tokenizer, stream_tx: mpsc::Sender<String>) -> Self {
+    pub fn new(tokenizer: tokenizers::Tokenizer, stream_tx: mpsc::Sender<(Digest, String)>) -> Self {
         Self {
             tokenizer,
             tokens: Vec::new(),
@@ -35,7 +37,7 @@ impl TokenOutputStream {
     }
 
     // https://github.com/huggingface/text-generation-inference/blob/5ba53d44a18983a4de32d122f4cb46f4a17d9ef6/server/text_generation_server/models/model.py#L68
-    pub fn next_token(&mut self, token: u32, stream: bool) -> Result<Option<String>, ModelError> {
+    pub fn next_token(&mut self, token: u32, request_id: Option<Digest>) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -49,9 +51,9 @@ impl TokenOutputStream {
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
             let output = text.1.to_string();
-            if stream {
+            if let Some(digest) = request_id {
                 self.stream_tx
-                    .send(output.clone())
+                    .send((digest, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -60,7 +62,7 @@ impl TokenOutputStream {
         }
     }
 
-    pub fn decode_rest(&self, stream: bool) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(&self, request_id: Option<Digest>) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -71,9 +73,9 @@ impl TokenOutputStream {
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
             let output = text.1.to_string();
-            if stream {
+            if let Some(digest) = request_id {
                 self.stream_tx
-                    .send(output.clone())
+                    .send((digest, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))

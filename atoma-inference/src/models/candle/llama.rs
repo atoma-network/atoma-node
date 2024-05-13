@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -89,7 +90,7 @@ impl ModelTrait for LlamaModel {
 
     fn load(
         load_data: Self::LoadData,
-        stream_tx: mpsc::Sender<String>,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
         info!("Loading Llama model ...");
 
@@ -154,8 +155,10 @@ impl ModelTrait for LlamaModel {
         let mut res = String::new();
         let mut generated_tokens = 0;
 
-        let start_gen = Instant::now();
+        let request_id = Some(input.request_id).filter(|_| !input.stream);
         let mut cache = model::Cache::new(true, self.dtype, &self.config, &self.device)?;
+        let start_gen = Instant::now();
+
         for index in 0..input.max_tokens {
             let (context_size, context_index) = if cache.use_kv_cache && index > 0 {
                 (1, index_pos)
@@ -185,13 +188,13 @@ impl ModelTrait for LlamaModel {
             if Some(next_token) == eos_token_id {
                 break;
             }
-            if let Some(t) = self.tokenizer.next_token(next_token, input.stream)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 res += &t;
             }
 
             generated_tokens += 1;
         }
-        if let Some(rest) = self.tokenizer.decode_rest(input.stream)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
             res += &rest;
         }
 
@@ -276,6 +279,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            String::new(),
             prompt.clone(),
             temperature,
             random_seed,

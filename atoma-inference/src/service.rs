@@ -1,4 +1,4 @@
-use atoma_types::{Request, Response};
+use atoma_types::{Digest, Request, Response};
 use candle::Error as CandleError;
 use futures::StreamExt;
 use std::fmt::Debug;
@@ -32,7 +32,7 @@ impl ModelService {
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
-        stream_tx: std::sync::mpsc::Sender<String>,
+        stream_tx: std::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -154,10 +154,10 @@ mod tests {
 
     struct MockInput {}
 
-    impl TryFrom<PromptParams> for MockInput {
+    impl TryFrom<(Digest, PromptParams)> for MockInput {
         type Error = ModelError;
 
-        fn try_from(_: PromptParams) -> Result<Self, Self::Error> {
+        fn try_from(_: (Digest, PromptParams)) -> Result<Self, Self::Error> {
             Ok(Self {})
         }
     }
@@ -173,7 +173,7 @@ mod tests {
 
         fn load(
             _: Self::LoadData,
-            _: std::sync::mpsc::Sender<String>,
+            _: std::sync::mpsc::Sender<(Digest, String)>,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }

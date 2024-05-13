@@ -1,10 +1,10 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
-use atoma_types::PromptParams;
+use atoma_types::{Digest, PromptParams};
 use candle::{DType, Device};
 use serde::{Deserialize, Serialize};
 
-use crate::models::{ModelId, Request, Response};
+use crate::models::{ModelId, Response};
 
 use super::{candle::stable_diffusion::StableDiffusionInput, ModelError};
 
@@ -285,6 +285,7 @@ impl Display for ModelType {
 
 #[derive(Debug, Deserialize)]
 pub struct TextModelInput {
+    pub(crate) request_id: Digest,
     pub(crate) prompt: String,
     pub(crate) temperature: f64,
     pub(crate) random_seed: u64,
@@ -299,6 +300,7 @@ pub struct TextModelInput {
 impl TextModelInput {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        request_id: String,
         prompt: String,
         temperature: f64,
         random_seed: u64,
@@ -310,6 +312,7 @@ impl TextModelInput {
         stream: bool,
     ) -> Self {
         Self {
+            request_id,
             prompt,
             temperature,
             random_seed,
@@ -323,12 +326,13 @@ impl TextModelInput {
     }
 }
 
-impl TryFrom<PromptParams> for TextModelInput {
+impl TryFrom<(Digest, PromptParams)> for TextModelInput {
     type Error = ModelError;
 
-    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+    fn try_from((request_id, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
         match value {
             PromptParams::Text2TextPromptParams(p) => Ok(Self {
+                request_id,
                 prompt: p.prompt(),
                 temperature: p.temperature(),
                 random_seed: p.random_seed(),
@@ -412,40 +416,13 @@ pub struct StableDiffusionRequest {
     pub sampled_nodes: Vec<Vec<u8>>,
 }
 
-impl Request for StableDiffusionRequest {
-    type ModelInput = StableDiffusionInput;
-
-    fn into_model_input(self) -> Self::ModelInput {
-        Self::ModelInput {
-            prompt: self.prompt,
-            uncond_prompt: self.uncond_prompt,
-            height: self.height,
-            width: self.width,
-            n_steps: self.n_steps,
-            num_samples: self.num_samples,
-            model: self.model,
-            guidance_scale: self.guidance_scale,
-            img2img: self.img2img,
-            img2img_strength: self.img2img_strength,
-            random_seed: self.random_seed,
-        }
-    }
-
-    fn request_id(&self) -> usize {
-        self.request_id
-    }
-
-    fn requested_model(&self) -> ModelId {
-        self.model.clone()
-    }
-}
-
-impl TryFrom<PromptParams> for StableDiffusionInput {
+impl TryFrom<(Digest, PromptParams)> for StableDiffusionInput {
     type Error = ModelError;
 
-    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+    fn try_from((request_id, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
         match value {
             PromptParams::Text2ImagePromptParams(p) => Ok(Self {
+                request_id,
                 prompt: p.prompt(),
                 uncond_prompt: p.uncond_prompt(),
                 height: p.height().map(|t| t.try_into().unwrap()),
