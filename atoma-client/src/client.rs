@@ -115,9 +115,7 @@ impl AtomaSuiClient {
     /// Upon receiving a response from the `AtomaNode` service, this method extracts
     /// the output data and computes a cryptographic commitment. The commitment includes
     /// the root of an n-ary Merkle Tree built from the output data, represented as a `Vec<u8>`,
-    /// and the indices of the sampled nodes used for inference. For example, if two nodes
-    /// were sampled and produced an output `vec![1, 2, 3, 4, 5, 6, 7, 8]`, the Merkle tree
-    /// would have leaves built directly from `vec![[1, 2, 3, 4], [5, 6, 7, 8]]`.
+    /// and the indices of the sampled nodes used for inference.
     /// Additionally, the commitment contains a Merkle path from the node's leaf index
     /// (in the `sampled_nodes` vector) to the root.
     ///
