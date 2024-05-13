@@ -12,6 +12,8 @@ struct Args {
     model_config_path: String,
     #[arg(long)]
     sui_subscriber_path: String,
+    #[arg(long)]
+    output_manager_config_path: String,
 }
 
 #[tokio::main]
@@ -22,12 +24,14 @@ async fn main() -> Result<(), AtomaNodeError> {
     let atoma_sui_client_config_path = args.atoma_sui_client_config_path;
     let model_config_path = args.model_config_path;
     let sui_subscriber_path = args.sui_subscriber_path;
+    let output_manager_config_path = args.output_manager_config_path;
 
     let (_, json_rpc_server_rx) = mpsc::channel(CHANNEL_BUFFER);
     AtomaNode::start(
         atoma_sui_client_config_path,
         model_config_path,
         sui_subscriber_path,
+        output_manager_config_path,
         json_rpc_server_rx,
     )
     .await?;
