@@ -1,9 +1,10 @@
-use std::{path::PathBuf, sync::mpsc};
+use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{Digest, PromptParams};
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use self::{config::ModelConfig, types::ModelType};
 
@@ -26,7 +27,7 @@ pub trait ModelTrait {
     ) -> Result<Self::LoadData, ModelError>;
     fn load(
         load_data: Self::LoadData,
-        stream_tx: std::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized;
@@ -73,7 +74,7 @@ pub enum ModelError {
     #[error("Invalid model input")]
     InvalidModelInput,
     #[error("Send error: `{0}`")]
-    SendError(#[from] mpsc::SendError<(Digest, String)>),
+    SendError(#[from] mpsc::error::SendError<(Digest, String)>),
 }
 
 #[macro_export]

@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, sync::mpsc};
+use std::{path::PathBuf, str::FromStr};
 
 use atoma_types::Digest;
 use candle::{
@@ -11,6 +11,7 @@ use candle_transformers::{
 };
 use hf_hub::api::sync::ApiBuilder;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::models::{

@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::mpsc};
+use std::str::FromStr;
 
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
@@ -10,6 +10,7 @@ use candle_transformers::{
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::{

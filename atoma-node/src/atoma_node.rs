@@ -47,8 +47,7 @@ impl AtomaNode {
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
         let (output_manager_tx, output_manager_rx) = mpsc::channel(CHANNEL_SIZE);
-        let (sync_streamer_tx, sync_streamer_rx) = std::sync::mpsc::channel();
-        let (async_streamer_tx, async_streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
+        let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
 
         let model_service_handle = tokio::spawn(async move {
             info!("Spawning Model service..");
@@ -57,7 +56,7 @@ impl AtomaNode {
                 json_server_req_rx,
                 subscriber_req_rx,
                 atoma_node_resp_tx,
-                sync_streamer_tx,
+                streamer_tx,
             )?;
             model_service
                 .run()
@@ -100,19 +99,10 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::AtomaOutputManagerError)
         });
 
-        // TODO: this seems a waste of resources, spanning a thread just to send a message to the streamer.
-        // However, this allows to have a workaround to the fact that a `std::sync::mpsc::Receiver` shared across tasks
-        // cannot work (as the later is not thread-safe). To be improved.
-        std::thread::spawn(move || {
-            while let Ok(message) = sync_streamer_rx.recv() {
-                let _ = async_streamer_tx.blocking_send(message);
-            }
-        });
-
         let atoma_streamer_handle = tokio::spawn(async move {
             info!("Starting Atoma streamer service..");
             let atoma_streamer =
-                AtomaStreamer::new_from_config(streamer_config_path, async_streamer_rx);
+                AtomaStreamer::new_from_config(streamer_config_path, streamer_rx);
             atoma_streamer
                 .run()
                 .await

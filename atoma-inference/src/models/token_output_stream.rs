@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 
 use atoma_types::Digest;
 
@@ -60,7 +60,7 @@ impl TokenOutputStream {
             let output = text.1.to_string();
             if let Some(digest) = request_id {
                 self.stream_tx
-                    .send((digest, output.clone()))
+                    .blocking_send((digest, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -82,7 +82,7 @@ impl TokenOutputStream {
             let output = text.1.to_string();
             if let Some(digest) = request_id {
                 self.stream_tx
-                    .send((digest, output.clone()))
+                    .blocking_send((digest, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))

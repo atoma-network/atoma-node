@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
@@ -11,6 +11,7 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 
 use candle_transformers::models::llama as model;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::models::{
@@ -258,7 +259,7 @@ mod tests {
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
 
-        let (stream_tx, _) = mpsc::channel();
+        let (stream_tx, _) = mpsc::channel(1);
         let mut model = LlamaModel::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {

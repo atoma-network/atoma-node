@@ -32,7 +32,7 @@ impl ModelService {
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
-        stream_tx: std::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: Sender<(Digest, String)>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -173,7 +173,7 @@ mod tests {
 
         fn load(
             _: Self::LoadData,
-            _: std::sync::mpsc::Sender<(Digest, String)>,
+            _: tokio::sync::mpsc::Sender<(Digest, String)>,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }
@@ -216,7 +216,7 @@ mod tests {
         let (_, json_server_req_rx) = tokio::sync::mpsc::channel(1);
         let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(1);
         let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(1);
-        let (stream_tx, _) = std::sync::mpsc::channel();
+        let (stream_tx, _) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH);
 

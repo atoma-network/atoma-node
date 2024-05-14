@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::sync::mpsc;
 
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
@@ -10,6 +9,7 @@ use candle_transformers::models::qwen2_moe::{Config as ConfigMoe, Model as Model
 use hf_hub::api::sync::ApiBuilder;
 use hf_hub::{Repo, RepoType};
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::bail;

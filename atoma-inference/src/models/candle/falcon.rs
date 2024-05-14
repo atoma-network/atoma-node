@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, sync::mpsc, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
@@ -10,6 +10,7 @@ use candle_transformers::{
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::models::{

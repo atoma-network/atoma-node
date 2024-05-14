@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
+    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, thread::JoinHandle, sync::mpsc
 };
 
 use atoma_types::{Digest, Request, Response};
@@ -88,7 +88,7 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     pub(crate) fn start(
         config: ModelsConfig,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
@@ -167,7 +167,7 @@ pub(crate) fn dispatch_model_thread(
     model_type: ModelType,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: mpsc::Sender<(Digest, String)>,
+    stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     match model_type {
         ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
@@ -295,7 +295,7 @@ pub(crate) fn spawn_model_thread<M>(
     cache_dir: PathBuf,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: mpsc::Sender<(Digest, String)>,
+    stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,
