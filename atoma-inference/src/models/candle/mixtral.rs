@@ -129,6 +129,8 @@ impl ModelTrait for MixtralModel {
             .get_ids()
             .to_vec();
 
+        let input_tokens = tokens.len();
+
         let mut generated_tokens = 0_usize;
         let eos_token = match self.tokenizer.get_token("</s>") {
             Some(token) => token,
@@ -176,6 +178,8 @@ impl ModelTrait for MixtralModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
+            tokens: vec![],
         })
     }
 }

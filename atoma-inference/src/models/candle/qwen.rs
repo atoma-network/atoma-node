@@ -34,12 +34,20 @@ impl Model {
                 .map_err(ModelError::CandleError),
         }
     }
+
+    fn clear_kv_cache(&mut self) {
+        match self {
+            Model::Base(m) => m.clear_kv_cache(),
+            Model::MoE(m) => m.clear_kv_cache(),
+        }
+    }
 }
 
 pub struct QwenModel {
     model: Model,
     model_type: ModelType,
     device: Device,
+    dtype: DType,
     tokenizer: TokenOutputStream,
 }
 
@@ -48,6 +56,7 @@ impl QwenModel {
         model: Model,
         model_type: ModelType,
         device: Device,
+        dtype: DType,
         tokenizer: Tokenizer,
         stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
@@ -55,6 +64,7 @@ impl QwenModel {
             model,
             model_type,
             device,
+            dtype,
             tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         }
     }
@@ -160,6 +170,7 @@ impl ModelTrait for QwenModel {
             model,
             load_data.model_type,
             device,
+            dtype,
             tokenizer,
             stream_tx,
         ))
@@ -176,6 +187,8 @@ impl ModelTrait for QwenModel {
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let input_tokens = tokens.len();
+
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
 
@@ -195,7 +208,7 @@ impl ModelTrait for QwenModel {
             let ctxt = &tokens[start_pos..];
             let input_tensor = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self.model.forward(&input_tensor, start_pos)?;
-            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(self.dtype)?;
             let logits = if input.repeat_penalty == 1. {
                 logits
             } else {
@@ -226,10 +239,15 @@ impl ModelTrait for QwenModel {
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        self.model.clear_kv_cache();
+
         Ok(Self::Output {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
+            tokens: vec![],
         })
     }
 }

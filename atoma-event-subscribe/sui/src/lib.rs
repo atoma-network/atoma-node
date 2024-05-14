@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use subscriber::SuiSubscriberError;
 
@@ -34,17 +34,17 @@ impl FromStr for AtomaEvent {
     }
 }
 
-impl ToString for AtomaEvent {
-    fn to_string(&self) -> String {
+impl Display for AtomaEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DisputeEvent => "DisputeEvent".into(),
-            Self::FirstSubmissionEvent => "FirstSubmissionEvent".into(),
-            Self::NewlySampledNodesEvent => "NewlySampledNodesEvent".into(),
-            Self::NodeRegisteredEvent => "NodeRegisteredEvent".into(),
-            Self::NodeSubscribedToModelEvent => "NodeSubscribedToModelEvent".into(),
-            Self::SettledEvent => "SettledEvent".into(),
-            Self::Text2ImagePromptEvent => "Text2ImagePromptEvent".into(),
-            Self::Text2TextPromptEvent => "Text2TextPromptEvent".into(),
+            Self::DisputeEvent => write!(f, "DisputeEvent"),
+            Self::FirstSubmissionEvent => write!(f, "FirstSubmissionEvent"),
+            Self::NewlySampledNodesEvent => write!(f, "NewlySampledNodesEvent"),
+            Self::NodeRegisteredEvent => write!(f, "NodeRegisteredEvent"),
+            Self::NodeSubscribedToModelEvent => write!(f, "NodeSubscribedToModelEvent"),
+            Self::SettledEvent => write!(f, "SettledEvent"),
+            Self::Text2ImagePromptEvent => write!(f, "Text2ImagePromptEvent"),
+            Self::Text2TextPromptEvent => write!(f, "Text2TextPromptEvent"),
         }
     }
 }

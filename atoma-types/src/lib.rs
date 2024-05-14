@@ -190,6 +190,8 @@ pub struct Text2TextPromptParams {
     max_tokens: u64,
     top_k: Option<u64>,
     top_p: Option<f64>,
+    chat: bool,
+    pre_prompt_tokens: Vec<u32>,
     stream: bool,
 }
 
@@ -205,6 +207,8 @@ impl Text2TextPromptParams {
         max_tokens: u64,
         top_k: Option<u64>,
         top_p: Option<f64>,
+        chat: bool,
+        pre_prompt_tokens: Vec<u32>,
         stream: bool,
     ) -> Self {
         Self {
@@ -217,6 +221,8 @@ impl Text2TextPromptParams {
             max_tokens,
             top_k,
             top_p,
+            chat,
+            pre_prompt_tokens,
             stream,
         }
     }
@@ -260,6 +266,14 @@ impl Text2TextPromptParams {
     pub fn stream(&self) -> bool {
         self.stream
     }
+
+    pub fn is_chat(&self) -> bool {
+        self.chat
+    }
+
+    pub fn pre_prompt_tokens(&self) -> Vec<u32> {
+        self.pre_prompt_tokens.clone()
+    }
 }
 
 impl TryFrom<Value> for Text2TextPromptParams {
@@ -277,6 +291,17 @@ impl TryFrom<Value> for Text2TextPromptParams {
             top_k: Some(utils::parse_u64(&value["top_k"])?),
             top_p: Some(utils::parse_f32_from_le_bytes(&value["top_p"])? as f64),
             stream: utils::parse_bool(&value["stream"])?,
+            chat: utils::parse_bool(&value["chat"])?,
+            pre_prompt_tokens: value["pre_prompt_tokens"]
+                .as_array()
+                .ok_or_else(|| anyhow!("Expected an array for pre_prompt_tokens"))?
+                .iter()
+                .map(|v| {
+                    v.as_u64()
+                        .ok_or_else(|| anyhow!("Expected a u64 for pre_prompt_tokens"))
+                        .map(|v| v as u32)
+                })
+                .collect::<Result<Vec<_>>>()?,
         })
     }
 }
@@ -451,6 +476,16 @@ impl Response {
 
     pub fn response(&self) -> Value {
         self.response.clone()
+    }
+}
+
+impl Response {
+    pub fn input_tokens(&self) -> u64 {
+        self.response["input_tokens"].as_u64().unwrap_or(0)
+    }
+
+    pub fn tokens_count(&self) -> u64 {
+        self.response["tokens_count"].as_u64().unwrap_or(0)
     }
 }
 

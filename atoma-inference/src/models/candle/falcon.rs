@@ -168,6 +168,7 @@ impl ModelTrait for FalconModel {
             .encode(prompt, true)?
             .get_ids()
             .to_vec();
+        let input_tokens = tokens.len();
 
         let request_id = Some(input.request_id).filter(|_| !input.stream);
         let mut generated_tokens = 0;
@@ -215,6 +216,8 @@ impl ModelTrait for FalconModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
+            tokens: vec![],
         })
     }
 }

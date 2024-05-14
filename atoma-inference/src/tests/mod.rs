@@ -135,6 +135,8 @@ async fn test_mock_model_thread() {
                 Some(0),
                 Some(1.0),
                 false,
+                vec![],
+                false,
             ));
             let request = Request::new(vec![], 0, 1, prompt_params);
             let command = ModelThreadCommand {
