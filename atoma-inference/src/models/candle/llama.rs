@@ -13,6 +13,7 @@ use tokenizers::Tokenizer;
 use tracing::info;
 
 use crate::models::{
+    candle::save_tensor_to_file,
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
     types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
@@ -174,6 +175,7 @@ impl ModelTrait for LlamaModel {
                 )?
             };
             index_pos += ctxt.len();
+            save_tensor_to_file(&logits, format!("d:/logits_{index}.txt").as_str())?;
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
 
