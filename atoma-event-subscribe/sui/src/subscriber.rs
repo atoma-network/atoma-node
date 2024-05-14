@@ -1,9 +1,4 @@
-use std::{
-    fmt::Write,
-    path::Path,
-    str::FromStr,
-    time::Duration,
-};
+use std::{fmt::Write, path::Path, str::FromStr, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -22,11 +17,13 @@ use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 const REQUEST_ID_HEX_SIZE: usize = 64;
 
 pub struct SuiSubscriber {
-    id: SmallId,
-    sui_client: SuiClient,
-    filter: EventFilter,
     event_sender: mpsc::Sender<Request>,
+    filter: EventFilter,
+    http_url: String,
+    id: SmallId,
     last_event_id: Option<EventID>,
+    request_timeout: Option<Duration>,
+    ws_url: Option<String>,
 }
 
 impl SuiSubscriber {
@@ -38,23 +35,31 @@ impl SuiSubscriber {
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
-        let mut sui_client_builder = SuiClientBuilder::default();
-        if let Some(duration) = request_timeout {
-            sui_client_builder = sui_client_builder.request_timeout(duration);
-        }
-        if let Some(url) = ws_url {
-            sui_client_builder = sui_client_builder.ws_url(url);
-        }
-        info!("Starting sui client..");
-        let sui_client = sui_client_builder.build(http_url).await?;
         let filter = EventFilter::Package(package_id);
         Ok(Self {
             id,
-            sui_client,
+            http_url: http_url.to_string(),
+            ws_url: ws_url.map(|s| s.to_string()),
             filter,
             event_sender,
-            last_event_id: None
+            request_timeout,
+            last_event_id: None,
         })
+    }
+
+    async fn build_client(&self) -> Result<SuiClient, SuiSubscriberError> {
+        let mut sui_client_builder = SuiClientBuilder::default();
+        if let Some(duration) = self.request_timeout {
+            sui_client_builder = sui_client_builder.request_timeout(duration);
+        }
+        if let Some(url) = self.ws_url.as_ref() {
+            sui_client_builder = sui_client_builder.ws_url(url);
+        }
+        info!("Starting sui client..");
+        sui_client_builder
+            .build(self.http_url.as_str())
+            .await
+            .map_err(SuiSubscriberError::SuiBuilderError)
     }
 
     pub async fn new_from_config<P: AsRef<Path>>(
@@ -79,38 +84,54 @@ impl SuiSubscriber {
     }
 
     pub async fn subscribe(mut self) -> Result<(), SuiSubscriberError> {
-        let event_api = self.sui_client.event_api();
-        let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
-        info!("Starting event while loop");
-        while let Some(event) = subscribe_event.next().await {
-            match event {
-                Ok(event) => self.handle_event(event).await?,
-                Err(e) => {
-                    error!("Failed to get event with error: {e}");
+        loop {
+            let sui_client = self.build_client().await?;
+            let event_api = sui_client.event_api();
+            let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
+            if let Some(event_id) = self.last_event_id.clone() {
+                self.handle_pagination_events(event_id, &sui_client).await?;
+            }
+            info!("Starting event while loop");
+            while let Some(event) = subscribe_event.next().await {
+                match event {
+                    Ok(event) => self.handle_event(event, &sui_client).await?,
+                    Err(e) => {
+                        error!("Failed to get event with error: {e}");
+                    }
                 }
             }
+            error!("WebSocket connection closed unexpedectly..");
         }
-        Ok(())
     }
 
-    pub async fn subscribe_pagination(self) -> Result<(), SuiSubscriberError> {
-        let paged_events = self
-            .sui_client
+    async fn handle_pagination_events(
+        &mut self,
+        event_id: EventID,
+        sui_client: &SuiClient,
+    ) -> Result<(), SuiSubscriberError> {
+        info!("Starting pagination, from last event_id = {:?}..", event_id);
+        let filter = self.filter.clone();
+        let paged_events = sui_client
             .event_api()
-            .query_events(self.filter, None, None, false)
+            .query_events(filter, Some(event_id), None, false)
             .await?;
-        for event in paged_events.data.iter() {
-
+        for event in paged_events.data.into_iter() {
+            self.last_event_id = Some(event.id);
+            self.handle_event(event, &sui_client).await?;
         }
         Ok(())
     }
 }
 
 impl SuiSubscriber {
-    async fn handle_event(&mut self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+    async fn handle_event(
+        &mut self,
+        event: SuiEvent,
+        sui_client: &SuiClient,
+    ) -> Result<(), SuiSubscriberError> {
         self.last_event_id = Some(event.id);
         let event_type = event.type_.name.as_str();
-        
+
         match AtomaEvent::from_str(event_type)? {
             AtomaEvent::DisputeEvent => todo!(),
             AtomaEvent::FirstSubmissionEvent
@@ -121,7 +142,10 @@ impl SuiSubscriber {
             }
             AtomaEvent::NewlySampledNodesEvent => {
                 let event_data = event.parsed_json;
-                match self.handle_newly_sampled_nodes_event(event_data).await {
+                match self
+                    .handle_newly_sampled_nodes_event(event_data, sui_client)
+                    .await
+                {
                     Ok(()) => {}
                     Err(err) => {
                         error!("Failed to process request, with error: {err}")
@@ -172,6 +196,7 @@ impl SuiSubscriber {
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,
+        sui_client: &SuiClient,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
@@ -181,8 +206,7 @@ impl SuiSubscriber {
                 path: "ticket_id".to_string(),
                 value: serde_json::from_str(ticket_id)?,
             };
-            let data = self
-                .sui_client
+            let data = sui_client
                 .event_api()
                 .query_events(event_filter, None, Some(1), false)
                 .await?;
