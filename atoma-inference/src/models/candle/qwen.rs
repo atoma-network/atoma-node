@@ -34,7 +34,7 @@ impl Model {
     }
 
     fn clear_kv_cache(&mut self) {
-        match self { 
+        match self {
             Model::Base(m) => m.clear_kv_cache(),
             Model::MoE(m) => m.clear_kv_cache(),
         }
@@ -45,12 +45,18 @@ pub struct QwenModel {
     model: Model,
     model_type: ModelType,
     device: Device,
-    dtype: DType,   
+    dtype: DType,
     tokenizer: Tokenizer,
 }
 
 impl QwenModel {
-    pub fn new(model: Model, model_type: ModelType, device: Device, dtype: DType, tokenizer: Tokenizer) -> Self {
+    pub fn new(
+        model: Model,
+        model_type: ModelType,
+        device: Device,
+        dtype: DType,
+        tokenizer: Tokenizer,
+    ) -> Self {
         Self {
             model,
             model_type,
@@ -228,7 +234,7 @@ impl ModelTrait for QwenModel {
         );
 
         self.model.clear_kv_cache();
-        
+
         Ok(Self::Output {
             text: output,
             time: dt.as_secs_f64(),
