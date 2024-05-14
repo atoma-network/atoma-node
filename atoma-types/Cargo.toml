@@ -8,5 +8,7 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 hex.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+

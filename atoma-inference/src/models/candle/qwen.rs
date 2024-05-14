@@ -198,7 +198,7 @@ impl ModelTrait for QwenModel {
             None => bail!("cannot find the <|endoftext|> token"),
         };
 
-        let request_id = Some(input.request_id).filter(|_| !input.stream);
+        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
 

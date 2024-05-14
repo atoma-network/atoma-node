@@ -131,7 +131,7 @@ impl ModelTrait for Phi3Model {
             None => bail!("cannot find the endoftext token"),
         };
 
-        let request_id = Some(input.request_id).filter(|_| !input.stream);
+        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
         let mut pos = 0;
         let mut output = String::new();
 

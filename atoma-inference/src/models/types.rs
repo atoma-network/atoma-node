@@ -331,7 +331,7 @@ pub struct TextModelInput {
     pub(crate) top_p: Option<f64>,
     pub(crate) chat: bool,
     pub(crate) pre_prompt_tokens: Vec<u32>,
-    pub(crate) stream: bool,
+    pub(crate) should_stream_output: bool,
 }
 
 impl TextModelInput {
@@ -348,7 +348,7 @@ impl TextModelInput {
         top_p: Option<f64>,
         chat: bool,
         pre_prompt_tokens: Vec<u32>,
-        stream: bool,
+        should_stream_output: bool,
     ) -> Self {
         Self {
             request_id,
@@ -362,7 +362,7 @@ impl TextModelInput {
             top_p,
             chat,
             pre_prompt_tokens,
-            stream,
+            should_stream_output,
         }
     }
 }
@@ -384,7 +384,7 @@ impl TryFrom<(Digest, PromptParams)> for TextModelInput {
                 top_p: p.top_p(),
                 chat: p.is_chat(),
                 pre_prompt_tokens: p.pre_prompt_tokens(),
-                stream: p.stream(),
+                should_stream_output: p.should_stream_output(),
             }),
             PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
         }

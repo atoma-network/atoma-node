@@ -102,10 +102,10 @@ impl AtomaNode {
         let atoma_streamer_handle = tokio::spawn(async move {
             info!("Starting Atoma streamer service..");
             let atoma_streamer = AtomaStreamer::new_from_config(streamer_config_path, streamer_rx);
-            atoma_streamer
-                .run()
-                .await
-                .map_err(AtomaNodeError::AtomaStreamerError)
+            atoma_streamer.run().await.map_err(|e| {
+                error!("Error with Atoma streamer: {e}");
+                AtomaNodeError::AtomaStreamerError(e)
+            })
         });
 
         match try_join!(

@@ -178,7 +178,7 @@ impl TryFrom<Value> for PromptParams {
 /// - repeat last n: parameter to penalize last `n` token repetition
 /// - top_k: parameter controlling `k` top tokens for sampling
 /// - top_p: parameter controlling probabilities for top tokens
-/// - stream: boolean value used for streaming the response back to the User, on some UI
+/// - should_stream_output: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2TextPromptParams {
     prompt: String,
@@ -192,7 +192,7 @@ pub struct Text2TextPromptParams {
     top_p: Option<f64>,
     chat: bool,
     pre_prompt_tokens: Vec<u32>,
-    stream: bool,
+    should_stream_output: bool,
 }
 
 impl Text2TextPromptParams {
@@ -209,7 +209,7 @@ impl Text2TextPromptParams {
         top_p: Option<f64>,
         chat: bool,
         pre_prompt_tokens: Vec<u32>,
-        stream: bool,
+        should_stream_output: bool,
     ) -> Self {
         Self {
             prompt,
@@ -223,7 +223,7 @@ impl Text2TextPromptParams {
             top_p,
             chat,
             pre_prompt_tokens,
-            stream,
+            should_stream_output,
         }
     }
 
@@ -263,8 +263,8 @@ impl Text2TextPromptParams {
         self.top_p
     }
 
-    pub fn stream(&self) -> bool {
-        self.stream
+    pub fn should_stream_output(&self) -> bool {
+        self.should_stream_output
     }
 
     pub fn is_chat(&self) -> bool {
@@ -280,6 +280,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
+        println!("FLAG: value = {value:?}");
         Ok(Self {
             prompt: utils::parse_str(&value["prompt"])?,
             model: utils::parse_str(&value["model"])?,
@@ -290,8 +291,8 @@ impl TryFrom<Value> for Text2TextPromptParams {
             max_tokens: utils::parse_u64(&value["max_tokens"])?,
             top_k: Some(utils::parse_u64(&value["top_k"])?),
             top_p: Some(utils::parse_f32_from_le_bytes(&value["top_p"])? as f64),
-            stream: utils::parse_bool(&value["stream"])?,
-            chat: utils::parse_bool(&value["chat"])?,
+            should_stream_output: utils::parse_bool(&value["should_stream_output"])?,
+            chat: utils::parse_bool(&value["prepend_output_with_input"])?,
             pre_prompt_tokens: value["pre_prompt_tokens"]
                 .as_array()
                 .ok_or_else(|| anyhow!("Expected an array for pre_prompt_tokens"))?

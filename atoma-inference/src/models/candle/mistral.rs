@@ -147,7 +147,7 @@ impl ModelTrait for MistralModel {
             None => bail!("cannot find the </s> token"),
         };
 
-        let request_id = Some(input.request_id).filter(|_| !input.stream);
+        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
         for index in 0..input.max_tokens {

@@ -256,7 +256,7 @@ impl ModelTrait for QuantizedModel {
             .get(eos_token)
             .unwrap();
 
-        let request_id = Some(input.request_id).filter(|_| !input.stream);
+        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
 
         let start_post_prompt = std::time::Instant::now();
         for index in 0..to_sample {
