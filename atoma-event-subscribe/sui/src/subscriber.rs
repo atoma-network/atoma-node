@@ -88,7 +88,7 @@ impl SuiSubscriber {
             let sui_client = self.build_client().await?;
             let event_api = sui_client.event_api();
             let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
-            if let Some(event_id) = self.last_event_id.clone() {
+            if let Some(event_id) = self.last_event_id {
                 self.handle_pagination_events(event_id, &sui_client).await?;
             }
             info!("Starting event while loop");
@@ -117,7 +117,7 @@ impl SuiSubscriber {
             .await?;
         for event in paged_events.data.into_iter() {
             self.last_event_id = Some(event.id);
-            self.handle_event(event, &sui_client).await?;
+            self.handle_event(event, sui_client).await?;
         }
         Ok(())
     }
