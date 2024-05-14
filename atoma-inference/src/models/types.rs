@@ -331,6 +331,8 @@ pub struct TextRequest {
     pub temperature: Option<f32>,
     pub top_k: Option<usize>,
     pub top_p: Option<f64>,
+    pub chat: bool,
+    pub pre_prompt_tokens: Vec<u32>,
 }
 
 impl Request for TextRequest {
@@ -346,6 +348,8 @@ impl Request for TextRequest {
             self.max_tokens,
             self.top_k,
             self.top_p,
+            self.chat,
+            self.pre_prompt_tokens,
         )
     }
 
@@ -368,6 +372,8 @@ pub struct TextModelInput {
     pub(crate) max_tokens: usize,
     pub(crate) top_k: Option<usize>,
     pub(crate) top_p: Option<f64>,
+    pub(crate) chat: bool,
+    pub(crate) pre_prompt_tokens: Vec<u32>,
 }
 
 impl TextModelInput {
@@ -381,6 +387,8 @@ impl TextModelInput {
         max_tokens: usize,
         top_k: Option<usize>,
         top_p: Option<f64>,
+        chat: bool,
+        pre_prompt_tokens: Vec<u32>,
     ) -> Self {
         Self {
             prompt,
@@ -391,6 +399,8 @@ impl TextModelInput {
             max_tokens,
             top_k,
             top_p,
+            chat,
+            pre_prompt_tokens,
         }
     }
 }
@@ -409,6 +419,8 @@ impl TryFrom<PromptParams> for TextModelInput {
                 max_tokens: p.max_tokens().try_into().unwrap(),
                 top_k: p.top_k().map(|t| t.try_into().unwrap()),
                 top_p: p.top_p(),
+                chat: p.is_chat(),
+                pre_prompt_tokens: p.pre_prompt_tokens().iter().map(|t| *t as u32).collect(),
             }),
             PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
         }
@@ -419,6 +431,7 @@ impl TryFrom<PromptParams> for TextModelInput {
 pub struct TextModelOutput {
     pub input_tokens: usize,
     pub text: String,
+    pub tokens: Vec<u32>,
     pub time: f64,
     pub tokens_count: usize,
 }
