@@ -445,6 +445,16 @@ impl Response {
     }
 }
 
+impl Response {
+    pub fn input_tokens(&self) -> u64 {
+        self.response["input_tokens"].as_u64().unwrap_or(0)
+    }
+
+    pub fn tokens_count(&self) -> u64 {
+        self.response["tokens_count"].as_u64().unwrap_or(0)
+    }
+}
+
 mod utils {
     use super::*;
 

@@ -197,6 +197,7 @@ impl ModelTrait for QuantizedModel {
         // }
 
         let prompt_tokens = tokens.get_ids().to_vec();
+        let input_tokens = prompt_tokens.len();
         let to_sample = input.max_tokens.saturating_sub(1);
         let prompt_tokens = if prompt_tokens.len() + to_sample > model::MAX_SEQ_LEN - 10 {
             let to_remove = prompt_tokens.len() + to_sample + 10 - model::MAX_SEQ_LEN;
@@ -277,6 +278,7 @@ impl ModelTrait for QuantizedModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
         })
     }
 }

@@ -159,6 +159,7 @@ impl ModelTrait for MambaModel {
             .encode(prompt, true)?
             .get_ids()
             .to_vec();
+        let input_tokens = tokens.len();
         let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
 
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
@@ -225,6 +226,7 @@ impl ModelTrait for MambaModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
         })
     }
 }

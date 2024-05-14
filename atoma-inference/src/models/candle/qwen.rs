@@ -165,6 +165,8 @@ impl ModelTrait for QwenModel {
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let input_tokens = tokens.len();
+
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
 
@@ -218,6 +220,7 @@ impl ModelTrait for QwenModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
         })
     }
 }
