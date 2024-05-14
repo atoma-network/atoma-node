@@ -1,10 +1,15 @@
-use std::str::FromStr;
-use std::{fmt::Write, path::Path, time::Duration};
+use std::{
+    fmt::Write,
+    path::Path,
+    str::FromStr,
+    time::Duration,
+};
 
 use futures::StreamExt;
 use serde_json::Value;
 use sui_sdk::rpc_types::{EventFilter, SuiEvent};
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
+use sui_sdk::types::event::EventID;
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -21,6 +26,7 @@ pub struct SuiSubscriber {
     sui_client: SuiClient,
     filter: EventFilter,
     event_sender: mpsc::Sender<Request>,
+    last_event_id: Option<EventID>,
 }
 
 impl SuiSubscriber {
@@ -47,6 +53,7 @@ impl SuiSubscriber {
             sui_client,
             filter,
             event_sender,
+            last_event_id: None
         })
     }
 
@@ -71,7 +78,7 @@ impl SuiSubscriber {
         .await
     }
 
-    pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
+    pub async fn subscribe(mut self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
         info!("Starting event while loop");
@@ -85,11 +92,25 @@ impl SuiSubscriber {
         }
         Ok(())
     }
+
+    pub async fn subscribe_pagination(self) -> Result<(), SuiSubscriberError> {
+        let paged_events = self
+            .sui_client
+            .event_api()
+            .query_events(self.filter, None, None, false)
+            .await?;
+        for event in paged_events.data.iter() {
+
+        }
+        Ok(())
+    }
 }
 
 impl SuiSubscriber {
-    async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+    async fn handle_event(&mut self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+        self.last_event_id = Some(event.id);
         let event_type = event.type_.name.as_str();
+        
         match AtomaEvent::from_str(event_type)? {
             AtomaEvent::DisputeEvent => todo!(),
             AtomaEvent::FirstSubmissionEvent
