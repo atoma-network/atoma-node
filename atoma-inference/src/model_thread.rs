@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, thread::JoinHandle, sync::mpsc
+    collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
 use atoma_types::{Digest, Request, Response};
