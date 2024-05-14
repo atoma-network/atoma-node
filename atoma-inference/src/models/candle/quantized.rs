@@ -286,7 +286,7 @@ impl ModelTrait for QuantizedModel {
             tokens_count: generated_tokens,
             input_tokens,
             tokens: if input.chat {
-                vec![prompt_tokens.as_slice(), all_tokens.as_slice()].concat()
+                [prompt_tokens.as_slice(), all_tokens.as_slice()].concat()
             } else {
                 vec![]
             },

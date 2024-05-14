@@ -280,6 +280,8 @@ mod tests {
             max_tokens,
             Some(top_k),
             Some(top_p),
+            false,
+            vec![],
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");

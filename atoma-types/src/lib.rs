@@ -292,7 +292,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
                 .map(|v| {
                     v.as_u64()
                         .ok_or_else(|| anyhow!("Expected a u64 for pre_prompt_tokens"))
-                        .and_then(|v| Ok(v as u32))
+                        .map(|v| v as u32)
                 })
                 .collect::<Result<Vec<_>>>()?,
         })

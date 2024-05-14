@@ -420,7 +420,7 @@ impl TryFrom<PromptParams> for TextModelInput {
                 top_k: p.top_k().map(|t| t.try_into().unwrap()),
                 top_p: p.top_p(),
                 chat: p.is_chat(),
-                pre_prompt_tokens: p.pre_prompt_tokens().iter().map(|t| *t as u32).collect(),
+                pre_prompt_tokens: p.pre_prompt_tokens(),
             }),
             PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
         }
