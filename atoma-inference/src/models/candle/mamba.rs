@@ -153,12 +153,13 @@ impl ModelTrait for MambaModel {
 
         info!("Running inference on prompt: {:?}", prompt);
 
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
         let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
 
@@ -177,9 +178,6 @@ impl ModelTrait for MambaModel {
             let logits = self.model.forward(&input, &mut state)?;
 
             next_logits = Some(logits);
-            if let Some(t) = self.tokenizer.next_token(token)? {
-                output.push_str(t.as_str());
-            }
         }
 
         let start_gen = Instant::now();
@@ -198,12 +196,12 @@ impl ModelTrait for MambaModel {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
 
             if next_token == eos_token {
                 break;
             }
 
+            tokens.push(next_token);
             if let Some(t) = self.tokenizer.next_token(next_token)? {
                 output.push_str(t.as_str());
             }
@@ -227,6 +225,7 @@ impl ModelTrait for MambaModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }
@@ -305,6 +304,8 @@ mod tests {
             max_tokens,
             Some(top_k),
             Some(top_p),
+            false,
+            vec![],
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
