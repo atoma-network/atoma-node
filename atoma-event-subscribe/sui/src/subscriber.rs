@@ -100,7 +100,7 @@ impl SuiSubscriber {
                     }
                 }
             }
-            error!("WebSocket connection closed unexpedectly..");
+            error!("WebSocket connection closed unexpectedly..");
         }
     }
 
