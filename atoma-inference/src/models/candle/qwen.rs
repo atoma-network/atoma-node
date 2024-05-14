@@ -240,6 +240,7 @@ impl ModelTrait for QwenModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
+            tokens: vec![],
         })
     }
 }
