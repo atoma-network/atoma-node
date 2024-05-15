@@ -196,7 +196,8 @@ impl ModelTrait for QuantizedModel {
         //     }
         // }
 
-        let prompt_tokens = tokens.get_ids().to_vec();
+        let prompt_tokens = [&input.pre_prompt_tokens, tokens.get_ids()].concat();
+        let input_tokens = prompt_tokens.len();
         let to_sample = input.max_tokens.saturating_sub(1);
         let prompt_tokens = if prompt_tokens.len() + to_sample > model::MAX_SEQ_LEN - 10 {
             let to_remove = prompt_tokens.len() + to_sample + 10 - model::MAX_SEQ_LEN;
@@ -231,7 +232,13 @@ impl ModelTrait for QuantizedModel {
 
         let eos_token = match self.model_type {
             ModelType::QuantizedL8b => "<|end_of_text|>",
-            _ => "</s>",
+            _ => {
+                if input.chat {
+                    "<|end_of_turn|>"
+                } else {
+                    "</s>"
+                }
+            }
         };
 
         let eos_token = *self
@@ -277,6 +284,12 @@ impl ModelTrait for QuantizedModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
+            tokens: if input.chat {
+                [prompt_tokens.as_slice(), all_tokens.as_slice()].concat()
+            } else {
+                vec![]
+            },
         })
     }
 }

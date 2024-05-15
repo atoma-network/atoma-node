@@ -78,7 +78,7 @@ impl AtomaSuiClient {
             }
 
             let img_data = array
-                .get(0)
+                .first()
                 .and_then(|img| img.as_array())
                 .ok_or(AtomaSuiClientError::MissingOutputData)?;
             let img = img_data
@@ -99,6 +99,8 @@ impl AtomaSuiClient {
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
 
+            info!("Image data length: {:?}", img.len());
+
             let mut result = img;
             result.extend_from_slice(&height);
             result.extend_from_slice(&width);
@@ -113,9 +115,7 @@ impl AtomaSuiClient {
     /// Upon receiving a response from the `AtomaNode` service, this method extracts
     /// the output data and computes a cryptographic commitment. The commitment includes
     /// the root of an n-ary Merkle Tree built from the output data, represented as a `Vec<u8>`,
-    /// and the indices of the sampled nodes used for inference. For example, if two nodes
-    /// were sampled and produced an output `vec![1, 2, 3, 4, 5, 6, 7, 8]`, the Merkle tree
-    /// would have leaves built directly from `vec![[1, 2, 3, 4], [5, 6, 7, 8]]`.
+    /// and the indices of the sampled nodes used for inference.
     /// Additionally, the commitment contains a Merkle path from the node's leaf index
     /// (in the `sampled_nodes` vector) to the root.
     ///
@@ -130,6 +130,9 @@ impl AtomaSuiClient {
         let (index, num_leaves) = (response.sampled_node_index(), response.num_sampled_nodes());
         let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
 
+        let num_input_tokens = response.input_tokens();
+        let num_output_tokens = response.tokens_count();
+
         let client = self.wallet_ctx.get_client().await?;
         let tx = client
             .transaction_builder()
@@ -143,6 +146,8 @@ impl AtomaSuiClient {
                     SuiJsonValue::from_object_id(self.config.atoma_db_id()),
                     SuiJsonValue::from_object_id(self.config.node_badge_id()),
                     SuiJsonValue::new(request_id.into())?,
+                    SuiJsonValue::new(num_input_tokens.to_string().into())?,
+                    SuiJsonValue::new(num_output_tokens.to_string().into())?,
                     SuiJsonValue::new(root.as_ref().into())?,
                     SuiJsonValue::new(pre_image.as_ref().into())?,
                 ],
@@ -175,7 +180,9 @@ impl AtomaSuiClient {
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_rx.recv().await {
             info!("Received new response: {:?}", response);
-            self.submit_response_commitment(response).await?;
+            if let Err(e) = self.submit_response_commitment(response).await {
+                error!("Failed to submit response commitment: {:?}", e);
+            }
         }
         Ok(())
     }

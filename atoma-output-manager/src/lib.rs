@@ -1,23 +1,41 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use atoma_types::{Digest, Response};
+use config::AtomaFirebaseConfig;
 use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
+mod config;
+
 pub struct AtomaOutputManager {
     firebase_uri: PathBuf,
+    firebase_auth_token: String,
     output_manager_rx: mpsc::Receiver<(Digest, Response)>,
 }
 
 impl AtomaOutputManager {
     pub fn new(
         firebase_uri: PathBuf,
+        firebase_auth_token: String,
         output_manager_rx: mpsc::Receiver<(Digest, Response)>,
     ) -> Self {
         Self {
             firebase_uri,
+            firebase_auth_token,
+            output_manager_rx,
+        }
+    }
+
+    pub fn new_from_config(
+        config_path: &Path,
+        output_manager_rx: mpsc::Receiver<(Digest, Response)>,
+    ) -> Self {
+        let config = AtomaFirebaseConfig::from_file_path(config_path);
+        Self {
+            firebase_uri: config.firebase_uri(),
+            firebase_auth_token: config.firebase_auth_token(),
             output_manager_rx,
         }
     }
@@ -52,6 +70,7 @@ impl AtomaOutputManager {
         );
         let response = client
             .post(url.to_str().unwrap())
+            .bearer_auth(&self.firebase_auth_token)
             .json(&data)
             .send()
             .await?;

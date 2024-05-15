@@ -92,54 +92,62 @@ RUST_LOG=info cargo run --release --features flash-attn -- --atoma-sui-client-co
 
 The supported models currently are:
 
-| Model Type                     | Hugging Face model name        |
-|--------------------------------|--------------------------------|
-| falcon_7b                      | tiiuae/falcon-7b               |
-| falcon_40b                     | tiiuae/falcon-40b              |
-| falcon_180b                    | tiiuae/falcon-180b             |
-| llama_v1                       | Narsil/amall-7b                |
-| llama_v2                       | meta-llama/Llama-2-7b-hf       |
-| llama_solar_10_7b              | upstage/SOLAR-10.7B-v1.0       |
-| llama_tiny_llama_1_1b_chat     | TinyLlama/TinyLlama-1.1B-Chat-v1.0 |
-| llama3_8b                      | meta-llama/Meta-Llama-3-8B      |
-| llama3_instruct_8b             | meta-llama/Meta-Llama-3-8B-Instruct |
-| llama3_70b                     | meta-llama/Meta-Llama-3-70B     |
-| mamba_130m                     | state-spaces/mamba-130m         |
-| mamba_370m                     | state-spaces/mamba-370m         |
-| mamba_790m                     | state-spaces/mamba-790m         |
-| mamba_1-4b                     | state-spaces/mamba-1.4b         |
-| mamba_2-8b                     | state-spaces/mamba-2.8b         |
-| mistral_7bv01                  | mistralai/Mistral-7B-v0.1       |
-| mistral_7bv02                  | mistralai/Mistral-7B-v0.2       |
-| mistral_7b-instruct-v01        | mistralai/Mistral-7B-Instruct-v0.1 |
-| mistral_7b-instruct-v02        | mistralai/Mistral-7B-Instruct-v0.2 |
-| mixtral_8x7b                   | mistralai/Mixtral-8x7B-v0.1     |
-| phi_3-mini                     | microsoft/Phi-3-mini-4k-instruct |
-| stable_diffusion_v1-5          | runwayml/stable-diffusion-v1-5  |
-| stable_diffusion_v2-1          | stabilityai/stable-diffusion-2-1 |
-| stable_diffusion_xl            | stabilityai/stable-diffusion-xl-base-1.0 |
-| stable_diffusion_turbo         | stabilityai/sdxl-turbo          |
-| quantized_7b                   | TheBloke/Llama-2-7B-GGML        |
-| quantized_13b                  | TheBloke/Llama-2-13B-GGML       |
-| quantized_70b                  | TheBloke/Llama-2-70B-GGML       |
-| quantized_7b-chat              | TheBloke/Llama-2-7B-Chat-GGML   |
-| quantized_13b-chat             | TheBloke/Llama-2-13B-Chat-GGML  |
-| quantized_70b-chat             | TheBloke/Llama-2-70B-Chat-GGML  |
-| quantized_7b-code              | TheBloke/CodeLlama-7B-GGUF     |
-| quantized_13b-code             | TheBloke/CodeLlama-13B-GGUF    |
-| quantized_32b-code             | TheBloke/CodeLlama-34B-GGUF    |
-| quantized_7b-leo               | TheBloke/leo-hessianai-7B-GGUF |
-| quantized_13b-leo              | TheBloke/leo-hessianai-13B-GGUF |
-| quantized_7b-mistral           | TheBloke/Mistral-7B-v0.1-GGUF  |
-| quantized_7b-mistral-instruct  | TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF |
-| quantized_7b-mistral-instruct-v0.2 | TheBloke/Mistral-7B-Instruct-v0.2-GGUF |
-| quantized_7b-zephyr-a          | TheBloke/zephyr-7B-alpha-GGUF   |
-| quantized_7b-zephyr-b          | TheBloke/zephyr-7B-beta-GGUF    |
-| quantized_7b-open-chat-3.5     | TheBloke/openchat_3.5-GGUF     |
-| quantized_7b-starling-a        | TheBloke/Starling-LM-7B-alpha-GGUF |
-| quantized_mixtral              | TheBloke/Mixtral-8x7B-v0.1-GGUF |
-| quantized_mixtral-instruct     | TheBloke/Mistral-7B-Instruct-v0.1-GGUF |
-| quantized_llama3-8b            | QuantFactory/Meta-Llama-3-8B-GGUF |
+| Model Type                         | Hugging Face model name                  |
+|------------------------------------|------------------------------------------|
+| falcon_7b                          | tiiuae/falcon-7b                         |
+| falcon_40b                         | tiiuae/falcon-40b                        |
+| falcon_180b                        | tiiuae/falcon-180b                       |
+| llama_v1                           | Narsil/amall-7b                          |
+| llama_v2                           | meta-llama/Llama-2-7b-hf                 |
+| llama_solar_10_7b                  | upstage/SOLAR-10.7B-v1.0                 |
+| llama_tiny_llama_1_1b_chat         | TinyLlama/TinyLlama-1.1B-Chat-v1.0       |
+| llama3_8b                          | meta-llama/Meta-Llama-3-8B               |
+| llama3_instruct_8b                 | meta-llama/Meta-Llama-3-8B-Instruct      |
+| llama3_70b                         | meta-llama/Meta-Llama-3-70B              |
+| mamba_130m                         | state-spaces/mamba-130m                  |
+| mamba_370m                         | state-spaces/mamba-370m                  |
+| mamba_790m                         | state-spaces/mamba-790m                  |
+| mamba_1-4b                         | state-spaces/mamba-1.4b                  |
+| mamba_2-8b                         | state-spaces/mamba-2.8b                  |
+| mistral_7bv01                      | mistralai/Mistral-7B-v0.1                |
+| mistral_7bv02                      | mistralai/Mistral-7B-v0.2                |
+| mistral_7b-instruct-v01            | mistralai/Mistral-7B-Instruct-v0.1       |
+| mistral_7b-instruct-v02            | mistralai/Mistral-7B-Instruct-v0.2       |
+| mixtral_8x7b                       | mistralai/Mixtral-8x7B-v0.1              |
+| phi_3-mini                         | microsoft/Phi-3-mini-4k-instruct         |
+| stable_diffusion_v1-5              | runwayml/stable-diffusion-v1-5           |
+| stable_diffusion_v2-1              | stabilityai/stable-diffusion-2-1         |
+| stable_diffusion_xl                | stabilityai/stable-diffusion-xl-base-1.0 |
+| stable_diffusion_turbo             | stabilityai/sdxl-turbo                   |
+| quantized_7b                       | TheBloke/Llama-2-7B-GGML                 |
+| quantized_13b                      | TheBloke/Llama-2-13B-GGML                |
+| quantized_70b                      | TheBloke/Llama-2-70B-GGML                |
+| quantized_7b-chat                  | TheBloke/Llama-2-7B-Chat-GGML            |
+| quantized_13b-chat                 | TheBloke/Llama-2-13B-Chat-GGML           |
+| quantized_70b-chat                 | TheBloke/Llama-2-70B-Chat-GGML           |
+| quantized_7b-code                  | TheBloke/CodeLlama-7B-GGUF               |
+| quantized_13b-code                 | TheBloke/CodeLlama-13B-GGUF              |
+| quantized_32b-code                 | TheBloke/CodeLlama-34B-GGUF              |
+| quantized_7b-leo                   | TheBloke/leo-hessianai-7B-GGUF           |
+| quantized_13b-leo                  | TheBloke/leo-hessianai-13B-GGUF          |
+| quantized_7b-mistral               | TheBloke/Mistral-7B-v0.1-GGUF            |
+| quantized_7b-mistral-instruct      | TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF |
+| quantized_7b-mistral-instruct-v0.2 | TheBloke/Mistral-7B-Instruct-v0.2-GGUF   |
+| quantized_7b-zephyr-a              | TheBloke/zephyr-7B-alpha-GGUF            |
+| quantized_7b-zephyr-b              | TheBloke/zephyr-7B-beta-GGUF             |
+| quantized_7b-open-chat-3.5         | TheBloke/openchat_3.5-GGUF               |
+| quantized_7b-starling-a            | TheBloke/Starling-LM-7B-alpha-GGUF       |
+| quantized_mixtral                  | TheBloke/Mixtral-8x7B-v0.1-GGUF          |
+| quantized_mixtral-instruct         | TheBloke/Mistral-7B-Instruct-v0.1-GGUF   |
+| quantized_llama3-8b                | QuantFactory/Meta-Llama-3-8B-GGUF        |
+| qwen_w0.5b                         | Qwen/Qwen1.5-0.5B                        |
+| qwen_w1.8b                         | Qwen/Qwen1.5-1.8B                        |
+| qwen_w4b                           | Qwen/Qwen1.5-4B                          |
+| qwen_w7b                           | qwen/Qwen1.5-7B                          |
+| qwen_w14b                          | qwen/Qwen1.5-14B                         |
+| qwen_w72b                          | qwen/Qwen1.5-72B                         |
+| qwen_moe_a2.7b                     | qwen/Qwen1.5-MoE-A2.7B                   |
+
 
 For example, if a user wants to run a node hosting a quantized 7b mistral model, it can do so simply by setting
 

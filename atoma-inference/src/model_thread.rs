@@ -13,7 +13,7 @@ use crate::{
     models::{
         candle::{
             falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel,
+            mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel, qwen::QwenModel,
             stable_diffusion::StableDiffusion,
         },
         config::{ModelConfig, ModelsConfig},
@@ -224,16 +224,6 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
         ),
-        ModelType::StableDiffusionV1_5
-        | ModelType::StableDiffusionV2_1
-        | ModelType::StableDiffusionTurbo
-        | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-        ),
         ModelType::QuantizedLlamaV2_7b
         | ModelType::QuantizedLlamaV2_13b
         | ModelType::QuantizedLlamaV2_70b
@@ -255,6 +245,29 @@ pub(crate) fn dispatch_model_thread(
         | ModelType::QuantizedMixtral
         | ModelType::QuantizedMixtralInstruct
         | ModelType::QuantizedL8b => spawn_model_thread::<QuantizedModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            model_receiver,
+        ),
+        ModelType::QwenW0_5b
+        | ModelType::QwenW1_8b
+        | ModelType::QwenW4b
+        | ModelType::QwenW7b
+        | ModelType::QwenW14b
+        | ModelType::QwenW72b
+        | ModelType::QwenMoeA27b => spawn_model_thread::<QwenModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            model_receiver,
+        ),
+        ModelType::StableDiffusionV1_5
+        | ModelType::StableDiffusionV2_1
+        | ModelType::StableDiffusionTurbo
+        | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
             model_name,
             api_key,
             cache_dir,

@@ -135,11 +135,13 @@ impl ModelTrait for LlamaModel {
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
-        let mut tokens = if self.model_type == ModelType::Llama3_8b {
+        let tokens = if self.model_type == ModelType::Llama3_8b {
             vec![bos_token_id].into_iter().chain(prompt_ids).collect()
         } else {
             prompt_ids
         };
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
+        let input_tokens = tokens.len();
 
         let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
         let mut logits_processor =
@@ -199,6 +201,8 @@ impl ModelTrait for LlamaModel {
             text: res,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            input_tokens,
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }
@@ -276,6 +280,8 @@ mod tests {
             max_tokens,
             Some(top_k),
             Some(top_p),
+            false,
+            vec![],
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");
