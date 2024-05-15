@@ -4,6 +4,8 @@ use atoma_types::Digest;
 
 use crate::{bail, models::ModelError};
 
+const END_STREAM: &str = "[ATOMA_END_STREAM]";
+
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
 /// streaming way rather than having to wait for the full decoding.
 pub struct TokenOutputStream {
@@ -111,5 +113,11 @@ impl TokenOutputStream {
         self.tokens.clear();
         self.prev_index = 0;
         self.current_index = 0;
+    }
+
+    pub fn end_stream(&self, tx_digest: Digest) -> Result<(), ModelError> {
+        self.stream_tx
+            .blocking_send((tx_digest, END_STREAM.to_string()))
+            .map_err(ModelError::SendError)
     }
 }

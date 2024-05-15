@@ -256,7 +256,7 @@ impl ModelTrait for QuantizedModel {
             .get(eos_token)
             .unwrap();
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
 
         let start_post_prompt = std::time::Instant::now();
         for index in 0..to_sample {
@@ -284,7 +284,7 @@ impl ModelTrait for QuantizedModel {
         }
         if let Some(rest) = self
             .tokenizer
-            .decode_rest(request_id)
+            .decode_rest(request_id.clone())
             .map_err(candle::Error::msg)?
         {
             output.push_str(rest.as_str());
@@ -295,6 +295,12 @@ impl ModelTrait for QuantizedModel {
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
+
         Ok(TextModelOutput {
             text: output,
             time: dt.as_secs_f64(),

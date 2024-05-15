@@ -167,7 +167,7 @@ impl ModelTrait for MixtralModel {
         }
 
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
         }
 
@@ -175,6 +175,12 @@ impl ModelTrait for MixtralModel {
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
+
         Ok(TextModelOutput {
             text: output,
             time: dt.as_secs_f64(),

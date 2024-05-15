@@ -198,7 +198,7 @@ impl ModelTrait for QwenModel {
             None => bail!("cannot find the <|endoftext|> token"),
         };
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
 
@@ -231,7 +231,7 @@ impl ModelTrait for QwenModel {
             }
         }
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
         }
 
@@ -241,6 +241,10 @@ impl ModelTrait for QwenModel {
         );
 
         self.model.clear_kv_cache();
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
 
         Ok(Self::Output {
             text: output,

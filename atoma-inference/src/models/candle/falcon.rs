@@ -206,12 +206,20 @@ impl ModelTrait for FalconModel {
 
             generated_tokens += 1;
         }
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
+            output += &rest;
+        }
         let dt = start_gen.elapsed();
 
         info!(
             "{generated_tokens} tokens generated ({} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
 
         Ok(TextModelOutput {
             text: output,

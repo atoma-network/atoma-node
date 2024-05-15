@@ -131,7 +131,7 @@ impl ModelTrait for Phi3Model {
             None => bail!("cannot find the endoftext token"),
         };
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut pos = 0;
         let mut output = String::new();
 
@@ -162,10 +162,21 @@ impl ModelTrait for Phi3Model {
             pos += context_size;
         }
         let dt = start_gen.elapsed();
+        
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
+            output.push_str(&rest);
+        }
+
         info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
+
         Ok(TextModelOutput {
             text: output,
             time: dt.as_secs_f64(),

@@ -197,7 +197,7 @@ impl ModelTrait for LlamaModel {
 
             generated_tokens += 1;
         }
-        if let Some(rest) = self.tokenizer.decode_rest(request_id)? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             res += &rest;
         }
 
@@ -206,6 +206,11 @@ impl ModelTrait for LlamaModel {
             "{generated_tokens} tokens generated ({} token/s)\n",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
 
         Ok(TextModelOutput {
             text: res,

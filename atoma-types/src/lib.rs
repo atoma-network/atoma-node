@@ -280,7 +280,6 @@ impl TryFrom<Value> for Text2TextPromptParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        println!("FLAG: value = {value:?}");
         Ok(Self {
             prompt: utils::parse_str(&value["prompt"])?,
             model: utils::parse_str(&value["model"])?,
