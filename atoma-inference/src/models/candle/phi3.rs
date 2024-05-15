@@ -162,7 +162,7 @@ impl ModelTrait for Phi3Model {
             pos += context_size;
         }
         let dt = start_gen.elapsed();
-        
+
         if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
         }
