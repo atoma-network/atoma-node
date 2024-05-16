@@ -30,16 +30,13 @@ pub struct AtomaNode {
 
 impl AtomaNode {
     pub async fn start<P>(
-        atoma_sui_client_config_path: P,
-        model_config_path: P,
-        sui_subscriber_path: P,
-        output_manager_config_path: P,
+        config_path: P,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     ) -> Result<(), AtomaNodeError>
     where
-        P: AsRef<Path> + Send + 'static,
+        P: AsRef<Path> + Send + 'static + Clone,
     {
-        let model_config = ModelsConfig::from_file_path(model_config_path);
+        let model_config = ModelsConfig::from_file_path(config_path.clone());
 
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
@@ -59,40 +56,47 @@ impl AtomaNode {
                 .map_err(AtomaNodeError::ModelServiceError)
         });
 
-        let sui_subscriber_handle = tokio::spawn(async move {
-            info!("Starting Sui subscriber service..");
-            let sui_event_subscriber =
-                SuiSubscriber::new_from_config(sui_subscriber_path, subscriber_req_tx).await?;
-            sui_event_subscriber
-                .subscribe()
-                .await
-                .map_err(AtomaNodeError::SuiSubscriberError)
-        });
+        let sui_subscriber_handle = {
+            let config_path = config_path.clone();
+            tokio::spawn(async move {
+                info!("Starting Sui subscriber service..");
+                let sui_event_subscriber =
+                    SuiSubscriber::new_from_config(config_path, subscriber_req_tx).await?;
+                sui_event_subscriber
+                    .subscribe()
+                    .await
+                    .map_err(AtomaNodeError::SuiSubscriberError)
+            })
+        };
 
-        let atoma_sui_client_handle = tokio::spawn(async move {
-            info!("Starting Atoma Sui client service..");
-            let atoma_sui_client = AtomaSuiClient::new_from_config_file(
-                atoma_sui_client_config_path,
-                atoma_node_resp_rx,
-                output_manager_tx,
-            )?;
-            atoma_sui_client
-                .run()
-                .await
-                .map_err(AtomaNodeError::AtomaSuiClientError)
-        });
+        let atoma_sui_client_handle = {
+            let config_path = config_path.clone();
+            tokio::spawn(async move {
+                info!("Starting Atoma Sui client service..");
+                let atoma_sui_client = AtomaSuiClient::new_from_config_file(
+                    config_path.clone(),
+                    atoma_node_resp_rx,
+                    output_manager_tx,
+                )?;
+                atoma_sui_client
+                    .run()
+                    .await
+                    .map_err(AtomaNodeError::AtomaSuiClientError)
+            })
+        };
 
-        let atoma_output_manager_handle = tokio::spawn(async move {
-            info!("Starting Atoma output manager service..");
-            let atoma_output_manager = AtomaOutputManager::new_from_config(
-                output_manager_config_path.as_ref(),
-                output_manager_rx,
-            );
-            atoma_output_manager
-                .run()
-                .await
-                .map_err(AtomaNodeError::AtomaOutputManagerError)
-        });
+        let atoma_output_manager_handle = {
+            let config_path = config_path.clone();
+            tokio::spawn(async move {
+                info!("Starting Atoma output manager service..");
+                let atoma_output_manager =
+                    AtomaOutputManager::new_from_config(config_path, output_manager_rx);
+                atoma_output_manager
+                    .run()
+                    .await
+                    .map_err(AtomaNodeError::AtomaOutputManagerError)
+            })
+        };
 
         match try_join!(
             model_service_handle,

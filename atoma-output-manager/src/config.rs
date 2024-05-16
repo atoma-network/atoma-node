@@ -18,7 +18,7 @@ impl AtomaFirebaseConfig {
             .build()
             .expect("Failed to generate Atoma Sui client configuration file");
         config
-            .try_deserialize::<Self>()
+            .get::<Self>("output_manager")
             .expect("Failed to generated Atoma Sui client config file")
     }
 
