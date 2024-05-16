@@ -177,7 +177,7 @@ impl ModelTrait for MambaModel {
 
         let mut state = State::new(1, &self.config, self.dtype, &self.device)?; // TODO: handle larger batch sizes
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut next_logits = None;
         let mut output = String::new();
 

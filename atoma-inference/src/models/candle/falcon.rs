@@ -171,7 +171,7 @@ impl ModelTrait for FalconModel {
             .to_vec();
         let input_tokens = tokens.len();
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut generated_tokens = 0;
         let mut new_tokens = vec![];
         let mut output = String::new();

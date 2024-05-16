@@ -158,7 +158,7 @@ impl ModelTrait for LlamaModel {
         let mut res = String::new();
         let mut generated_tokens = 0;
 
-        let request_id = Some(input.request_id).filter(|_| !input.should_stream_output);
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut cache = model::Cache::new(true, self.dtype, &self.config, &self.device)?;
         let start_gen = Instant::now();
 
