@@ -2,6 +2,7 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
+use atoma_types::Digest;
 use atoma_types::Text2TextPromptParams;
 use prompts::PROMPTS;
 use serde::Serialize;
@@ -31,10 +32,10 @@ struct MockInputOutput {
     id: u64,
 }
 
-impl TryFrom<PromptParams> for MockInputOutput {
+impl TryFrom<(Digest, PromptParams)> for MockInputOutput {
     type Error = ModelError;
 
-    fn try_from(value: PromptParams) -> Result<Self, Self::Error> {
+    fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
         Ok(Self {
             id: value.into_text2text_prompt_params().unwrap().max_tokens(),
         })
@@ -54,7 +55,10 @@ impl ModelTrait for TestModel {
         Ok(Duration::from_secs(duration.parse().unwrap()))
     }
 
-    fn load(duration: Self::LoadData) -> Result<Self, ModelError>
+    fn load(
+        duration: Self::LoadData,
+        _: tokio::sync::mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -76,7 +80,7 @@ impl ModelTrait for TestModel {
 }
 
 impl ModelThreadDispatcher {
-    fn test_start() -> Self {
+    fn test_start(stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>) -> Self {
         let duration_in_secs = vec![1, 2, 5, 10];
         let mut model_senders = HashMap::with_capacity(4);
 
@@ -97,6 +101,7 @@ impl ModelThreadDispatcher {
                 cache_dir,
                 model_config,
                 model_receiver,
+                stream_tx.clone(),
             );
         }
         Self {
@@ -110,7 +115,8 @@ impl ModelThreadDispatcher {
 async fn test_mock_model_thread() {
     const NUM_REQUESTS: usize = 16;
 
-    let model_thread_dispatcher = ModelThreadDispatcher::test_start();
+    let (stream_tx, _) = tokio::sync::mpsc::channel(1);
+    let model_thread_dispatcher = ModelThreadDispatcher::test_start(stream_tx);
     let mut responses = FuturesUnordered::new();
 
     let mut should_be_received_responses = vec![];
@@ -130,16 +136,20 @@ async fn test_mock_model_thread() {
                 Some(1.0),
                 false,
                 vec![],
+                false,
             ));
-            let request = Request::new(vec![0], 0, 1, prompt_params);
+            let request = Request::new(vec![], 0, 1, prompt_params);
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
             responses.push(response_receiver);
-            should_be_received_responses
-                .push(MockInputOutput::try_from(request.params()).unwrap().id);
+            should_be_received_responses.push(
+                MockInputOutput::try_from((String::new(), request.params()))
+                    .unwrap()
+                    .id,
+            );
         }
     }
 
@@ -198,6 +208,7 @@ async fn test_inference_service() {
         tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
+    let (stream_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
 
     println!("Starting model service..");
     let mut service = ModelService::start(
@@ -205,6 +216,7 @@ async fn test_inference_service() {
         json_server_req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
+        stream_tx,
     )
     .unwrap();
 

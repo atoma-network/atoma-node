@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use atoma_types::PromptParams;
+use atoma_types::{Digest, PromptParams};
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use self::{config::ModelConfig, types::ModelType};
 
@@ -15,7 +16,7 @@ pub mod types;
 pub type ModelId = String;
 
 pub trait ModelTrait {
-    type Input: TryFrom<PromptParams, Error = ModelError>;
+    type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
     type Output: Serialize;
     type LoadData;
 
@@ -24,7 +25,10 @@ pub trait ModelTrait {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError>;
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized;
     fn model_type(&self) -> ModelType;
@@ -69,6 +73,8 @@ pub enum ModelError {
     InvalidModelType(String),
     #[error("Invalid model input")]
     InvalidModelInput,
+    #[error("Send error: `{0}`")]
+    SendError(#[from] mpsc::error::SendError<(Digest, String)>),
 }
 
 #[macro_export]

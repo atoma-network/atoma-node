@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -9,6 +10,7 @@ use candle_transformers::{
 };
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::{
@@ -91,7 +93,10 @@ impl ModelTrait for MistralModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -113,7 +118,7 @@ impl ModelTrait for MistralModel {
             model,
             device,
             dtype,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         })
     }
 
@@ -122,6 +127,9 @@ impl ModelTrait for MistralModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {}", input.prompt);
+        self.tokenizer.clear();
+
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut tokens = self
@@ -139,6 +147,7 @@ impl ModelTrait for MistralModel {
             None => bail!("cannot find the </s> token"),
         };
 
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
         for index in 0..input.max_tokens {
@@ -161,13 +170,13 @@ impl ModelTrait for MistralModel {
             if next_token == eos_token {
                 break;
             }
-            if let Some(word) = self.tokenizer.next_token(next_token)? {
+            if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&word);
             }
         }
 
         let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
         }
 
@@ -175,6 +184,12 @@ impl ModelTrait for MistralModel {
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
+
         Ok(TextModelOutput {
             text: output,
             time: dt.as_secs_f64(),
