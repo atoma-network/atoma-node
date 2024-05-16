@@ -28,6 +28,8 @@ impl GatewayOutputManager {
         }
     }
 
-    async fn handle_request(tx_digest: Vec<u8>, data: Value) -> 
+    async fn handle_request(tx_digest: Vec<u8>, data: Value) {
+        
+    }
 }
 
