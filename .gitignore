@@ -2,10 +2,4 @@ Cargo.lock
 target/
 .vscode/
 /models/
-inference.toml
-sui_subscriber.toml
-sui_client.toml
-output_manager.toml
-streamer_config.toml
 config.toml
-
