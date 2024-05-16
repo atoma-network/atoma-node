@@ -1,4 +1,10 @@
+use tokio::sync::mpsc;
+
+use atoma_types::Digest;
+
 use crate::{bail, models::ModelError};
+
+const END_STREAM: &str = "[ATOMA_END_STREAM]";
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
 /// streaming way rather than having to wait for the full decoding.
@@ -7,15 +13,20 @@ pub struct TokenOutputStream {
     tokens: Vec<u32>,
     prev_index: usize,
     current_index: usize,
+    stream_tx: mpsc::Sender<(Digest, String)>,
 }
 
 impl TokenOutputStream {
-    pub fn new(tokenizer: tokenizers::Tokenizer) -> Self {
+    pub fn new(
+        tokenizer: tokenizers::Tokenizer,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Self {
         Self {
             tokenizer,
             tokens: Vec::new(),
             prev_index: 0,
             current_index: 0,
+            stream_tx,
         }
     }
 
@@ -31,7 +42,11 @@ impl TokenOutputStream {
     }
 
     // https://github.com/huggingface/text-generation-inference/blob/5ba53d44a18983a4de32d122f4cb46f4a17d9ef6/server/text_generation_server/models/model.py#L68
-    pub fn next_token(&mut self, token: u32) -> Result<Option<String>, ModelError> {
+    pub fn next_token(
+        &mut self,
+        token: u32,
+        request_id: Option<Digest>,
+    ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -44,13 +59,19 @@ impl TokenOutputStream {
             let text = text.split_at(prev_text.len());
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
-            Ok(Some(text.1.to_string()))
+            let output = text.1.to_string();
+            if let Some(digest) = request_id {
+                self.stream_tx
+                    .blocking_send((digest, output.clone()))
+                    .map_err(ModelError::SendError)?;
+            }
+            Ok(Some(output))
         } else {
             Ok(None)
         }
     }
 
-    pub fn decode_rest(&self) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(&self, request_id: Option<Digest>) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -60,7 +81,13 @@ impl TokenOutputStream {
         let text = self.decode(&self.tokens[self.prev_index..])?;
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
-            Ok(Some(text.1.to_string()))
+            let output = text.1.to_string();
+            if let Some(digest) = request_id {
+                self.stream_tx
+                    .blocking_send((digest, output.clone()))
+                    .map_err(ModelError::SendError)?;
+            }
+            Ok(Some(output))
         } else {
             Ok(None)
         }
@@ -86,5 +113,11 @@ impl TokenOutputStream {
         self.tokens.clear();
         self.prev_index = 0;
         self.current_index = 0;
+    }
+
+    pub fn end_stream(&self, tx_digest: Digest) -> Result<(), ModelError> {
+        self.stream_tx
+            .blocking_send((tx_digest, END_STREAM.to_string()))
+            .map_err(ModelError::SendError)
     }
 }

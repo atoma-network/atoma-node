@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -10,6 +11,7 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 
 use candle_transformers::models::llama as model;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::models::{
@@ -28,7 +30,7 @@ pub struct LlamaModel {
     device: Device,
     model: model::Llama,
     model_type: ModelType,
-    tokenizer: Tokenizer,
+    tokenizer: TokenOutputStream,
     config: Config,
     dtype: DType,
 }
@@ -87,7 +89,10 @@ impl ModelTrait for LlamaModel {
         self.model_type.clone()
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError> {
         info!("Loading Llama model ...");
 
         let start = Instant::now();
@@ -114,24 +119,28 @@ impl ModelTrait for LlamaModel {
             device,
             model,
             model_type: load_data.model_type,
-            tokenizer,
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
             config,
             dtype,
         })
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+        info!("Running inference on prompt: {:?}", input.prompt);
+        self.tokenizer.clear();
+
         let bos_token_id = self
             .config
             .bos_token_id
-            .or_else(|| self.tokenizer.token_to_id(BOS_TOKEN))
+            .or_else(|| self.tokenizer.tokenizer().token_to_id(BOS_TOKEN))
             .unwrap();
         let eos_token_id = self
             .config
             .eos_token_id
-            .or_else(|| self.tokenizer.token_to_id(EOS_TOKEN));
+            .or_else(|| self.tokenizer.tokenizer().token_to_id(EOS_TOKEN));
         let prompt_ids = self
             .tokenizer
+            .tokenizer()
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
@@ -143,15 +152,16 @@ impl ModelTrait for LlamaModel {
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
 
-        let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let mut index_pos = 0;
         let mut res = String::new();
         let mut generated_tokens = 0;
 
-        let start_gen = Instant::now();
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut cache = model::Cache::new(true, self.dtype, &self.config, &self.device)?;
+        let start_gen = Instant::now();
+
         for index in 0..input.max_tokens {
             let (context_size, context_index) = if cache.use_kv_cache && index > 0 {
                 (1, index_pos)
@@ -181,13 +191,13 @@ impl ModelTrait for LlamaModel {
             if Some(next_token) == eos_token_id {
                 break;
             }
-            if let Some(t) = tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 res += &t;
             }
 
             generated_tokens += 1;
         }
-        if let Some(rest) = tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             res += &rest;
         }
 
@@ -196,6 +206,11 @@ impl ModelTrait for LlamaModel {
             "{generated_tokens} tokens generated ({} token/s)\n",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
 
         Ok(TextModelOutput {
             text: res,
@@ -248,7 +263,9 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = LlamaModel::load(load_data).expect("Failed to load model");
+
+        let (stream_tx, _) = mpsc::channel(1);
+        let mut model = LlamaModel::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -272,6 +289,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            String::new(),
             prompt.clone(),
             temperature,
             random_seed,
@@ -282,6 +300,7 @@ mod tests {
             Some(top_p),
             false,
             vec![],
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
         println!("{output}");

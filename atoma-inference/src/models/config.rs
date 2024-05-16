@@ -116,7 +116,7 @@ impl ModelsConfig {
             .build()
             .expect("Failed to generate inference configuration file");
         config
-            .try_deserialize::<Self>()
+            .get::<Self>("inference")
             .expect("Failed to generated config file")
     }
 
