@@ -28,8 +28,8 @@ impl AtomaOutputManager {
         }
     }
 
-    pub fn new_from_config(
-        config_path: &Path,
+    pub fn new_from_config<P: AsRef<Path>>(
+        config_path: P,
         output_manager_rx: mpsc::Receiver<(Digest, Response)>,
     ) -> Self {
         let config = AtomaFirebaseConfig::from_file_path(config_path);
