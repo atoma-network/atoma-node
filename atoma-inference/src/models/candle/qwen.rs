@@ -181,7 +181,7 @@ impl ModelTrait for QwenModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
