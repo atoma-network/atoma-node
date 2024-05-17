@@ -1,14 +1,17 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
+use atoma_types::Digest;
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
 };
 
+use async_trait::async_trait;
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::{
@@ -22,6 +25,7 @@ use super::{convert_to_image, device, save_tensor_to_file};
 
 #[derive(Debug, Deserialize)]
 pub struct StableDiffusionInput {
+    pub request_id: Digest,
     pub prompt: String,
     pub uncond_prompt: String,
 
@@ -74,6 +78,7 @@ pub struct StableDiffusion {
     vae: AutoEncoderKL,
 }
 
+#[async_trait]
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
     type Output = (Vec<u8>, usize, usize);
@@ -147,7 +152,10 @@ impl ModelTrait for StableDiffusion {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(
+        load_data: Self::LoadData,
+        _: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -660,7 +668,9 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = StableDiffusion::load(load_data).expect("Failed to load model");
+
+        let (stream_tx, _) = mpsc::channel(1);
+        let mut model = StableDiffusion::load(load_data, stream_tx).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -680,6 +690,7 @@ mod tests {
         let random_seed = 42;
 
         let input = StableDiffusionInput {
+            request_id: String::new(),
             prompt: prompt.clone(),
             uncond_prompt,
             height: None,

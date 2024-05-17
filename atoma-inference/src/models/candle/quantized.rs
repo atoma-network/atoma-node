@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
+use atoma_types::Digest;
 use candle::{
     quantized::{ggml_file, gguf_file},
     DType, Device, Tensor,
@@ -10,6 +11,7 @@ use candle_transformers::{
 };
 use hf_hub::api::sync::ApiBuilder;
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::models::{
@@ -34,12 +36,13 @@ impl QuantizedModel {
         device: Device,
         model_type: ModelType,
         tokenizer: Tokenizer,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
         Self {
             model,
             model_type,
             device,
-            tokenizer: TokenOutputStream::new(tokenizer),
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         }
     }
 }
@@ -129,7 +132,10 @@ impl ModelTrait for QuantizedModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError>
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError>
     where
         Self: Sized,
     {
@@ -177,6 +183,7 @@ impl ModelTrait for QuantizedModel {
             load_data.device,
             load_data.model_type,
             tokenizer,
+            stream_tx,
         ))
     }
 
@@ -226,7 +233,8 @@ impl ModelTrait for QuantizedModel {
         let logits = logits.squeeze(0)?;
         let mut next_token = logits_processor.sample(&logits)?;
         all_tokens.push(next_token);
-        if let Some(t) = self.tokenizer.next_token(next_token)? {
+
+        if let Some(t) = self.tokenizer.next_token(next_token, None)? {
             output.push_str(t.as_str());
         }
 
@@ -247,6 +255,9 @@ impl ModelTrait for QuantizedModel {
             .get_vocab(true)
             .get(eos_token)
             .unwrap();
+
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
+
         let start_post_prompt = std::time::Instant::now();
         for index in 0..to_sample {
             let input2 = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
@@ -264,14 +275,18 @@ impl ModelTrait for QuantizedModel {
             };
             next_token = logits_processor.sample(&logits)?;
             all_tokens.push(next_token);
-            if let Some(t) = self.tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(t.as_str());
             }
             if next_token == eos_token {
                 break;
             };
         }
-        if let Some(rest) = self.tokenizer.decode_rest().map_err(candle::Error::msg)? {
+        if let Some(rest) = self
+            .tokenizer
+            .decode_rest(request_id.clone())
+            .map_err(candle::Error::msg)?
+        {
             output.push_str(rest.as_str());
         }
         let dt = start_post_prompt.elapsed();
@@ -280,6 +295,12 @@ impl ModelTrait for QuantizedModel {
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
         );
+
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
+
         Ok(TextModelOutput {
             text: output,
             time: dt.as_secs_f64(),

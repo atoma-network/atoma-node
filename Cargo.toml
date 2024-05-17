@@ -12,8 +12,10 @@ members = [
     "atoma-node",
     "atoma-json-rpc",
     "atoma-storage",
-    "atoma-types"
-, "atoma-output-manager"]
+    "atoma-types",
+    "atoma-output-manager",
+    "atoma-streamer"
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -27,6 +29,7 @@ atoma-crypto = { path = "./atoma-crypto/" }
 atoma-inference = { path = "./atoma-inference/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
+atoma-streamer = { path = "./atoma-streamer" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 blake2 = "0.10.6"

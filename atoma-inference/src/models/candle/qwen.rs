@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
+use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::generation::LogitsProcessor;
-use candle_transformers::models::qwen2::{Config as ConfigBase, Model as ModelBase};
+use candle_transformers::models::qwen2::{Config as ConfigBase, ModelForCausalLM as ModelBase};
 use candle_transformers::models::qwen2_moe::{Config as ConfigMoe, Model as ModelMoe};
 use hf_hub::api::sync::ApiBuilder;
 use hf_hub::{Repo, RepoType};
 use tokenizers::Tokenizer;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::bail;
@@ -46,7 +48,7 @@ pub struct QwenModel {
     model_type: ModelType,
     device: Device,
     dtype: DType,
-    tokenizer: Tokenizer,
+    tokenizer: TokenOutputStream,
 }
 
 impl QwenModel {
@@ -56,13 +58,14 @@ impl QwenModel {
         device: Device,
         dtype: DType,
         tokenizer: Tokenizer,
+        stream_tx: mpsc::Sender<(Digest, String)>,
     ) -> Self {
         Self {
             model,
             model_type,
             device,
             dtype,
-            tokenizer,
+            tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
         }
     }
 }
@@ -126,7 +129,10 @@ impl ModelTrait for QwenModel {
         })
     }
 
-    fn load(load_data: Self::LoadData) -> Result<Self, ModelError> {
+    fn load(
+        load_data: Self::LoadData,
+        stream_tx: mpsc::Sender<(Digest, String)>,
+    ) -> Result<Self, ModelError> {
         let device = load_data.device;
         let dtype = load_data.dtype;
 
@@ -160,13 +166,14 @@ impl ModelTrait for QwenModel {
         };
 
         info!("Loaded the model in {:?}", start.elapsed());
-        Ok(Self {
-            model_type: load_data.model_type,
+        Ok(Self::new(
             model,
+            load_data.model_type,
             device,
             dtype,
             tokenizer,
-        })
+            stream_tx,
+        ))
     }
 
     fn model_type(&self) -> ModelType {
@@ -174,9 +181,8 @@ impl ModelTrait for QwenModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let mut tokenizer = TokenOutputStream::new(self.tokenizer.clone());
-
-        let mut tokens = tokenizer
+        let mut tokens = self
+            .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
             .get_ids()
@@ -187,11 +193,12 @@ impl ModelTrait for QwenModel {
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
 
         let mut generated_tokens = 0usize;
-        let eos_token = match tokenizer.get_token("<|endoftext|>") {
+        let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
             Some(token) => token,
             None => bail!("cannot find the <|endoftext|> token"),
         };
 
+        let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut output = String::new();
         let start_gen = std::time::Instant::now();
 
@@ -219,12 +226,12 @@ impl ModelTrait for QwenModel {
             if next_token == eos_token {
                 break;
             }
-            if let Some(t) = tokenizer.next_token(next_token)? {
+            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&t);
             }
         }
         let dt = start_gen.elapsed();
-        if let Some(rest) = tokenizer.decode_rest()? {
+        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
         }
 
@@ -234,6 +241,10 @@ impl ModelTrait for QwenModel {
         );
 
         self.model.clear_kv_cache();
+        if input.should_stream_output {
+            info!("Ending stream");
+            self.tokenizer.end_stream(request_id.unwrap())?;
+        }
 
         Ok(Self::Output {
             text: output,
