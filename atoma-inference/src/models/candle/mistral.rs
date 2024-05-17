@@ -132,12 +132,13 @@ impl ModelTrait for MistralModel {
 
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
 
         let input_tokens = tokens.len();
 
@@ -165,11 +166,11 @@ impl ModelTrait for MistralModel {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token {
                 break;
             }
+            tokens.push(next_token);
             if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&word);
             }
@@ -195,7 +196,7 @@ impl ModelTrait for MistralModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }
