@@ -4,7 +4,7 @@ use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::generation::LogitsProcessor;
-use candle_transformers::models::qwen2::{Config as ConfigBase, Model as ModelBase};
+use candle_transformers::models::qwen2::{Config as ConfigBase, ModelForCausalLM as ModelBase};
 use candle_transformers::models::qwen2_moe::{Config as ConfigMoe, Model as ModelMoe};
 use hf_hub::api::sync::ApiBuilder;
 use hf_hub::{Repo, RepoType};
