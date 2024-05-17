@@ -217,6 +217,8 @@ pub(crate) fn dispatch_model_thread(
             cache_dir,
             model_config,
             model_receiver,
+            stream_tx,
+            model_config.num_shards()
         )
     } else {
         match model_type {
@@ -228,6 +230,7 @@ pub(crate) fn dispatch_model_thread(
                 model_config,
                 model_receiver,
                 stream_tx,
+                model_config.num_shards()
             )
         }
         ModelType::LlamaV1
@@ -243,6 +246,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::Mamba130m
         | ModelType::Mamba370m
@@ -255,6 +259,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::Mistral7bV01
         | ModelType::Mistral7bV02
@@ -266,6 +271,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
             model_name,
@@ -274,6 +280,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
             model_name,
@@ -282,6 +289,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::StableDiffusionV1_5
         | ModelType::StableDiffusionV2_1
@@ -293,6 +301,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::QuantizedLlamaV2_7b
         | ModelType::QuantizedLlamaV2_13b
@@ -321,6 +330,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
         ModelType::QwenW0_5b
         | ModelType::QwenW1_8b
@@ -335,6 +345,7 @@ pub(crate) fn dispatch_model_thread(
             model_config,
             model_receiver,
             stream_tx,
+            model_config.num_shards()
         ),
     }
 }
