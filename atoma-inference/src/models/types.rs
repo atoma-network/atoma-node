@@ -535,3 +535,19 @@ pub struct StableDiffusionResponse {
     /// It's true if the inference was performed correctly
     pub is_success: bool,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum AtomaChildMessage {
+    Initialized(Option<Vec<u8>>),
+    CommsReady,
+    Loaded,
+    InferenceResult(TextModelOutput),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum AtomaInferenceMessage {
+    InitializeComm(Vec<u8>),
+    LoadModel(PathBuf, String, Vec<PathBuf>, PathBuf),
+    Inference(TextModelInput),
+    Exit,
+}

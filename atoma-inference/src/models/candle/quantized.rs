@@ -18,7 +18,7 @@ use crate::models::{
     candle::device,
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+    types::{LlmLoadData, ModelType},
     ModelError, ModelTrait,
 };
 use candle_transformers::models::quantized_llama as model;

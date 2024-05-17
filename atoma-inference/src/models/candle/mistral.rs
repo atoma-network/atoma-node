@@ -18,7 +18,7 @@ use crate::{
     models::{
         candle::{device, hub_load_safetensors},
         token_output_stream::TokenOutputStream,
-        types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+        types::{LlmLoadData, ModelType},
         ModelError, ModelTrait,
     },
 };

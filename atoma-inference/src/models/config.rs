@@ -32,6 +32,7 @@ pub struct ModelConfig {
     revision: Revision,
     /// Use flash attention boolean value
     use_flash_attention: bool,
+    num_shards: usize,
 }
 
 impl ModelConfig {
@@ -42,6 +43,7 @@ impl ModelConfig {
         revision: Revision,
         device_id: usize,
         use_flash_attention: bool,
+        num_shards: usize,
     ) -> Self {
         Self {
             dtype,
@@ -49,6 +51,7 @@ impl ModelConfig {
             revision,
             device_id,
             use_flash_attention,
+            num_shards,
         }
     }
 
@@ -75,6 +78,10 @@ impl ModelConfig {
     /// Getter for `use_flash_attention`
     pub fn use_flash_attention(&self) -> bool {
         self.use_flash_attention
+    }
+
+    pub fn num_shards(&self) -> usize {
+        self.num_shards
     }
 }
 

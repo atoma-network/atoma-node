@@ -1,0 +1,38 @@
+[package]
+name = "atoma-multi-gpu-mock"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+atoma-types.workspace = true
+candle.workspace = true
+candle-flash-attn = { workspace = true, optional = true }
+candle-nn.workspace = true
+candle-transformers.workspace = true
+cudarc = { workspace = true, optional = true }
+half = { workspace = true, optional = true }
+hf-hub.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokenizers = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
+tungstenite.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+
+[build-dependencies]
+bindgen_cuda = { workspace = true, optional = true }
+
+[features]
+default = []
+cuda = [
+  "candle/cuda",
+  "candle-nn/cuda",
+  "candle-transformers/cuda",
+  "dep:bindgen_cuda",
+]
+cudnn = ["candle/cudnn"]
+flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
+nccl = ["cuda", "cudarc/nccl", "dep:half"]

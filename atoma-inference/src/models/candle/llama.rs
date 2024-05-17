@@ -17,7 +17,7 @@ use tracing::info;
 use crate::models::{
     config::ModelConfig,
     token_output_stream::TokenOutputStream,
-    types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput},
+    types::{LlmLoadData, ModelType},
     ModelError, ModelTrait,
 };
 

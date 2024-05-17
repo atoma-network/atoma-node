@@ -144,6 +144,7 @@ impl ModelThreadDispatcher {
                 model_config,
                 model_receiver,
                 stream_tx.clone(),
+                num_shards,
             );
 
             handles.push(ModelThreadHandle {
@@ -207,13 +208,23 @@ pub(crate) fn dispatch_model_thread(
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
     stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+    num_shards: usize,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
-    match model_type {
-        ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
-            spawn_model_thread::<FalconModel>(
-                model_name,
-                api_key.clone(),
-                cache_dir.clone(),
+    if model_config.num_shards() > 1 {
+        spawn_model_thread::<LlamaMultiModel>(
+            model_name,
+            api_key,
+            cache_dir,
+            model_config,
+            model_receiver,
+        )
+    } else {
+        match model_type {
+            ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
+                spawn_model_thread::<FalconModel>(
+                    model_name,
+                    api_key.clone(),
+                    cache_dir.clone(),
                 model_config,
                 model_receiver,
                 stream_tx,
@@ -336,6 +347,7 @@ pub(crate) fn spawn_model_thread<M>(
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
     stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+    num_shards: usize,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,
