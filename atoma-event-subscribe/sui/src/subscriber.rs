@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::{fmt::Write, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -12,15 +12,16 @@ use tracing::{debug, error, info};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
-use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
+use atoma_types::{Request, SmallId};
 
-const REQUEST_ID_HEX_SIZE: usize = 64;
+const MAX_BATCH_SIZE: usize = 32; // TODO: change this to a map depending on (model, hardware)
+const NOTIFY_TIMEOUT: Duration = Duration::from_millis(1); // TODO: this value should be adaptative, and therefore we should have logic to adjust this value depending on the demand
 
 pub struct SuiSubscriber {
     id: SmallId,
     sui_client: SuiClient,
     filter: EventFilter,
-    event_sender: mpsc::Sender<Request>,
+    batched_requests_tx: mpsc::Sender<Vec<Request>>,
 }
 
 impl SuiSubscriber {
@@ -29,7 +30,7 @@ impl SuiSubscriber {
         http_url: &str,
         ws_url: Option<&str>,
         package_id: ObjectID,
-        event_sender: mpsc::Sender<Request>,
+        batched_requests_tx: mpsc::Sender<Vec<Request>>,
         request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
@@ -46,13 +47,13 @@ impl SuiSubscriber {
             id,
             sui_client,
             filter,
-            event_sender,
+            batched_requests_tx,
         })
     }
 
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
-        event_sender: mpsc::Sender<Request>,
+        batched_requests_tx: mpsc::Sender<Vec<Request>>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -65,7 +66,7 @@ impl SuiSubscriber {
             &http_url,
             Some(&ws_url),
             package_id,
-            event_sender,
+            batched_requests_tx,
             Some(request_timeout),
         )
         .await
@@ -74,12 +75,31 @@ impl SuiSubscriber {
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
+        let mut batched_requests = Vec::with_capacity(MAX_BATCH_SIZE);
         info!("Starting event while loop");
-        while let Some(event) = subscribe_event.next().await {
-            match event {
-                Ok(event) => self.handle_event(event).await?,
-                Err(e) => {
-                    error!("Failed to get event with error: {e}");
+        loop {
+            let timeout = tokio::time::sleep(NOTIFY_TIMEOUT);
+            tokio::select! {
+                event = subscribe_event.next() => {
+                    match event {
+                        Some(Ok(event)) => {
+                            self.handle_event(event, &mut batched_requests).await?;
+                            if batched_requests.len() >= MAX_BATCH_SIZE {
+                                self.send_batched_requests(&mut batched_requests).await;
+                            }
+                        },
+                        Some(Err(e)) => {
+                            error!("Failed to get event with error: {e}");
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                },
+                _ = timeout => {
+                    if !batched_requests.is_empty() {
+                        self.send_batched_requests(&mut batched_requests).await;
+                    }
                 }
             }
         }
@@ -88,7 +108,35 @@ impl SuiSubscriber {
 }
 
 impl SuiSubscriber {
-    async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+    fn is_sampled(&self, event_data: &Value) -> Option<(usize, usize)> {
+        let nodes = event_data["nodes"].as_array()?;
+        nodes.iter().enumerate().find_map(|(index, node)| {
+            node["inner"]
+                .as_u64()
+                .filter(|&id| id == self.id)
+                .map(|_| (index, nodes.len()))
+        })
+    }
+
+    async fn send_batched_requests(&self, batched_requests: &mut Vec<Request>) {
+        if let Err(e) = self
+            .batched_requests_tx
+            .send(batched_requests.clone())
+            .await
+        {
+            error!("Failed to send batched requests, with error: {e}")
+        } else {
+            batched_requests.clear()
+        }
+    }
+}
+
+impl SuiSubscriber {
+    async fn handle_event(
+        &self,
+        event: SuiEvent,
+        batched_events: &mut Vec<Request>,
+    ) -> Result<(), SuiSubscriberError> {
         let event_type = event.type_.name.as_str();
         match AtomaEvent::from_str(event_type)? {
             AtomaEvent::DisputeEvent => todo!(),
@@ -100,26 +148,22 @@ impl SuiSubscriber {
             }
             AtomaEvent::NewlySampledNodesEvent => {
                 let event_data = event.parsed_json;
-                match self.handle_newly_sampled_nodes_event(event_data).await {
-                    Ok(()) => {}
-                    Err(err) => {
-                        error!("Failed to process request, with error: {err}")
+                match self
+                    .handle_newly_sampled_nodes_event(event_data, batched_events)
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Failed to process request, with error: {e}")
                     }
                 }
             }
             AtomaEvent::Text2ImagePromptEvent | AtomaEvent::Text2TextPromptEvent => {
                 let event_data = event.parsed_json;
-                match self.handle_prompt_event(event_data).await {
-                    Ok(()) => {}
-                    Err(SuiSubscriberError::TypeConversionError(err)) => {
-                        if err.to_string().contains(NON_SAMPLED_NODE_ERR) {
-                            info!("Node has not been sampled for current request")
-                        } else {
-                            error!("Failed to process request, with error: {err}")
-                        }
-                    }
-                    Err(err) => {
-                        error!("Failed to process request, with error: {err}")
+                match self.handle_prompt_event(event_data, batched_events) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Failed to process request, with error: {e}")
                     }
                 }
             }
@@ -127,32 +171,34 @@ impl SuiSubscriber {
         Ok(())
     }
 
-    async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
+    fn handle_prompt_event(
+        &self,
+        event_data: Value,
+        batched_events: &mut Vec<Request>,
+    ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
-        let request = Request::try_from((self.id, event_data))?;
-        info!("Received new request: {:?}", request);
-        let request_id =
-            request
-                .id()
-                .iter()
-                .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
-                    write!(acc, "{:02x}", b).expect("Failed to write to request_id");
-                    acc
-                });
-        info!(
-            "Current node has been sampled for request with id: {}",
-            request_id
-        );
-        self.event_sender.send(request).await.map_err(Box::new)?;
 
+        if let Some((sampled_node_index, num_sampled_nodes)) = self.is_sampled(&event_data) {
+            let event_request =
+                Request::try_from((sampled_node_index, num_sampled_nodes, event_data.clone()))?;
+            info!(
+                "Node has been sampled for request with id: {:2x?}",
+                event_request.id()
+            );
+            batched_events.push(event_request);
+        } else {
+            info!("Node has not been sampled for current request")
+        }
         Ok(())
     }
 
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,
+        batched_events: &mut Vec<Request>,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
+
         let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
         if let Some(sampled_node_index) = newly_sampled_nodes {
             let ticket_id = extract_ticket_id(&event_data)?;
@@ -177,12 +223,11 @@ impl SuiSubscriber {
                 sampled_node_index as usize,
                 event.parsed_json.clone(),
             ))?;
-            info!("Received new request: {:?}", request);
             info!(
                 "Current node has been newly sampled for request with id: {}",
                 ticket_id
             );
-            self.event_sender.send(request).await.map_err(Box::new)?;
+            batched_events.push(request);
         }
 
         Ok(())

@@ -91,6 +91,28 @@ impl TryFrom<(u64, Value)> for Request {
     }
 }
 
+impl TryFrom<(usize, usize, Value)> for Request {
+    type Error = Error;
+
+    fn try_from(
+        (sampled_node_index, num_sampled_nodes, value): (usize, usize, Value),
+    ) -> Result<Self, Self::Error> {
+        let id = hex::decode(
+            value["ticket_id"]
+                .as_str()
+                .ok_or(anyhow!("Failed to decode hex string for request ticket_id"))?
+                .replace("0x", ""),
+        )?;
+        let body = PromptParams::try_from(value["params"].clone())?;
+        Ok(Request::new(
+            id,
+            sampled_node_index,
+            num_sampled_nodes,
+            body,
+        ))
+    }
+}
+
 impl TryFrom<(&str, usize, Value)> for Request {
     type Error = Error;
 
