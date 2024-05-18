@@ -487,6 +487,10 @@ impl Response {
     pub fn tokens_count(&self) -> u64 {
         self.response["tokens_count"].as_u64().unwrap_or(0)
     }
+
+    pub fn time_to_generate(&self) -> f64 {
+        self.response["time"].as_f64().unwrap_or(0.0)
+    }
 }
 
 mod utils {

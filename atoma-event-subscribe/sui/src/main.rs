@@ -11,10 +11,16 @@ struct Args {
     #[arg(long)]
     pub package_id: String,
     /// HTTP node's address for Sui client
-    #[arg(long, default_value = "https://sui-testnet.blockvision.org:443/v1/2g5QVcq1IfuBStgtb2oNWafvmjL:443")]
+    #[arg(
+        long,
+        default_value = "https://sui-testnet.blockvision.org:443/v1/2g5QVcq1IfuBStgtb2oNWafvmjL:443"
+    )]
     pub http_addr: String,
     /// RPC node's web socket address for Sui client
-    #[arg(long, default_value = "wss://sui-testnet.blockvision.org:443/v1/2g5QVcq1IfuBStgtb2oNWafvmjL:433")]
+    #[arg(
+        long,
+        default_value = "wss://sui-testnet.blockvision.org:443/v1/2g5QVcq1IfuBStgtb2oNWafvmjL:433"
+    )]
     pub ws_addr: String,
 }
 
