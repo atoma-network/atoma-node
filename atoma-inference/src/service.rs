@@ -22,15 +22,15 @@ pub struct ModelService {
     flush_storage: bool,
     cache_dir: PathBuf,
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
-    subscriber_req_rx: Receiver<Request>,
-    atoma_node_resp_tx: Sender<Response>,
+    subscriber_req_rx: Receiver<Vec<Request>>,
+    atoma_node_resp_tx: Sender<Vec<Response>>,
 }
 
 impl ModelService {
     pub fn start(
         model_config: ModelsConfig,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
-        subscriber_req_rx: Receiver<Request>,
+        subscriber_req_rx: Receiver<Vec<Request>>,
         atoma_node_resp_tx: Sender<Response>,
         stream_tx: Sender<(Digest, String)>,
     ) -> Result<Self, ModelServiceError> {
@@ -59,8 +59,8 @@ impl ModelService {
                 Some(request) = self.json_server_req_rx.recv() => {
                     self.dispatcher.run_json_inference(request);
                 },
-                Some(request) = self.subscriber_req_rx.recv() => {
-                    self.dispatcher.run_subscriber_inference(request);
+                Some(batched_requests) = self.subscriber_req_rx.recv() => {
+                    self.dispatcher.run_subscriber_inference(batched_requests);
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {

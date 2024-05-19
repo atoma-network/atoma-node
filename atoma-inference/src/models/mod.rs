@@ -32,7 +32,7 @@ pub trait ModelTrait {
     where
         Self: Sized;
     fn model_type(&self) -> ModelType;
-    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
+    fn run(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError>;
 }
 
 pub trait Request: Send + 'static {
@@ -75,6 +75,8 @@ pub enum ModelError {
     InvalidModelInput,
     #[error("Send error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    #[error("Empty input batch")]
+    EmptyInputBatch,
 }
 
 #[macro_export]

@@ -27,7 +27,7 @@ struct TestModel {
     duration: Duration,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct MockInputOutput {
     id: u64,
 }
@@ -69,13 +69,13 @@ impl ModelTrait for TestModel {
         todo!()
     }
 
-    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
+    fn run(&mut self, input: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
         std::thread::sleep(self.duration);
         println!(
             "Finished waiting time for {:?} and input = {:?}",
             self.duration, input
         );
-        Ok(input)
+        Ok(input.to_vec())
     }
 }
 
@@ -140,7 +140,7 @@ async fn test_mock_model_thread() {
             ));
             let request = Request::new(vec![], 0, 1, prompt_params);
             let command = ModelThreadCommand {
-                request: request.clone(),
+                batched_requests: vec![request.clone()],
                 sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
@@ -156,7 +156,7 @@ async fn test_mock_model_thread() {
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
         if let Ok(value) = response {
-            received_responses.push(value.response().as_u64().unwrap());
+            received_responses.extend(value.iter().map(|r| r.response().as_u64().unwrap()));
         }
     }
 
