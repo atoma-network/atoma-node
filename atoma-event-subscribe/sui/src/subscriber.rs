@@ -76,6 +76,7 @@ impl SuiSubscriber {
         while let Some(response) = subscribe_event.next().await {
             match response {
                 Ok(event) => {
+                    info!("Received event, with id: {:?}", event.id);
                     self.handle_event(event).await?;
                 }
                 Err(e) => error!("Failed to get event with error: {e}"),
@@ -88,10 +89,11 @@ impl SuiSubscriber {
 impl SuiSubscriber {
     fn is_sampled(&self, event_data: &Value) -> Option<(usize, usize)> {
         let nodes = event_data["nodes"].as_array()?;
+        info!("FLAG: nodes = {:?}", nodes);
         nodes.iter().enumerate().find_map(|(index, node)| {
             node["inner"]
-                .as_u64()
-                .filter(|&id| id == self.id)
+                .as_str()
+                .filter(|&id| id.parse::<u64>().unwrap() == self.id)
                 .map(|_| (index, nodes.len()))
         })
     }

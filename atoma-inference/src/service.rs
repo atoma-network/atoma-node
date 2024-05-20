@@ -60,6 +60,7 @@ impl ModelService {
                     self.dispatcher.run_json_inference(request);
                 },
                 Some(request) = self.subscriber_req_rx.recv() => {
+                    info!("FLAG: Received request!!!!");
                     self.dispatcher.run_subscriber_inference(request);
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
