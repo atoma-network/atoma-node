@@ -60,27 +60,18 @@ impl Request {
     }
 }
 
-impl TryFrom<(u64, Value)> for Request {
+impl TryFrom<(usize, usize, Value)> for Request {
     type Error = Error;
 
-    fn try_from((node_id, value): (u64, Value)) -> Result<Self, Self::Error> {
+    fn try_from(
+        (sampled_node_index, num_sampled_nodes, value): (usize, usize, Value),
+    ) -> Result<Self, Self::Error> {
         let id = hex::decode(
             value["ticket_id"]
                 .as_str()
                 .ok_or(anyhow!("Failed to decode hex string for request ticket_id"))?
                 .replace("0x", ""),
         )?;
-        let sampled_nodes = value["nodes"]
-            .as_array()
-            .ok_or(anyhow!("Request is malformed, missing `nodes` field"))?
-            .iter()
-            .map(|v| utils::parse_u64(&v["inner"]))
-            .collect::<Result<Vec<_>>>()?;
-        let sampled_node_index = sampled_nodes
-            .iter()
-            .position(|n| n == &node_id)
-            .ok_or(anyhow!(NON_SAMPLED_NODE_ERR))?;
-        let num_sampled_nodes = sampled_nodes.len();
         let body = PromptParams::try_from(value["params"].clone())?;
         Ok(Request::new(
             id,
