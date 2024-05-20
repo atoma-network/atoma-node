@@ -414,6 +414,10 @@ impl ModelTrait for StableDiffusion {
 
         Ok(res)
     }
+
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+        todo!()
+    }
 }
 
 impl ModelType {

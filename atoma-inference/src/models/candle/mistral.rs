@@ -199,6 +199,10 @@ impl ModelTrait for MistralModel {
             tokens: if input.chat { tokens } else { vec![] },
         })
     }
+
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+        todo!();
+    }
 }
 
 #[cfg(test)]

@@ -145,56 +145,7 @@ impl ModelTrait for FalconModel {
         self.model_type.clone()
     }
 
-    fn run(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
-        if inputs.is_empty() {
-            return Err(ModelError::EmptyInputBatch);
-        }
-
-        let input_length = inputs.len();
-        let mut all_encoded_tokens = Vec::new();
-        let mut all_input_lengths = Vec::new();
-        let mut all_outputs = Vec::new();
-
-        // Encode all prompts and prepare batched input
-        for input in inputs {
-            let tokens = self
-                .tokenizer
-                .tokenizer()
-                .encode(input.prompt, true)?
-                .get_ids()
-                .to_vec();
-            let tokens = [input.pre_prompt_tokens.clone(), tokens].concat();
-            all_encoded_tokens.push(tokens);
-            all_input_lengths.push(tokens.len());
-        }
-
-        // Determine the maximum length for padding
-        let max_length = *all_input_lengths.iter().max().unwrap_or(&0);
-
-        // Pad all token sequences to the same length and convert to Tensor
-        let padded_index = self
-            .tokenizer
-            .tokenizer()
-            .get_padding()
-            .map(|t| t.pad_id)
-            .unwrap_or_default();
-        let mut batched_input = Vec::new();
-        for tokens in all_encoded_tokens.iter() {
-            let mut padded_tokens = tokens.clone();
-            padded_tokens.resize(max_length, padded_index); // Assuming 0 is the padding index
-            batched_input.extend(padded_tokens);
-        }
-
-        let input_tensor = Tensor::new(&batched_input, &self.device)?.unsqueeze(0)?.reshape((1, input_length, max_length))?;
-
-        let logits = self.model.forward(&input_tensor)?;
-        let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
-        
-
-        Ok(all_outputs)
-    }
-
-    fn run(&mut self, input: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running inference on prompt: {:?}", input.prompt);
         self.tokenizer.clear();
 
@@ -279,6 +230,29 @@ impl ModelTrait for FalconModel {
             input_tokens,
             tokens: if input.chat { tokens } else { vec![] },
         })
+    }
+
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+        if inputs.is_empty() {
+            return Err(ModelError::EmptyInputBatch);
+        }
+
+        let prompts = inputs.iter().map(|i| {
+            i.prompt
+        }).collect::<Vec<_>>();
+        let tokens = self.tokenizer.tokenizer().encode_batch(prompts, true)?;
+        let token_ids = tokens.iter().enumerate().map(|(i, tokens)| { 
+            let tokens = tokens.get_ids().to_vec();
+            let all_tokens = [inputs[i].pre_prompt_tokens, tokens].concat();
+            Ok::<_, ModelError>(Tensor::new(all_tokens.as_slice(), &self.device)?)
+        }).collect::<Result<Vec<_>, _>>()?;
+
+        let input_tensor = Tensor::stack(&token_ids, 0)?;
+        
+        let logits = self.model.forward(&input_tensor)?;
+        let logits = logits.squeeze(0)?.to_dtype(self.dtype)?;
+
+        Ok(vec![])
     }
 }
 

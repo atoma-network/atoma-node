@@ -313,4 +313,8 @@ impl ModelTrait for QuantizedModel {
             },
         })
     }
+
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+        todo!()
+    }
 }

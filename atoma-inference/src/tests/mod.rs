@@ -69,13 +69,17 @@ impl ModelTrait for TestModel {
         todo!()
     }
 
-    fn run(&mut self, input: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+    fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         std::thread::sleep(self.duration);
         println!(
             "Finished waiting time for {:?} and input = {:?}",
             self.duration, input
         );
-        Ok(input.to_vec())
+        Ok(input)
+    }
+
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError> {
+        todo!()
     }
 }
 

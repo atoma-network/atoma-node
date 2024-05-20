@@ -32,7 +32,8 @@ pub trait ModelTrait {
     where
         Self: Sized;
     fn model_type(&self) -> ModelType;
-    fn run(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError>;
+    fn run(&mut self, inputs: Self::Input) -> Result<Self::Output, ModelError>;
+    fn run_batch(&mut self, inputs: &[Self::Input]) -> Result<Vec<Self::Output>, ModelError>;
 }
 
 pub trait Request: Send + 'static {

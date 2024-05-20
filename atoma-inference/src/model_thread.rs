@@ -83,8 +83,8 @@ where
                     let params = r.params();
                     M::Input::try_from((hex::encode(&request_id), params))
                 })
-                .collect();
-            let model_output = self.model.run(model_input)?;
+                .collect::<Result<Vec<_>, _>>()?;
+            let model_output = self.model.run(batched_inputs.as_slice())?;
             let output = model_output
                 .iter()
                 .map(|o| serde_json::to_value(o))
