@@ -4,7 +4,6 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
-async-trait.workspace = true
 atoma-types.workspace = true
 axum.workspace = true
 candle.workspace = true

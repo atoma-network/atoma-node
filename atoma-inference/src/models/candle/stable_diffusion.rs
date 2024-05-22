@@ -6,7 +6,6 @@ use candle_transformers::models::stable_diffusion::{
     StableDiffusionConfig,
 };
 
-use async_trait::async_trait;
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
@@ -78,7 +77,6 @@ pub struct StableDiffusion {
     vae: AutoEncoderKL,
 }
 
-#[async_trait]
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
     type Output = (Vec<u8>, usize, usize);
