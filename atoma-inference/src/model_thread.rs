@@ -8,18 +8,15 @@ use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, warn};
 
-use crate::{
-    apis::ApiError,
-    models::{
-        candle::{
-            falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-            mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel, qwen::QwenModel,
-            stable_diffusion::StableDiffusion,
-        },
-        config::{ModelConfig, ModelsConfig},
-        types::ModelType,
-        ModelError, ModelId, ModelTrait,
+use crate::models::{
+    candle::{
+        falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
+        mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel, qwen::QwenModel,
+        stable_diffusion::StableDiffusion,
     },
+    config::{ModelConfig, ModelsConfig},
+    types::ModelType,
+    ModelError, ModelId, ModelTrait,
 };
 
 pub struct ModelThreadCommand {
@@ -29,8 +26,6 @@ pub struct ModelThreadCommand {
 
 #[derive(Debug, Error)]
 pub enum ModelThreadError {
-    #[error("Model thread shutdown: `{0}`")]
-    ApiError(#[from] ApiError),
     #[error("Model thread shutdown: `{0}`")]
     ModelError(#[from] ModelError),
     #[error("Core thread shutdown: `{0}`")]

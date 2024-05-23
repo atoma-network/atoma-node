@@ -10,7 +10,6 @@ use tracing::{error, info};
 use thiserror::Error;
 
 use crate::{
-    apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
     models::config::ModelsConfig,
 };
@@ -111,8 +110,6 @@ pub enum ModelServiceError {
     PrivateKeyError(io::Error),
     #[error("Core error: `{0}`")]
     ModelThreadError(#[from] ModelThreadError),
-    #[error("Api error: `{0}`")]
-    ApiError(#[from] ApiError),
     #[error("Candle error: `{0}`")]
     CandleError(#[from] CandleError),
     #[error("Sender error: `{0}`")]
