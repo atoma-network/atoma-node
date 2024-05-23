@@ -1,14 +1,7 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+//! This crate contains logic for fast inference servince, based on PagedAttention and the vLLM implementation. We refer the reader to
+//! https://arxiv.org/pdf/2309.06180 for the detailed architecture of the service. We were highly inspired by the complete, in production, Python implementation
+//! of vLLM, in https://github.com/vllm-project/vllm.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod block;
+pub mod block_allocator;
+pub mod evictor;
