@@ -15,7 +15,7 @@ pub trait Evictor {
 /// If there are multiple blocks with the same `last_accessed` time, the block with the largest `num_hashed_tokens` will be evicted.
 /// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
 pub struct LRUEvictor {
-    free_table: IndexMap<u64, PhysicalTokenBlock>,
+    pub free_table: IndexMap<u64, PhysicalTokenBlock>,
 }
 
 impl LRUEvictor {

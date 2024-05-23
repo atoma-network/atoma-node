@@ -11,5 +11,6 @@ candle.workspace = true
 indexmap.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
