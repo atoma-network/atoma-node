@@ -1,10 +1,13 @@
-use std::time::Instant;
+use std::{
+    sync::{Arc, RwLock},
+    time::Instant,
+};
 
 use candle::Device;
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
-pub type BlockTable = Vec<PhysicalTokenBlock>;
+pub type BlockTable = Vec<Arc<RwLock<PhysicalTokenBlock>>>;
 
 /// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
 /// physical blocks in the KV cache (allocated on the GPU).
