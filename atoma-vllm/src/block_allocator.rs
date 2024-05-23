@@ -73,6 +73,7 @@ impl BlockCacheAllocator {
 
 impl BlockAllocator for BlockCacheAllocator {
     /// Allocates a new block
+    fn allocate_block(
         &mut self,
         block_hash: u64,
         num_hashed_tokens: usize,
