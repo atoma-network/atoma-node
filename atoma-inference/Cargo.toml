@@ -11,6 +11,7 @@ candle.workspace = true
 candle-flash-attn = { workspace = true, optional = true }
 candle-nn.workspace = true
 candle-transformers.workspace = true
+clap = { workspace = true }
 config.workspace = true
 dotenv.workspace = true
 futures.workspace = true
