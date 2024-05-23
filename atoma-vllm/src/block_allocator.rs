@@ -5,7 +5,7 @@ use thiserror::Error;
 use tracing::{error, info, info_span, Span};
 
 use crate::{
-    block::{self, PhysicalTokenBlock},
+    block::PhysicalTokenBlock,
     evictor::{Evictor, EvictorError, LRUEvictor},
 };
 
