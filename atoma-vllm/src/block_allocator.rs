@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use candle::Device;
 use thiserror::Error;
-use tracing::{error, info, info_span, Span};
+use tracing::{error, info, info_span, warn, Span};
 
 use crate::{
     block::PhysicalTokenBlock,
@@ -24,7 +24,11 @@ pub trait BlockAllocator {
     fn get_num_free_blocks(&self) -> usize;
     fn get_num_total_blocks(&self) -> usize;
     fn contains_block(&self, block_hash: u64) -> bool;
-    fn update_hash(&self, block_hash: u64, block: PhysicalTokenBlock);
+    fn update_hash(
+        &mut self,
+        block_hash: u64,
+        block: &mut PhysicalTokenBlock,
+    ) -> Result<(), BlockAllocatorError>;
 }
 
 /// `BlockCachedAllocator` manages free physical token blocks for a device.
@@ -191,7 +195,31 @@ impl BlockAllocator for BlockCacheAllocator {
     }
 
     /// Updates block hash
-    fn update_hash(&self, block_hash: u64, block: PhysicalTokenBlock) {}
+    fn update_hash(
+        &mut self,
+        block_hash: u64,
+        block: &mut PhysicalTokenBlock,
+    ) -> Result<(), BlockAllocatorError> {
+        let enter_span = &self.span;
+        let _ = enter_span.enter();
+
+        if !self.contains_block(block_hash) {
+            warn!("Block with block_hash {block_hash} not found..");
+            return Err(BlockAllocatorError::BlockNotFound(block_hash));
+        }
+
+        let old_hash = block.block_hash();
+        block.update_block_hash(block_hash);
+
+        if let Some(block) = self.cached_blocks.remove(&old_hash) {
+            info!("Updating block with new block hash in cache..");
+            self.cached_blocks.insert(block_hash, block.clone());
+            Ok(())
+        } else {
+            warn!("Block with old block hash {old_hash} not found in cache..");
+            Err(BlockAllocatorError::BlockNotFound(block.block_hash()))
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -206,4 +234,6 @@ pub enum BlockAllocatorError {
     BlockAlreadyInUse,
     #[error("Cannot free unused block, with block_hash = `{0}`")]
     CannotDoubleFree(u64),
+    #[error("Block not found, with block_hash = `{0}`")]
+    BlockNotFound(u64),
 }
