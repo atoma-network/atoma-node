@@ -15,7 +15,7 @@ members = [
     "atoma-types",
     "atoma-output-manager",
     "atoma-streamer"
-]
+, "atoma-vllm"]
 
 [workspace.package]
 version = "0.1.0"
