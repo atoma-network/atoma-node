@@ -67,13 +67,17 @@ impl AtomaStreamer {
         );
 
         let last_streamed_index = self.last_streamed_index.entry(tx_digest).or_insert(0);
-        let response = client
-            .patch(url.to_str().unwrap())
-            .json(&json!({last_streamed_index.to_string(): data}))
-            .send()
-            .await?;
-        let text = response.text().await?;
-        info!("Received response with text: {text}");
+        let index = last_streamed_index.to_string();
+        tokio::spawn(async move {
+            let response = client
+                .patch(url.to_str().unwrap())
+                .json(&json!({index: data}))
+                .send()
+                .await
+                .unwrap();
+            let text = response.text().await.unwrap();
+            info!("Received response with text: {text}");
+        });
         *last_streamed_index += 1;
         Ok(())
     }
