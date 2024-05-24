@@ -27,6 +27,12 @@ pub enum EarlyStopping {
     Never,
 }
 
+impl Default for EarlyStopping {
+    fn default() -> Self {
+        Self::False
+    }
+}
+
 /// Sampling parameters for text generation.
 ///
 /// Overall, we follow the sampling parameters from the OpenAI text completion
@@ -101,63 +107,63 @@ pub enum EarlyStopping {
 ///    truncate_prompt_tokens: If set to an integer k, will use only the last k
 ///        tokens from the prompt (i.e., left truncation). Defaults to None
 ///        (i.e., no truncation).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SamplingParams {
     /// Number of output sequences to return for the given prompt.
-    n: usize,
+    pub n: usize,
     /// Best of
-    best_of: usize,
+    pub best_of: usize,
     /// Presence penalty
-    presence_penalty: f32,
+    pub presence_penalty: f32,
     /// Frequency penalty
-    frequency_penalty: f32,
+    pub frequency_penalty: f32,
     /// Repetition penalty
-    repetition_penalty: f32,
+    pub repetition_penalty: f32,
     /// Temperature
-    temperature: f32,
+    pub temperature: f32,
     /// Top p
-    top_p: f32,
+    pub top_p: f32,
     /// Top k
-    top_k: i32,
+    pub top_k: i32,
     /// Min p
-    min_p: f32,
+    pub min_p: f32,
     /// Random seed
-    seed: Option<u64>,
+    pub seed: Option<u64>,
     /// Use beam search (bool)
-    use_beam_search: bool,
+    pub use_beam_search: bool,
     /// Length penalty
-    length_penalty: f32,
+    pub length_penalty: f32,
     /// Early stopping
-    early_stopping: EarlyStopping,
+    pub early_stopping: EarlyStopping,
     /// Stop
-    stop: Vec<String>,
+    pub stop: Vec<String>,
     /// Stop token ids
-    stop_token_ids: HashSet<u32>,
+    pub stop_token_ids: HashSet<u32>,
     /// Include stop string in output
-    include_stop_str_in_output: bool,
+    pub include_stop_str_in_output: bool,
     /// Ignore EOS token
-    ignore_eos: bool,
+    pub ignore_eos: bool,
     /// Maximum number of tokens
-    max_tokens: Option<usize>,
+    pub max_tokens: Option<usize>,
     /// Minimum number of tokens
-    min_tokens: usize,
+    pub min_tokens: usize,
     /// Log probabilities
-    logprobs: Option<usize>,
+    pub logprobs: Option<usize>,
     /// Prompt log probabilities
-    prompt_logprobs: Option<usize>,
+    pub prompt_logprobs: Option<usize>,
     /// Detokenize
-    detokenize: bool,
+    pub detokenize: bool,
     /// Skip special tokens
-    skip_special_tokens: bool,
+    pub skip_special_tokens: bool,
     /// Spaces between special tokens
-    spaces_between_special_tokens: bool,
+    pub spaces_between_special_tokens: bool,
     /// Logits processors
-    logits_processors: Vec<LogitsProcessor>,
+    pub logits_processors: Vec<LogitsProcessor>,
     /// Truncate prompt tokens
-    truncate_prompt_tokens: Option<usize>,
+    pub truncate_prompt_tokens: Option<usize>,
     /// Output text buffer length - Number of characters to hold back for stop string evaluation
     /// until sequence is finished.
-    output_text_buffer_length: usize,
+    pub output_text_buffer_length: usize,
 }
 
 impl SamplingParams {
@@ -307,33 +313,11 @@ impl SamplingParams {
                 )));
             }
         }
-        if self.min_tokens < 0 {
-            return Err(SamplingParamsError::VerifyArgumentsError(format!(
-                "min_tokens must be greater than or equal to 0, got {}.",
-                self.min_tokens
-            )));
-        }
         if let Some(max_tokens) = self.max_tokens {
             if self.min_tokens > max_tokens {
                 return Err(SamplingParamsError::VerifyArgumentsError(format!(
                     "min_tokens must be less than or equal to max_tokens={}, got {}.",
                     max_tokens, self.min_tokens
-                )));
-            }
-        }
-        if let Some(logprobs) = self.logprobs {
-            if logprobs < 0 {
-                return Err(SamplingParamsError::VerifyArgumentsError(format!(
-                    "logprobs must be non-negative, got {}.",
-                    logprobs
-                )));
-            }
-        }
-        if let Some(prompt_logprobs) = self.prompt_logprobs {
-            if prompt_logprobs < 0 {
-                return Err(SamplingParamsError::VerifyArgumentsError(format!(
-                    "prompt_logprobs must be non-negative, got {}.",
-                    prompt_logprobs
                 )));
             }
         }
@@ -414,6 +398,7 @@ impl SamplingParams {
     }
 
     /// Update sampling parameter from generation configuration
+    #[allow(dead_code)]
     fn update_from_generation_config(&mut self, eos_token_ids: Vec<u32>) {
         if !self.ignore_eos {
             self.stop_token_ids.extend(eos_token_ids.iter())

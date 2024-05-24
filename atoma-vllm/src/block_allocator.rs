@@ -276,6 +276,7 @@ impl BlockAllocator for CachedBlockAllocator {
 /// The allocator maintains a list of free blocks and allocates a block when
 /// requested. When a block is freed, its reference count is decremented. If
 /// the reference count becomes zero, the block is added back to the free list.
+#[allow(dead_code)]
 pub struct UncachedBlockAllocator {
     /// Block size
     block_size: usize,
