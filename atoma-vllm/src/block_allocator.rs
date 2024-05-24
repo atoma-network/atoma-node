@@ -148,6 +148,7 @@ impl BlockAllocator for CachedBlockAllocator {
             return Ok(block);
         }
 
+        #[allow(clippy::map_entry)]
         if !self.cached_blocks.contains_key(&block_hash) {
             let allocated_block =
                 self.allocate_block(block_hash, num_hashed_tokens.unwrap_or_default())?;
@@ -235,7 +236,7 @@ impl BlockAllocator for CachedBlockAllocator {
 
     /// Get number of free blocks
     fn get_num_free_blocks(&self) -> usize {
-        return self.num_blocks - self.current_num_blocks;
+        self.num_blocks - self.current_num_blocks
     }
 
     /// Getter for `num_blocks`
@@ -278,8 +279,10 @@ impl BlockAllocator for CachedBlockAllocator {
 /// the reference count becomes zero, the block is added back to the free list.
 pub struct UncachedBlockAllocator {
     /// Block size
+    #[allow(dead_code)]
     block_size: usize,
     /// Device
+    #[allow(dead_code)]
     device: Device,
     /// Number of blocks
     num_blocks: usize,
@@ -328,7 +331,7 @@ impl BlockAllocator for UncachedBlockAllocator {
             Ok(block)
         } else {
             error!("Out of memory, no available free blocks!");
-            return Err(BlockAllocatorError::OutOfMemory);
+            Err(BlockAllocatorError::OutOfMemory)
         }
     }
 

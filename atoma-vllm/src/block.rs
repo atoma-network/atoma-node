@@ -41,7 +41,7 @@ impl LogicalTokenBlock {
 
     /// Getter for `block_size`
     pub fn block_size(&self) -> usize {
-        self.block_number
+        self.block_size
     }
 
     /// Checks if `token_ids` is empty
