@@ -172,10 +172,10 @@ impl SequenceData {
     pub fn get_prefix_token_ids(&self, num_tokens: usize) -> (Vec<u32>, Vec<u32>) {
         let prompt_len = self.get_prompt_len();
         if num_tokens > prompt_len {
-            return (
+            (
                 self.prompt_token_ids.clone(),
                 self.output_token_ids[..(num_tokens - prompt_len)].to_vec(),
-            );
+            )
         } else {
             (self.prompt_token_ids[..num_tokens].to_vec(), vec![])
         }
@@ -257,6 +257,7 @@ pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
     /// End of sequence token
+    #[allow(dead_code)]
     eos_token_id: Option<u32>,
     /// Prompt
     prompt: String,
@@ -269,8 +270,10 @@ pub struct Sequence {
     /// Logical token blocks
     logical_token_blocks: Vec<LogicalTokenBlock>,
     /// Prefix offset, used for incremental detokenization
+    #[allow(dead_code)]
     prefix_offset: usize,
     /// Read offset, used for incremental detokenization
+    #[allow(dead_code)]
     read_offset: usize,
     /// Output generated text
     output_text: String,
@@ -279,8 +282,10 @@ pub struct Sequence {
     /// Sequence status
     sequence_status: Option<SequenceStatus>,
     /// Generated tokens
+    #[allow(dead_code)]
     tokens: Vec<String>,
     /// Span
+    #[allow(dead_code)]
     span: Span,
 }
 
@@ -521,20 +526,26 @@ pub struct MultiModalData {
 /// Warn: Our implementation does not consider LoRA and embeddings requests (contrary to vLLM).
 pub struct SequenceGroup {
     /// Request Id
+    #[allow(dead_code)]
     request_id: String,
     /// Sequences
     sequences: HashMap<u64, Sequence>,
     /// Request's arrival time
+    #[allow(dead_code)]
     arrival_time: Instant,
     /// Request metrics
     metrics: RequestMetrics,
     /// Multi modal data
+    #[allow(dead_code)]
     multi_model_data: Vec<MultiModalData>,
     /// Prompt log probabilities
+    #[allow(dead_code)]
     prompt_logprobs: Option<LogProb>,
     /// Sampling parameters
+    #[allow(dead_code)]
     sampling_params: Option<SamplingParams>,
     /// State
+    #[allow(dead_code)]
     state: SequenceGroupState,
 }
 
@@ -597,6 +608,7 @@ impl SequenceGroup {
     }
 
     /// Sets the first token time for Request level timings.
+    #[allow(dead_code)]
     fn maybe_set_first_token_time(&mut self, time: Instant) {
         // NOTE: in a case where a sequence_group is swapped and
         // recomputed, the time between iterations is counted
@@ -614,6 +626,7 @@ impl SequenceGroup {
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
+    #[allow(dead_code)]
     fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
         if self.metrics.first_scheduled_time.is_none() {
             self.metrics.first_scheduled_time = Some(time);
@@ -622,11 +635,13 @@ impl SequenceGroup {
     }
 
     /// Sets finished time
+    #[allow(dead_code)]
     fn set_finished_time(&mut self, time: Instant) {
         self.metrics.finished_time = Some(time);
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
+    #[allow(dead_code)]
     fn get_max_num_running_seqs(&self) -> usize {
         if self.sampling_params.is_some() && self.sampling_params.as_ref().unwrap().use_beam_search
         {
@@ -661,11 +676,7 @@ impl SequenceGroup {
                     }
                 })
                 .collect(),
-            None => self
-                .sequences
-                .values()
-                .map(|s| s.clone())
-                .collect(),
+            None => self.sequences.values().cloned().collect(),
         }
     }
 
@@ -782,29 +793,39 @@ impl SequenceGroup {
 ///     `multi_modal_data`: Multi modal data.
 pub struct SequenceGroupMetadata {
     /// Request id
+    #[allow(dead_code)]
     request_id: String,
     /// Is prompt (bool)
+    #[allow(dead_code)]
     is_prompt: bool,
     /// Sampling parameters
+    #[allow(dead_code)]
     sampling_params: SamplingParams,
     /// Block tables
+    #[allow(dead_code)]
     block_tables: HashMap<u64, Vec<u64>>,
     /// Do sample (bool)
+    #[allow(dead_code)]
     do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
     /// Computed block numbers
+    #[allow(dead_code)]
     computed_block_nums: Vec<u32>,
     /// Sequence data
+    #[allow(dead_code)]
     sequence_data: HashMap<u64, SequenceData>,
     /// Internal state tied to this sequence group
+    #[allow(dead_code)]
     state: SequenceGroupState,
     /// Optional multi model data
+    #[allow(dead_code)]
     multi_modal_data: Option<MultiModalData>,
 }
 
 impl SequenceGroupMetadata {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         request_id: String,
         is_prompt: bool,
@@ -817,18 +838,16 @@ impl SequenceGroupMetadata {
         state: SequenceGroupState,
         multi_modal_data: Option<MultiModalData>,
     ) -> Self {
-        let token_chunk_size = if token_chunk_size.is_none() {
-            if is_prompt {
-                sequence_data
-                    .values()
-                    .next()
-                    .map(|s| s.length())
-                    .unwrap_or(0)
-            } else {
-                1
-            }
+        let token_chunk_size = if let Some(size) = token_chunk_size {
+            size
+        } else if is_prompt {
+            sequence_data
+                .values()
+                .next()
+                .map(|s| s.length())
+                .unwrap_or(0)
         } else {
-            token_chunk_size.unwrap()
+            1
         };
 
         Self {
@@ -908,6 +927,10 @@ impl SamplerOutput {
     pub fn len(&self) -> usize {
         self.outputs.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.outputs.is_empty()
+    }
 }
 
 #[derive(Debug)]
@@ -946,6 +969,7 @@ pub struct SpecDecodeWorkerMetrics {
 #[derive(Clone)]
 pub struct ExecuteModelRequest {
     /// The sequence group metadata list
+    #[allow(dead_code)]
     seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
     blocks_to_swap_in: Vec<(i32, i32)>,
@@ -1193,19 +1217,34 @@ mod tests {
         let seqs = seq_group.get_seqs(None);
         assert_eq!(seqs.len(), 1);
 
-        seq_group.sequences.values_mut().enumerate().for_each(|(i, v)| if i == 0 {
-            v.sequence_data.add_token_id(1, 0.0);
-        });
-        seq_group.sequences.values_mut().for_each(|v| v.reset_state_for_recompute());
-        assert!(seq_group.is_prefill());
-        
-        seq_group.update_num_computed_tokens(5).expect("Failed to update");
+        seq_group
+            .sequences
+            .values_mut()
+            .enumerate()
+            .for_each(|(i, v)| {
+                if i == 0 {
+                    v.sequence_data.add_token_id(1, 0.0);
+                }
+            });
+        seq_group
+            .sequences
+            .values_mut()
+            .for_each(|v| v.reset_state_for_recompute());
         assert!(seq_group.is_prefill());
 
-        seq_group.update_num_computed_tokens(7).expect("Failed to update");
+        seq_group
+            .update_num_computed_tokens(5)
+            .expect("Failed to update");
         assert!(seq_group.is_prefill());
 
-        seq_group.update_num_computed_tokens(1).expect("Failed to update");
+        seq_group
+            .update_num_computed_tokens(7)
+            .expect("Failed to update");
+        assert!(seq_group.is_prefill());
+
+        seq_group
+            .update_num_computed_tokens(1)
+            .expect("Failed to update");
         assert!(!seq_group.is_prefill())
     }
 }

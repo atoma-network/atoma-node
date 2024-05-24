@@ -27,6 +27,12 @@ impl LRUEvictor {
     }
 }
 
+impl Default for LRUEvictor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Evictor for LRUEvictor {
     /// Checks if `LRUEvictor` contains a block for the corresponding `block_hash`
     fn contains(&self, block_hash: u64) -> bool {

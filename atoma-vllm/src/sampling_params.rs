@@ -168,6 +168,7 @@ pub struct SamplingParams {
 
 impl SamplingParams {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         n: usize,
         best_of: Option<usize>,
