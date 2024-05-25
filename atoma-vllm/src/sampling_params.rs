@@ -20,7 +20,7 @@ pub enum SamplingStrategy {
 type LogitsProcessor = fn(&Vec<i32>, &Tensor) -> Tensor;
 
 /// `EarlyStopping` - controls the stopping condition for beam search
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EarlyStopping {
     True,
     False,
@@ -107,7 +107,7 @@ impl Default for EarlyStopping {
 ///    truncate_prompt_tokens: If set to an integer k, will use only the last k
 ///        tokens from the prompt (i.e., left truncation). Defaults to None
 ///        (i.e., no truncation).
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SamplingParams {
     /// Number of output sequences to return for the given prompt.
     pub n: usize,

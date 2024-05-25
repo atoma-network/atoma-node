@@ -50,7 +50,7 @@ impl LogProb {
 }
 
 /// `SequenceStatus` Status of a `Sequence`
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SequenceStatus {
     Waiting,
     Running,
@@ -86,13 +86,14 @@ impl SequenceStatus {
 }
 
 /// State of a `Sequence`
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SequenceStage {
     Prefill,
     Decode,
 }
 
 /// Request metrics
+#[derive(Debug)]
 pub struct RequestMetrics {
     /// Time of request arrival to service
     pub arrival_time: Instant,
@@ -113,7 +114,7 @@ pub struct RequestMetrics {
 /// Args:
 ///    `prompt_token_ids``: The token IDs of the prompt.
 ///    `output_token_ids``: The token IDs of the output. Set to an empty list if None.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SequenceData {
     /// Prompt token ids
     prompt_token_ids: Vec<u32>,
@@ -252,7 +253,7 @@ impl SequenceData {
 ///        block size used by the block manager and cache engine.
 ///
 /// Warn: Contrary to vLLM, we are not dealing with LoRA requests
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
@@ -268,7 +269,7 @@ pub struct Sequence {
     /// Block size
     block_size: usize,
     /// Logical token blocks
-    logical_token_blocks: Vec<LogicalTokenBlock>,
+    pub logical_token_blocks: Vec<LogicalTokenBlock>,
     /// Prefix offset, used for incremental detokenization
     #[allow(dead_code)]
     prefix_offset: usize,
@@ -377,6 +378,11 @@ impl Sequence {
         }
     }
 
+    /// Get the total number of logical blocks for this sequence
+    pub fn get_num_total_logical_token_blocks(&self) -> usize {
+        self.logical_token_blocks.len()
+    }
+
     /// Appends a single token to the `Sequence`
     pub fn append_token_id(&mut self, token_id: u32, logprobs: HashMap<u32, LogProb>) {
         if logprobs.contains_key(&token_id) {
@@ -391,6 +397,11 @@ impl Sequence {
     /// Length of the underlying `Sequence`'s `SequenceData`
     pub fn length(&self) -> usize {
         self.sequence_data.length()
+    }
+
+    /// Getter for `block_size`
+    pub fn block_size(&self) -> usize {
+        self.block_size
     }
 
     /// Length of the underlying `Sequence`'s `SequenceData` prompt length
@@ -482,15 +493,22 @@ impl Sequence {
     pub fn is_prefill(&self) -> bool {
         self.sequence_data.stage == SequenceStage::Prefill
     }
+
+    /// Getter for `sequence_id`
+    pub fn sequence_id(&self) -> u64 {
+        self.sequence_id
+    }
 }
 
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
+#[derive(Debug)]
 pub struct SequenceGroupState {
     /// Generator used in seeded sampling
     pub generator: Option<usize>,
 }
 
 /// `MultiModalType` - The type of a multi-modal request
+#[derive(Debug)]
 pub enum MultiModalType {
     Audio,
     Image,
@@ -505,6 +523,7 @@ pub enum MultiModalType {
 ///    
 /// The required shape and semantic meaning of it depends on the vision
 /// language config of the hosted model.
+#[derive(Debug)]
 pub struct MultiModalData {
     /// Type
     pub r#type: MultiModalType,
@@ -524,10 +543,11 @@ pub struct MultiModalData {
 ///        for an embedding model.
 ///
 /// Warn: Our implementation does not consider LoRA and embeddings requests (contrary to vLLM).
+#[derive(Debug)]
 pub struct SequenceGroup {
     /// Request Id
     #[allow(dead_code)]
-    request_id: String,
+    pub request_id: String,
     /// Sequences
     sequences: HashMap<u64, Sequence>,
     /// Request's arrival time
@@ -559,8 +579,13 @@ impl SequenceGroup {
         sampling_params: Option<SamplingParams>,
         multi_model_data: Vec<MultiModalData>,
         state: SequenceGroupState,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SequenceError> {
+        if sequences.is_empty() {
+            return Err(SequenceError::ConstructorError(
+                "Empty vector of `Sequence`s".into(),
+            ));
+        }
+        Ok(Self {
             request_id,
             sequences: sequences.into_iter().map(|s| (s.sequence_id, s)).collect(),
             arrival_time,
@@ -576,7 +601,7 @@ impl SequenceGroup {
             prompt_logprobs,
             sampling_params,
             state,
-        }
+        })
     }
 
     /// Prompt of the `SequenceGroup`, all the sequences should have the same prompt
@@ -680,6 +705,42 @@ impl SequenceGroup {
         }
     }
 
+    /// Get sequence ids from `SequenceGroup` with given id
+    pub fn get_sequences_ids(&self, status: Option<SequenceStatus>) -> Vec<u64> {
+        match status {
+            Some(ref status) => self
+                .sequences
+                .values()
+                .filter_map(|seq| {
+                    if seq.sequence_status.as_ref() == Some(status) {
+                        Some(seq.sequence_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            None => self.sequences.values().map(|s| s.sequence_id).collect(),
+        }
+    }
+
+    /// Gets first sequence as a reference
+    pub fn get_first_sequence(&self, status: Option<SequenceStatus>) -> Option<&Sequence> {
+        match status {
+            Some(ref status) => self
+                .sequences
+                .values()
+                .filter_map(|seq| {
+                    if seq.sequence_status.as_ref() == Some(status) {
+                        Some(seq)
+                    } else {
+                        None
+                    }
+                })
+                .next(),
+            None => self.sequences.values().next(),
+        }
+    }
+
     /// Get a vector of unfinished sequences
     pub fn get_unfinished_sequences(&self) -> Vec<Sequence> {
         self.sequences
@@ -724,19 +785,41 @@ impl SequenceGroup {
         num_uncomputed_tokens
     }
 
-    /// Number of sequences
+    /// Number of sequences, which optionally are in current `SequenceStatus`
     pub fn get_num_sequences(&self, status: Option<SequenceStatus>) -> usize {
-        if status.is_none() {
-            self.sequences.len()
+        if let Some(status) = status {
+            let mut len = 0;
+            for sequence in self.sequences.values() {
+                if let Some(ref sequence_status) = sequence.sequence_status {
+                    if sequence_status == &status {
+                        len += 1;
+                    }
+                }
+            }
+            len
         } else {
-            self.get_seqs(status).len()
+            self.sequences.len()
         }
     }
 
+    /// Get the total number of logical blocks needed to be allocated for this `SequenceGroup`,
+    pub fn get_num_total_logical_token_blocks(&self, status: SequenceStatus) -> Option<usize> {
+        // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
+        // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
+        for sequence in self.sequences.values() {
+            if sequence.sequence_status == Some(status) {
+                return Some(sequence.get_num_total_logical_token_blocks());
+            }
+        }
+        None
+    }
+
+    /// Number of unfinished sequences
     pub fn num_unfinished_sequences(&self) -> usize {
         self.get_unfinished_sequences().len()
     }
 
+    /// Number of finished sequences
     pub fn num_finished_sequences(&self) -> usize {
         self.get_finished_sequences().len()
     }
@@ -1025,6 +1108,8 @@ pub enum SequenceError {
     InvalidNumberGeneratedTokens,
     #[error("Invalid last token generation while in prefix phase")]
     WhileInPrefix,
+    #[error("Constructor error: `{0}`")]
+    ConstructorError(String),
 }
 
 #[cfg(test)]
@@ -1096,7 +1181,8 @@ mod tests {
             SequenceGroupState {
                 generator: Some(42),
             },
-        );
+        )
+        .expect("Failed to construct a new sequence group");
 
         (prompt, seq_group)
     }

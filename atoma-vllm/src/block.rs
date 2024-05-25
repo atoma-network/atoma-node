@@ -174,6 +174,11 @@ impl PhysicalTokenBlock {
         self.ref_count += 1;
     }
 
+    /// Increment `ref_count` by `value`
+    pub fn increment_ref_count_by(&mut self, value: usize) {
+        self.ref_count += value;
+    }
+
     /// Decreases the `ref_count` variable by -1, if possible
     pub fn decrease_ref_count(&mut self) {
         if self.ref_count > 0 {

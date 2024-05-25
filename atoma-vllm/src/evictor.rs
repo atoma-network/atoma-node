@@ -14,6 +14,7 @@ pub trait Evictor {
 /// The `LRUEvictor` struct evicts cached blocks based on their last_accessed timestamp, which represents the last time the block was accessed.
 /// If there are multiple blocks with the same `last_accessed` time, the block with the largest `num_hashed_tokens` will be evicted.
 /// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
+#[derive(Debug)]
 pub struct LRUEvictor {
     pub free_table: IndexMap<u64, PhysicalTokenBlock>,
 }

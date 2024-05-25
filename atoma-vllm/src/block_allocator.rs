@@ -5,14 +5,14 @@ use std::{
 
 use candle::Device;
 use thiserror::Error;
-use tracing::{error, info, info_span, warn, Span};
+use tracing::{error, info, info_span, instrument, warn, Span};
 
 use crate::{
     block::{BlockTable, PhysicalTokenBlock},
     evictor::{Evictor, EvictorError, LRUEvictor},
 };
 
-pub trait BlockAllocator {
+pub trait BlockAllocator: std::fmt::Debug {
     fn allocate_block(
         &mut self,
         _block_hash: u64,
@@ -34,7 +34,7 @@ pub trait BlockAllocator {
     fn update_hash(
         &mut self,
         _block_hash: u64,
-        _block: &mut PhysicalTokenBlock,
+        _block: Arc<RwLock<PhysicalTokenBlock>>,
     ) -> Result<(), BlockAllocatorError> {
         panic!("Not implemented")
     }
@@ -45,10 +45,11 @@ pub trait BlockAllocator {
 /// The allocator maintains a list of free blocks and allocates a new block whenever requested.
 /// When a block is freed, its reference counter field is decremented. Once the reference counter
 /// equals zero, the block is added back to the free list.
+#[derive(Debug)]
 pub struct CachedBlockAllocator {
     /// Block size
     block_size: usize,
-    /// Counter, used to identify blocks
+    /// Counter for injective hashing
     counter: u64,
     /// Device
     device: Device,
@@ -82,12 +83,12 @@ impl CachedBlockAllocator {
 
 impl BlockAllocator for CachedBlockAllocator {
     /// Allocates a new block
+    #[instrument]
     fn allocate_block(
         &mut self,
         block_hash: u64,
         num_hashed_tokens: usize,
     ) -> Result<Arc<RwLock<PhysicalTokenBlock>>, BlockAllocatorError> {
-        let _enter_span = self.span.enter();
         if self.current_num_blocks == self.num_blocks {
             info!("Current number blocks equals total number of blocks, evicting a block..");
             let mut evicted_block = self.evictor.evict()?;
@@ -110,19 +111,17 @@ impl BlockAllocator for CachedBlockAllocator {
     }
 
     /// Allocates a new block to the cache
+    #[instrument]
     fn allocate(
         &mut self,
-        mut block_hash: Option<u64>,
+        block_hash: Option<u64>,
         num_hashed_tokens: Option<usize>,
     ) -> Result<Arc<RwLock<PhysicalTokenBlock>>, BlockAllocatorError> {
-        let span = &self.span;
-        let _ = span.enter();
-        if block_hash.is_none() {
-            self.counter += 1;
-            block_hash = Some(self.counter);
-        }
-        // DON'T PANIC: already enforced that `block_hash` is not `None`
-        let block_hash = block_hash.unwrap();
+        let block_hash = block_hash.unwrap_or_else(|| {
+            let counter = self.counter;
+            self.counter += 1; // updates `counter` to be used for next block allocation
+            counter
+        });
         if self.evictor.contains(block_hash) {
             if self.cached_blocks.contains_key(&block_hash) {
                 error!("Block with block_hash = {block_hash} has already been allocated in cache");
@@ -248,7 +247,7 @@ impl BlockAllocator for CachedBlockAllocator {
     fn update_hash(
         &mut self,
         block_hash: u64,
-        block: &mut PhysicalTokenBlock,
+        block: Arc<RwLock<PhysicalTokenBlock>>,
     ) -> Result<(), BlockAllocatorError> {
         let enter_span = &self.span;
         let _ = enter_span.enter();
@@ -258,8 +257,14 @@ impl BlockAllocator for CachedBlockAllocator {
             return Err(BlockAllocatorError::BlockNotFound(block_hash));
         }
 
-        let old_hash = block.block_hash();
-        block.update_block_hash(block_hash);
+        let old_hash = {
+            let mut block_guard = block
+                .write()
+                .map_err(|e| BlockAllocatorError::PoisonError(e.to_string()))?;
+            let old_hash = block_guard.block_hash();
+            block_guard.update_block_hash(block_hash);
+            old_hash
+        };
 
         if let Some(block) = self.cached_blocks.remove(&old_hash) {
             info!("Updating block with new block hash in cache..");
@@ -267,7 +272,7 @@ impl BlockAllocator for CachedBlockAllocator {
             Ok(())
         } else {
             warn!("Block with old block hash {old_hash} not found in cache..");
-            Err(BlockAllocatorError::BlockNotFound(block.block_hash()))
+            Err(BlockAllocatorError::BlockNotFound(old_hash))
         }
     }
 }
@@ -278,6 +283,7 @@ impl BlockAllocator for CachedBlockAllocator {
 /// requested. When a block is freed, its reference count is decremented. If
 /// the reference count becomes zero, the block is added back to the free list.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct UncachedBlockAllocator {
     /// Block size
     block_size: usize,
