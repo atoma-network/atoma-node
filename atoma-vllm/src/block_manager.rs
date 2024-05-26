@@ -1,13 +1,14 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, PoisonError, RwLock},
+    collections::{hash_map::Entry, HashMap, HashSet},
+    ops::{Deref, DerefMut},
+    sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
 use crate::{
-    block::{BlockTable, PhysicalTokenBlock},
-    block_allocator::{
-        BlockAllocator, BlockAllocatorError, CachedBlockAllocator, UncachedBlockAllocator,
+    block::{
+        BlockError, BlockTable, DerefRead, DerefWrite, PhysicalTokenBlock, SyncPhysicalTokenBlock,
     },
+    block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
 };
 use candle::Device;
@@ -41,17 +42,15 @@ pub struct BlockSpaceManager {
     /// Total number of GPU blocks
     num_gpu_blocks: usize,
     /// CPU allocator
-    cpu_allocator: Box<dyn BlockAllocator>,
+    cpu_allocator: BlockAllocator,
     /// GPU allocator
-    gpu_allocator: Box<dyn BlockAllocator>,
+    gpu_allocator: BlockAllocator,
     /// Watermark
     watermark: f32,
     /// Watermark blocks
     watermark_blocks: u32,
     /// Block sliding window
     block_sliding_window: Option<usize>,
-    /// Enable caching
-    enable_caching: bool,
     /// Tracing span
     pub span: Span,
 }
@@ -65,47 +64,17 @@ impl BlockSpaceManager {
         num_gpu_blocks: usize,
         watermark: f32,
         sliding_window: Option<usize>,
-        enable_caching: bool,
     ) -> Result<Self, BlockSpaceManagerError> {
-        if enable_caching && sliding_window.is_some() {
-            return Err(BlockSpaceManagerError::SlidingWindowDisabledWithCaching);
-        }
-
         let block_sliding_window = sliding_window.map(|sw| sw.div_ceil(block_size));
 
         let watermark_blocks = (watermark * num_gpu_blocks as f32).round() as u32;
-        let span = info_span!("block-space-manager");
 
-        let (cpu_allocator, gpu_allocator): (Box<dyn BlockAllocator>, Box<dyn BlockAllocator>) =
-            if enable_caching {
-                info!("Block space manager uses cached block allocator");
-                (
-                    Box::new(CachedBlockAllocator::new(
-                        block_size,
-                        Device::Cpu,
-                        num_cpu_blocks,
-                    )),
-                    Box::new(CachedBlockAllocator::new(
-                        block_size,
-                        Device::new_cuda(device)?,
-                        num_gpu_blocks,
-                    )),
-                )
-            } else {
-                info!("Block space managar uses uncached block allocator");
-                (
-                    Box::new(UncachedBlockAllocator::new(
-                        block_size,
-                        Device::Cpu,
-                        num_cpu_blocks,
-                    )),
-                    Box::new(UncachedBlockAllocator::new(
-                        block_size,
-                        Device::new_cuda(device)?,
-                        num_gpu_blocks,
-                    )),
-                )
-            };
+        let (cpu_allocator, gpu_allocator): (BlockAllocator, BlockAllocator) = (
+            BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
+            BlockAllocator::new(block_size, Device::new_cuda(device)?, num_gpu_blocks),
+        );
+
+        let span = info_span!("block-space-manager");
 
         Ok(Self {
             block_size,
@@ -115,7 +84,6 @@ impl BlockSpaceManager {
             num_cpu_blocks,
             num_gpu_blocks,
             block_sliding_window,
-            enable_caching,
             span,
             watermark,
             watermark_blocks,
@@ -154,7 +122,7 @@ impl BlockSpaceManager {
     pub fn allocate(&mut self, seq_group: SequenceGroup) -> Result<(), BlockSpaceManagerError> {
         if let Some(sequence) = seq_group.get_first_sequence(Some(SequenceStatus::Waiting)) {
             let num_logical_blocks_to_allocate = sequence.get_num_total_logical_token_blocks();
-            let mut block_table: Vec<Arc<RwLock<PhysicalTokenBlock>>> =
+            let mut block_table: Vec<SyncPhysicalTokenBlock> =
                 Vec::with_capacity(num_logical_blocks_to_allocate);
 
             for logical_idx in 0..num_logical_blocks_to_allocate {
@@ -167,14 +135,14 @@ impl BlockSpaceManager {
                     let block = block_table.get(logical_idx % block_sliding_window).unwrap();
                     // TODO: I don't think this code is necessary
                     {
-                        let mut block_guard = match block.write() {
+                        let mut block_guard = match block.deref_write() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
                                     "Failed to acquire lock for sequence_group with id = {}",
                                     seq_group.request_id
                                 );
-                                return Err(BlockSpaceManagerError::PoisonError(e.to_string()));
+                                return Err(BlockSpaceManagerError::BlockError(e));
                             }
                         };
                         block_guard.increment_ref_count_by(
@@ -182,24 +150,17 @@ impl BlockSpaceManager {
                         );
                     }
                     block.clone()
-                } else if self.enable_caching {
-                    let block_hash = sequence.hash_of_block(logical_idx);
-                    let num_hashed_tokens = sequence.num_hashed_tokens_of_block(logical_idx);
-                    let block = self
-                        .gpu_allocator
-                        .allocate(Some(block_hash), Some(num_hashed_tokens))?;
-                    block
                 } else {
-                    let block = self.gpu_allocator.allocate(None, None)?;
+                    let block = self.gpu_allocator.allocate()?;
                     {
-                        let mut block_guard = match block.write() {
+                        let mut block_guard = match block.deref_write() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
                                     "Failed to acquire lock for sequence_group with id = {}",
                                     seq_group.request_id
                                 );
-                                return Err(BlockSpaceManagerError::PoisonError(e.to_string()));
+                                return Err(BlockSpaceManagerError::BlockError(e));
                             }
                         };
                         block_guard.increment_ref_count_by(
@@ -229,35 +190,6 @@ impl BlockSpaceManager {
         num_seqs <= num_free_gpu_blocks
     }
 
-    /// Promotes last block
-    #[instrument]
-    fn promote_last_block(
-        &mut self,
-        sequence: Sequence,
-        last_block: Arc<RwLock<PhysicalTokenBlock>>,
-    ) -> Result<Arc<RwLock<PhysicalTokenBlock>>, BlockSpaceManagerError> {
-        if !self.enable_caching {
-            error!("`promote_last_block` method only supported with `enable_caching`");
-            return Err(BlockSpaceManagerError::MethodNotSupported(
-                "promote_last_block".into(),
-            ));
-        }
-
-        // Computes a new hash for the block, so that it can be shared by other sequences
-        let new_hash = sequence.hash_of_block(sequence.get_num_total_logical_token_blocks() - 1);
-
-        // is the `new_hash` is already in cache table, then free `last_block` and return the cache version
-        if self.gpu_allocator.contains_block(new_hash) {
-            info!("Gpu allocator already contains a block with `{new_hash}`, freeing last block..");
-            self.gpu_allocator.free(last_block)?;
-            Ok(self.gpu_allocator.allocate(Some(new_hash), None)?)
-        } else {
-            self.gpu_allocator
-                .update_hash(new_hash, last_block.clone())?;
-            Ok(last_block)
-        }
-    }
-
     /// Checks if the last block is already full
     #[instrument]
     fn is_last_block_full(&self, sequence: &Sequence) -> bool {
@@ -265,73 +197,25 @@ impl BlockSpaceManager {
         token_ids_len > 0 && (token_ids_len % sequence.block_size() == 0)
     }
 
-    /// Try promote last block
-    #[instrument]
-    fn maybe_promote_last_block(
-        &mut self,
-        sequence: Sequence,
-        last_block: Arc<RwLock<PhysicalTokenBlock>>,
-    ) -> Result<Arc<RwLock<PhysicalTokenBlock>>, BlockSpaceManagerError> {
-        if self.is_last_block_full(&sequence) {
-            self.promote_last_block(sequence, last_block)
-        } else {
-            Ok(last_block)
-        }
-    }
-
-    /// Allocates a new physical block,
-    #[instrument]
-    fn allocate_last_block(
-        &mut self,
-        sequence: Sequence,
-    ) -> Result<Arc<RwLock<PhysicalTokenBlock>>, BlockSpaceManagerError> {
-        if !self.enable_caching {
-            return Ok(self.gpu_allocator.allocate(None, None)?);
-        }
-
-        let mut block_hash = None;
-        let logical_idx = sequence.length() - 1;
-
-        // None if the last block is not full. Otherwise, we set it to the
-        // content hash of `last_block`
-        if self.is_last_block_full(&sequence) {
-            block_hash = Some(sequence.hash_of_block(logical_idx));
-        }
-
-        let num_hashed_tokens = sequence.num_hashed_tokens_of_block(logical_idx);
-
-        // `num_hashed_tokens` is used to compute future hashes
-        // (e.g. in the hashing function, it is used to ask the sequence for
-        // prefix tokens)
-        let new_block = self
-            .gpu_allocator
-            .allocate(block_hash, Some(num_hashed_tokens))?;
-
-        // The `block_hash` being `None` means that `last_block` was not full.
-        // In that case, `reference_count` should be 1
-        if block_hash.is_none() {
-            let block_guard = new_block
-                .read()
-                .map_err(|e| BlockSpaceManagerError::PoisonError(e.to_string()))?;
-            let block_ref_count = block_guard.ref_count();
-            if block_ref_count != 1 {
-                return Err(BlockSpaceManagerError::InvalidRefCount(block_ref_count));
-            }
-        }
-
-        Ok(new_block)
-    }
-
     /// Allocates a new physical slot for a new token
+    #[instrument]
     pub fn append_slots(
         &mut self,
         sequence: Sequence,
     ) -> Result<Option<(usize, usize)>, BlockSpaceManagerError> {
         let num_total_logical_token_blocks = sequence.get_num_total_logical_token_blocks();
+        if num_total_logical_token_blocks == 0 {
+            error!("Total number of logical token blocks is zero, sequences should not be empty");
+            return Err(BlockSpaceManagerError::EmptySequence);
+        }
         if let Some(block_table) = self.block_tables.get_mut(&sequence.sequence_id()) {
             // If we need to allocate a new physical block
             if block_table.len() < num_total_logical_token_blocks {
                 if block_table.len() != num_total_logical_token_blocks - 1 {
+                    error!(
+                        "Can only allocate one physical block at the time, requested = {} blocks",
+                        num_total_logical_token_blocks - block_table.len()
+                    );
                     return Err(BlockSpaceManagerError::AppendSlotError(
                         "Can only allocate one physical block at the time".into(),
                     ));
@@ -340,17 +224,245 @@ impl BlockSpaceManager {
                 if self.block_sliding_window.is_some()
                     && block_table.len() >= self.block_sliding_window.unwrap()
                 {
-                    // Reuse a block
-                    // DON'T PANIC: `self.block_sliding_window` is not `None` and `block_table` length
+                    // Block table has more than `block_sliding_window` blocks, so we might as well
+                    // reuse a block prior to beginning of `block_table.len() - block_sliding_window`
+                    //
+                    // DON'T PANIC: `self.block_sliding_window` is not `None` and
+                    // `block_table.len() % self.block_sliding_window.unwrap() <= block_table.len()`, forcibly
                     block_table.push(
                         block_table
                             .get(block_table.len() % self.block_sliding_window.unwrap())
-                            .unwrap().clone(),
+                            .unwrap()
+                            .clone(),
                     );
+                } else {
+                    // In this case, the sequence already has a new logical block to be appended
+                    // we need to allocate a new physical block
+                    let new_block = self.gpu_allocator.allocate()?;
+                    block_table.push(new_block);
+
+                    return Ok(None);
                 }
+
+                // We need to append the new token to the last block
+                let last_block = block_table.last_mut().unwrap(); // DON'T PANIC: at this point we are sure that `block_table` is non-empty
+                {
+                    let guard = last_block.deref_read()?;
+                    if !guard.device().is_cuda() {
+                        error!("Invalid device, it should be a `Cuda` device");
+                        return Err(BlockSpaceManagerError::InvalidDevice);
+                    }
+
+                    if guard.ref_count() == 1 {
+                        return Ok(None);
+                    }
+                }
+
+                // At this point, the block is shared with other sequences, so we perform Copy on Write (CoW)
+                // CoW: Allocate a new block and copy the tokens
+                let new_block = self.gpu_allocator.allocate()?;
+                self.gpu_allocator.free(last_block.clone())?;
+                *last_block = new_block;
             }
         }
         Ok(None)
+    }
+
+    /// Fork a `Sequence`. It never allocates new physical blocks, therefore this method is safe from OOM
+    /// NOTE: we are cloning shared references to `PhysicalBlocks` from the parent to child sequence
+    #[instrument]
+    pub fn fork(
+        &mut self,
+        parent_sequence: Sequence,
+        child_sequence: Sequence,
+    ) -> Result<(), BlockSpaceManagerError> {
+        info!(
+            "Forking current parent sequence with id = {}",
+            parent_sequence.sequence_id()
+        );
+        if !self
+            .block_tables
+            .contains_key(&parent_sequence.sequence_id())
+        {
+            return Err(BlockSpaceManagerError::MissingSequence);
+        }
+
+        // // DON'T PANIC: already checked to not be `None`
+        let source_block_table = self
+            .block_tables
+            .get(&parent_sequence.sequence_id())
+            .unwrap()
+            .clone();
+
+        self.block_tables
+            .insert(child_sequence.sequence_id(), source_block_table.clone());
+
+        // When using a sliding window, blocks will be eventually reused.
+        // In this case the block tables will contain repeated blocks.
+        // When forking, we must make sure that each block's `ref_count`
+        // is only incremented by one, so we deduplicate them
+        let block_ids = vec![];
+        for block in source_block_table.iter() {
+            let mut guard = block.deref_write()?;
+            if !block_ids.contains(&guard.block_hash()) {
+                guard.increment_ref_count();
+            }
+        }
+        Ok(())
+    }
+
+    /// Get allocated physical blocks to each `Sequence` of `SequenceGroup`
+    fn get_physical_blocks(
+        &self,
+        seq_group: &SequenceGroup,
+    ) -> Result<Vec<SyncPhysicalTokenBlock>, BlockSpaceManagerError> {
+        // NOTE: we assume that physical blocks are only shared across `Sequence`'s of the
+        // same `SequenceGroup`
+        let mut output = Vec::new();
+        let mut block_ids = Vec::new();
+        for sequence in seq_group.get_unfinished_sequences() {
+            if let Some(blocks) = self.block_tables.get(&sequence.sequence_id()) {
+                for block in blocks {
+                    {
+                        let block_id = block.deref_read()?.block_hash();
+                        if !block_ids.contains(&block_id) {
+                            block_ids.push(block_id);
+                            output.push(block.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    /// Checks if can swap in logical with physical token blocks
+    #[instrument]
+    pub fn can_swap_in(
+        &self,
+        seq_group: SequenceGroup,
+    ) -> Result<AllocationStatus, BlockSpaceManagerError> {
+        info!(
+            "Can swap in, for sequence group with id = {}",
+            seq_group.request_id
+        );
+        let blocks = self.get_physical_blocks(&seq_group)?;
+        let num_swapped_sequences = seq_group.get_num_sequences(Some(SequenceStatus::Swapped));
+        let num_free_blocks = self.gpu_allocator.get_num_free_blocks();
+        // NOTE: Conservatively we assume that every sequence will allocate
+        // at least one block free block right after the swap-in
+        // NOTE: it should match the logic in `can_append_slot`
+        let num_required_blocks = blocks.len() + num_swapped_sequences;
+        if self.gpu_allocator.get_num_total_blocks() < num_required_blocks {
+            Ok(AllocationStatus::Never)
+        } else if num_free_blocks >= num_required_blocks {
+            Ok(AllocationStatus::Ok)
+        } else {
+            Ok(AllocationStatus::Later)
+        }
+    }
+
+    /// Swaps in CPU with GPU blocks
+    #[instrument]
+    pub fn swap_in(
+        &mut self,
+        seq_group: SequenceGroup,
+    ) -> Result<HashMap<u64, u64>, BlockSpaceManagerError> {
+        info!(
+            "Swapping in CPU to GPU blocks, for sequence group with id = {}",
+            seq_group.request_id
+        );
+        // CPU (physical) block -> GPU (physical) block
+        let mut mapping = HashMap::new();
+        for sequence in seq_group.get_seqs(Some(SequenceStatus::Swapped)) {
+            let mut new_block_table: BlockTable = Vec::new();
+            if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+                for cpu_block in block_table {
+                    let cpu_block_id = { cpu_block.deref_read()?.block_hash() };
+                    let gpu_block = if let Entry::Vacant(e) = mapping.entry(cpu_block_id) {
+                        // Create a new block
+                        let gpu_block = self.gpu_allocator.allocate()?;
+                        e.insert(gpu_block.clone());
+                        gpu_block
+                    } else {
+                        // Reuse a block
+                        // DON'T PANIC: already checked that `cpu_block_id` lies in `mapping.keys()`
+                        let gpu_block = mapping.get(&cpu_block_id).unwrap();
+                        // Increase the `ref_count` of `gpu_block`
+                        {
+                            gpu_block.deref_write()?.increment_ref_count();
+                        }
+                        gpu_block.clone()
+                    };
+                    new_block_table.push(gpu_block);
+                    // Free the CPU block that was allocated into the GPU
+                    self.cpu_allocator.free(cpu_block.clone())?;
+                }
+            }
+            self.block_tables
+                .insert(sequence.sequence_id(), new_block_table);
+        }
+
+        let mut block_number_mapping = HashMap::with_capacity(mapping.len());
+        for (cpu_block_id, gpu_block) in mapping.iter() {
+            let gpu_block_id = { gpu_block.deref_read()?.block_hash() };
+            block_number_mapping.insert(*cpu_block_id, gpu_block_id);
+        }
+        Ok(block_number_mapping)
+    }
+
+    /// Can swap out from GPU to CPU blocks
+    #[instrument]
+    pub fn can_swap_out(&self, seq_group: SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
+        info!(
+            "Can swap out, for sequence group with id = {}",
+            seq_group.request_id
+        );
+        let blocks = self.get_physical_blocks(&seq_group)?;
+        Ok(blocks.len() <= self.cpu_allocator.get_num_free_blocks())
+    }
+
+    /// Swaps out GPU to CPU blocks
+    #[instrument]
+    pub fn swap_out(&mut self, seq_group: SequenceGroup) -> Result<HashMap<u64, u64>, BlockSpaceManagerError> {
+        info!("Swap out GPU to CPU blocks, for sequence group with id = {}", seq_group.request_id);
+        // GPU (physical) block -> CPU (physical) block
+        let mut mapping = HashMap::new();
+        for sequence in seq_group.get_seqs(Some(SequenceStatus::Running)).iter() { 
+            let mut new_block_table: BlockTable = Vec::new();
+            if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) { 
+                for gpu_block in block_table { 
+                    let gpu_block_id = {gpu_block.deref_read()?.block_hash()};
+                    let cpu_block = if let Entry::Vacant(e) = mapping.entry(gpu_block_id) {
+                        // Create a new block
+                        let cpu_block = self.cpu_allocator.allocate()?;
+                        e.insert(cpu_block.clone());
+                        cpu_block
+                    } else { 
+                        // Reuse a block
+                        // DON'T PANIC: already checked that `cpu_block_id` lies in `mapping.keys()`
+                        let cpu_block = mapping.get(&gpu_block_id).unwrap();
+                        // Increase the `ref_count` of `gpu_block`
+                        {
+                            cpu_block.deref_write()?.increment_ref_count();
+                        }
+                        cpu_block.clone()
+                    };
+                    new_block_table.push(cpu_block);
+                    // Free the CPU block that was allocated into the GPU
+                    self.gpu_allocator.free(gpu_block.clone())?;
+                }
+                self.block_tables
+                .insert(sequence.sequence_id(), new_block_table);
+            }
+        }
+
+        let mut block_number_mapping = HashMap::with_capacity(mapping.len());
+        for (gpu_block_id, cpu_block) in mapping.iter() {
+            let cpu_block_id = { cpu_block.deref_read()?.block_hash() };
+            block_number_mapping.insert(*gpu_block_id, cpu_block_id);
+        }
+        Ok(block_number_mapping)
     }
 }
 
@@ -370,4 +482,12 @@ pub enum BlockSpaceManagerError {
     InvalidRefCount(usize),
     #[error("Append slot error: `{0}`")]
     AppendSlotError(String),
+    #[error("Empty `Sequence`")]
+    EmptySequence,
+    #[error("Invalid `Device`")]
+    InvalidDevice,
+    #[error("Block error: `{0}`")]
+    BlockError(#[from] BlockError),
+    #[error("Missing sequence from block table")]
+    MissingSequence,
 }

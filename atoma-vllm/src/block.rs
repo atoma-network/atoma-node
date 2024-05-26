@@ -1,13 +1,14 @@
 use std::{
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     time::Instant,
 };
 
 use candle::Device;
+use thiserror::Error;
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
-pub type BlockTable = Vec<Arc<RwLock<PhysicalTokenBlock>>>;
+pub type BlockTable = Vec<SyncPhysicalTokenBlock>;
 
 /// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
 /// physical blocks in the KV cache (allocated on the GPU).
@@ -195,4 +196,36 @@ impl PartialEq for PhysicalTokenBlock {
             && self.device.same_device(&other.device)
             && self.ref_count == other.ref_count
     }
+}
+
+impl Eq for PhysicalTokenBlock {}
+
+pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
+
+pub trait DerefRead {
+    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError>;
+}
+
+pub trait DerefWrite {
+    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError>;
+}
+
+impl DerefRead for SyncPhysicalTokenBlock {
+    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
+        self.read()
+            .map_err(|e| BlockError::PoisonError(e.to_string()))
+    }
+}
+
+impl DerefWrite for SyncPhysicalTokenBlock {
+    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
+        self.write()
+            .map_err(|e| BlockError::PoisonError(e.to_string()))
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum BlockError {
+    #[error("Poison error: `{0}`")]
+    PoisonError(String),
 }
