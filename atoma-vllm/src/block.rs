@@ -135,6 +135,11 @@ impl PhysicalTokenBlock {
         self.computed
     }
 
+    /// Set `computed`
+    pub fn set_computed(&self, value: bool) {
+        self.computed = value
+    }
+
     /// Getter for `device`
     pub fn device(&self) -> Device {
         self.device.clone()
@@ -148,6 +153,11 @@ impl PhysicalTokenBlock {
     /// Getter for `last_accessed`
     pub fn last_accessed(&self) -> Option<Instant> {
         self.last_accessed
+    }
+
+    /// Sets `last_accessed`
+    pub fn set_last_accessed(&self, instant: Instant) {
+        self.last_accessed = Some(instant)
     }
 
     /// Getter for `ref_count`

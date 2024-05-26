@@ -2,6 +2,7 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockWriteGuard},
+    time::Instant,
 };
 
 use crate::{
@@ -424,21 +425,27 @@ impl BlockSpaceManager {
 
     /// Swaps out GPU to CPU blocks
     #[instrument]
-    pub fn swap_out(&mut self, seq_group: SequenceGroup) -> Result<HashMap<u64, u64>, BlockSpaceManagerError> {
-        info!("Swap out GPU to CPU blocks, for sequence group with id = {}", seq_group.request_id);
+    pub fn swap_out(
+        &mut self,
+        seq_group: SequenceGroup,
+    ) -> Result<HashMap<u64, u64>, BlockSpaceManagerError> {
+        info!(
+            "Swap out GPU to CPU blocks, for sequence group with id = {}",
+            seq_group.request_id
+        );
         // GPU (physical) block -> CPU (physical) block
         let mut mapping = HashMap::new();
-        for sequence in seq_group.get_seqs(Some(SequenceStatus::Running)).iter() { 
+        for sequence in seq_group.get_seqs(Some(SequenceStatus::Running)).iter() {
             let mut new_block_table: BlockTable = Vec::new();
-            if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) { 
-                for gpu_block in block_table { 
-                    let gpu_block_id = {gpu_block.deref_read()?.block_hash()};
+            if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+                for gpu_block in block_table {
+                    let gpu_block_id = { gpu_block.deref_read()?.block_hash() };
                     let cpu_block = if let Entry::Vacant(e) = mapping.entry(gpu_block_id) {
                         // Create a new block
                         let cpu_block = self.cpu_allocator.allocate()?;
                         e.insert(cpu_block.clone());
                         cpu_block
-                    } else { 
+                    } else {
                         // Reuse a block
                         // DON'T PANIC: already checked that `cpu_block_id` lies in `mapping.keys()`
                         let cpu_block = mapping.get(&gpu_block_id).unwrap();
@@ -453,7 +460,7 @@ impl BlockSpaceManager {
                     self.gpu_allocator.free(gpu_block.clone())?;
                 }
                 self.block_tables
-                .insert(sequence.sequence_id(), new_block_table);
+                    .insert(sequence.sequence_id(), new_block_table);
             }
         }
 
@@ -463,6 +470,162 @@ impl BlockSpaceManager {
             block_number_mapping.insert(*gpu_block_id, cpu_block_id);
         }
         Ok(block_number_mapping)
+    }
+
+    /// Free block table
+    fn free_block_table(&mut self, block_table: &BlockTable) -> Result<(), BlockSpaceManagerError> {
+        // when using a sliding window, each seq will only use up
+        // to `self.block_sliding_window` blocks. When freeing
+        // the block table, we must make sure to not free blocks more
+        // than once. If no sliding window is used, there is no block
+        // reuse in the block table, so we must free all blocks.
+        let blocks_to_free = if let Some(block_sliding_window) = self.block_sliding_window {
+            block_table[block_sliding_window..].to_vec()
+        } else {
+            block_table
+        };
+
+        let mut block_ids = Vec::new();
+
+        for block in blocks_to_free {
+            let block_device = {
+                let block_guard = block.deref_read()?;
+                let block_id = block_guard.block_hash();
+                if block_ids.contains(&block_id) {
+                    continue;
+                } else {
+                    block_ids.push(block_id)
+                }
+                block_guard.device()
+            };
+            if block_device.is_cpu() {
+                self.cpu_allocator.free(block)?;
+            } else {
+                self.gpu_allocator.free(block)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Frees blocks for `Sequence`
+    #[instrument]
+    pub fn free(&mut self, sequence: Sequence) -> Result<(), BlockSpaceManagerError> {
+        info!(
+            "Freeing blocks for sequence with id = {}",
+            sequence.sequence_id()
+        );
+
+        if !self.block_tables.contains_key(&sequence.sequence_id()) {
+            // NOTE: Either `Sequence`'s blocks have been freed already, or haven't been scheduled yet
+            info!(
+                "Sequence's blocks already freed or haven't been scheduled yet, sequence's id = {}",
+                sequence.sequence_id()
+            );
+        }
+
+        // DON'T PANIC: already checked that `sequence_id` is present in `self.block_tables`
+        let block_table = self.block_tables.get(&sequence.sequence_id()).unwrap();
+        self.free_block_table(block_table)?;
+
+        self.block_tables.remove(&sequence.sequence_id());
+
+        Ok(())
+    }
+
+    /// Reset's all block tables
+    #[instrument]
+    pub fn reset(&mut self) -> Result<(), BlockSpaceManagerError> {
+        info!("Resetting all block tables..");
+        for (_, bt) in self.block_tables.drain() {
+            self.free_block_table(&bt)?;
+        }
+        Ok(())
+    }
+
+    /// Gets `Sequence`'s `BlockTable`
+    pub fn get_block_table(&self, sequence: Sequence) -> Option<BlockTable> {
+        self.block_tables.get(&sequence.sequence_id()).cloned()
+    }
+
+    /// Gets number of free gpu blocks
+    pub fn get_number_of_free_gpu_blocks(&self) -> usize {
+        self.gpu_allocator.get_num_free_blocks()
+    }
+
+    /// Gets number of free cpu blocks
+    pub fn get_number_of_free_cpu_blocks(&self) -> usize {
+        self.cpu_allocator.get_num_free_blocks()
+    }
+
+    /// Accesses all blocks in a given `Sequence`
+    pub fn access_all_blocks_in_sequence(
+        &self,
+        sequence: Sequence,
+        access_time: Instant,
+    ) -> Result<(), BlockSpaceManagerError> {
+        if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+            for block in block_table {
+                {
+                    block.deref_write()?.set_last_accessed(access_time)
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Computes full blocks in `Sequence`
+    #[instrument]
+    pub fn compute_full_blocks_in_sequence(
+        &self,
+        sequence: Sequence,
+    ) -> Result<(), BlockSpaceManagerError> {
+        info!(
+            "Computes full blocks in sequence, for sequence_id = {}",
+            sequence.sequence_id()
+        );
+        if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+            let max_full_block_plus_one = sequence.length() / self.block_size;
+            if max_full_block_plus_one == 0 {
+                return Ok(());
+            }
+            let max_full_block = max_full_block_plus_one - 1; // DON'T PANIC: already checked that `max_full_block_plus_one >= 1`
+            for i in (0..max_full_block).rev() {
+                if let Some(block) = block_table.get(i) {
+                    {
+                        let block_guard = block.deref_write()?;
+                        if block_guard.computed() {
+                            break;
+                        } else {
+                            block_guard.set_computed(true)
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Gets all computed blocks
+    #[instrument]
+    pub fn gets_all_computed_blocks(&self, sequence: Sequence) -> Result<Vec<usize>, BlockSpaceManagerError> {
+        info!("Getting all computed blocks for sequence with id = {}", sequence.sequence_id());
+        if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+            // NOTE We exclude the last block to avoid the case where the entire
+            // prompt is cached. This would cause erroneous behavior in model
+            // runner
+            let mut output = Vec::new();
+            for block in block_table[..block_table.len() - 1].iter() {
+                {
+                    let block_guard = block.deref_read()?;
+                    if block_guard.computed() {
+                        output.push(block_guard.block_number());
+                    }
+                }
+            }
+            return Ok(output);
+        }
+        Ok(vec![])
     }
 }
 
