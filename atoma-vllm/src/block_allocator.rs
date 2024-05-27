@@ -23,7 +23,7 @@ pub struct BlockAllocator {
     /// Number of blocks
     num_blocks: usize,
     /// Free blocks available
-    free_blocks: BlockTable,
+    pub(crate) free_blocks: BlockTable,
     /// Tracing span
     pub span: Span,
 }
@@ -31,10 +31,9 @@ pub struct BlockAllocator {
 impl BlockAllocator {
     /// Constructor
     pub fn new(block_size: usize, device: Device, num_blocks: usize) -> Self {
-        let free_blocks = (0..num_blocks)
+        let free_blocks = (0..(num_blocks as u64))
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
-                    0,
                     i,
                     block_size,
                     device.clone(),
@@ -111,9 +110,9 @@ pub enum BlockAllocatorError {
     BlockAlreadyAllocated,
     #[error("Block already in use")]
     BlockAlreadyInUse,
-    #[error("Cannot free unused block, with block_hash = `{0}`")]
+    #[error("Cannot free unused block, with block_number = `{0}`")]
     CannotDoubleFree(u64),
-    #[error("Block not found, with block_hash = `{0}`")]
+    #[error("Block not found, with block_number = `{0}`")]
     BlockNotFound(u64),
     #[error("Failed to acquire read lock: `{0}`")]
     PoisonError(String),
@@ -141,13 +140,13 @@ mod tests {
             let block = cpu_allocator.allocate().expect("Failed to allocate block");
             num_free_blocks -= 1;
 
+            let block_id = block.deref_read().unwrap().block_number();
             // Allocated block is not part of free blocks, anymore
-            assert!(!cpu_allocator
-                .free_blocks
-                .iter()
-                .map(|block| block.read().unwrap().block_number())
-                .collect::<Vec<_>>()
-                .contains(&block.read().unwrap().block_number()));
+            assert!(cpu_allocator.free_blocks.iter().all(|block| block
+                .read()
+                .unwrap()
+                .block_number()
+                != block_id));
             assert_eq!(cpu_allocator.get_num_free_blocks(), num_free_blocks);
         }
 

@@ -82,10 +82,8 @@ impl LogicalTokenBlock {
 /// A physical block structure. It represents a contiguous memory KV cache block, usually allocated on the 'physical' GPU.
 #[derive(Clone, Debug)]
 pub struct PhysicalTokenBlock {
-    /// Block id
-    block_hash: u64,
     /// Block number
-    block_number: usize,
+    block_number: u64,
     /// Block size (representing number of KV vectors for contiguous input tokens)
     block_size: usize,
     /// Block has been computed
@@ -102,9 +100,8 @@ pub struct PhysicalTokenBlock {
 
 impl PhysicalTokenBlock {
     /// Constructor
-    pub fn new(block_hash: u64, block_number: usize, block_size: usize, device: Device) -> Self {
+    pub fn new(block_number: u64, block_size: usize, device: Device) -> Self {
         Self {
-            block_hash,
             block_number,
             block_size,
             computed: false,
@@ -115,13 +112,8 @@ impl PhysicalTokenBlock {
         }
     }
 
-    /// Getter for `block_id`
-    pub fn block_hash(&self) -> u64 {
-        self.block_hash
-    }
-
     /// Getter for `block_number`
-    pub fn block_number(&self) -> usize {
+    pub fn block_number(&self) -> u64 {
         self.block_number
     }
 
@@ -136,7 +128,7 @@ impl PhysicalTokenBlock {
     }
 
     /// Set `computed`
-    pub fn set_computed(&self, value: bool) {
+    pub fn set_computed(&mut self, value: bool) {
         self.computed = value
     }
 
@@ -156,18 +148,13 @@ impl PhysicalTokenBlock {
     }
 
     /// Sets `last_accessed`
-    pub fn set_last_accessed(&self, instant: Instant) {
+    pub fn set_last_accessed(&mut self, instant: Instant) {
         self.last_accessed = Some(instant)
     }
 
     /// Getter for `ref_count`
     pub fn ref_count(&self) -> usize {
         self.ref_count
-    }
-
-    /// Set `block_hash`
-    pub fn update_block_hash(&mut self, block_hash: u64) {
-        self.block_hash = block_hash
     }
 
     /// Set `num_hashed_tokens`
@@ -190,6 +177,11 @@ impl PhysicalTokenBlock {
         self.ref_count += value;
     }
 
+    /// Sets the `ref_count` by `value`
+    pub fn set_ref_count_by(&mut self, value: usize) {
+        self.ref_count = value;
+    }
+
     /// Decreases the `ref_count` variable by -1, if possible
     pub fn decrease_ref_count(&mut self) {
         if self.ref_count > 0 {
@@ -200,8 +192,7 @@ impl PhysicalTokenBlock {
 
 impl PartialEq for PhysicalTokenBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.block_hash == other.block_hash
-            && self.block_number == other.block_number
+        self.block_number == other.block_number
             && self.block_size == other.block_size
             && self.device.same_device(&other.device)
             && self.ref_count == other.ref_count
