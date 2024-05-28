@@ -568,10 +568,7 @@ pub struct SequenceGroup {
     #[allow(dead_code)]
     pub request_id: String,
     /// Sequences
-    sequences: HashMap<u64, Sequence>,
-    /// Request's arrival time
-    #[allow(dead_code)]
-    arrival_time: Instant,
+    pub(crate) sequences: HashMap<u64, Sequence>,
     /// Request metrics
     metrics: RequestMetrics,
     /// Multi modal data
@@ -607,7 +604,6 @@ impl SequenceGroup {
         Ok(Self {
             request_id,
             sequences: sequences.into_iter().map(|s| (s.sequence_id, s)).collect(),
-            arrival_time,
             metrics: RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
@@ -694,6 +690,11 @@ impl SequenceGroup {
     #[allow(dead_code)]
     fn set_finished_time(&mut self, time: Instant) {
         self.metrics.finished_time = Some(time);
+    }
+
+    /// Get `SequenceGroup`'s arrival time
+    pub fn arrival_time(&self) -> Instant {
+        self.metrics.arrival_time
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request

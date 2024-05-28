@@ -17,6 +17,7 @@ const GB: usize = 1 << 30;
 ///   sliding_window: Optional sliding window size.
 ///   num_gpu_blocks: Number of GPU blocks
 ///   num_cpu_block: Number of CPU blocks
+#[derive(Debug)]
 pub struct CacheConfig {
     /// Block size
     block_size: usize,
@@ -129,6 +130,7 @@ pub enum CacheConfigError {
 ///      prompt latency) before scheduling next prompt.
 ///   enable_chunked_prefill: If true, prefill requests can be chunked based
 ///      on the remaining max_num_batched_tokens.
+#[derive(Debug)]
 pub struct SchedulerConfig {
     /// Maximum number of batched tokens
     max_num_batched_tokens: usize,
