@@ -59,11 +59,11 @@ impl LogicalTokenBlock {
         self.block_size - self.num_tokens
     }
 
-    /// Appends a new token id, if there are enough empty slots in the current `LogicalTokenBlock`
-    pub fn append_tokens(&mut self, token_id: u32) {
-        if !self.is_full() {
-            self.token_ids.push(token_id);
-            self.num_tokens += 1;
+    /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
+    pub fn append_tokens(&mut self, token_ids: &[u32]) {
+        if token_ids.len() <= self.get_num_empty_slots() {
+            self.token_ids.extend(token_ids);
+            self.num_tokens += token_ids.len();
         }
     }
 

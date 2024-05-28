@@ -6,4 +6,5 @@ pub mod block;
 pub mod block_allocator;
 pub mod block_manager;
 pub mod evictor;
+pub mod sampling_params;
 pub mod sequence;
