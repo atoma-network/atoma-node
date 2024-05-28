@@ -15,7 +15,7 @@ members = [
     "atoma-types",
     "atoma-output-manager",
     "atoma-streamer"
-]
+, "atoma-vllm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -46,6 +46,9 @@ futures-util = "0.3.30"
 hex = "0.4.3"
 hf-hub = "0.3.2"
 image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
+indexmap = "2.2.6"
+metrics = "0.22.3"
+metrics-exporter-prometheus = "0.14.0"
 rand = "0.8.5"
 rayon = "1.10.0"
 reqwest = "0.12.1"
