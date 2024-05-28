@@ -280,8 +280,10 @@ impl BlockAllocator for CachedBlockAllocator {
 #[allow(dead_code)]
 pub struct UncachedBlockAllocator {
     /// Block size
+    #[allow(dead_code)]
     block_size: usize,
     /// Device
+    #[allow(dead_code)]
     device: Device,
     /// Number of blocks
     num_blocks: usize,
