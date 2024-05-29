@@ -358,7 +358,7 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn can_swap_in(
         &self,
-        seq_group: SequenceGroup,
+        seq_group: &SequenceGroup,
     ) -> Result<AllocationStatus, BlockSpaceManagerError> {
         info!(
             "Can swap in, for sequence group with id = {}",
@@ -1054,7 +1054,7 @@ mod tests {
             .expect("Failed to get block ids from block table for `prompt`");
         assert_eq!(
             block_manager
-                .can_swap_in(seq_group.clone())
+                .can_swap_in(&seq_group)
                 .expect("failed to run `swap_in`"),
             AllocationStatus::Ok
         );

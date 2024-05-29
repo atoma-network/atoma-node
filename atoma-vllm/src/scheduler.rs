@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     block,
-    block_manager::{BlockSpaceManager, BlockSpaceManagerError},
+    block_manager::{AllocationStatus, BlockSpaceManager, BlockSpaceManagerError},
     config::{CacheConfig, SchedulerConfig},
     policy::{FcfsPolicy, Policy},
     sequence::{self, Sequence, SequenceGroup, SequenceStatus},
@@ -168,6 +168,23 @@ pub struct SchedulerRunningOutputs {
     blocks_to_swap_out: HashMap<u64, u64>,
     // The blocks to copy.
     blocks_to_copy: HashMap<u64, u64>,
+}
+
+/// The requests that are scheduled from a swap queue.
+///
+/// Could contain prefill (prefill that's chunked) or decodes.
+pub struct SchedulerSwappedInOutputs {
+    /// Selected sequences that are going to be swapped in and is in a decoding phase.
+    decode_seq_groups: Vec<ScheduledSequenceGroup>,
+    /// Selected sequences that are going to be swapped in and in a prefill
+    /// phase. I.e., it means the prefill has been chunked.
+    prefill_seq_groups: Vec<ScheduledSequenceGroup>,
+    /// The blocks to swap in.
+    blocks_to_swap_in: HashMap<u64, u64>,
+    /// The blocks to copy.
+    blocks_to_copy: HashMap<u64, u64>,
+    /// Infeasible sequence groups.
+    infeasible_seq_groups: Vec<SequenceGroup>,
 }
 
 /// `Scheduler` - Responsible for managing the schedule of incoming inference `SequenceGroup` requests
@@ -348,7 +365,7 @@ impl<P: Policy> Scheduler<P> {
     ///             all tokens.
     ///
     /// Returns:
-    /// 
+    ///
     ///     A tuple of remaining running queue (should be always 0) after
     ///         scheduling and `SchedulerRunningOutputs`.
     fn schedule_running(
@@ -357,6 +374,7 @@ impl<P: Policy> Scheduler<P> {
         running_queue: &mut VecDeque<SequenceGroup>,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
+        info!("Schedule running..");
         // Blocks that need to be swapped or copied before model execution
         let mut blocks_to_swap_out = HashMap::<u64, u64>::new();
         let mut blocks_to_copy = HashMap::<u64, u64>::new();
@@ -478,20 +496,20 @@ impl<P: Policy> Scheduler<P> {
     }
 
     /// Schedule sequence groups that are swapped out.
-    /// 
+    ///
     /// It schedules swapped requests as long as it fits `budget`. The input arguments
     /// `budget` and are updated based on scheduled sequence_groups.
-    /// 
+    ///
     /// Args:
-    /// 
+    ///
     ///     `swapped_queue`: The queue that contains swapped out requests. The given arguments are NOT in-place modified.
     ///     `budget`: The scheduling budget. The argument is in-place updated
     ///         when any requests are swapped in.
     ///     `policy`: The sorting policy to sort swapped_queue.
     ///     `enable_chunking`: If true, seq group can be chunked and only a
     ///         chunked number of tokens are scheduled  if `budget.num_batched_tokens` has not enough capacity to schedule all tokens.
-    /// 
-    /// Returns: 
+    ///
+    /// Returns:
     ///     A tuple of remaining `swapped_queue` after scheduling and
     ///     `SchedulerSwappedInOutputs`.
     #[instrument]
@@ -500,8 +518,79 @@ impl<P: Policy> Scheduler<P> {
         budget: &mut SchedulingBudget,
         swapped_queue: &mut VecDeque<SequenceGroup>,
         enable_chunking: bool,
-    ) -> Result<(), SchedulerError> { 
-        Ok(())
+    ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
+        info!("Schedule swapped..");
+        // Blocks that need to be swapped or copied before model execution.
+        let mut blocks_to_swap_in = HashMap::<u64, u64>::new();
+        let mut blocks_to_copy = HashMap::<u64, u64>::new();
+        let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
+        let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
+
+        let now = Instant::now();
+
+        let mut swapped_queue = P::sort_by_priority(now, &swapped_queue);
+        let mut infeasible_seq_groups = Vec::<SequenceGroup>::new();
+
+        while !swapped_queue.is_empty() {
+            let mut sequence_group = swapped_queue.pop_front().unwrap(); // DON'T PANIC: we are guaranteed that `swapped_queue` is non-empty at this point
+
+            // If the sequence group cannot be swapped in, stop.
+            let allocation_status = self.block_manager.can_swap_in(&sequence_group)?;
+            if allocation_status == AllocationStatus::Later {
+                break;
+            } else if allocation_status == AllocationStatus::Never {
+                warn!("Failing the request {} because there is not enough KV cache blocks to run the entire sequence..", 
+                        sequence_group.request_id);
+                for (_, sequence) in sequence_group.sequences.iter_mut() {
+                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored);
+                }
+                infeasible_seq_groups.push(sequence_group.clone());
+            }
+
+            // The total number of sequences in the RUNNING state should not
+            // exceed the maximum number of sequences.
+            let num_new_sequences = sequence_group.get_max_num_running_seqs();
+            let num_new_tokens = self.get_num_tokens(
+                &sequence_group,
+                SequenceStatus::Swapped,
+                enable_chunking,
+                budget,
+            )?;
+
+            if num_new_tokens == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? {
+                info!("Either no new tokens to be swapped or no available budget to swap tokens");
+                break;
+            }
+
+            self.swap_in(&mut sequence_group, &mut blocks_to_swap_in)?;
+            self.append_slots(&sequence_group, &mut blocks_to_copy)?;
+            let is_preffil = sequence_group.is_prefill();
+            if is_preffil {
+                prefill_seq_groups.push(ScheduledSequenceGroup {
+                    scheduled_group: sequence_group.clone(),
+                    token_chunk_size: num_new_tokens,
+                })
+            } else {
+                decode_seq_groups.push(ScheduledSequenceGroup {
+                    scheduled_group: sequence_group.clone(),
+                    token_chunk_size: 1,
+                })
+            }
+
+            budget.add_num_batched_tokens(sequence_group.request_id.clone(), num_new_tokens);
+            budget.add_number_sequences(sequence_group.request_id.clone(), num_new_sequences);
+        }
+
+        Ok((
+            swapped_queue,
+            SchedulerSwappedInOutputs {
+                decode_seq_groups,
+                prefill_seq_groups,
+                blocks_to_swap_in,
+                blocks_to_copy,
+                infeasible_seq_groups,
+            },
+        ))
     }
 }
 
@@ -563,7 +652,7 @@ impl<P: Debug> Scheduler<P> {
     ///     slots.
     #[instrument]
     fn append_slots(
-        &self,
+        &mut self,
         sequence_group: &SequenceGroup,
         blocks_to_copy: &mut HashMap<u64, u64>,
     ) -> Result<(), SchedulerError> {
@@ -630,7 +719,7 @@ impl<P: Debug> Scheduler<P> {
         if preemption_mode == PreemptionMode::Recomputation {
             self.preempt_by_recompute(sequence_group)?;
         } else if preemption_mode == PreemptionMode::Swap {
-            self.preempt_by_swap(sequence_group, blocks_to_swap_out);
+            self.preempt_by_swap(sequence_group, blocks_to_swap_out)?;
         } else {
             unreachable!("Preemption mode not supported");
         }
@@ -682,12 +771,15 @@ impl<P: Debug> Scheduler<P> {
         &mut self,
         sequence_group: &mut SequenceGroup,
         blocks_to_swap_out: &mut HashMap<u64, u64>,
-    ) {
+    ) -> Result<(), SchedulerError> {
         info!(
             "Preemption by swap for sequence group with id = {}..",
             sequence_group.request_id
         );
-        self.swap_out(sequence_group, blocks_to_swap_out);
+
+        self.swap_out(sequence_group, blocks_to_swap_out)?;
+
+        Ok(())
     }
 
     /// Swaps out GPU blocks to CPU blocks
@@ -709,10 +801,29 @@ impl<P: Debug> Scheduler<P> {
 
         let mapping = self.block_manager.swap_out(sequence_group)?;
         blocks_to_swap_out.extend(mapping.iter());
-        sequence_group
-            .sequences
-            .iter_mut()
-            .for_each(|(_, s)| s.set_sequence_status(SequenceStatus::Swapped));
+        sequence_group.sequences.iter_mut().for_each(|(_, s)| {
+            if s.get_sequence_status() == SequenceStatus::Running {
+                s.set_sequence_status(SequenceStatus::Swapped)
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Swaps in CPU blocks to GPU blocks
+    #[instrument]
+    fn swap_in(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+        blocks_to_swap_in: &mut HashMap<u64, u64>,
+    ) -> Result<(), SchedulerError> {
+        let mapping = self.block_manager.swap_in(sequence_group)?;
+        blocks_to_swap_in.extend(mapping.iter());
+        sequence_group.sequences.iter_mut().for_each(|(_, s)| {
+            if s.get_sequence_status() == SequenceStatus::Swapped {
+                s.set_sequence_status(SequenceStatus::Running)
+            }
+        });
 
         Ok(())
     }
