@@ -592,6 +592,141 @@ impl<P: Policy> Scheduler<P> {
             },
         ))
     }
+
+    /// Schedule sequence groups that are in prefill stage.
+    ///
+    /// Note that the current scheduler treats PREEMPTED_FOR_RECOMPUTE
+    /// as a new prefill (that starts from beginning -> most recently generated
+    ///    tokens).
+    ///
+    /// Args:
+    ///
+    ///     `waiting_queue`: The queue that contains prefill requests.
+    ///         The given arguments are NOT in-place modified.
+    ///     `budget`: The scheduling budget. The argument is in-place updated
+    ///         when any requests are scheduled.
+    ///     `enable_chunking`: If True, seq group can be chunked and only a
+    ///         chunked number of tokens are scheduled  if
+    ///         `budget.num_batched_tokens` has not enough capacity to schedule
+    ///         all tokens.
+    ///
+    /// Returns:
+    ///     
+    ///     A tuple of remaining `waiting_queue` after scheduling and
+    ///         `SchedulerSwappedInOutputs`,
+    #[instrument]
+    fn schedule_prefills(
+        &mut self,
+        mut waiting_queue: VecDeque<SequenceGroup>,
+        budget: &mut SchedulingBudget,
+        enable_chunking: bool,
+    ) -> Result<(), SchedulerError> {
+        info!("Schedulig prefills..");
+
+        let mut ignored_seq_groups = Vec::<SequenceGroup>::new();
+        let mut sequence_groups = Vec::<ScheduledSequenceGroup>::new();
+
+        // We don't sort `waiting_queue` because we assume it is sorted. We also require
+        // ownership of `waiting_queue` so that we don't change it in place, in this method.
+
+        let leftover_waiting_sequences: VecDeque<SequenceGroup> = VecDeque::new();
+
+        while !waiting_queue.is_empty() && self.passed_delay(Instant::now()) {
+            // DON'T PANIC: at this point, we are guaranteed that `waiting_queue` is non-empty
+            let mut sequence_group = waiting_queue.pop_front().unwrap();
+            let mut cloned_sequence_group = sequence_group.clone();
+            let mut waiting_sequences = cloned_sequence_group
+                .sequences
+                .iter_mut()
+                .filter_map(|(_, s)| {
+                    if s.get_sequence_status() == SequenceStatus::Waiting {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            if waiting_sequences.len() != 1 {
+                error!("Waiting sequence group should have only one prompt sequence, it has {} for request = {}.", waiting_sequences.len(), sequence_group.request_id);
+                return Err(SchedulerError::InvalidNumberWaitingSequence {
+                    request_id: sequence_group.request_id.clone(),
+                    num_sequences: waiting_sequences.len(),
+                });
+            }
+
+            let num_new_tokens = self.get_num_tokens(
+                &sequence_group,
+                SequenceStatus::Waiting,
+                enable_chunking,
+                budget,
+            )?;
+
+            if !enable_chunking {
+                // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
+                let num_prompt_tokens = waiting_sequences.first().unwrap().length();
+                if num_prompt_tokens != num_new_tokens {
+                    error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
+                    return Err(SchedulerError::InvalidNumberOfNewTokens {
+                        num_prompt_tokens,
+                        num_new_tokens,
+                    });
+                }
+            }
+
+            let prompt_limit = self.get_prompt_limit();
+            if num_new_tokens > prompt_limit {
+                warn!(
+                    "Input prompt ({} tokens) is too long and exceeds limits of {}",
+                    num_new_tokens, prompt_limit
+                );
+                for (_, sequence) in sequence_group.sequences.iter_mut() {
+                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored)
+                }
+                ignored_seq_groups.push(sequence_group.clone());
+                continue;
+            }
+
+            // If the sequence cannot be allocated, just stop
+            let can_allocate = self.block_manager.can_allocate(&sequence_group);
+            if can_allocate == AllocationStatus::Later {
+                break;
+            } else if can_allocate == AllocationStatus::Never {
+                warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
+                for sequence in waiting_sequences.iter_mut() {
+                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored);
+                }
+                ignored_seq_groups.push(sequence_group.clone());
+            }
+
+            let num_new_sequences = sequence_group.get_max_num_running_seqs();
+            if num_new_sequences == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? { 
+                break
+            }
+
+            // At this point, we can schedule this request
+            self.allocate_and_set_running(sequence_group);
+            sequence_groups.push(ScheduledSequenceGroup { 
+                scheduled_group: sequence_group.clone(),
+                token_chunk_size: num_new_sequences
+            });
+
+            budget.add_num_batched_tokens(sequence_group.request_id.clone(), num_new_tokens);
+            budget.add_number_sequences(sequence_group.request_id.clone(), num_new_sequences);
+        }
+
+        // Queue requests that couldn't be scheduled.
+        // NOTE: Need to reverse, to have the correct order
+        for wait_seq in leftover_waiting_sequences.iter().rev() { 
+            waiting_queue.push_front(wait_seq.clone());
+        }
+
+        if sequence_groups.len() > 1 { 
+            self.previous_prompt = true;
+        }
+
+        Ok(())
+    }
 }
 
 impl<P: Debug> Scheduler<P> {
@@ -827,6 +962,43 @@ impl<P: Debug> Scheduler<P> {
 
         Ok(())
     }
+
+    /// Computes if duration change has been greater than scheduled delay
+    fn passed_delay(&mut self, now: Instant) -> bool {
+        if self.previous_prompt {
+            self.last_prompt_latency = self.previous_time.map(|t| now - t);
+        }
+
+        self.previous_time = Some(now);
+        self.previous_prompt = false;
+
+        // Delay scheduling prompts to let waiting queue fill up
+        if self.scheduler_config.delay_factor().as_secs_f32() > 0.0 && !self.waiting.is_empty() {
+            // DON'T PANIC: at this point, we are guaranteed that `self.waiting` is non-empty
+            let earliest_arrival_time =
+                self.waiting.iter().map(|s| s.arrival_time()).min().unwrap();
+            ((now - earliest_arrival_time).as_secs_f32()
+                > self.scheduler_config.delay_factor().as_secs_f32()
+                    * self
+                        .last_prompt_latency
+                        .map(|d| d.as_secs_f32())
+                        .unwrap_or(0.0))
+                || self.running.is_empty()
+        } else {
+            true
+        }
+    }
+
+    /// Get prompt limit
+    fn get_prompt_limit(&self) -> usize {
+        if self.scheduler_config.enable_chunked_prefill() {
+            self.scheduler_config.max_model_len()
+        } else {
+            self.scheduler_config
+                .max_model_len()
+                .min(self.scheduler_config.max_num_batched_tokens())
+        }
+    }
 }
 
 /// A `SequenceGroup` that has been scheduled
@@ -851,4 +1023,14 @@ pub enum SchedulerError {
     InvalidNumberSequencesForRecompute(usize),
     #[error("Not enough block space for swap out")]
     NotEnoughBlockSpaceForSwapOut,
+    #[error("Invalid number of waiting sequences for request `{request_id}`: `{num_sequences}`")]
+    InvalidNumberWaitingSequence {
+        request_id: String,
+        num_sequences: usize,
+    },
+    #[error("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`")]
+    InvalidNumberOfNewTokens {
+        num_prompt_tokens: usize,
+        num_new_tokens: usize,
+    },
 }

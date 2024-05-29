@@ -132,6 +132,8 @@ pub enum CacheConfigError {
 ///      on the remaining max_num_batched_tokens.
 #[derive(Debug)]
 pub struct SchedulerConfig {
+    /// Maximum length of a sequence (including prompt and generated text)
+    max_model_len: usize,
     /// Maximum number of batched tokens
     max_num_batched_tokens: usize,
     /// Maxinum number of sequences
@@ -149,6 +151,7 @@ pub struct SchedulerConfig {
 impl SchedulerConfig {
     /// Constructor
     pub fn new(
+        max_model_len: usize,
         max_num_batched_tokens: usize,
         max_num_sequences: usize,
         max_sequence_length: usize,
@@ -157,6 +160,7 @@ impl SchedulerConfig {
         device: usize,
     ) -> Result<Self, SchedulerConfigError> {
         let this = Self {
+            max_model_len,
             max_num_batched_tokens,
             max_num_sequences,
             max_sequence_length,
@@ -190,6 +194,26 @@ impl SchedulerConfig {
     /// Getter for `device` ordinal
     pub fn device(&self) -> usize {
         self.device
+    }
+
+    /// Getter for `delay_factor`
+    pub fn delay_factor(&self) -> Duration {
+        self.delay_factor
+    }
+
+    /// Getter for `enable_chunked_prefill`
+    pub fn enable_chunked_prefill(&self) -> bool {
+        self.enable_chunked_prefill
+    }
+
+    /// Getter for `max_model_len`
+    pub fn max_model_len(&self) -> usize {
+        self.max_model_len
+    }
+
+    /// Getter for `max_num_batched_tokens`
+    pub fn max_num_batched_tokens(&self) -> usize {
+        self.max_num_batched_tokens
     }
 }
 
