@@ -629,13 +629,20 @@ impl<P: Policy> Scheduler<P> {
         // We don't sort `waiting_queue` because we assume it is sorted. We also require
         // ownership of `waiting_queue` so that we don't change it in place, in this method.
 
-        let leftover_waiting_sequences: VecDeque<SequenceGroup> = VecDeque::new();
-
         while !waiting_queue.is_empty() && self.passed_delay(Instant::now()) {
             // DON'T PANIC: at this point, we are guaranteed that `waiting_queue` is non-empty
             let mut sequence_group = waiting_queue.pop_front().unwrap();
-            let mut cloned_sequence_group = sequence_group.clone();
-            let mut waiting_sequences = cloned_sequence_group
+
+            // To be used below
+            let can_allocate = self.block_manager.can_allocate(&sequence_group);
+            let num_new_tokens = self.get_num_tokens(
+                &sequence_group,
+                SequenceStatus::Waiting,
+                enable_chunking,
+                budget,
+            )?;
+
+            let mut waiting_sequences = sequence_group
                 .sequences
                 .iter_mut()
                 .filter_map(|(_, s)| {
@@ -654,13 +661,6 @@ impl<P: Policy> Scheduler<P> {
                     num_sequences: waiting_sequences.len(),
                 });
             }
-
-            let num_new_tokens = self.get_num_tokens(
-                &sequence_group,
-                SequenceStatus::Waiting,
-                enable_chunking,
-                budget,
-            )?;
 
             if !enable_chunking {
                 // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
@@ -688,7 +688,6 @@ impl<P: Policy> Scheduler<P> {
             }
 
             // If the sequence cannot be allocated, just stop
-            let can_allocate = self.block_manager.can_allocate(&sequence_group);
             if can_allocate == AllocationStatus::Later {
                 break;
             } else if can_allocate == AllocationStatus::Never {
@@ -700,28 +699,22 @@ impl<P: Policy> Scheduler<P> {
             }
 
             let num_new_sequences = sequence_group.get_max_num_running_seqs();
-            if num_new_sequences == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? { 
-                break
+            if num_new_sequences == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? {
+                break;
             }
 
             // At this point, we can schedule this request
-            self.allocate_and_set_running(sequence_group);
-            sequence_groups.push(ScheduledSequenceGroup { 
+            self.allocate_and_set_running(&mut sequence_group);
+            sequence_groups.push(ScheduledSequenceGroup {
                 scheduled_group: sequence_group.clone(),
-                token_chunk_size: num_new_sequences
+                token_chunk_size: num_new_sequences,
             });
 
             budget.add_num_batched_tokens(sequence_group.request_id.clone(), num_new_tokens);
             budget.add_number_sequences(sequence_group.request_id.clone(), num_new_sequences);
         }
 
-        // Queue requests that couldn't be scheduled.
-        // NOTE: Need to reverse, to have the correct order
-        for wait_seq in leftover_waiting_sequences.iter().rev() { 
-            waiting_queue.push_front(wait_seq.clone());
-        }
-
-        if sequence_groups.len() > 1 { 
+        if sequence_groups.len() > 1 {
             self.previous_prompt = true;
         }
 
@@ -998,6 +991,20 @@ impl<P: Debug> Scheduler<P> {
                 .max_model_len()
                 .min(self.scheduler_config.max_num_batched_tokens())
         }
+    }
+
+    /// Allocates blocks to `SequenceGroup` and set sequences status to `Running`
+    fn allocate_and_set_running(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+    ) -> Result<(), SchedulerError> {
+        self.block_manager.allocate(&sequence_group)?;
+        sequence_group.sequences.iter_mut().for_each(|(_, s)| {
+            if s.get_sequence_status() == SequenceStatus::Waiting {
+                s.set_sequence_status(SequenceStatus::Running)
+            }
+        });
+        Ok(())
     }
 }
 
