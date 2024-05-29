@@ -1,11 +1,12 @@
 use std::{
     collections::VecDeque,
+    fmt::Debug,
     time::{Duration, Instant},
 };
 
 use crate::sequence::SequenceGroup;
 
-pub trait Policy {
+pub trait Policy: Debug {
     fn get_priority(now: Instant, sequence_group: &SequenceGroup) -> Duration;
     fn sort_by_priority(
         now: Instant,
@@ -21,6 +22,7 @@ pub trait Policy {
     }
 }
 /// `Policy` - Responsible for deciding which `Sequence`'s to be processed next, on the `Scheduler`
+#[derive(Debug)]
 pub struct FcfsPolicy {}
 
 impl Policy for FcfsPolicy {

@@ -436,7 +436,7 @@ impl BlockSpaceManager {
 
     /// Can swap out from GPU to CPU blocks
     #[instrument]
-    pub fn can_swap_out(&self, seq_group: SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
+    pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
         info!(
             "Can swap out, for sequence group with id = {}",
             seq_group.request_id
@@ -1023,7 +1023,7 @@ mod tests {
             .get_block_table_ids(&prompt.sequence_id())
             .expect("Failed to get block ids from block table for `prompt`");
         assert!(block_manager
-            .can_swap_out(seq_group.clone())
+            .can_swap_out(&seq_group)
             .expect("Failed to run `can_swap_out`"));
 
         let before_cpu_blocks = block_manager.get_number_of_free_cpu_blocks();

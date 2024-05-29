@@ -1,17 +1,32 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
     marker::PhantomData,
     time::{Duration, Instant},
 };
 
 use crate::{
+    block,
     block_manager::{BlockSpaceManager, BlockSpaceManagerError},
     config::{CacheConfig, SchedulerConfig},
     policy::{FcfsPolicy, Policy},
-    sequence::{Sequence, SequenceGroup, SequenceStatus},
+    sequence::{self, Sequence, SequenceGroup, SequenceStatus},
 };
 use thiserror::Error;
-use tracing::{error, info, info_span, instrument, Span};
+use tracing::{error, info, info_span, instrument, warn, Span};
+
+/// Preemption modes.
+///
+/// 1. `Swapping`: Swap out the blocks of the preempted sequences to CPU memory
+///     and swap them back in when the sequences are resumed.
+/// 2. `Recomputation`: Discard the blocks of the preempted sequences and
+///     recompute them when the sequences are resumed, treating the sequences as
+///     new prompts.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PreemptionMode {
+    Swap,
+    Recomputation,
+}
 
 /// `SchedulingBudget` - The available slots for scheduling.
 ///
@@ -135,6 +150,26 @@ impl SchedulingBudget {
     }
 }
 
+/// `SchedulerRunningOutputs` - The requests that are scheduled from a running queue.
+///
+/// Could contain prefill (prefill that's chunked) or decodes. If there's not
+/// enough memory, it can be preempted (for recompute) or swapped out.
+pub struct SchedulerRunningOutputs {
+    // Selected sequences that are running and in a decoding phase.
+    decode_seq_groups: Vec<ScheduledSequenceGroup>,
+    // Selected sequences that are running and in a prefill phase.
+    // i.e., it means the prefill has been chunked.
+    prefill_seq_groups: Vec<ScheduledSequenceGroup>,
+    // The preempted sequences.
+    preempted: Vec<SequenceGroup>,
+    // Sequences that are swapped out.
+    swapped_out: Vec<SequenceGroup>,
+    // The blocks to swap out.
+    blocks_to_swap_out: HashMap<u64, u64>,
+    // The blocks to copy.
+    blocks_to_copy: HashMap<u64, u64>,
+}
+
 /// `Scheduler` - Responsible for managing the schedule of incoming inference `SequenceGroup` requests
 ///
 /// It handles processing multiple sequences, including tasks such as prefill (initial setup), decoding and swapping blocks from CPU <-> GPU.
@@ -159,6 +194,8 @@ pub struct Scheduler<P> {
     previous_prompt: bool,
     /// Last prompt latency duration
     last_prompt_latency: Option<Duration>,
+    /// Cumulative preemption
+    num_cumulative_preemption: usize,
     /// Tracing span
     pub span: Span,
     /// Phantom data
@@ -187,6 +224,7 @@ impl<P> Scheduler<P> {
             previous_time: None,
             previous_prompt: false,
             last_prompt_latency: None,
+            num_cumulative_preemption: 0,
             span: info_span!("scheduler"),
             _phantom: PhantomData::default(),
         })
@@ -220,7 +258,7 @@ impl<P> Scheduler<P> {
                     }
                 })
                 .collect::<Vec<_>>();
-            self.free_sequence(request_id.clone(), &sequences_ids, SequenceStatus::Waiting)?;
+            self.free_sequences(request_id.clone(), &sequences_ids, SequenceStatus::Waiting)?;
         }
         if let Some(sequence_group) = self.running.iter().find(|s| s.request_id == request_id) {
             let sequences_ids = sequence_group
@@ -234,7 +272,7 @@ impl<P> Scheduler<P> {
                     }
                 })
                 .collect::<Vec<_>>();
-            self.free_sequence(request_id.clone(), &sequences_ids, SequenceStatus::Running)?;
+            self.free_sequences(request_id.clone(), &sequences_ids, SequenceStatus::Running)?;
         }
         if let Some(sequence_group) = self.swapped.iter().find(|s| s.request_id == request_id) {
             let sequences_ids = sequence_group
@@ -248,13 +286,13 @@ impl<P> Scheduler<P> {
                     }
                 })
                 .collect::<Vec<_>>();
-            self.free_sequence(request_id, &sequences_ids, SequenceStatus::Swapped)?;
+            self.free_sequences(request_id, &sequences_ids, SequenceStatus::Swapped)?;
         }
         Ok(())
     }
 
     /// Frees blocks from a given `SequenceGroup`
-    fn free_sequence(
+    fn free_sequences(
         &mut self,
         request_id: String,
         sequences_ids: &[u64],
@@ -277,6 +315,11 @@ impl<P> Scheduler<P> {
         Ok(())
     }
 
+    /// Frees blocks from a given `Sequence` with `sequence_id`
+    fn free_sequence(&mut self, sequence_id: u64) -> Result<(), SchedulerError> {
+        Ok(self.block_manager.free(sequence_id)?)
+    }
+
     /// Gets number of unfinished sequences
     pub fn num_unfinished_sequeces(&self) -> usize {
         self.waiting.len() + self.running.len() + self.swapped.len()
@@ -295,27 +338,28 @@ impl<P: Policy> Scheduler<P> {
     ///
     /// Args:
     ///
-    ///     running_queue: The queue that contains running requests (i.e.,
+    ///     `running_queue`: The queue that contains running requests (i.e.,
     ///         decodes). The given arguments are NOT in-place modified.
-    ///     budget: The scheduling budget. The argument is in-place updated
+    ///     `budget`: The scheduling budget. The argument is in-place updated
     ///             when any decodes are preempted.
-    ///     enable_chunking: If true, seq group can be chunked and only a
+    ///     `enable_chunking`: If true, seq group can be chunked and only a
     ///             chunked number of tokens are scheduled  if
     ///             `budget.num_batched_tokens` has not enough capacity to schedule
     ///             all tokens.
     ///
     /// Returns:
+    /// 
     ///     A tuple of remaining running queue (should be always 0) after
-    ///         scheduling and SchedulerRunningOutputs.
+    ///         scheduling and `SchedulerRunningOutputs`.
     fn schedule_running(
-        &self,
+        &mut self,
         budget: &mut SchedulingBudget,
-        running_queue: VecDeque<SequenceGroup>,
+        running_queue: &mut VecDeque<SequenceGroup>,
         enable_chunking: bool,
-    ) {
+    ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         // Blocks that need to be swapped or copied before model execution
-        let mut blocks_to_swap_out = HashMap::<usize, usize>::new();
-        let mut blocks_to_copy = HashMap::<usize, usize>::new();
+        let mut blocks_to_swap_out = HashMap::<u64, u64>::new();
+        let mut blocks_to_copy = HashMap::<u64, u64>::new();
 
         let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
         let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
@@ -330,18 +374,138 @@ impl<P: Policy> Scheduler<P> {
         let mut running_queue = P::sort_by_priority(now, &running_queue);
 
         while !running_queue.is_empty() {
-            let sequence_group = running_queue.front().unwrap(); // DON'T PANIC: we have already checked that the `running_queue` is not empty
+            let mut sequence_group = running_queue.pop_front().unwrap(); // DON'T PANIC: we have already checked that the `running_queue` is not empty
             let num_running_tokens = self.get_num_tokens(
-                sequence_group,
+                &sequence_group,
                 SequenceStatus::Running,
                 enable_chunking,
                 budget,
-            );
+            )?;
+
+            // if no tokens are being processed, we break the loop
+            if num_running_tokens == 0 {
+                break;
+            }
+
+            loop {
+                if !self.can_append_slots(&sequence_group) {
+                    budget.subtract_num_batched_tokens(
+                        &sequence_group.request_id,
+                        num_running_tokens,
+                    );
+                    let num_running_sequences = sequence_group.get_max_num_running_seqs();
+                    budget.subtracts_number_sequences(
+                        &sequence_group.request_id,
+                        num_running_sequences,
+                    );
+
+                    if !running_queue.is_empty() {
+                        // Preempt the lowest-priority sequence groups first
+                        // victim lies at the end of `runnning_queue`, as it is was last in, last out
+                        let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
+                        let preempted_mode = self.preempt(
+                            &mut victim_sequence_group,
+                            &mut blocks_to_swap_out,
+                            None,
+                        )?;
+                        if preempted_mode == PreemptionMode::Recomputation {
+                            preempted.push(victim_sequence_group);
+                        } else {
+                            preempted.push(victim_sequence_group);
+                        }
+                    } else {
+                        // No other sequence groups can be preempted.
+                        // Preempt the current `SequenceGroup`
+                        let preempted_mode =
+                            self.preempt(&mut sequence_group, &mut blocks_to_swap_out, None)?;
+
+                        if preempted_mode == PreemptionMode::Recomputation {
+                            preempted.push(sequence_group.clone());
+                        } else {
+                            swapped_out.push(sequence_group.clone());
+                        }
+
+                        // As no other sequence groups can be preempted, we stop the loop
+                        break;
+                    }
+                } else {
+                    self.append_slots(&sequence_group, &mut blocks_to_copy)?;
+                    let is_prefill = sequence_group.is_prefill();
+                    if is_prefill {
+                        // Prefill computation
+                        prefill_seq_groups.push(ScheduledSequenceGroup {
+                            scheduled_group: sequence_group.clone(),
+                            token_chunk_size: num_running_tokens,
+                        });
+                    } else {
+                        // Decoding computation (only decodes 1 token at a time)
+                        decode_seq_groups.push(ScheduledSequenceGroup {
+                            scheduled_group: sequence_group.clone(),
+                            token_chunk_size: 1,
+                        });
+                    }
+                    budget.add_num_batched_tokens(
+                        sequence_group.request_id.clone(),
+                        num_running_tokens,
+                    );
+
+                    // OPTIMIZATION: Note that `get_max_num_running_seqs` is
+                    // expensive. For the default scheduling chase where
+                    // `enable_chunking` is false, `num_seqs` are updated before running
+                    // this method, so we don't have to update it again here.
+                    if enable_chunking {
+                        let num_running_seqs = sequence_group.get_max_num_running_seqs();
+                        budget.add_number_sequences(
+                            sequence_group.request_id.clone(),
+                            num_running_seqs,
+                        )
+                    }
+                    break;
+                }
+            }
         }
+
+        let scheduler_running_outputs = SchedulerRunningOutputs {
+            decode_seq_groups,
+            prefill_seq_groups,
+            preempted,
+            swapped_out,
+            blocks_to_swap_out,
+            blocks_to_copy,
+        };
+
+        Ok((running_queue, scheduler_running_outputs))
+    }
+
+    /// Schedule sequence groups that are swapped out.
+    /// 
+    /// It schedules swapped requests as long as it fits `budget`. The input arguments
+    /// `budget` and are updated based on scheduled sequence_groups.
+    /// 
+    /// Args:
+    /// 
+    ///     `swapped_queue`: The queue that contains swapped out requests. The given arguments are NOT in-place modified.
+    ///     `budget`: The scheduling budget. The argument is in-place updated
+    ///         when any requests are swapped in.
+    ///     `policy`: The sorting policy to sort swapped_queue.
+    ///     `enable_chunking`: If true, seq group can be chunked and only a
+    ///         chunked number of tokens are scheduled  if `budget.num_batched_tokens` has not enough capacity to schedule all tokens.
+    /// 
+    /// Returns: 
+    ///     A tuple of remaining `swapped_queue` after scheduling and
+    ///     `SchedulerSwappedInOutputs`.
+    #[instrument]
+    fn schedule_swapped(
+        &mut self,
+        budget: &mut SchedulingBudget,
+        swapped_queue: &mut VecDeque<SequenceGroup>,
+        enable_chunking: bool,
+    ) -> Result<(), SchedulerError> { 
+        Ok(())
     }
 }
 
-impl<P> Scheduler<P> {
+impl<P: Debug> Scheduler<P> {
     /// Get the next new tokens to compute for a given sequence group
     /// that's in a given `status`.
     ///
@@ -382,6 +546,176 @@ impl<P> Scheduler<P> {
 
         Ok(num_new_tokens)
     }
+
+    /// Determine whether or not we have enough space in the KV cache to
+    /// continue generation of the sequence group.
+    fn can_append_slots(&self, sequence_group: &SequenceGroup) -> bool {
+        self.block_manager.can_append_slots(sequence_group)
+    }
+
+    /// Appends new slots to the sequences in the given sequence group.
+    ///
+    /// Args:
+    /// `sequence_group`: The sequence group containing the
+    /// sequences to append slots to.
+    /// `blocks_to_copy`: Mapping of source block index to destination block index.
+    ///     It is updated with the new source and destination block indices for the appended
+    ///     slots.
+    #[instrument]
+    fn append_slots(
+        &self,
+        sequence_group: &SequenceGroup,
+        blocks_to_copy: &mut HashMap<u64, u64>,
+    ) -> Result<(), SchedulerError> {
+        info!(
+            "Appending slot to sequence group with id = {}",
+            sequence_group.request_id
+        );
+        let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
+            if s.get_sequence_status() == SequenceStatus::Running {
+                Some(s)
+            } else {
+                None
+            }
+        });
+        for sequence in running_sequences {
+            let cows = self.block_manager.append_slots(sequence)?;
+            if let Some(cow) = cows {
+                blocks_to_copy.insert(cow.0, cow.1);
+            } else {
+                warn!("No Copy on Write new blocks to append, for sequence with id = {} in sequence group with id = {}", 
+                    sequence.sequence_id(), sequence_group.request_id);
+            }
+        }
+        Ok(())
+    }
+
+    /// Allows for preemption of `SequenceGroup`
+    #[instrument]
+    fn preempt(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+        blocks_to_swap_out: &mut HashMap<u64, u64>,
+        preemption_mode: Option<PreemptionMode>,
+    ) -> Result<PreemptionMode, SchedulerError> {
+        // If preemption mode is not specified, we determine the mode as follows:
+        // We use recomputation by default since it incurs lower overhead than
+        // swapping. However, when the sequence group has multiple sequences
+        // (e.g., beam search), recomputation is not currently supported. In
+        // such a case, we use swapping instead.
+        // FIXME: This makes our scheduling policy a bit bizarre.
+        // As swapped sequences are prioritized over waiting sequences,
+        // sequence groups with multiple sequences are implicitly prioritized
+        // over sequence groups with a single sequence.
+        // TODO: Support recomputation for sequence groups with multiple
+        // sequences. This may require a more sophisticated CUDA kernel.
+        let preemption_mode = if preemption_mode.is_none() {
+            if sequence_group.get_max_num_running_seqs() == 1 {
+                PreemptionMode::Recomputation
+            } else {
+                PreemptionMode::Swap
+            }
+        } else {
+            preemption_mode.unwrap()
+        };
+
+        if self.num_cumulative_preemption % 50 == 0 {
+            warn!("Sequence group with id = {} is preempted by {:?} mode because there is not enough KV cache space. 
+                    This can affect the end-to-end performance. Increase `gpu_memory_utilization` or `tensor_parallel_size` 
+                    to provide more KV cache memory. `total_num_cumulative_preemption = {}` ", 
+                    sequence_group.request_id, preemption_mode, self.num_cumulative_preemption + 1);
+        }
+        self.num_cumulative_preemption += 1;
+
+        if preemption_mode == PreemptionMode::Recomputation {
+            self.preempt_by_recompute(sequence_group)?;
+        } else if preemption_mode == PreemptionMode::Swap {
+            self.preempt_by_swap(sequence_group, blocks_to_swap_out);
+        } else {
+            unreachable!("Preemption mode not supported");
+        }
+
+        Ok(preemption_mode)
+    }
+
+    /// Preempts a `SequenceGroup` by `Recomputation` mode
+    #[instrument]
+    fn preempt_by_recompute(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+    ) -> Result<(), SchedulerError> {
+        info!(
+            "Preemption by recomputation for sequence group with id = {}",
+            sequence_group.request_id
+        );
+        let sequences = sequence_group
+            .sequences
+            .iter_mut()
+            .filter_map(|(_, s)| {
+                if s.get_sequence_status() == SequenceStatus::Running {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if sequences.len() != 1 {
+            error!("Number of sequences in `SequenceGroup` for preempt by recompute should be 1, but is {}", sequences.len());
+            return Err(SchedulerError::InvalidNumberSequencesForRecompute(
+                sequences.len(),
+            ));
+        }
+
+        for sequence in sequences {
+            sequence.set_sequence_status(SequenceStatus::Waiting);
+            self.free_sequence(sequence.sequence_id())?;
+            sequence.reset_state_for_recompute();
+        }
+
+        Ok(())
+    }
+
+    /// Preempts a `SequenceGroup` by `Swap` mode
+    #[instrument]
+    fn preempt_by_swap(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+        blocks_to_swap_out: &mut HashMap<u64, u64>,
+    ) {
+        info!(
+            "Preemption by swap for sequence group with id = {}..",
+            sequence_group.request_id
+        );
+        self.swap_out(sequence_group, blocks_to_swap_out);
+    }
+
+    /// Swaps out GPU blocks to CPU blocks
+    #[instrument]
+    fn swap_out(
+        &mut self,
+        sequence_group: &mut SequenceGroup,
+        blocks_to_swap_out: &mut HashMap<u64, u64>,
+    ) -> Result<(), SchedulerError> {
+        info!(
+            "Swapping out for sequence group with id = {}",
+            sequence_group.request_id
+        );
+
+        if !self.block_manager.can_swap_out(sequence_group)? {
+            error!("Aborted due to the lack of CPU swap space. Please increase the swap space to avoid this error.");
+            return Err(SchedulerError::NotEnoughBlockSpaceForSwapOut);
+        }
+
+        let mapping = self.block_manager.swap_out(sequence_group)?;
+        blocks_to_swap_out.extend(mapping.iter());
+        sequence_group
+            .sequences
+            .iter_mut()
+            .for_each(|(_, s)| s.set_sequence_status(SequenceStatus::Swapped));
+
+        Ok(())
+    }
 }
 
 /// A `SequenceGroup` that has been scheduled
@@ -402,4 +736,8 @@ pub enum SchedulerError {
     EmptyScheduling,
     #[error("Zero number of new tokens to schedule")]
     ZeroNewTokensToSchedule,
+    #[error("Invalid number of sequences for recompute: `{0}`")]
+    InvalidNumberSequencesForRecompute(usize),
+    #[error("Not enough block space for swap out")]
+    NotEnoughBlockSpaceForSwapOut,
 }

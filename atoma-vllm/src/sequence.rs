@@ -698,9 +698,9 @@ impl SequenceGroup {
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
-    #[allow(dead_code)]
-    fn get_max_num_running_seqs(&self) -> usize {
+    pub fn get_max_num_running_seqs(&self) -> usize {
         if self.sampling_params.is_some() && self.sampling_params.as_ref().unwrap().use_beam_search
+        // DON'T PANIC: `self.sampling_params` have been checked to be `Some`
         {
             // For beam search, maximally there will always be `best_of` beam
             // candidates running in the future.
