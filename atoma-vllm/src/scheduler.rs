@@ -170,6 +170,20 @@ pub struct SchedulerRunningOutputs {
     blocks_to_copy: HashMap<u64, u64>,
 }
 
+impl SchedulerRunningOutputs {
+    /// Create an empty `Self` instance
+    fn create_empty() -> Self {
+        Self {
+            decode_seq_groups: vec![],
+            prefill_seq_groups: vec![],
+            preempted: vec![],
+            swapped_out: vec![],
+            blocks_to_swap_out: HashMap::new(),
+            blocks_to_copy: HashMap::new(),
+        }
+    }
+}
+
 /// The requests that are scheduled from a swap queue.
 ///
 /// Could contain prefill (prefill that's chunked) or decodes.
@@ -185,6 +199,80 @@ pub struct SchedulerSwappedInOutputs {
     blocks_to_copy: HashMap<u64, u64>,
     /// Infeasible sequence groups.
     infeasible_seq_groups: Vec<SequenceGroup>,
+}
+
+impl SchedulerSwappedInOutputs {
+    /// Create an empty `Self` instance
+    fn create_empty() -> Self {
+        Self {
+            decode_seq_groups: vec![],
+            prefill_seq_groups: vec![],
+            blocks_to_swap_in: HashMap::new(),
+            blocks_to_copy: HashMap::new(),
+            infeasible_seq_groups: vec![],
+        }
+    }
+}
+
+/// `SchedulerPrefillOutputs` - The requests that are scheduled from a waiting queue.
+///
+/// Could contain a fresh prefill requests or preempted requests that need
+/// to be recomputed from scratch.
+#[derive(Debug)]
+pub struct SchedulerPrefillOutputs {
+    /// Selected sequences for prefill
+    sequence_groups: Vec<ScheduledSequenceGroup>,
+    /// Ignored sequence groups.
+    ignored_sequence_groups: Vec<SequenceGroup>,
+}
+
+impl SchedulerPrefillOutputs {
+    /// Create an `empty` `Self` instance
+    fn create_empty() -> Self {
+        Self {
+            sequence_groups: vec![],
+            ignored_sequence_groups: vec![],
+        }
+    }
+}
+
+/// `SchedulerOutputs` - The scheduling decision made from a scheduler.
+#[derive(Debug)]
+pub struct SchedulerOutputs {
+    // Scheduled sequence groups.
+    scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
+    // Number of prefill groups scheduled.
+    number_prefill_groups: usize,
+    // Total number of batched tokens.
+    num_batched_tokens: usize,
+    // Blocks to swap in. List of CPU -> GPU block number.
+    block_to_swap_in: HashMap<u64, u64>,
+    // Blocks to swap out. List of GPU -> CPU block number.
+    blocks_to_swap_out: HashMap<u64, u64>,
+    // Blocks to copy. Source to dest block.
+    blocks_to_copy: HashMap<u64, u64>,
+    // Ignored sequence groups
+    ignored_seq_groups: Vec<SequenceGroup>,
+    // The number of requests in the running queue
+    running_queue_size: usize,
+    // Number of preempted sequnce groups
+    preempted: usize,
+    // Tracing span
+    span: Span,
+}
+
+impl SchedulerOutputs {
+    /// Validate that `SchedulerOutputs` is well formed
+    #[instrument]
+    fn validate(&self) -> Result<(), SchedulerError> {
+        if !self.block_to_swap_in.is_empty() && !self.blocks_to_swap_out.is_empty() {
+            error!("Swap in and swap out should never happen at the same time.");
+            return Err(SchedulerError::InvalidSchedulerOutput(
+                "Swap in and swap out should never happen at the same time.".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// `Scheduler` - Responsible for managing the schedule of incoming inference `SequenceGroup` requests
@@ -620,10 +708,10 @@ impl<P: Policy> Scheduler<P> {
         mut waiting_queue: VecDeque<SequenceGroup>,
         budget: &mut SchedulingBudget,
         enable_chunking: bool,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<(VecDeque<SequenceGroup>, SchedulerPrefillOutputs), SchedulerError> {
         info!("Schedulig prefills..");
 
-        let mut ignored_seq_groups = Vec::<SequenceGroup>::new();
+        let mut ignored_sequence_groups = Vec::<SequenceGroup>::new();
         let mut sequence_groups = Vec::<ScheduledSequenceGroup>::new();
 
         // We don't sort `waiting_queue` because we assume it is sorted. We also require
@@ -683,7 +771,7 @@ impl<P: Policy> Scheduler<P> {
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
                     sequence.set_sequence_status(SequenceStatus::FinishedIgnored)
                 }
-                ignored_seq_groups.push(sequence_group.clone());
+                ignored_sequence_groups.push(sequence_group.clone());
                 continue;
             }
 
@@ -695,7 +783,7 @@ impl<P: Policy> Scheduler<P> {
                 for sequence in waiting_sequences.iter_mut() {
                     sequence.set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
-                ignored_seq_groups.push(sequence_group.clone());
+                ignored_sequence_groups.push(sequence_group.clone());
             }
 
             let num_new_sequences = sequence_group.get_max_num_running_seqs();
@@ -704,7 +792,7 @@ impl<P: Policy> Scheduler<P> {
             }
 
             // At this point, we can schedule this request
-            self.allocate_and_set_running(&mut sequence_group);
+            self.allocate_and_set_running(&mut sequence_group)?;
             sequence_groups.push(ScheduledSequenceGroup {
                 scheduled_group: sequence_group.clone(),
                 token_chunk_size: num_new_sequences,
@@ -716,6 +804,46 @@ impl<P: Policy> Scheduler<P> {
 
         if sequence_groups.len() > 1 {
             self.previous_prompt = true;
+        }
+
+        Ok((
+            waiting_queue,
+            SchedulerPrefillOutputs {
+                sequence_groups,
+                ignored_sequence_groups,
+            },
+        ))
+    }
+
+    /// Schedule queued requests.
+    ///
+    /// The current policy is designed to optimize the throughput. First,
+    /// it batches as many prefill requests as possible. And it schedules
+    ///  decodes. If there's a pressure on GPU memory, decode requests can
+    /// be swapped or preempted.
+    fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        // Include running requests to the budget.
+        let mut budget = SchedulingBudget::new(
+            self.scheduler_config.max_num_batched_tokens(),
+            self.scheduler_config.max_num_sequences(),
+        );
+
+        // Make sure we include num running seqs before scheduling prefill
+        for sequence_group in self.running.iter() {
+            budget.add_number_sequences(
+                sequence_group.request_id.clone(),
+                sequence_group.get_max_num_running_seqs(),
+            );
+        }
+
+        let prefills = SchedulerPrefillOutputs::create_empty();
+        let running_scheduled = SchedulerRunningOutputs::create_empty();
+        let swapped_in = SchedulerSwappedInOutputs::create_empty();
+
+        // If any requests are swapped, prioritized swapped requests
+        if self.swapped.is_empty() {
+            let (remaining_waiting, prefills) =
+                self.schedule_prefills(self.waiting, &mut budget, false)?;
         }
 
         Ok(())
@@ -1009,6 +1137,7 @@ impl<P: Debug> Scheduler<P> {
 }
 
 /// A `SequenceGroup` that has been scheduled
+#[derive(Debug)]
 struct ScheduledSequenceGroup {
     /// Sequence group
     scheduled_group: SequenceGroup,
@@ -1040,4 +1169,6 @@ pub enum SchedulerError {
         num_prompt_tokens: usize,
         num_new_tokens: usize,
     },
+    #[error("Invalid scheduler output: `{0}`")]
+    InvalidSchedulerOutput(String),
 }

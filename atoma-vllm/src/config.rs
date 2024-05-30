@@ -215,6 +215,11 @@ impl SchedulerConfig {
     pub fn max_num_batched_tokens(&self) -> usize {
         self.max_num_batched_tokens
     }
+
+    /// Getter for `max_num_sequences`
+    pub fn max_num_sequences(&self) -> usize {
+        self.max_num_sequences
+    }
 }
 
 #[derive(Debug, Error)]
