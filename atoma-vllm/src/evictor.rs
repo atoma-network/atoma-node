@@ -4,16 +4,17 @@ use thiserror::Error;
 use crate::block::PhysicalTokenBlock;
 
 pub trait Evictor {
-    fn contains(&self, block_hash: u64) -> bool;
+    fn contains(&self, block_number: u64) -> bool;
     fn evict(&mut self) -> Result<PhysicalTokenBlock, EvictorError>;
     fn add(&mut self, block: PhysicalTokenBlock);
-    fn remove(&mut self, block_hash: u64) -> Option<PhysicalTokenBlock>;
+    fn remove(&mut self, block_number: u64) -> Option<PhysicalTokenBlock>;
     fn num_blocks(&self) -> usize;
 }
 
 /// The `LRUEvictor` struct evicts cached blocks based on their last_accessed timestamp, which represents the last time the block was accessed.
 /// If there are multiple blocks with the same `last_accessed` time, the block with the largest `num_hashed_tokens` will be evicted.
 /// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
+#[derive(Debug)]
 pub struct LRUEvictor {
     pub free_table: IndexMap<u64, PhysicalTokenBlock>,
 }
@@ -34,9 +35,9 @@ impl Default for LRUEvictor {
 }
 
 impl Evictor for LRUEvictor {
-    /// Checks if `LRUEvictor` contains a block for the corresponding `block_hash`
-    fn contains(&self, block_hash: u64) -> bool {
-        self.free_table.contains_key(&block_hash)
+    /// Checks if `LRUEvictor` contains a block for the corresponding `block_number`
+    fn contains(&self, block_number: u64) -> bool {
+        self.free_table.contains_key(&block_number)
     }
 
     /// Evicts a cached block, based on the eviction policy
@@ -79,12 +80,12 @@ impl Evictor for LRUEvictor {
 
     /// Adds a new block to `free_table`
     fn add(&mut self, block: PhysicalTokenBlock) {
-        self.free_table.insert(block.block_hash(), block);
+        self.free_table.insert(block.block_number(), block);
     }
 
-    /// Removes, if possible, a block with `block_hash`
-    fn remove(&mut self, block_hash: u64) -> Option<PhysicalTokenBlock> {
-        self.free_table.shift_remove(&block_hash)
+    /// Removes, if possible, a block with `block_number`
+    fn remove(&mut self, block_number: u64) -> Option<PhysicalTokenBlock> {
+        self.free_table.shift_remove(&block_number)
     }
 
     /// Gets the number of blocks in `free_table`
