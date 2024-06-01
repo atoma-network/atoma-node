@@ -459,7 +459,7 @@ impl<P: Policy> Scheduler<P> {
     fn schedule_running(
         &mut self,
         budget: &mut SchedulingBudget,
-        running_queue: &mut VecDeque<SequenceGroup>,
+        mut running_queue: VecDeque<SequenceGroup>,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         info!("Schedule running..");
@@ -604,7 +604,7 @@ impl<P: Policy> Scheduler<P> {
     fn schedule_swapped(
         &mut self,
         budget: &mut SchedulingBudget,
-        swapped_queue: &mut VecDeque<SequenceGroup>,
+        mut swapped_queue: VecDeque<SequenceGroup>,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
         info!("Schedule swapped..");
@@ -859,13 +859,13 @@ impl<P: Policy> Scheduler<P> {
         if prefills.sequence_groups.len() == 0 {
             // NOTE: we don't mutate `self.running` in place, instead we clone the `running` queue
             (remaining_running, running_scheduled) =
-                self.schedule_running(&mut budget, &mut remaining_running, false)?;
+                self.schedule_running(&mut budget, remaining_running, false)?;
 
             // If any sequence group is preempted, do not swap in any sequence
             // group, because it means there's no slot for new running requests
             if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
                 (remaining_swapped, swapped_in) =
-                    self.schedule_swapped(&mut budget, &mut remaining_swapped, false)?
+                    self.schedule_swapped(&mut budget, remaining_swapped, false)?
             }
         }
 
@@ -996,9 +996,131 @@ impl<P: Policy> Scheduler<P> {
     /// by prefill requests.
     #[instrument]
     fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        let mut budget = SchedulingBudget::new(
+            self.scheduler_config.max_num_batched_tokens(),
+            self.scheduler_config.max_num_sequences(),
+        );
 
-        Ok(SchedulerOutputs { 
-            
+        let mut remaining_waiting = self.waiting.clone();
+        let mut remaining_running = self.running.clone();
+        let mut remaining_swapped = self.swapped.clone();
+
+        let mut prefills = SchedulerPrefillOutputs::create_empty();
+        let mut running_scheduled = SchedulerRunningOutputs::create_empty();
+        let mut swapped_in = SchedulerSwappedInOutputs::create_empty();
+
+        // Decoding should be always scheduled first by fcfs
+        (remaining_running, running_scheduled) =
+            self.schedule_running(&mut budget, remaining_running, true)?;
+
+        // Schedule swapped out requests.
+        // If preemption happens, it means we don't have space for swap in
+        if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
+            (remaining_swapped, swapped_in) =
+                self.schedule_swapped(&mut budget, remaining_swapped, true)?;
+        }
+
+        // Schedule new prefills.
+        (remaining_waiting, prefills) =
+            self.schedule_prefills(remaining_waiting, &mut budget, true)?;
+
+        if budget.num_batched_tokens() > self.scheduler_config.max_num_batched_tokens() {
+            error!("Number of budget batched tokens exceeds the configured number of max batched tokens");
+            return Err(SchedulerError::InvalidNumberBudgetTokens(
+                    "Number of budget batched tokens exceeds the configured number of max batched tokens".into()
+                ));
+        }
+
+        if budget.num_current_sequences() > self.scheduler_config.max_num_sequences() {
+            error!("Number of budget sequences exceed the configured number of max number of sequences");
+            return Err(SchedulerError::InvalidNumberBudgetSequences(
+                "Number of budget sequences exceed the configured number of max number of sequences".into()
+            ));
+        }
+
+        // To be used later, on the output
+        let preempted = running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
+
+        // Update waiting queue
+        self.waiting = remaining_waiting;
+        // NOTE: need to reverse order of preempted sequence groups to preserve order once you push these
+        // to the left on the `self.waiting` queue.
+        // NOTE: Preempted running scheduled means there was not enough block space to be run on the
+        // current inference loop, so these requests should have priority regarding newly received
+        // requests.
+        running_scheduled
+            .preempted
+            .iter()
+            .rev()
+            .for_each(|s| self.waiting.push_front(s.clone()));
+
+        // Update new running requests
+        self.running = remaining_running;
+        // NOTE: newly prefill requests get appended first, then decoding ones
+        self.running.extend(
+            prefills
+                .sequence_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+        self.running.extend(
+            running_scheduled
+                .decode_seq_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+        self.running.extend(
+            swapped_in
+                .decode_seq_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+        self.running.extend(
+            swapped_in
+                .prefill_seq_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+
+        // Update swapped requests
+        self.swapped = remaining_swapped;
+        self.swapped.extend(running_scheduled.swapped_out);
+
+        let number_prefill_groups = prefills.sequence_groups.len()
+            + swapped_in.prefill_seq_groups.len()
+            + running_scheduled.prefill_seq_groups.len();
+        let scheduled_sequence_groups = prefills
+            .sequence_groups
+            .into_iter()
+            .chain(
+                running_scheduled.prefill_seq_groups.into_iter().chain(
+                    swapped_in.prefill_seq_groups.into_iter().chain(
+                        running_scheduled
+                            .decode_seq_groups
+                            .into_iter()
+                            .chain(swapped_in.decode_seq_groups.into_iter()),
+                    ),
+                ),
+            )
+            .collect();
+        let blocks_to_copy = running_scheduled
+            .blocks_to_copy
+            .into_iter()
+            .chain(swapped_in.blocks_to_copy)
+            .collect();
+        let ignored_seq_groups = prefills.ignored_sequence_groups;
+
+        Ok(SchedulerOutputs {
+            scheduled_sequence_groups,
+            num_batched_tokens: budget.num_batched_tokens(),
+            number_prefill_groups,
+            blocks_to_swap_in: swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out: running_scheduled.blocks_to_swap_out,
+            blocks_to_copy,
+            ignored_seq_groups,
+            running_queue_size: self.running.len(),
+            preempted,
+            span: info_span!("scheduler-outputs"),
         })
     }
 
