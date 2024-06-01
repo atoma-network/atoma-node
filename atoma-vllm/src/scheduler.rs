@@ -246,7 +246,7 @@ pub struct SchedulerOutputs {
     // Total number of batched tokens.
     num_batched_tokens: usize,
     // Blocks to swap in. List of CPU -> GPU block number.
-    block_to_swap_in: HashMap<u64, u64>,
+    blocks_to_swap_in: HashMap<u64, u64>,
     // Blocks to swap out. List of GPU -> CPU block number.
     blocks_to_swap_out: HashMap<u64, u64>,
     // Blocks to copy. Source to dest block.
@@ -265,7 +265,7 @@ impl SchedulerOutputs {
     /// Validate that `SchedulerOutputs` is well formed
     #[instrument]
     fn validate(&self) -> Result<(), SchedulerError> {
-        if !self.block_to_swap_in.is_empty() && !self.blocks_to_swap_out.is_empty() {
+        if !self.blocks_to_swap_in.is_empty() && !self.blocks_to_swap_out.is_empty() {
             error!("Swap in and swap out should never happen at the same time.");
             return Err(SchedulerError::InvalidSchedulerOutput(
                 "Swap in and swap out should never happen at the same time.".into(),
@@ -821,7 +821,9 @@ impl<P: Policy> Scheduler<P> {
     /// it batches as many prefill requests as possible. And it schedules
     ///  decodes. If there's a pressure on GPU memory, decode requests can
     /// be swapped or preempted.
+    #[instrument]
     fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        info!("Scheduling default..");
         // Include running requests to the budget.
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
@@ -836,17 +838,144 @@ impl<P: Policy> Scheduler<P> {
             );
         }
 
-        let prefills = SchedulerPrefillOutputs::create_empty();
-        let running_scheduled = SchedulerRunningOutputs::create_empty();
-        let swapped_in = SchedulerSwappedInOutputs::create_empty();
+        let mut remaining_running = self.running.clone();
+        let mut remaining_waiting = self.waiting.clone();
+        let mut remaining_swapped = self.swapped.clone();
+
+        let mut prefills = SchedulerPrefillOutputs::create_empty();
+        let mut running_scheduled = SchedulerRunningOutputs::create_empty();
+        let mut swapped_in = SchedulerSwappedInOutputs::create_empty();
 
         // If any requests are swapped, prioritized swapped requests
         if self.swapped.is_empty() {
-            let (remaining_waiting, prefills) =
-                self.schedule_prefills(self.waiting, &mut budget, false)?;
+            // NOTE: we don't mutate `self.waiting` in place, instead we clone the `waiting` queue
+            (remaining_waiting, prefills) =
+                self.schedule_prefills(remaining_waiting, &mut budget, false)?;
         }
 
-        Ok(())
+        // Don't schedule decodes if prefills are scheduled.
+        // NOTE: If `schedule_prefills` doesn't enable chunking, `self.running`
+        // only contains decode requests, not chunked prefills.
+        if prefills.sequence_groups.len() == 0 {
+            // NOTE: we don't mutate `self.running` in place, instead we clone the `running` queue
+            (remaining_running, running_scheduled) =
+                self.schedule_running(&mut budget, &mut remaining_running, false)?;
+
+            // If any sequence group is preempted, do not swap in any sequence
+            // group, because it means there's no slot for new running requests
+            if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
+                (remaining_swapped, swapped_in) =
+                    self.schedule_swapped(&mut budget, &mut remaining_swapped, false)?
+            }
+        }
+
+        if budget.num_batched_tokens > self.scheduler_config.max_num_batched_tokens() {
+            error!("Number of budget batched tokens exceeds the configured number of max batched tokens");
+            return Err(SchedulerError::InvalidNumberBudgetTokens(
+                    "Number of budget batched tokens exceeds the configured number of max batched tokens".into()
+                ));
+        }
+
+        if budget.num_current_sequences() > self.scheduler_config.max_num_sequences() {
+            error!("Number of budget sequences exceed the configured number of max number of sequences");
+            return Err(SchedulerError::InvalidNumberBudgetSequences(
+                "Number of budget sequences exceed the configured number of max number of sequences".into()
+            ));
+        }
+
+        // To be used later for method output
+        let preempted = running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
+
+        // Update waiting requests
+        self.waiting = remaining_waiting;
+        // NOTE: need to reverse order of preempted sequence groups to preserve order once you push these
+        // to the left on the `self.waiting` queue.
+        // NOTE: Preempted running scheduled means there was not enough block space to be run on the
+        // current inference loop, so these requests should have priority regarding newly received
+        // requests.
+        running_scheduled
+            .preempted
+            .iter()
+            .rev()
+            .for_each(|s| self.waiting.push_front(s.clone()));
+        // Update new running requests
+        self.running = remaining_running;
+        // NOTE: newly prefill requests get appended first, then decoding ones
+        self.running
+            .extend(prefills.sequence_groups.iter().map(|s| s.scheduled_group.clone()));
+        self.running.extend(
+            running_scheduled
+                .decode_seq_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+        self.running.extend(
+            swapped_in
+                .decode_seq_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
+        // Update swapped requests
+        self.swapped = remaining_swapped;
+        self.swapped.extend(running_scheduled.swapped_out);
+
+        // There should be no prefill from running queue because this policy
+        // doesn't allow chunked prefills.
+        if running_scheduled.prefill_seq_groups.len() != 0 {
+            error!("Chunked prefills are not allowed for running schedules, there should be none");
+            return Err(SchedulerError::ChunkedPrefillsNotAllowed(
+                "Chunked prefills are not allowed for running schedules, there should be none"
+                    .into(),
+            ));
+        }
+
+        if swapped_in.prefill_seq_groups.len() != 0 {
+            error!(
+                "Chunked prefills are not allowed for swapped in schedules, there should be none"
+            );
+            return Err(SchedulerError::ChunkedPrefillsNotAllowed(
+                "Chunked prefills are not allowed for swapped in schedules, there should be none"
+                    .into(),
+            ));
+        }
+
+        let number_prefill_groups = prefills.sequence_groups.len();
+
+        let scheduled_sequence_groups = prefills
+            .sequence_groups
+            .into_iter()
+            .chain(
+                running_scheduled
+                    .decode_seq_groups
+                    .into_iter()
+                    .chain(swapped_in.decode_seq_groups.into_iter()),
+            )
+            .collect();
+
+        let blocks_to_copy = running_scheduled
+            .blocks_to_copy
+            .into_iter()
+            .chain(swapped_in.blocks_to_copy.into_iter())
+            .collect();
+
+        let ignored_seq_groups = prefills
+            .ignored_sequence_groups
+            .into_iter()
+            .chain(swapped_in.infeasible_seq_groups.into_iter())
+            .collect();
+
+        Ok(SchedulerOutputs {
+            scheduled_sequence_groups,
+            num_batched_tokens: budget.num_batched_tokens,
+            number_prefill_groups,
+            blocks_to_swap_in: swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out: running_scheduled.blocks_to_swap_out,
+            blocks_to_copy,
+            ignored_seq_groups,
+            running_queue_size: self.running.len(),
+            preempted,
+            span: info_span!("scheduler-outputs"),
+        })
     }
 }
 
@@ -1171,4 +1300,10 @@ pub enum SchedulerError {
     },
     #[error("Invalid scheduler output: `{0}`")]
     InvalidSchedulerOutput(String),
+    #[error("Invalid number of budget tokens: `{0}`")]
+    InvalidNumberBudgetTokens(String),
+    #[error("Invalid number of sequences: `{0}`")]
+    InvalidNumberBudgetSequences(String),
+    #[error("Chunked prefills not allowed: `{0}`")]
+    ChunkedPrefillsNotAllowed(String),
 }
