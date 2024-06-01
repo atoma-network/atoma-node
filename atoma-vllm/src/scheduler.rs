@@ -901,8 +901,12 @@ impl<P: Policy> Scheduler<P> {
         // Update new running requests
         self.running = remaining_running;
         // NOTE: newly prefill requests get appended first, then decoding ones
-        self.running
-            .extend(prefills.sequence_groups.iter().map(|s| s.scheduled_group.clone()));
+        self.running.extend(
+            prefills
+                .sequence_groups
+                .iter()
+                .map(|s| s.scheduled_group.clone()),
+        );
         self.running.extend(
             running_scheduled
                 .decode_seq_groups
@@ -976,6 +980,36 @@ impl<P: Policy> Scheduler<P> {
             preempted,
             span: info_span!("scheduler-outputs"),
         })
+    }
+
+    /// Schedule queued requests.
+    ///
+    /// Chunked prefill allows to chunk prefill requests, batch them together
+    /// with decode requests. This policy 1. schedule as many decoding requests
+    /// as possible. 2. schedule chunked prefill requests that are not
+    /// finished. 3. schedule swapped request. 4. schedule new prefill
+    /// requests.
+    ///
+    /// The policy can sustain the high GPU utilization because it can put
+    /// prefill and decodes requests to the same batch, while it improves
+    /// inter token latency because decodes requests don't need to blocked
+    /// by prefill requests.
+    #[instrument]
+    fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+
+        Ok(SchedulerOutputs { 
+            
+        })
+    }
+
+    /// Schedule queued requests.
+    #[instrument]
+    fn schedule(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        if self.scheduler_config.enable_chunked_prefill() {
+            self.schedule_chunked_prefill()
+        } else {
+            self.schedule_default()
+        }
     }
 }
 
