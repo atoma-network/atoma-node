@@ -132,14 +132,12 @@ pub enum CacheConfigError {
 ///      on the remaining max_num_batched_tokens.
 #[derive(Debug)]
 pub struct SchedulerConfig {
-    /// Maximum length of a sequence (including prompt and generated text)
-    max_model_len: usize,
     /// Maximum number of batched tokens
     max_num_batched_tokens: usize,
     /// Maxinum number of sequences
     max_num_sequences: usize,
-    /// Maximum sequence length
-    max_sequence_length: usize,
+    /// Maximum length of a sequence (including prompt and generated text)
+    max_model_len: usize,
     /// Delay factor
     delay_factor: Duration,
     /// Enable chunked prefill
@@ -151,19 +149,17 @@ pub struct SchedulerConfig {
 impl SchedulerConfig {
     /// Constructor
     pub fn new(
-        max_model_len: usize,
         max_num_batched_tokens: usize,
         max_num_sequences: usize,
-        max_sequence_length: usize,
+        max_model_len: usize,
         delay_factor: Duration,
         enable_chunked_prefill: bool,
         device: usize,
     ) -> Result<Self, SchedulerConfigError> {
         let this = Self {
-            max_model_len,
             max_num_batched_tokens,
             max_num_sequences,
-            max_sequence_length,
+            max_model_len,
             delay_factor,
             enable_chunked_prefill,
             device,
@@ -174,10 +170,10 @@ impl SchedulerConfig {
     }
 
     fn verify_args(&self) -> Result<(), SchedulerConfigError> {
-        if self.max_num_batched_tokens < self.max_sequence_length && !self.enable_chunked_prefill {
+        if self.max_num_batched_tokens < self.max_model_len && !self.enable_chunked_prefill {
             return Err(SchedulerConfigError::FailedVerifySchedulerConfig(format!(
-                "max_num_batched_tokens ({}) is smaller than max_sequence_length ({}). This effectively limits the maximum sequence length to max_num_batched_tokens and makes the scheduler reject longer sequences. Please increase max_num_batched_tokens or decrease max_sequence_length.",
-                self.max_num_batched_tokens, self.max_sequence_length
+                "`max_num_batched_tokens` ({}) is smaller than `max_model_len` ({}). This effectively limits the maximum sequence length to `max_num_batched_tokens` and makes the scheduler reject longer sequences. Please increase `max_num_batched_tokens` or decrease `max_sequence_length`.",
+                self.max_num_batched_tokens, self.max_model_len
             )));
         }
 

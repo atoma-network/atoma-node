@@ -114,7 +114,7 @@ pub struct RequestMetrics {
 /// Args:
 ///    `prompt_token_ids``: The token IDs of the prompt.
 ///    `output_token_ids``: The token IDs of the output. Set to an empty list if None.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SequenceData {
     /// Prompt token ids
     prompt_token_ids: Vec<u32>,
@@ -195,15 +195,15 @@ impl SequenceData {
         self.length() - self.get_num_computed_tokens()
     }
 
-    /// Updates the number of computed tokens
+    /// Updates the number of computed tokens, so far
     pub fn update_num_computed_tokens(
         &mut self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
-        if self.num_computed_tokens + num_new_computed_tokens <= self.length() {
-            self.num_computed_tokens += num_new_computed_tokens;
-            if self.num_computed_tokens == self.length() {
-                // All tokens have been already generated, so sequence transits to decode stage
+        self.num_computed_tokens += num_new_computed_tokens;
+        if self.num_computed_tokens <= self.length() {
+            if self.get_num_uncomputed_tokens() == 0 {
+                // Prompt tokens attention layers have been now compute, so sequence transits to decode stage
                 self.stage = SequenceStage::Decode;
             }
             return Ok(());
@@ -253,7 +253,7 @@ impl SequenceData {
 ///        block size used by the block manager and cache engine.
 ///
 /// Warn: Contrary to vLLM, we are not dealing with LoRA requests
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
@@ -519,13 +519,13 @@ impl Sequence {
     }
 
     /// Getter for internal `SequenceData`
-    pub fn sequence_data(&self) -> SequenceData { 
+    pub fn sequence_data(&self) -> SequenceData {
         self.sequence_data.clone()
     }
 }
 
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SequenceGroupState {
     /// Generator used in seeded sampling
     pub generator: Option<usize>,
@@ -581,7 +581,7 @@ pub struct SequenceGroup {
     #[allow(dead_code)]
     prompt_logprobs: Option<LogProb>,
     /// Sampling parameters
-    sampling_params: Option<SamplingParams>,
+    sampling_params: SamplingParams,
     /// State
     state: SequenceGroupState,
 }
@@ -593,7 +593,7 @@ impl SequenceGroup {
         sequences: Vec<Sequence>,
         arrival_time: Instant,
         prompt_logprobs: Option<LogProb>,
-        sampling_params: Option<SamplingParams>,
+        sampling_params: SamplingParams,
         multi_model_data: Option<MultiModalData>,
         state: SequenceGroupState,
     ) -> Result<Self, SequenceError> {
@@ -699,20 +699,16 @@ impl SequenceGroup {
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
     pub fn get_max_num_running_seqs(&self) -> usize {
-        if self.sampling_params.is_some() && self.sampling_params.as_ref().unwrap().use_beam_search
-        // DON'T PANIC: `self.sampling_params` have been checked to be `Some`
-        {
+        if self.sampling_params.use_beam_search {
             // For beam search, maximally there will always be `best_of` beam
             // candidates running in the future.
-            return self.sampling_params.as_ref().unwrap().best_of;
+            return self.sampling_params.best_of;
         }
-        if self.sampling_params.is_some()
-            && self.sampling_params.as_ref().unwrap().best_of > self.get_num_sequences(None)
-        {
+        if self.sampling_params.best_of > self.get_num_sequences(None) {
             // At prompt stage, the sequence group is not yet filled up
             // and only have one sequence running. However, in the
             // generation stage, we will have `best_of` sequences running.
-            return self.sampling_params.as_ref().unwrap().best_of;
+            return self.sampling_params.best_of;
         }
         // At sampling stages, return the number of actual sequences
         // that are not finished yet.
@@ -903,17 +899,17 @@ impl SequenceGroup {
     }
 
     /// Getter for `state`
-    pub fn state(&self) -> SequenceGroupState { 
+    pub fn state(&self) -> SequenceGroupState {
         self.state.clone()
     }
 
     /// Getter for `multi_modal_data`
-    pub fn multi_modal_data(&self) -> Option<MultiModalData> { 
+    pub fn multi_modal_data(&self) -> Option<MultiModalData> {
         self.multi_model_data.clone()
     }
 
     /// Getter for sampling parameters
-    pub fn sampling_params(&self) -> Option<SamplingParams> { 
+    pub fn sampling_params(&self) -> SamplingParams {
         self.sampling_params.clone()
     }
 }
@@ -1169,7 +1165,7 @@ pub enum SequenceError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn sample_outputs() -> Vec<CompletionSequenceGroupOutput> {
@@ -1199,7 +1195,7 @@ mod tests {
     }
 
     /// Create a dummy prompt sequence and sequence group.
-    fn create_dummy_prompt(
+    pub(crate) fn create_dummy_prompt(
         request_id: u64,
         prompt_length: usize,
         block_size: Option<usize>,
@@ -1228,11 +1224,11 @@ mod tests {
             vec![prompt.clone()],
             Instant::now(),
             None,
-            Some(SamplingParams {
+            SamplingParams {
                 use_beam_search,
                 best_of,
                 ..Default::default()
-            }),
+            },
             None,
             SequenceGroupState {
                 generator: Some(42),

@@ -706,58 +706,13 @@ pub enum BlockSpaceManagerError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::{
         sampling_params::SamplingParams,
-        sequence::{LogProb, SequenceGroupState},
+        sequence::{tests::create_dummy_prompt, LogProb, SequenceGroupState},
     };
 
     use super::*;
-
-    /// Create a dummy prompt sequence and sequence group.
-    fn create_dummy_prompt(
-        request_id: u64,
-        prompt_length: usize,
-        block_size: Option<usize>,
-        use_beam_search: bool,
-        best_of: usize,
-    ) -> (Sequence, SequenceGroup) {
-        let block_size = block_size.unwrap_or(prompt_length);
-
-        // Create dummy prompt sequence with tokens 0...block_size-1
-        // and prompt "0 ... block_size".
-        let prompt_tokens: Vec<u32> = (0..(prompt_length as u32)).collect();
-        let prompt_str = prompt_tokens
-            .iter()
-            .map(|t| t.to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        let prompt = Sequence::new(
-            request_id,
-            Some(1000),
-            prompt_str,
-            prompt_tokens,
-            block_size,
-        );
-        let seq_group = SequenceGroup::new(
-            request_id.to_string(),
-            vec![prompt.clone()],
-            Instant::now(),
-            None,
-            Some(SamplingParams {
-                use_beam_search,
-                best_of,
-                ..Default::default()
-            }),
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
-        )
-        .expect("Failed to construct a new sequence group");
-
-        (prompt, seq_group)
-    }
 
     #[test]
     fn test_allocate() {
@@ -873,7 +828,9 @@ mod tests {
             vec![prompt.clone(), child.clone()],
             Instant::now(),
             None,
-            None,
+            SamplingParams {
+                ..Default::default()
+            },
             None,
             SequenceGroupState {
                 generator: Some(42),
@@ -1180,7 +1137,9 @@ mod tests {
             vec![parent.clone()],
             Instant::now(),
             None,
-            None,
+            SamplingParams {
+                ..Default::default()
+            },
             None,
             SequenceGroupState {
                 generator: Some(42),

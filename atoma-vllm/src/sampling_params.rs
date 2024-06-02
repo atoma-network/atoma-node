@@ -107,7 +107,7 @@ impl Default for EarlyStopping {
 ///    truncate_prompt_tokens: If set to an integer k, will use only the last k
 ///        tokens from the prompt (i.e., left truncation). Defaults to None
 ///        (i.e., no truncation).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SamplingParams {
     /// Number of output sequences to return for the given prompt.
     pub n: usize,

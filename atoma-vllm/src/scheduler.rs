@@ -1,18 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fmt::Debug,
-    marker::PhantomData,
-    time::{Duration, Instant},
+    collections::{HashMap, HashSet, VecDeque}, fmt::Debug, marker::PhantomData, sync::{Arc, Mutex}, time::{Duration, Instant}
 };
 
 use crate::{
-    block::{self, PhysicalTokenBlock, SyncPhysicalTokenBlock},
     block_manager::{AllocationStatus, BlockSpaceManager, BlockSpaceManagerError},
     config::{CacheConfig, SchedulerConfig},
-    policy::{FcfsPolicy, Policy},
-    sequence::{
-        self, Sequence, SequenceData, SequenceGroup, SequenceGroupMetadata, SequenceStatus,
-    },
+    policy::Policy,
+    sequence::{SequenceData, SequenceGroup, SequenceGroupMetadata, SequenceStatus},
 };
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -290,11 +284,11 @@ pub struct Scheduler<P> {
     /// `BlockSpaceManager` to handle block resources efficiently
     block_manager: BlockSpaceManager,
     /// Waiting `SequenceGroup` queue
-    waiting: VecDeque<SequenceGroup>,
+    waiting: VecDeque<Arc<Mutex<SequenceGroup>>>,
     /// Running `SequenceGroup` queue
-    running: VecDeque<SequenceGroup>,
+    running: VecDeque<Arc<Mutex<SequenceGroup>>>,
     /// Swapped `SequenceGroup` queue
-    swapped: VecDeque<SequenceGroup>,
+    swapped: VecDeque<Arc<Mutex<SequenceGroup>>>,
     /// Time at previous scheduling step
     previous_time: Option<Instant>,
     /// Checks if we scheduled a prompt at previous steps
@@ -398,6 +392,18 @@ impl<P> Scheduler<P> {
         Ok(())
     }
 
+    /// Aborts multiple `SequenceGroup`'s at once
+    pub fn abort_sequence_groups(
+        &mut self,
+        request_ids: impl Iterator<Item = String>,
+    ) -> Result<(), SchedulerError> {
+        for request_id in request_ids {
+            self.abort_sequence_group(request_id)?;
+        }
+
+        Ok(())
+    }
+
     /// Frees blocks from a given `SequenceGroup`
     fn free_sequences(
         &mut self,
@@ -444,24 +450,22 @@ impl<P: Policy> Scheduler<P> {
     /// Running queue should include decode and chunked prefill requests.
     ///
     /// Args:
-    ///
-    ///     `running_queue`: The queue that contains running requests (i.e.,
+    ///     running_queue - The queue that contains running requests (i.e.,
     ///         decodes). The given arguments are NOT in-place modified.
-    ///     `budget`: The scheduling budget. The argument is in-place updated
+    ///     budget - The scheduling budget. The argument is in-place updated
     ///             when any decodes are preempted.
-    ///     `enable_chunking`: If true, seq group can be chunked and only a
+    ///     enable_chunking - If true, seq group can be chunked and only a
     ///             chunked number of tokens are scheduled  if
-    ///             `budget.num_batched_tokens` has not enough capacity to schedule
+    ///             budget.num_batched_tokens has not enough capacity to schedule
     ///             all tokens.
     ///
     /// Returns:
-    ///
     ///     A tuple of remaining running queue (should be always 0) after
-    ///         scheduling and `SchedulerRunningOutputs`.
+    ///         scheduling and SchedulerRunningOutputs.
     fn schedule_running(
         &mut self,
         budget: &mut SchedulingBudget,
-        mut running_queue: VecDeque<SequenceGroup>,
+        running_queue: VecDeque<SequenceGroup>,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         info!("Schedule running..");
@@ -482,6 +486,7 @@ impl<P: Policy> Scheduler<P> {
         let mut running_queue = P::sort_by_priority(now, &running_queue);
 
         while !running_queue.is_empty() {
+            println!("FLAG: running_queue.len() == {}", running_queue.len());
             let mut sequence_group = running_queue.pop_front().unwrap(); // DON'T PANIC: we have already checked that the `running_queue` is not empty
             let num_running_tokens = self.get_num_tokens(
                 &sequence_group,
@@ -591,22 +596,21 @@ impl<P: Policy> Scheduler<P> {
     /// `budget` and are updated based on scheduled sequence_groups.
     ///
     /// Args:
-    ///
-    ///     `swapped_queue`: The queue that contains swapped out requests. The given arguments are NOT in-place modified.
-    ///     `budget`: The scheduling budget. The argument is in-place updated
+    ///     swapped_queue: The queue that contains swapped out requests. The given arguments are NOT in-place modified.
+    ///     budget: The scheduling budget. The argument is in-place updated
     ///         when any requests are swapped in.
-    ///     `policy`: The sorting policy to sort swapped_queue.
-    ///     `enable_chunking`: If true, seq group can be chunked and only a
-    ///         chunked number of tokens are scheduled  if `budget.num_batched_tokens` has not enough capacity to schedule all tokens.
+    ///     policy: The sorting policy to sort swapped_queue.
+    ///     enable_chunking: If true, seq group can be chunked and only a
+    ///         chunked number of tokens are scheduled  if budget.num_batched_tokens has not enough capacity to schedule all tokens.
     ///
     /// Returns:
     ///     A tuple of remaining `swapped_queue` after scheduling and
-    ///     `SchedulerSwappedInOutputs`.
+    ///     SchedulerSwappedInOutputs.
     #[instrument]
     fn schedule_swapped(
         &mut self,
         budget: &mut SchedulingBudget,
-        mut swapped_queue: VecDeque<SequenceGroup>,
+        swapped_queue: VecDeque<SequenceGroup>,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
         info!("Schedule swapped..");
@@ -690,20 +694,18 @@ impl<P: Policy> Scheduler<P> {
     ///    tokens).
     ///
     /// Args:
-    ///
-    ///     `waiting_queue`: The queue that contains prefill requests.
+    ///     waiting_queue: The queue that contains prefill requests.
     ///         The given arguments are NOT in-place modified.
-    ///     `budget`: The scheduling budget. The argument is in-place updated
+    ///     budget: The scheduling budget. The argument is in-place updated
     ///         when any requests are scheduled.
-    ///     `enable_chunking`: If True, seq group can be chunked and only a
+    ///     enable_chunking: If True, seq group can be chunked and only a
     ///         chunked number of tokens are scheduled  if
-    ///         `budget.num_batched_tokens` has not enough capacity to schedule
+    ///         budget.num_batched_tokens has not enough capacity to schedule
     ///         all tokens.
     ///
     /// Returns:
-    ///     
-    ///     A tuple of remaining `waiting_queue` after scheduling and
-    ///         `SchedulerSwappedInOutputs`,
+    ///     A tuple of remaining waiting_queue after scheduling and
+    ///         SchedulerSwappedInOutputs,
     #[instrument]
     fn schedule_prefills(
         &mut self,
@@ -929,10 +931,10 @@ impl<P: Policy> Scheduler<P> {
         // doesn't allow chunked prefills.
         if running_scheduled.prefill_seq_groups.len() != 0 {
             error!("Chunked prefills are not allowed for running schedules, there should be none");
-            return Err(SchedulerError::ChunkedPrefillsNotAllowed(
-                "Chunked prefills are not allowed for running schedules, there should be none"
-                    .into(),
-            ));
+            return Err(SchedulerError::ChunkedPrefillsNotAllowed(format!(
+                "Chunked prefills are not allowed for running schedules, there should be none but we received {}",
+                running_scheduled.prefill_seq_groups.len()
+            )));
         }
 
         if swapped_in.prefill_seq_groups.len() != 0 {
@@ -940,8 +942,7 @@ impl<P: Policy> Scheduler<P> {
                 "Chunked prefills are not allowed for swapped in schedules, there should be none"
             );
             return Err(SchedulerError::ChunkedPrefillsNotAllowed(
-                "Chunked prefills are not allowed for swapped in schedules, there should be none"
-                    .into(),
+                format!("Chunked prefills are not allowed for swapped in schedules, there should be none but we received {}", swapped_in.prefill_seq_groups.len()),
             ));
         }
 
@@ -970,6 +971,9 @@ impl<P: Policy> Scheduler<P> {
             .chain(swapped_in.infeasible_seq_groups.into_iter())
             .collect();
 
+        // NOTE: `SchedulerOutputs` should only be used by read operations, as
+        // contrary to original Python vllm implementation, `SchedulerOutputs` is passed
+        // by value, and not by reference
         Ok(SchedulerOutputs {
             scheduled_sequence_groups,
             num_batched_tokens: budget.num_batched_tokens,
@@ -1147,8 +1151,8 @@ impl<P: Policy> Scheduler<P> {
 
         // Create input data structures
         let mut sequence_groups_metadata = Vec::new();
-        for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter_mut() {
-            let sequence_group = scheduled_sequence_group.scheduled_group;
+        for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter() {
+            let mut sequence_group = scheduled_sequence_group.scheduled_group.clone();
             let token_chunk_size = scheduled_sequence_group.token_chunk_size;
             sequence_group.maybe_set_first_scheduled_time(now);
 
@@ -1166,32 +1170,44 @@ impl<P: Policy> Scheduler<P> {
             }) {
                 let sequence_id = sequence.sequence_id();
                 sequence_data.insert(sequence_id, sequence.sequence_data());
-                if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)  {
+                if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)
+                {
                     block_tables.insert(sequence_id, block_table_ids);
-                    self.block_manager.access_all_blocks_in_sequence(&sequence_id, now)?;
-                } else { 
-                    error!("Missing block table for sequence with id = {}", sequence.sequence_id());
+                    self.block_manager
+                        .access_all_blocks_in_sequence(&sequence_id, now)?;
+                } else {
+                    error!(
+                        "Missing block table for sequence with id = {}",
+                        sequence.sequence_id()
+                    );
                 }
             }
 
             let mut do_sample = true;
-            if sequence_group.is_prefill() { 
-                if sequence_group.sequences.len() != 1 { 
+            if sequence_group.is_prefill() {
+                if sequence_group.sequences.len() != 1 {
                     error!("Prefill mode has only one sequence");
                     return Err(SchedulerError::InvalidPrefillSequences(
-                        "Prefill mode has only one sequence".into()
+                        "Prefill mode has only one sequence".into(),
                     ));
                 }
 
                 // DON'T PANIC: checked previously that `sequence_group.sequences.len() != 1`
-                let sequence = sequence_group.sequences.iter().map(|(_, s)| s).next().unwrap();
+                let sequence = sequence_group
+                    .sequences
+                    .iter()
+                    .map(|(_, s)| s)
+                    .next()
+                    .unwrap();
 
                 // In the next iteration, all prompt tokens are not computed.
                 // It means the prefill is chunked, and we don't need sampling.
                 // NOTE: We use get_len instead of get_prompt_len because when
                 // a sequence is preempted, prefill includes previous generated
                 // output tokens.
-                if token_chunk_size + sequence.sequence_data().get_num_computed_tokens() < sequence.sequence_data().length() {
+                if token_chunk_size + sequence.sequence_data().get_num_computed_tokens()
+                    < sequence.sequence_data().length()
+                {
                     do_sample = false;
                 }
             }
@@ -1205,20 +1221,29 @@ impl<P: Policy> Scheduler<P> {
             // prefill < decoding.
             let is_prompt = sequence_group.is_prefill();
             let sequence_group_metadata = SequenceGroupMetadata::new(
-                sequence_group.request_id, 
-                is_prompt, 
-                sequence_data, 
-                sequence_group.sampling_params(), 
-                block_tables, 
-                do_sample, 
-                Some(token_chunk_size), 
-                sequence_group.state(), 
-                multi_modal_data);
+                sequence_group.request_id.clone(),
+                is_prompt,
+                sequence_data,
+                sequence_group.sampling_params(),
+                block_tables,
+                do_sample,
+                Some(token_chunk_size),
+                sequence_group.state(),
+                multi_modal_data,
+            );
             sequence_groups_metadata.push(sequence_group_metadata);
-
         }
 
-        Ok(())
+        // // Now that the batch has been created, we can assume all blocks in the
+        // // batch will have been computed before the next scheduling invocation.
+        // // This is because the engine assumes that a failure in model execution
+        // //  will crash the vLLM instance / will not retry.
+        // for scheduled_seq_group in scheduler_outputs.scheduled_sequence_groups.iter() {
+        //     self.block_manager.mark_blocks_as_computed(
+        //         scheduled_seq_group.scheduled_group)
+        // }
+
+        Ok((sequence_groups_metadata, scheduler_outputs))
     }
 }
 
@@ -1305,6 +1330,11 @@ impl<P: Debug> Scheduler<P> {
             }
         }
         Ok(())
+    }
+
+    /// Adds new `SequenceGroup`'s to `waiting` queue
+    pub fn add_sequence_group(&mut self, sequence_group: SequenceGroup) {
+        self.waiting.push_back(sequence_group)
     }
 
     /// Allows for preemption of `SequenceGroup`
@@ -1512,7 +1542,7 @@ impl<P: Debug> Scheduler<P> {
 #[derive(Debug)]
 struct ScheduledSequenceGroup {
     /// Sequence group
-    scheduled_group: SequenceGroup,
+    scheduled_group: Arc<Mutex<SequenceGroup>>,
     /// The total chunk size (number of tokens) to process for next iteration.
     /// 1 for decoding. Same as prompt tokens for prefill, but if prefill is
     /// chunked, it can be smaller than that.
@@ -1551,4 +1581,295 @@ pub enum SchedulerError {
     ChunkedPrefillsNotAllowed(String),
     #[error("Invalid prefill sequence: `{0}`")]
     InvalidPrefillSequences(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        policy::FcfsPolicy,
+        sequence::{tests::create_dummy_prompt, LogProb},
+    };
+
+    fn get_sequence_groups(scheduler_outputs: &SchedulerOutputs) -> Vec<SequenceGroup> {
+        scheduler_outputs
+            .scheduled_sequence_groups
+            .iter()
+            .map(|s| s.scheduled_group.clone())
+            .collect()
+    }
+
+    fn schedule_and_update_computed_tokens(
+        scheduler: &mut Scheduler<FcfsPolicy>,
+    ) -> (Vec<SequenceGroupMetadata>, SchedulerOutputs) {
+        let (metadatas, mut outputs) = scheduler.schedule().expect("Failed to schedule");
+        
+        for (s, meta) in outputs
+            .scheduled_sequence_groups
+            .iter_mut()
+            .zip(metadatas.iter())
+        {
+            s.scheduled_group
+                .update_num_computed_tokens(meta.token_chunk_size)
+                .expect("Failed to updated number of computed tokens");
+        }
+        (metadatas, outputs)
+    }
+
+    fn add_new_token(scheduler: &mut Scheduler<FcfsPolicy>, token_id: u32) {
+        scheduler.running.iter_mut().for_each(|s| {
+            for (_, sequence) in s.sequences.iter_mut() {
+                sequence.add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                )
+            }
+        });
+    }
+
+    #[test]
+    fn test_scheduler_add_sequence_group() {
+        const BLOCK_SIZE: usize = 4;
+        const GPU_MEMORY_UTILIZATION: f32 = 1.0;
+        const NUM_CPU_BLOCKS: usize = 4;
+        const NUM_GPU_BLOCKS: usize = 4;
+        const SWAP_SPACE: usize = 1;
+        const CACHE_DTYPE: &str = "auto";
+
+        const MAX_NUM_BATCHED_TOKENS: usize = 100;
+        const MAX_NUM_SEQUENCES: usize = 64;
+        const MAX_MODEL_LEN: usize = 1;
+        let scheduler_config = SchedulerConfig::new(
+            MAX_NUM_BATCHED_TOKENS,
+            MAX_NUM_SEQUENCES,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to generate `SchedulerConfig`");
+
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            GPU_MEMORY_UTILIZATION,
+            SWAP_SPACE,
+            CACHE_DTYPE.into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate `CacheConfig`");
+
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to generate `Scheduler`");
+
+        // adds multiple sequence groups to `Scheduler` instance
+        let num_sequence_group: usize = 4;
+        for i in 0..num_sequence_group {
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            scheduler.add_sequence_group(sequence_group);
+            assert_eq!(scheduler.num_unfinished_sequeces(), i + 1);
+        }
+    }
+
+    #[test]
+    fn test_scheduler_abort_sequence_group() {
+        const BLOCK_SIZE: usize = 4;
+        const GPU_MEMORY_UTILIZATION: f32 = 1.0;
+        const NUM_CPU_BLOCKS: usize = 4;
+        const NUM_GPU_BLOCKS: usize = 4;
+        const SWAP_SPACE: usize = 1;
+        const CACHE_DTYPE: &str = "auto";
+
+        const MAX_NUM_BATCHED_TOKENS: usize = 100;
+        const MAX_NUM_SEQUENCES: usize = 64;
+        const MAX_MODEL_LEN: usize = 1;
+        let scheduler_config = SchedulerConfig::new(
+            MAX_NUM_BATCHED_TOKENS,
+            MAX_NUM_SEQUENCES,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to generate `SchedulerConfig`");
+
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            GPU_MEMORY_UTILIZATION,
+            SWAP_SPACE,
+            CACHE_DTYPE.into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate `CacheConfig`");
+
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to generate `Scheduler`");
+
+        // adds multiple sequence groups to `Scheduler` instance
+        let num_sequence_group: usize = 4;
+        let mut requests_ids = HashSet::new();
+        for i in 0..num_sequence_group {
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            scheduler.add_sequence_group(sequence_group);
+            requests_ids.insert(format!("{i}"));
+        }
+
+        assert_eq!(scheduler.num_unfinished_sequeces(), num_sequence_group);
+        scheduler
+            .abort_sequence_groups(requests_ids.into_iter())
+            .expect("Failed to abort sequence groups");
+        assert_eq!(scheduler.num_unfinished_sequeces(), 0);
+    }
+
+    #[test]
+    fn test_scheduler_schedule_simple() {
+        const BLOCK_SIZE: usize = 4;
+        const GPU_MEMORY_UTILIZATION: f32 = 1.0;
+        const NUM_CPU_BLOCKS: usize = 8;
+        const NUM_GPU_BLOCKS: usize = 8;
+        const SWAP_SPACE: usize = 1;
+        const CACHE_DTYPE: &str = "auto";
+
+        const MAX_NUM_BATCHED_TOKENS: usize = 100;
+        const MAX_NUM_SEQUENCES: usize = 4;
+        const MAX_MODEL_LEN: usize = 16;
+        let scheduler_config = SchedulerConfig::new(
+            MAX_NUM_BATCHED_TOKENS,
+            MAX_NUM_SEQUENCES,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to generate `SchedulerConfig`");
+
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            GPU_MEMORY_UTILIZATION,
+            SWAP_SPACE,
+            CACHE_DTYPE.into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate `CacheConfig`");
+
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to generate `Scheduler`");
+
+        let num_sequence_groups = 4;
+        let mut running = vec![];
+
+        for i in 0..num_sequence_groups {
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            scheduler.add_sequence_group(sequence_group.clone());
+            running.push(sequence_group);
+        }
+
+        // Schedule sequence groups prompts.
+        let num_tokens = BLOCK_SIZE * num_sequence_groups;
+        let (sequence_groups_metadata, outputs) =
+            schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&outputs);
+        assert_eq!(
+            sequence_groups
+                .iter()
+                .map(|s| s.request_id.clone())
+                .collect::<HashSet<_>>(),
+            running
+                .iter()
+                .map(|s| s.request_id.clone())
+                .collect::<HashSet<_>>()
+        );
+        for sequence_group in sequence_groups.iter() {
+            let running_sequence_group = running
+                .iter()
+                .find(|s| s.request_id == sequence_group.request_id)
+                .unwrap()
+                .clone();
+            assert_eq!(
+                running_sequence_group.sampling_params(),
+                sequence_group.sampling_params()
+            );
+            assert_eq!(
+                running_sequence_group
+                    .sequences
+                    .iter()
+                    .map(|(id, _)| id)
+                    .collect::<Vec<_>>(),
+                sequence_group
+                    .sequences
+                    .iter()
+                    .map(|(id, _)| id)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(running_sequence_group.state(), sequence_group.state())
+        }
+        assert_eq!(outputs.num_batched_tokens, num_tokens);
+        assert!(
+            outputs.blocks_to_copy.is_empty()
+                && outputs.blocks_to_swap_in.is_empty()
+                && outputs.blocks_to_swap_out.is_empty()
+        );
+        assert_eq!(sequence_groups_metadata.len(), num_sequence_groups);
+
+        println!("FLAG: {:?}", scheduler.running.iter().map(|s| s.is_prefill()).collect::<Vec<_>>());
+
+        // add a new token for each running `SequenceGroup`'s internal `Sequence`
+        add_new_token(&mut scheduler, 1);
+
+        // Schedule seq groups generation.
+        let (sequence_groups_metadata, outputs) =
+            schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&outputs);
+        assert_eq!(
+            sequence_groups
+                .iter()
+                .map(|s| s.request_id.clone())
+                .collect::<HashSet<_>>(),
+            running
+                .iter()
+                .map(|s| s.request_id.clone())
+                .collect::<HashSet<_>>()
+        );
+        for sequence_group in sequence_groups.iter() {
+            let running_sequence_group = running
+                .iter()
+                .find(|s| s.request_id == sequence_group.request_id)
+                .unwrap()
+                .clone();
+            assert_eq!(
+                running_sequence_group.sampling_params(),
+                sequence_group.sampling_params()
+            );
+            assert_eq!(
+                running_sequence_group
+                    .sequences
+                    .iter()
+                    .map(|(id, _)| id)
+                    .collect::<Vec<_>>(),
+                sequence_group
+                    .sequences
+                    .iter()
+                    .map(|(id, _)| id)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(running_sequence_group.state(), sequence_group.state())
+        }
+        assert_eq!(outputs.num_batched_tokens, num_sequence_groups);
+        assert!(
+            outputs.blocks_to_copy.is_empty()
+                && outputs.blocks_to_swap_in.is_empty()
+                && outputs.blocks_to_swap_out.is_empty()
+        );
+        assert_eq!(sequence_groups_metadata.len(), num_sequence_groups);
+
+        add_new_token(&mut scheduler, 1)
+    }
 }

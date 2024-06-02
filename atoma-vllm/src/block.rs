@@ -12,7 +12,7 @@ pub type BlockTable = Vec<SyncPhysicalTokenBlock>;
 
 /// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
 /// physical blocks in the KV cache (allocated on the GPU).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogicalTokenBlock {
     /// Block number
     block_number: usize,
