@@ -6,11 +6,13 @@ use std::{
 };
 
 use crate::{
-    block,
+    block::{self, PhysicalTokenBlock, SyncPhysicalTokenBlock},
     block_manager::{AllocationStatus, BlockSpaceManager, BlockSpaceManagerError},
     config::{CacheConfig, SchedulerConfig},
     policy::{FcfsPolicy, Policy},
-    sequence::{self, Sequence, SequenceGroup, SequenceStatus},
+    sequence::{
+        self, Sequence, SequenceData, SequenceGroup, SequenceGroupMetadata, SequenceStatus,
+    },
 };
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -1126,12 +1128,97 @@ impl<P: Policy> Scheduler<P> {
 
     /// Schedule queued requests.
     #[instrument]
-    fn schedule(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+    fn schedule_(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
         if self.scheduler_config.enable_chunked_prefill() {
             self.schedule_chunked_prefill()
         } else {
             self.schedule_default()
         }
+    }
+
+    /// Schedule queued requests, in the form of `SequenceGroup`'s.
+    /// This function calls the internal state of the `Scheduler`
+    #[instrument]
+    pub fn schedule(
+        &mut self,
+    ) -> Result<(Vec<SequenceGroupMetadata>, SchedulerOutputs), SchedulerError> {
+        let scheduler_outputs = self.schedule_()?;
+        let now = Instant::now();
+
+        // Create input data structures
+        let mut sequence_groups_metadata = Vec::new();
+        for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter_mut() {
+            let sequence_group = scheduled_sequence_group.scheduled_group;
+            let token_chunk_size = scheduled_sequence_group.token_chunk_size;
+            sequence_group.maybe_set_first_scheduled_time(now);
+
+            // Mapping from sequence id to `SequenceData`
+            let mut sequence_data = HashMap::<u64, SequenceData>::new();
+            // Mapping from sequence id to `PhysicalBlock` number
+            let mut block_tables = HashMap::<u64, Vec<u64>>::new();
+
+            for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
+                if s.get_sequence_status() == SequenceStatus::Running {
+                    Some(s)
+                } else {
+                    None
+                }
+            }) {
+                let sequence_id = sequence.sequence_id();
+                sequence_data.insert(sequence_id, sequence.sequence_data());
+                if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)  {
+                    block_tables.insert(sequence_id, block_table_ids);
+                    self.block_manager.access_all_blocks_in_sequence(&sequence_id, now)?;
+                } else { 
+                    error!("Missing block table for sequence with id = {}", sequence.sequence_id());
+                }
+            }
+
+            let mut do_sample = true;
+            if sequence_group.is_prefill() { 
+                if sequence_group.sequences.len() != 1 { 
+                    error!("Prefill mode has only one sequence");
+                    return Err(SchedulerError::InvalidPrefillSequences(
+                        "Prefill mode has only one sequence".into()
+                    ));
+                }
+
+                // DON'T PANIC: checked previously that `sequence_group.sequences.len() != 1`
+                let sequence = sequence_group.sequences.iter().map(|(_, s)| s).next().unwrap();
+
+                // In the next iteration, all prompt tokens are not computed.
+                // It means the prefill is chunked, and we don't need sampling.
+                // NOTE: We use get_len instead of get_prompt_len because when
+                // a sequence is preempted, prefill includes previous generated
+                // output tokens.
+                if token_chunk_size + sequence.sequence_data().get_num_computed_tokens() < sequence.sequence_data().length() {
+                    do_sample = false;
+                }
+            }
+
+            let multi_modal_data = if scheduler_outputs.number_prefill_groups > 0 {
+                sequence_group.multi_modal_data()
+            } else {
+                None
+            };
+            // It assumes the scheduled_seq_groups is ordered by
+            // prefill < decoding.
+            let is_prompt = sequence_group.is_prefill();
+            let sequence_group_metadata = SequenceGroupMetadata::new(
+                sequence_group.request_id, 
+                is_prompt, 
+                sequence_data, 
+                sequence_group.sampling_params(), 
+                block_tables, 
+                do_sample, 
+                Some(token_chunk_size), 
+                sequence_group.state(), 
+                multi_modal_data);
+            sequence_groups_metadata.push(sequence_group_metadata);
+
+        }
+
+        Ok(())
     }
 }
 
@@ -1462,4 +1549,6 @@ pub enum SchedulerError {
     InvalidNumberBudgetSequences(String),
     #[error("Chunked prefills not allowed: `{0}`")]
     ChunkedPrefillsNotAllowed(String),
+    #[error("Invalid prefill sequence: `{0}`")]
+    InvalidPrefillSequences(String),
 }

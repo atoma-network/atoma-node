@@ -602,10 +602,10 @@ impl BlockSpaceManager {
     /// Accesses all blocks in a given `Sequence`
     pub fn access_all_blocks_in_sequence(
         &self,
-        sequence: Sequence,
+        sequence_id: &u64,
         access_time: Instant,
     ) -> Result<(), BlockSpaceManagerError> {
-        if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+        if let Some(block_table) = self.block_tables.get(sequence_id) {
             for block in block_table {
                 {
                     block.deref_write()?.set_last_accessed(access_time)
@@ -749,7 +749,7 @@ mod tests {
                 best_of,
                 ..Default::default()
             }),
-            vec![],
+            None,
             SequenceGroupState {
                 generator: Some(42),
             },
@@ -874,7 +874,7 @@ mod tests {
             Instant::now(),
             None,
             None,
-            vec![],
+            None,
             SequenceGroupState {
                 generator: Some(42),
             },
@@ -1181,7 +1181,7 @@ mod tests {
             Instant::now(),
             None,
             None,
-            vec![],
+            None,
             SequenceGroupState {
                 generator: Some(42),
             },

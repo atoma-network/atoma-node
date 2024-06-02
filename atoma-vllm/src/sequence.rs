@@ -517,6 +517,11 @@ impl Sequence {
     pub fn sequence_id(&self) -> u64 {
         self.sequence_id
     }
+
+    /// Getter for internal `SequenceData`
+    pub fn sequence_data(&self) -> SequenceData { 
+        self.sequence_data.clone()
+    }
 }
 
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
@@ -565,23 +570,19 @@ pub struct MultiModalData {
 #[derive(Clone, Debug)]
 pub struct SequenceGroup {
     /// Request Id
-    #[allow(dead_code)]
     pub request_id: String,
     /// Sequences
     pub(crate) sequences: HashMap<u64, Sequence>,
     /// Request metrics
     metrics: RequestMetrics,
     /// Multi modal data
-    #[allow(dead_code)]
-    multi_model_data: Vec<MultiModalData>,
+    multi_model_data: Option<MultiModalData>,
     /// Prompt log probabilities
     #[allow(dead_code)]
     prompt_logprobs: Option<LogProb>,
     /// Sampling parameters
-    #[allow(dead_code)]
     sampling_params: Option<SamplingParams>,
     /// State
-    #[allow(dead_code)]
     state: SequenceGroupState,
 }
 
@@ -593,7 +594,7 @@ impl SequenceGroup {
         arrival_time: Instant,
         prompt_logprobs: Option<LogProb>,
         sampling_params: Option<SamplingParams>,
-        multi_model_data: Vec<MultiModalData>,
+        multi_model_data: Option<MultiModalData>,
         state: SequenceGroupState,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
@@ -678,8 +679,7 @@ impl SequenceGroup {
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
-    #[allow(dead_code)]
-    fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
+    pub fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
         if self.metrics.first_scheduled_time.is_none() {
             self.metrics.first_scheduled_time = Some(time);
             self.metrics.time_in_queue = Some(time - self.metrics.arrival_time);
@@ -901,6 +901,21 @@ impl SequenceGroup {
     pub fn is_finished(&self) -> bool {
         self.sequences.values().all(|s| s.is_finished())
     }
+
+    /// Getter for `state`
+    pub fn state(&self) -> SequenceGroupState { 
+        self.state.clone()
+    }
+
+    /// Getter for `multi_modal_data`
+    pub fn multi_modal_data(&self) -> Option<MultiModalData> { 
+        self.multi_model_data.clone()
+    }
+
+    /// Getter for sampling parameters
+    pub fn sampling_params(&self) -> Option<SamplingParams> { 
+        self.sampling_params.clone()
+    }
 }
 
 /// `SequenceGroupMetadata` - Metadata for a sequence group. Used to create `AttentionMetadata`
@@ -938,9 +953,6 @@ pub struct SequenceGroupMetadata {
     do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
-    /// Computed block numbers
-    #[allow(dead_code)]
-    computed_block_nums: Vec<u32>,
     /// Sequence data
     #[allow(dead_code)]
     sequence_data: HashMap<u64, SequenceData>,
@@ -963,7 +975,6 @@ impl SequenceGroupMetadata {
         block_tables: HashMap<u64, Vec<u64>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
-        computed_block_nums: Vec<u32>,
         state: SequenceGroupState,
         multi_modal_data: Option<MultiModalData>,
     ) -> Self {
@@ -987,7 +998,6 @@ impl SequenceGroupMetadata {
             block_tables,
             do_sample,
             token_chunk_size,
-            computed_block_nums,
             state,
             multi_modal_data,
         }
@@ -1223,7 +1233,7 @@ mod tests {
                 best_of,
                 ..Default::default()
             }),
-            vec![],
+            None,
             SequenceGroupState {
                 generator: Some(42),
             },
