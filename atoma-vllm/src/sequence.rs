@@ -605,7 +605,10 @@ impl SequenceGroup {
         }
         Ok(Self {
             request_id,
-            sequences: sequences.into_iter().map(|s| (s.sequence_id, Rc::new(RefCell::new(s)))).collect(),
+            sequences: sequences
+                .into_iter()
+                .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
+                .collect(),
             metrics: RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
@@ -632,12 +635,12 @@ impl SequenceGroup {
 
     /// Adds a `token_id` to a `Sequence` in `SequenceGroup` in place
     pub fn add_token_id_to_seq(
-        &mut self,
+        &self,
         sequence_id: u64,
         token_id: u32,
         logprobs: HashMap<u32, LogProb>,
     ) {
-        if let Some(sequence) = self.sequences.get_mut(&sequence_id) {
+        if let Some(sequence) = self.sequences.get(&sequence_id) {
             sequence.borrow_mut().add_token_id(token_id, logprobs);
         }
     }
@@ -748,12 +751,19 @@ impl SequenceGroup {
                     }
                 })
                 .collect(),
-            None => self.sequences.values().map(|s| s.borrow().sequence_id).collect(),
+            None => self
+                .sequences
+                .values()
+                .map(|s| s.borrow().sequence_id)
+                .collect(),
         }
     }
 
     /// Gets first sequence as a reference
-    pub fn get_first_sequence(&self, status: Option<SequenceStatus>) -> Option<&Rc<RefCell<Sequence>>> {
+    pub fn get_first_sequence(
+        &self,
+        status: Option<SequenceStatus>,
+    ) -> Option<&Rc<RefCell<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
@@ -807,18 +817,17 @@ impl SequenceGroup {
 
     /// Updates the number of computed tokens
     pub fn update_num_computed_tokens(
-        &mut self,
+        &self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
         for sequence in self.sequences.values() {
-            let is_finished = {sequence.borrow().is_finished()
-            };
+            let is_finished = { sequence.borrow().is_finished() };
             if !is_finished {
                 {
                     sequence
-                    .borrow_mut()
-                    .sequence_data
-                    .update_num_computed_tokens(num_new_computed_tokens)?;
+                        .borrow_mut()
+                        .sequence_data
+                        .update_num_computed_tokens(num_new_computed_tokens)?;
                 }
             }
         }
@@ -829,8 +838,9 @@ impl SequenceGroup {
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         let mut num_uncomputed_tokens = 0;
         for sequence in self.sequences.values() {
-            if !sequence.is_finished() {
-                num_uncomputed_tokens += sequence.sequence_data.get_num_uncomputed_tokens();
+            if !sequence.borrow().is_finished() {
+                num_uncomputed_tokens +=
+                    sequence.borrow().sequence_data.get_num_uncomputed_tokens();
             }
         }
         num_uncomputed_tokens
@@ -841,7 +851,7 @@ impl SequenceGroup {
         if let Some(status) = status {
             let mut len = 0;
             for sequence in self.sequences.values() {
-                if sequence.sequence_status == status {
+                if sequence.borrow().sequence_status == status {
                     len += 1;
                 }
             }
@@ -856,8 +866,8 @@ impl SequenceGroup {
         // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
         // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
         for sequence in self.sequences.values() {
-            if sequence.sequence_status == status {
-                return Some(sequence.get_num_total_logical_token_blocks());
+            if sequence.borrow().sequence_status == status {
+                return Some(sequence.borrow().get_num_total_logical_token_blocks());
             }
         }
         None
@@ -878,21 +888,22 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.is_prefill())
+            .map(|(_, s)| s.borrow().is_prefill())
             .unwrap_or(false)
     }
 
     /// Finds a `Sequence` with a given `sequence_id`
-    pub fn find(&self, sequence_id: u64) -> Option<Sequence> {
+    pub fn find(&self, sequence_id: u64) -> Option<Rc<RefCell<Sequence>>> {
         self.sequences.get(&sequence_id).cloned()
     }
 
     /// Adds a new `Sequence` to the `SequenceGroup`
-    pub fn add(&mut self, sequence: Sequence) {
-        if self.sequences.contains_key(&sequence.sequence_id) {
+    pub fn add(&mut self, sequence: Rc<RefCell<Sequence>>) {
+        let sequence_id = { sequence.borrow().sequence_id };
+        if self.sequences.contains_key(&sequence_id) {
             return;
         }
-        self.sequences.insert(sequence.sequence_id, sequence);
+        self.sequences.insert(sequence_id, sequence);
     }
 
     /// Removes a `Sequence` from the `SequenceGroup`, as an idempotent
@@ -902,7 +913,7 @@ impl SequenceGroup {
 
     /// Checks if generation is finished for all `Sequence`'s in `SequenceGroup`
     pub fn is_finished(&self) -> bool {
-        self.sequences.values().all(|s| s.is_finished())
+        self.sequences.values().all(|s| s.borrow().is_finished())
     }
 
     /// Getter for `state`
@@ -1210,7 +1221,7 @@ pub(crate) mod tests {
         block_size: Option<usize>,
         use_beam_search: bool,
         best_of: usize,
-    ) -> (Sequence, SequenceGroup) {
+    ) -> (Rc<RefCell<Sequence>>, SequenceGroup) {
         let block_size = block_size.unwrap_or(prompt_length);
 
         // Create dummy prompt sequence with tokens 0...block_size-1
@@ -1245,6 +1256,7 @@ pub(crate) mod tests {
         )
         .expect("Failed to construct a new sequence group");
 
+        let prompt = seq_group.sequences.values().next().unwrap().clone();
         (prompt, seq_group)
     }
 
@@ -1370,13 +1382,13 @@ pub(crate) mod tests {
             .enumerate()
             .for_each(|(i, v)| {
                 if i == 0 {
-                    v.sequence_data.add_token_id(1, 0.0);
+                    v.borrow_mut().sequence_data.add_token_id(1, 0.0);
                 }
             });
         seq_group
             .sequences
             .values_mut()
-            .for_each(|v| v.reset_state_for_recompute());
+            .for_each(|v| v.borrow_mut().reset_state_for_recompute());
         assert!(seq_group.is_prefill());
 
         seq_group

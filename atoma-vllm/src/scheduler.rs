@@ -355,8 +355,8 @@ impl<P> Scheduler<P> {
                 .sequences
                 .values()
                 .filter_map(|s| {
-                    if s.is_finished() {
-                        Some(s.sequence_id())
+                    if s.borrow().is_finished() {
+                        Some(s.borrow().sequence_id())
                     } else {
                         None
                     }
@@ -369,8 +369,8 @@ impl<P> Scheduler<P> {
                 .sequences
                 .values()
                 .filter_map(|s| {
-                    if s.is_finished() {
-                        Some(s.sequence_id())
+                    if s.borrow().is_finished() {
+                        Some(s.borrow().sequence_id())
                     } else {
                         None
                     }
@@ -383,8 +383,8 @@ impl<P> Scheduler<P> {
                 .sequences
                 .values()
                 .filter_map(|s| {
-                    if s.is_finished() {
-                        Some(s.sequence_id())
+                    if s.borrow().is_finished() {
+                        Some(s.borrow().sequence_id())
                     } else {
                         None
                     }
@@ -489,7 +489,6 @@ impl<P: Policy> Scheduler<P> {
         let mut running_queue = P::sort_by_priority(now, &running_queue);
 
         while !running_queue.is_empty() {
-            println!("FLAG: running_queue.len() == {}", running_queue.len());
             let mut sequence_group = running_queue.pop_front().unwrap(); // DON'T PANIC: we have already checked that the `running_queue` is not empty
             let num_running_tokens = self.get_num_tokens(
                 &sequence_group,
@@ -639,7 +638,9 @@ impl<P: Policy> Scheduler<P> {
                 warn!("Failing the request {} because there is not enough KV cache blocks to run the entire sequence..", 
                         sequence_group.request_id);
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
-                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored);
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 infeasible_seq_groups.push(sequence_group.clone());
             }
@@ -741,7 +742,7 @@ impl<P: Policy> Scheduler<P> {
                 .sequences
                 .iter_mut()
                 .filter_map(|(_, s)| {
-                    if s.get_sequence_status() == SequenceStatus::Waiting {
+                    if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
                         Some(s)
                     } else {
                         None
@@ -759,7 +760,7 @@ impl<P: Policy> Scheduler<P> {
 
             if !enable_chunking {
                 // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
-                let num_prompt_tokens = waiting_sequences.first().unwrap().length();
+                let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
                 if num_prompt_tokens != num_new_tokens {
                     error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
                     return Err(SchedulerError::InvalidNumberOfNewTokens {
@@ -776,7 +777,9 @@ impl<P: Policy> Scheduler<P> {
                     num_new_tokens, prompt_limit
                 );
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
-                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored)
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::FinishedIgnored)
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
                 continue;
@@ -788,7 +791,9 @@ impl<P: Policy> Scheduler<P> {
             } else if can_allocate == AllocationStatus::Never {
                 warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
                 for sequence in waiting_sequences.iter_mut() {
-                    sequence.set_sequence_status(SequenceStatus::FinishedIgnored);
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
             }
@@ -802,7 +807,7 @@ impl<P: Policy> Scheduler<P> {
             self.allocate_and_set_running(&mut sequence_group)?;
             sequence_groups.push(ScheduledSequenceGroup {
                 scheduled_group: sequence_group.clone(),
-                token_chunk_size: num_new_sequences,
+                token_chunk_size: num_new_tokens,
             });
 
             budget.add_num_batched_tokens(sequence_group.request_id.clone(), num_new_tokens);
@@ -933,7 +938,7 @@ impl<P: Policy> Scheduler<P> {
         // There should be no prefill from running queue because this policy
         // doesn't allow chunked prefills.
         if running_scheduled.prefill_seq_groups.len() != 0 {
-            error!("Chunked prefills are not allowed for running schedules, there should be none");
+            error!("Chunked prefills are not allowed for running schedules, there should be none but we received {}", running_scheduled.prefill_seq_groups.len());
             return Err(SchedulerError::ChunkedPrefillsNotAllowed(format!(
                 "Chunked prefills are not allowed for running schedules, there should be none but we received {}",
                 running_scheduled.prefill_seq_groups.len()
@@ -942,7 +947,7 @@ impl<P: Policy> Scheduler<P> {
 
         if swapped_in.prefill_seq_groups.len() != 0 {
             error!(
-                "Chunked prefills are not allowed for swapped in schedules, there should be none"
+                "Chunked prefills are not allowed for swapped in schedules, there should be none but we received {}", running_scheduled.prefill_seq_groups.len()
             );
             return Err(SchedulerError::ChunkedPrefillsNotAllowed(
                 format!("Chunked prefills are not allowed for swapped in schedules, there should be none but we received {}", swapped_in.prefill_seq_groups.len()),
@@ -1165,14 +1170,14 @@ impl<P: Policy> Scheduler<P> {
             let mut block_tables = HashMap::<u64, Vec<u64>>::new();
 
             for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
-                if s.get_sequence_status() == SequenceStatus::Running {
+                if s.borrow().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
                 }
             }) {
-                let sequence_id = sequence.sequence_id();
-                sequence_data.insert(sequence_id, sequence.sequence_data());
+                let sequence_id = sequence.borrow().sequence_id();
+                sequence_data.insert(sequence_id, sequence.borrow().sequence_data());
                 if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)
                 {
                     block_tables.insert(sequence_id, block_table_ids);
@@ -1181,7 +1186,7 @@ impl<P: Policy> Scheduler<P> {
                 } else {
                     error!(
                         "Missing block table for sequence with id = {}",
-                        sequence.sequence_id()
+                        sequence.borrow().sequence_id()
                     );
                 }
             }
@@ -1208,8 +1213,8 @@ impl<P: Policy> Scheduler<P> {
                 // NOTE: We use get_len instead of get_prompt_len because when
                 // a sequence is preempted, prefill includes previous generated
                 // output tokens.
-                if token_chunk_size + sequence.sequence_data().get_num_computed_tokens()
-                    < sequence.sequence_data().length()
+                if token_chunk_size + sequence.borrow().sequence_data().get_num_computed_tokens()
+                    < sequence.borrow().sequence_data().length()
                 {
                     do_sample = false;
                 }
@@ -1237,6 +1242,7 @@ impl<P: Policy> Scheduler<P> {
             sequence_groups_metadata.push(sequence_group_metadata);
         }
 
+        // TODO: remove this code if not necessary
         // // Now that the batch has been created, we can assume all blocks in the
         // // batch will have been computed before the next scheduling invocation.
         // // This is because the engine assumes that a failure in model execution
@@ -1271,8 +1277,8 @@ impl<P: Debug> Scheduler<P> {
         let mut num_sequences_in_status = 0;
 
         for (_, seq) in sequence_group.sequences.iter() {
-            if seq.get_sequence_status() == sequence_status {
-                num_new_tokens += seq.get_num_new_tokens();
+            if seq.borrow().get_sequence_status() == sequence_status {
+                num_new_tokens += seq.borrow().get_num_new_tokens();
                 num_sequences_in_status += 1;
             }
         }
@@ -1317,19 +1323,19 @@ impl<P: Debug> Scheduler<P> {
             sequence_group.request_id
         );
         let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
-            if s.get_sequence_status() == SequenceStatus::Running {
+            if s.borrow().get_sequence_status() == SequenceStatus::Running {
                 Some(s)
             } else {
                 None
             }
         });
         for sequence in running_sequences {
-            let cows = self.block_manager.append_slots(sequence)?;
+            let cows = self.block_manager.append_slots(sequence.borrow())?;
             if let Some(cow) = cows {
                 blocks_to_copy.insert(cow.0, cow.1);
             } else {
                 warn!("No Copy on Write new blocks to append, for sequence with id = {} in sequence group with id = {}", 
-                    sequence.sequence_id(), sequence_group.request_id);
+                    sequence.borrow().sequence_id(), sequence_group.request_id);
             }
         }
         Ok(())
@@ -1402,7 +1408,7 @@ impl<P: Debug> Scheduler<P> {
             .sequences
             .iter_mut()
             .filter_map(|(_, s)| {
-                if s.get_sequence_status() == SequenceStatus::Running {
+                if s.borrow().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
@@ -1418,9 +1424,17 @@ impl<P: Debug> Scheduler<P> {
         }
 
         for sequence in sequences {
-            sequence.set_sequence_status(SequenceStatus::Waiting);
-            self.free_sequence(sequence.sequence_id())?;
-            sequence.reset_state_for_recompute();
+            {
+                sequence
+                    .borrow_mut()
+                    .set_sequence_status(SequenceStatus::Waiting);
+            }
+            {
+                self.free_sequence(sequence.borrow().sequence_id())?;
+            }
+            {
+                sequence.borrow_mut().reset_state_for_recompute();
+            }
         }
 
         Ok(())
@@ -1463,8 +1477,9 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_out(sequence_group)?;
         blocks_to_swap_out.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            if s.get_sequence_status() == SequenceStatus::Running {
-                s.set_sequence_status(SequenceStatus::Swapped)
+            let sequence_status = { s.borrow().get_sequence_status() };
+            if sequence_status == SequenceStatus::Running {
+                s.borrow_mut().set_sequence_status(SequenceStatus::Swapped)
             }
         });
 
@@ -1481,8 +1496,9 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_in(sequence_group)?;
         blocks_to_swap_in.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            if s.get_sequence_status() == SequenceStatus::Swapped {
-                s.set_sequence_status(SequenceStatus::Running)
+            let sequence_status = { s.borrow().get_sequence_status() };
+            if sequence_status == SequenceStatus::Swapped {
+                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
             }
         });
 
@@ -1533,8 +1549,9 @@ impl<P: Debug> Scheduler<P> {
     ) -> Result<(), SchedulerError> {
         self.block_manager.allocate(&sequence_group)?;
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            if s.get_sequence_status() == SequenceStatus::Waiting {
-                s.set_sequence_status(SequenceStatus::Running)
+            let sequence_status = { s.borrow().get_sequence_status() };
+            if sequence_status == SequenceStatus::Waiting {
+                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
             }
         });
         Ok(())
@@ -1621,11 +1638,13 @@ mod tests {
 
     fn add_new_token(scheduler: &mut Scheduler<FcfsPolicy>, token_id: u32) {
         scheduler.running.iter_mut().for_each(|s| {
-            for (_, sequence) in s.sequences.iter_mut() {
-                sequence.add_token_id(
-                    token_id,
-                    HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
-                )
+            for (_, sequence) in s.sequences.iter() {
+                {
+                    sequence.borrow_mut().add_token_id(
+                        token_id,
+                        HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                    )
+                }
             }
         });
     }
@@ -1821,15 +1840,6 @@ mod tests {
                 && outputs.blocks_to_swap_out.is_empty()
         );
         assert_eq!(sequence_groups_metadata.len(), num_sequence_groups);
-
-        println!(
-            "FLAG: {:?}",
-            scheduler
-                .running
-                .iter()
-                .map(|s| s.is_prefill())
-                .collect::<Vec<_>>()
-        );
 
         // add a new token for each running `SequenceGroup`'s internal `Sequence`
         add_new_token(&mut scheduler, 1);
