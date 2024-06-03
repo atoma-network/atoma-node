@@ -1892,4 +1892,86 @@ mod tests {
 
         add_new_token(&mut scheduler, 1)
     }
+
+    #[test]
+    /// Verify running batched tokens are not applied to prefill requests.
+    fn test_scheduler_prefill_prioritized() { 
+        const BLOCK_SIZE: usize = 4;
+        const GPU_MEMORY_UTILIZATION: f32 = 1.0;
+        const NUM_CPU_BLOCKS: usize = 2;
+        const NUM_GPU_BLOCKS: usize = 2;
+        const SWAP_SPACE: usize = 1;
+        const CACHE_DTYPE: &str = "auto";
+
+        const MAX_NUM_BATCHED_TOKENS: usize = 30;
+        const MAX_NUM_SEQUENCES: usize = 2;
+        const MAX_MODEL_LEN: usize = 30;
+        let scheduler_config = SchedulerConfig::new(
+            MAX_NUM_BATCHED_TOKENS,
+            MAX_NUM_SEQUENCES,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to generate `SchedulerConfig`");
+
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            GPU_MEMORY_UTILIZATION,
+            SWAP_SPACE,
+            CACHE_DTYPE.into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate `CacheConfig`");
+
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to generate `Scheduler`");
+
+        // Add seq groups to scheduler
+        let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, false, 1);
+        scheduler.add_sequence_group(sequence_group_a.clone());
+        
+        // Schedule seq groups prompts
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let out_sequence_groups = get_sequence_groups(&out);
+        assert_eq!(out_sequence_groups.len(), 1);
+        assert_eq!(out_sequence_groups[0].request_id, sequence_group_a.request_id);
+        assert_eq!(out_sequence_groups[0].sequences.values().len(), 1);
+        let sequence = out_sequence_groups[0].sequences.values().next().unwrap().borrow();
+        let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+
+        assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+        assert_eq!(sequence.get_num_new_tokens(), sequence_a.get_num_new_tokens());
+        assert_eq!(sequence.get_last_token_id(), sequence_a.get_last_token_id());
+        assert_eq!(sequence.get_num_new_tokens(), sequence_a.get_num_new_tokens());
+        assert_eq!(sequence.get_num_total_logical_token_blocks(), sequence_a.get_num_total_logical_token_blocks());
+        assert_eq!(sequence.get_token_ids(), sequence_a.get_token_ids());
+        assert_eq!(sequence.get_sequence_status(), sequence_a.get_sequence_status());
+
+        // Add a new prefill request B
+        let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, false, 1);
+        scheduler.add_sequence_group(sequence_group_b.clone());
+
+        // Verify prefill requests are prioritized. Since max_batched_num_tokens
+        // is 1, new prefill request has to be scheduled first.
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let out_sequence_groups = get_sequence_groups(&out);
+        assert_eq!(out_sequence_groups.len(), 1);
+        assert_eq!(out_sequence_groups[0].request_id, sequence_group_b.request_id);
+        assert_eq!(out_sequence_groups[0].sequences.values().len(), 1);
+        let sequence = out_sequence_groups[0].sequences.values().next().unwrap().borrow();
+        let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+
+        assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+        assert_eq!(sequence.get_num_new_tokens(), sequence_b.get_num_new_tokens());
+        assert_eq!(sequence.get_last_token_id(), sequence_b.get_last_token_id());
+        assert_eq!(sequence.get_num_new_tokens(), sequence_b.get_num_new_tokens());
+        assert_eq!(sequence.get_num_total_logical_token_blocks(), sequence_b.get_num_total_logical_token_blocks());
+        assert_eq!(sequence.get_token_ids(), sequence_b.get_token_ids());
+        assert_eq!(sequence.get_sequence_status(), sequence_b.get_sequence_status());
+    }
 }
