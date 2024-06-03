@@ -6,6 +6,8 @@ use std::{
 use candle::Device;
 use thiserror::Error;
 
+use crate::traits::{DerefRead, DerefWrite};
+
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
 pub type BlockTable = Vec<SyncPhysicalTokenBlock>;
@@ -201,25 +203,24 @@ impl PartialEq for PhysicalTokenBlock {
 
 impl Eq for PhysicalTokenBlock {}
 
+/// Sync and Send shared access physical block
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
-pub trait DerefRead {
-    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError>;
-}
-
-pub trait DerefWrite {
-    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError>;
-}
-
 impl DerefRead for SyncPhysicalTokenBlock {
-    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn deref_read(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error> {
         self.read()
             .map_err(|e| BlockError::PoisonError(e.to_string()))
     }
 }
 
 impl DerefWrite for SyncPhysicalTokenBlock {
-    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn deref_write(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error> {
         self.write()
             .map_err(|e| BlockError::PoisonError(e.to_string()))
     }

@@ -11,3 +11,4 @@ pub mod policy;
 pub mod sampling_params;
 pub mod scheduler;
 pub mod sequence;
+pub mod traits;

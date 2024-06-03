@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
-    block::{BlockError, BlockTable, DerefRead, DerefWrite, SyncPhysicalTokenBlock},
+    block::{BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
+    traits::{DerefRead, DerefWrite},
 };
 use candle::{
     utils::{cuda_is_available, metal_is_available},

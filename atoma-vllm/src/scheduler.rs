@@ -1,5 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque}, fmt::Debug, marker::PhantomData, sync::{Arc, Mutex}, time::{Duration, Instant}
+    collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
+    marker::PhantomData,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -284,11 +287,11 @@ pub struct Scheduler<P> {
     /// `BlockSpaceManager` to handle block resources efficiently
     block_manager: BlockSpaceManager,
     /// Waiting `SequenceGroup` queue
-    waiting: VecDeque<Arc<Mutex<SequenceGroup>>>,
+    waiting: VecDeque<SequenceGroup>,
     /// Running `SequenceGroup` queue
-    running: VecDeque<Arc<Mutex<SequenceGroup>>>,
+    running: VecDeque<SequenceGroup>,
     /// Swapped `SequenceGroup` queue
-    swapped: VecDeque<Arc<Mutex<SequenceGroup>>>,
+    swapped: VecDeque<SequenceGroup>,
     /// Time at previous scheduling step
     previous_time: Option<Instant>,
     /// Checks if we scheduled a prompt at previous steps
@@ -1542,7 +1545,7 @@ impl<P: Debug> Scheduler<P> {
 #[derive(Debug)]
 struct ScheduledSequenceGroup {
     /// Sequence group
-    scheduled_group: Arc<Mutex<SequenceGroup>>,
+    scheduled_group: SequenceGroup,
     /// The total chunk size (number of tokens) to process for next iteration.
     /// 1 for decoding. Same as prompt tokens for prefill, but if prefill is
     /// chunked, it can be smaller than that.
@@ -1603,7 +1606,7 @@ mod tests {
         scheduler: &mut Scheduler<FcfsPolicy>,
     ) -> (Vec<SequenceGroupMetadata>, SchedulerOutputs) {
         let (metadatas, mut outputs) = scheduler.schedule().expect("Failed to schedule");
-        
+
         for (s, meta) in outputs
             .scheduled_sequence_groups
             .iter_mut()
@@ -1819,7 +1822,14 @@ mod tests {
         );
         assert_eq!(sequence_groups_metadata.len(), num_sequence_groups);
 
-        println!("FLAG: {:?}", scheduler.running.iter().map(|s| s.is_prefill()).collect::<Vec<_>>());
+        println!(
+            "FLAG: {:?}",
+            scheduler
+                .running
+                .iter()
+                .map(|s| s.is_prefill())
+                .collect::<Vec<_>>()
+        );
 
         // add a new token for each running `SequenceGroup`'s internal `Sequence`
         add_new_token(&mut scheduler, 1);

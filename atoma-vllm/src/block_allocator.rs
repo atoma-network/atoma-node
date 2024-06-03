@@ -4,8 +4,9 @@ use candle::Device;
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
 
-use crate::block::{
-    BlockError, BlockTable, DerefRead, DerefWrite, PhysicalTokenBlock, SyncPhysicalTokenBlock,
+use crate::{
+    block::{BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
+    traits::{DerefRead, DerefWrite},
 };
 
 /// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.

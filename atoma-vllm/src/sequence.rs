@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     ops::{Index, IndexMut},
@@ -572,7 +573,7 @@ pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
     /// Sequences
-    pub(crate) sequences: HashMap<u64, Sequence>,
+    pub(crate) sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
     /// Request metrics
     metrics: RequestMetrics,
     /// Multi modal data
@@ -604,7 +605,7 @@ impl SequenceGroup {
         }
         Ok(Self {
             request_id,
-            sequences: sequences.into_iter().map(|s| (s.sequence_id, s)).collect(),
+            sequences: sequences.into_iter().map(|s| (s.sequence_id, Rc::new(RefCell::new(s)))).collect(),
             metrics: RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
@@ -625,7 +626,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.prompt.clone())
+            .map(|(_, s)| s.borrow().prompt.clone())
             .unwrap_or_default()
     }
 
@@ -637,7 +638,7 @@ impl SequenceGroup {
         logprobs: HashMap<u32, LogProb>,
     ) {
         if let Some(sequence) = self.sequences.get_mut(&sequence_id) {
-            sequence.add_token_id(token_id, logprobs);
+            sequence.borrow_mut().add_token_id(token_id, logprobs);
         }
     }
 
@@ -646,7 +647,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.prompt_token_ids.clone())
+            .map(|(_, s)| s.borrow().prompt_token_ids.clone())
             .unwrap_or_default()
     }
 
@@ -671,7 +672,7 @@ impl SequenceGroup {
             .sequences
             .iter()
             .next()
-            .map(|(_, s)| s.get_output_len())
+            .map(|(_, s)| s.borrow().get_output_len())
             .unwrap_or_default();
         if self.metrics.first_token_time.is_none() && initial_seq_len == 1 {
             self.metrics.first_token_time = Some(time);
@@ -716,13 +717,13 @@ impl SequenceGroup {
     }
 
     /// Get sequences from `SequenceGroup`
-    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Sequence> {
+    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Rc<RefCell<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.sequence_status == status {
+                    if seq.borrow().sequence_status == status {
                         Some(seq.clone())
                     } else {
                         None
@@ -740,25 +741,25 @@ impl SequenceGroup {
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.sequence_status == status {
-                        Some(seq.sequence_id)
+                    if seq.borrow().sequence_status == status {
+                        Some(seq.borrow().sequence_id)
                     } else {
                         None
                     }
                 })
                 .collect(),
-            None => self.sequences.values().map(|s| s.sequence_id).collect(),
+            None => self.sequences.values().map(|s| s.borrow().sequence_id).collect(),
         }
     }
 
     /// Gets first sequence as a reference
-    pub fn get_first_sequence(&self, status: Option<SequenceStatus>) -> Option<&Sequence> {
+    pub fn get_first_sequence(&self, status: Option<SequenceStatus>) -> Option<&Rc<RefCell<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.sequence_status == status {
+                    if seq.borrow().sequence_status == status {
                         Some(seq)
                     } else {
                         None
@@ -770,35 +771,36 @@ impl SequenceGroup {
     }
 
     /// Gets a shared reference to `Sequence` with `sequence_id`
-    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Sequence> {
+    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.sequence_id() == sequence_id)
+            .filter(|s| s.borrow().sequence_id() == sequence_id)
             .next()
     }
 
-    /// Gets a mutable reference to a `Sequence` with `sequence_id`
-    pub fn get_sequence_mut_from_id(&mut self, sequence_id: u64) -> Option<&mut Sequence> {
-        self.sequences
-            .values_mut()
-            .filter(|s| s.sequence_id() == sequence_id)
-            .next()
-    }
+    // TODO: remove this code if not necessary anymore
+    // /// Gets a mutable reference to a `Sequence` with `sequence_id`
+    // pub fn get_sequence_mut_from_id(&mut self, sequence_id: u64) -> Option<&mut Sequence> {
+    //     self.sequences
+    //         .values_mut()
+    //         .filter(|s| s.sequence_id() == sequence_id)
+    //         .next()
+    // }
 
     /// Get a vector of unfinished sequences
-    pub fn get_unfinished_sequences(&self) -> Vec<Sequence> {
+    pub fn get_unfinished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| !s.is_finished())
+            .filter(|s| !s.borrow().is_finished())
             .cloned()
             .collect()
     }
 
     /// Get a vector of finished sequences
-    pub fn get_finished_sequences(&self) -> Vec<Sequence> {
+    pub fn get_finished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.is_finished())
+            .filter(|s| s.borrow().is_finished())
             .cloned()
             .collect()
     }
@@ -808,11 +810,16 @@ impl SequenceGroup {
         &mut self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
-        for sequence in self.sequences.values_mut() {
-            if !sequence.is_finished() {
-                sequence
+        for sequence in self.sequences.values() {
+            let is_finished = {sequence.borrow().is_finished()
+            };
+            if !is_finished {
+                {
+                    sequence
+                    .borrow_mut()
                     .sequence_data
                     .update_num_computed_tokens(num_new_computed_tokens)?;
+                }
             }
         }
         Ok(())
@@ -1162,6 +1169,8 @@ pub enum SequenceError {
     WhileInPrefix,
     #[error("Constructor error: `{0}`")]
     ConstructorError(String),
+    #[error("Poison error: `{0}`")]
+    PoisonError(String),
 }
 
 #[cfg(test)]
