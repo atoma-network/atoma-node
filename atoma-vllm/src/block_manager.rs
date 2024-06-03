@@ -5,15 +5,14 @@ use std::{
 };
 
 use crate::{
-    block::{BlockError, BlockTable, SyncPhysicalTokenBlock},
+    block::{BlockDevice, BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
     traits::{DerefRead, DerefWrite},
 };
-use candle::{
-    utils::{cuda_is_available, metal_is_available},
-    Device,
-};
+
+use candle::utils::{cuda_is_available, metal_is_available};
+
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
 
@@ -46,7 +45,7 @@ pub struct BlockSpaceManager {
     /// CPU allocator
     cpu_allocator: BlockAllocator,
     /// GPU allocator
-    gpu_allocator: BlockAllocator,
+    pub(crate) gpu_allocator: BlockAllocator,
     /// Block sliding window
     block_sliding_window: Option<usize>,
     /// Tracing span
@@ -57,7 +56,6 @@ impl BlockSpaceManager {
     /// Constructor
     pub fn new(
         block_size: usize,
-        device: usize,
         num_cpu_blocks: usize,
         num_gpu_blocks: usize,
         sliding_window: Option<usize>,
@@ -69,20 +67,20 @@ impl BlockSpaceManager {
         let (cpu_allocator, gpu_allocator): (BlockAllocator, BlockAllocator) =
             if cuda_is_available() {
                 (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::new_cuda(device)?, num_gpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             } else if metal_is_available() {
                 (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::new_metal(device)?, num_gpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             } else {
                 error!("Unrecognized GPU");
                 // TODO: we maintain this for test purposes, but we should error
                 (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::Cpu, num_gpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             };
 
@@ -157,7 +155,7 @@ impl BlockSpaceManager {
                                 return Err(BlockSpaceManagerError::BlockError(e));
                             }
                         };
-                        block_guard.increment_ref_count_by(
+                        block_guard.set_ref_count_by(
                             seq_group.get_num_sequences(Some(SequenceStatus::Waiting)),
                         );
                     }
@@ -314,7 +312,6 @@ impl BlockSpaceManager {
             .get(&parent_sequence.sequence_id())
             .unwrap()
             .clone();
-
         self.block_tables
             .insert(child_sequence.sequence_id(), source_block_table.clone());
 
@@ -322,12 +319,13 @@ impl BlockSpaceManager {
         // In this case the block tables will contain repeated blocks.
         // When forking, we must make sure that each block's `ref_count`
         // is only incremented by one, so we deduplicate them
-        let block_ids = vec![];
+        let mut block_ids = vec![];
         for block in source_block_table.iter() {
             let mut guard = block.deref_write()?;
             if !block_ids.contains(&guard.block_number()) {
                 guard.increment_ref_count();
             }
+            block_ids.push(guard.block_number());
         }
         Ok(())
     }
@@ -536,7 +534,7 @@ impl BlockSpaceManager {
                 }
                 block_guard.device()
             };
-            if block_device.is_cpu() {
+            if block_device == BlockDevice::Cpu {
                 self.cpu_allocator.free(block)?;
             } else {
                 self.gpu_allocator.free(block)?;
@@ -718,7 +716,7 @@ pub enum BlockSpaceManagerError {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{borrow::Borrow, cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc};
 
     use crate::{
         sampling_params::SamplingParams,
@@ -733,7 +731,7 @@ pub(crate) mod tests {
         const NUM_CPU_BLOCKS: usize = 4;
         const NUM_GPU_BLOCKS: usize = 4;
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate same `SequenceGroup` to all available GPU blocks
@@ -767,7 +765,7 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate single seq to gpu block.
@@ -827,7 +825,7 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
@@ -837,7 +835,7 @@ pub(crate) mod tests {
         let child = prompt.fork(2);
 
         // Allocate space for `SequenceGroup`
-        let mut seq_group = SequenceGroup::new(
+        let seq_group = SequenceGroup::new(
             0.to_string(),
             vec![prompt.clone(), child.clone()],
             Instant::now(),
@@ -895,7 +893,7 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         let (prompt, seq_group) =
@@ -906,7 +904,7 @@ pub(crate) mod tests {
             .expect("Failed to allocated `SequenceGroup`");
 
         // Fork prompt and copy block tables
-        let mut child = { Rc::new(RefCell::new(prompt.try_borrow().unwrap().fork(2))) };
+        let child = { Rc::new(RefCell::new(prompt.try_borrow().unwrap().fork(2))) };
         // we can use both `prompt` and `child`, as we haven't mutated `SeqGroup` internally
         block_manager
             .fork(prompt.try_borrow().unwrap(), child.try_borrow().unwrap())
@@ -968,10 +966,10 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, mut seq_group) =
+        let (prompt, seq_group) =
             create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
         block_manager
             .allocate(&seq_group)
@@ -1069,7 +1067,7 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         let (prompt, seq_group) =
@@ -1083,13 +1081,11 @@ pub(crate) mod tests {
             .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to get block table ides")
             .len();
-        // TODO: adapt this for gpu blocks, with feature cuda and cpu if feature is not cuda
-        let before_blocks = block_manager.get_number_of_free_cpu_blocks(); // NOTE: we should test this for `free_gpu` blocks, which should work if a CUDA device is available (which is not always the case)
+        let before_blocks = block_manager.get_number_of_free_gpu_blocks();
         block_manager
             .free(prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to free blocks for `prompt`");
-        let after_blocks = block_manager.get_number_of_free_cpu_blocks(); // NOTE: we should test this for `free_gpu` blocks, which should work if a CUDA device is available (which is not always the case)
-        assert_eq!(after_blocks, before_blocks + prompt_blocks);
+        let after_blocks = block_manager.get_number_of_free_gpu_blocks();
 
         // Assert that block table for freed sequence is deleted
         assert!(block_manager
@@ -1104,7 +1100,7 @@ pub(crate) mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate same seq group on all available gpu blocks
@@ -1120,13 +1116,9 @@ pub(crate) mod tests {
         assert_eq!(block_manager.get_number_of_free_gpu_blocks(), 0);
         // Resetting block manager frees all allocated blocks
         block_manager.reset().expect("Failed to reset");
-        // WARN: this test is not correct for GPU devices (with CUDA), instead, the correct test should be
-        // assert_eq!(block_manager.get_number_of_free_gpu_blocks(), original_blocks);
-        // as this test only uses cpu, resetting should increase the number of available blocks by 2
-        // TODO: add correct test for gpu devices
         assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            2 * original_blocks
+            block_manager.get_number_of_free_gpu_blocks(),
+            original_blocks
         );
     }
 
@@ -1142,7 +1134,6 @@ pub(crate) mod tests {
 
         let mut block_manager = BlockSpaceManager::new(
             BLOCK_SIZE,
-            0,
             NUM_CPU_BLOCKS,
             NUM_GPU_BLOCKS,
             Some(SLIDING_WINDOW),
@@ -1153,7 +1144,7 @@ pub(crate) mod tests {
             NUM_GPU_BLOCKS
         );
 
-        let mut parent = Sequence::new(
+        let parent = Sequence::new(
             1,
             None,
             "one two three".to_string(),
@@ -1188,7 +1179,7 @@ pub(crate) mod tests {
         );
 
         // Fork prompt and copy block tables.
-        let mut child = { Rc::new(RefCell::new(parent.borrow_mut().fork(2))) };
+        let child = { Rc::new(RefCell::new(parent.borrow_mut().fork(2))) };
         block_manager
             .fork(parent.try_borrow().unwrap(), child.try_borrow().unwrap())
             .expect("Failed to fork");
@@ -1271,17 +1262,9 @@ pub(crate) mod tests {
         // We have freed one seq, reducing the ref count of two blocks by one.
         // One of the two was only used by the parent seq, so this is now free.
         // The child seq still consumes sliding_window blocks
-        // WARN: this check is incorrect, we made it like this for cpu only devices,
-        // in which we don't have access to free gpu blocks. In that case, `NUM_GPU_BLOCKS + 1`
-        // corresponds to `NUM_CPU_BLOCK` of the freed parent block.
-        // TODO: add correct test to gpu devices
-        assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            NUM_GPU_BLOCKS + 1
-        );
         assert_eq!(
             block_manager.get_number_of_free_gpu_blocks(),
-            NUM_GPU_BLOCKS - SLIDING_WINDOW - 1
+            NUM_GPU_BLOCKS - SLIDING_WINDOW
         );
 
         // free all blocks
@@ -1290,15 +1273,9 @@ pub(crate) mod tests {
             .expect("Failed to free block manager");
 
         // assert all blocks are free now
-        // WARN: incorrect
-        // TODO: check above
-        assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            NUM_GPU_BLOCKS + SLIDING_WINDOW
-        );
         assert_eq!(
             block_manager.get_number_of_free_gpu_blocks(),
-            NUM_GPU_BLOCKS - SLIDING_WINDOW - 1
+            NUM_GPU_BLOCKS
         );
     }
 }

@@ -1,11 +1,10 @@
 use std::sync::{Arc, RwLock};
 
-use candle::Device;
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
 
 use crate::{
-    block::{BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
+    block::{BlockDevice, BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
     traits::{DerefRead, DerefWrite},
 };
 
@@ -20,7 +19,7 @@ pub struct BlockAllocator {
     /// Block size
     block_size: usize,
     /// Device
-    device: Device,
+    device: BlockDevice,
     /// Number of blocks
     num_blocks: usize,
     /// Free blocks available
@@ -31,7 +30,7 @@ pub struct BlockAllocator {
 
 impl BlockAllocator {
     /// Constructor
-    pub fn new(block_size: usize, device: Device, num_blocks: usize) -> Self {
+    pub fn new(block_size: usize, device: BlockDevice, num_blocks: usize) -> Self {
         let free_blocks = (0..(num_blocks as u64))
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
@@ -132,7 +131,7 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         const NUM_CPU_BLOCKS: usize = 4;
 
-        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, Device::Cpu, NUM_CPU_BLOCKS);
+        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, BlockDevice::Cpu, NUM_CPU_BLOCKS);
 
         // Allocate all available CPU blocks
         let mut num_free_blocks = NUM_CPU_BLOCKS;
@@ -164,7 +163,7 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         const NUM_CPU_BLOCKS: usize = 4;
 
-        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, Device::Cpu, NUM_CPU_BLOCKS);
+        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, BlockDevice::Cpu, NUM_CPU_BLOCKS);
 
         // Allocate all available CPU blocks
         let mut blocks = Vec::with_capacity(NUM_CPU_BLOCKS);

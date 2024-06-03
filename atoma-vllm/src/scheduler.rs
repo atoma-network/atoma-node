@@ -315,7 +315,6 @@ impl<P> Scheduler<P> {
         Ok(Self {
             block_manager: BlockSpaceManager::new(
                 cache_config.block_size(),
-                scheduler_config.device(),
                 cache_config.num_cpu_blocks(),
                 cache_config.num_gpu_blocks(),
                 cache_config.sliding_window(),
@@ -350,48 +349,57 @@ impl<P> Scheduler<P> {
     pub fn abort_sequence_group(&mut self, request_id: String) -> Result<(), SchedulerError> {
         info!("Aborting sequence group..");
 
-        if let Some(sequence_group) = self.waiting.iter().find(|s| s.request_id == request_id) {
-            let sequences_ids = sequence_group
-                .sequences
-                .values()
-                .filter_map(|s| {
-                    if s.borrow().is_finished() {
-                        Some(s.borrow().sequence_id())
-                    } else {
-                        None
+        let mut queue_identifier = 'w';
+        let waiting_length = self.waiting.len();
+        let running_length = self.running.len();
+
+        let mut sequence_ids_to_free = vec![];
+        let mut index = 0;
+        for sequence_group in self
+            .waiting
+            .iter()
+            .chain(self.running.iter().chain(self.swapped.iter()))
+        {
+            if sequence_group.request_id == request_id {
+                for sequence in sequence_group.sequences.values() {
+                    let (sequence_id, is_finished) = {
+                        (
+                            sequence.borrow().sequence_id(),
+                            sequence.borrow().is_finished(),
+                        )
+                    };
+                    if is_finished {
+                        continue;
                     }
-                })
-                .collect::<Vec<_>>();
-            self.free_sequences(request_id.clone(), &sequences_ids, SequenceStatus::Waiting)?;
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::FinishedAborted);
+                    sequence_ids_to_free.push(sequence_id);
+                }
+
+                break;
+            }
+            index += 1;
         }
-        if let Some(sequence_group) = self.running.iter().find(|s| s.request_id == request_id) {
-            let sequences_ids = sequence_group
-                .sequences
-                .values()
-                .filter_map(|s| {
-                    if s.borrow().is_finished() {
-                        Some(s.borrow().sequence_id())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            self.free_sequences(request_id.clone(), &sequences_ids, SequenceStatus::Running)?;
+
+        for sequence_id in sequence_ids_to_free {
+            self.free_sequence(sequence_id)?;
         }
-        if let Some(sequence_group) = self.swapped.iter().find(|s| s.request_id == request_id) {
-            let sequences_ids = sequence_group
-                .sequences
-                .values()
-                .filter_map(|s| {
-                    if s.borrow().is_finished() {
-                        Some(s.borrow().sequence_id())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            self.free_sequences(request_id, &sequences_ids, SequenceStatus::Swapped)?;
+
+        if index >= waiting_length && index < waiting_length + running_length {
+            queue_identifier = 'r';
+        } else if index > waiting_length + running_length {
+            queue_identifier = 's';
         }
+
+        if queue_identifier == 'w' {
+            self.waiting.retain(|s| s.request_id != request_id);
+        } else if queue_identifier == 'r' {
+            self.running.retain(|s| s.request_id != request_id);
+        } else {
+            self.swapped.retain(|s| s.request_id == request_id);
+        }
+
         Ok(())
     }
 
@@ -488,8 +496,7 @@ impl<P: Policy> Scheduler<P> {
         let now = Instant::now();
         let mut running_queue = P::sort_by_priority(now, &running_queue);
 
-        while !running_queue.is_empty() {
-            let mut sequence_group = running_queue.pop_front().unwrap(); // DON'T PANIC: we have already checked that the `running_queue` is not empty
+        while let Some(mut sequence_group) = running_queue.pop_front() {
             let num_running_tokens = self.get_num_tokens(
                 &sequence_group,
                 SequenceStatus::Running,
@@ -526,7 +533,7 @@ impl<P: Policy> Scheduler<P> {
                         if preempted_mode == PreemptionMode::Recomputation {
                             preempted.push(victim_sequence_group);
                         } else {
-                            preempted.push(victim_sequence_group);
+                            swapped_out.push(victim_sequence_group);
                         }
                     } else {
                         // No other sequence groups can be preempted.
@@ -740,7 +747,7 @@ impl<P: Policy> Scheduler<P> {
 
             let mut waiting_sequences = sequence_group
                 .sequences
-                .iter_mut()
+                .iter()
                 .filter_map(|(_, s)| {
                     if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
                         Some(s)
@@ -787,6 +794,7 @@ impl<P: Policy> Scheduler<P> {
 
             // If the sequence cannot be allocated, just stop
             if can_allocate == AllocationStatus::Later {
+                waiting_queue.push_front(sequence_group);
                 break;
             } else if can_allocate == AllocationStatus::Never {
                 warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
@@ -931,6 +939,7 @@ impl<P: Policy> Scheduler<P> {
                 .iter()
                 .map(|s| s.scheduled_group.clone()),
         );
+
         // Update swapped requests
         self.swapped = remaining_swapped;
         self.swapped.extend(running_scheduled.swapped_out);
@@ -956,7 +965,7 @@ impl<P: Policy> Scheduler<P> {
 
         let number_prefill_groups = prefills.sequence_groups.len();
 
-        let scheduled_sequence_groups = prefills
+        let scheduled_sequence_groups: Vec<ScheduledSequenceGroup> = prefills
             .sequence_groups
             .into_iter()
             .chain(
@@ -1225,6 +1234,7 @@ impl<P: Policy> Scheduler<P> {
             } else {
                 None
             };
+
             // It assumes the scheduled_seq_groups is ordered by
             // prefill < decoding.
             let is_prompt = sequence_group.is_prefill();
@@ -1623,7 +1633,6 @@ mod tests {
         scheduler: &mut Scheduler<FcfsPolicy>,
     ) -> (Vec<SequenceGroupMetadata>, SchedulerOutputs) {
         let (metadatas, mut outputs) = scheduler.schedule().expect("Failed to schedule");
-
         for (s, meta) in outputs
             .scheduled_sequence_groups
             .iter_mut()
@@ -1895,7 +1904,7 @@ mod tests {
 
     #[test]
     /// Verify running batched tokens are not applied to prefill requests.
-    fn test_scheduler_prefill_prioritized() { 
+    fn test_scheduler_prefill_prioritized() {
         const BLOCK_SIZE: usize = 4;
         const GPU_MEMORY_UTILIZATION: f32 = 1.0;
         const NUM_CPU_BLOCKS: usize = 2;
@@ -1934,23 +1943,43 @@ mod tests {
         // Add seq groups to scheduler
         let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, false, 1);
         scheduler.add_sequence_group(sequence_group_a.clone());
-        
+
         // Schedule seq groups prompts
         let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
         let out_sequence_groups = get_sequence_groups(&out);
         assert_eq!(out_sequence_groups.len(), 1);
-        assert_eq!(out_sequence_groups[0].request_id, sequence_group_a.request_id);
+        assert_eq!(
+            out_sequence_groups[0].request_id,
+            sequence_group_a.request_id
+        );
         assert_eq!(out_sequence_groups[0].sequences.values().len(), 1);
-        let sequence = out_sequence_groups[0].sequences.values().next().unwrap().borrow();
+        let sequence = out_sequence_groups[0]
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .borrow();
         let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
 
         assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
-        assert_eq!(sequence.get_num_new_tokens(), sequence_a.get_num_new_tokens());
+        assert_eq!(
+            sequence.get_num_new_tokens(),
+            sequence_a.get_num_new_tokens()
+        );
         assert_eq!(sequence.get_last_token_id(), sequence_a.get_last_token_id());
-        assert_eq!(sequence.get_num_new_tokens(), sequence_a.get_num_new_tokens());
-        assert_eq!(sequence.get_num_total_logical_token_blocks(), sequence_a.get_num_total_logical_token_blocks());
+        assert_eq!(
+            sequence.get_num_new_tokens(),
+            sequence_a.get_num_new_tokens()
+        );
+        assert_eq!(
+            sequence.get_num_total_logical_token_blocks(),
+            sequence_a.get_num_total_logical_token_blocks()
+        );
         assert_eq!(sequence.get_token_ids(), sequence_a.get_token_ids());
-        assert_eq!(sequence.get_sequence_status(), sequence_a.get_sequence_status());
+        assert_eq!(
+            sequence.get_sequence_status(),
+            sequence_a.get_sequence_status()
+        );
 
         // Add a new prefill request B
         let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, false, 1);
@@ -1961,17 +1990,211 @@ mod tests {
         let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
         let out_sequence_groups = get_sequence_groups(&out);
         assert_eq!(out_sequence_groups.len(), 1);
-        assert_eq!(out_sequence_groups[0].request_id, sequence_group_b.request_id);
+        assert_eq!(
+            out_sequence_groups[0].request_id,
+            sequence_group_b.request_id
+        );
         assert_eq!(out_sequence_groups[0].sequences.values().len(), 1);
-        let sequence = out_sequence_groups[0].sequences.values().next().unwrap().borrow();
+        let sequence = out_sequence_groups[0]
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .borrow();
         let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
 
         assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
-        assert_eq!(sequence.get_num_new_tokens(), sequence_b.get_num_new_tokens());
+        assert_eq!(
+            sequence.get_num_new_tokens(),
+            sequence_b.get_num_new_tokens()
+        );
         assert_eq!(sequence.get_last_token_id(), sequence_b.get_last_token_id());
-        assert_eq!(sequence.get_num_new_tokens(), sequence_b.get_num_new_tokens());
-        assert_eq!(sequence.get_num_total_logical_token_blocks(), sequence_b.get_num_total_logical_token_blocks());
+        assert_eq!(
+            sequence.get_num_new_tokens(),
+            sequence_b.get_num_new_tokens()
+        );
+        assert_eq!(
+            sequence.get_num_total_logical_token_blocks(),
+            sequence_b.get_num_total_logical_token_blocks()
+        );
         assert_eq!(sequence.get_token_ids(), sequence_b.get_token_ids());
-        assert_eq!(sequence.get_sequence_status(), sequence_b.get_sequence_status());
+        assert_eq!(
+            sequence.get_sequence_status(),
+            sequence_b.get_sequence_status()
+        );
+    }
+
+    #[test]
+    fn test_scheduler_schedule_preempt_abort() {
+        const BLOCK_SIZE: usize = 4;
+        const GPU_MEMORY_UTILIZATION: f32 = 1.0;
+        const NUM_CPU_BLOCKS: usize = 2;
+        const NUM_GPU_BLOCKS: usize = 2;
+        const SWAP_SPACE: usize = 1;
+        const CACHE_DTYPE: &str = "auto";
+
+        const MAX_NUM_BATCHED_TOKENS: usize = 64;
+        const MAX_NUM_SEQUENCES: usize = 2;
+        const MAX_MODEL_LEN: usize = 16;
+        let scheduler_config = SchedulerConfig::new(
+            MAX_NUM_BATCHED_TOKENS,
+            MAX_NUM_SEQUENCES,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to generate `SchedulerConfig`");
+
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            GPU_MEMORY_UTILIZATION,
+            SWAP_SPACE,
+            CACHE_DTYPE.into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate `CacheConfig`");
+
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to generate `Scheduler`");
+
+        // Add seq groups to scheduler
+        let (_, sequence_group_a) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group_b) = create_dummy_prompt(2, BLOCK_SIZE, None, false, 1);
+
+        scheduler.add_sequence_group(sequence_group_a.clone());
+        scheduler.add_sequence_group(sequence_group_b.clone());
+
+        // Schedule seq groups prompts
+        let (sequence_group_metadata, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&out);
+        assert_eq!(sequence_groups.len(), 2);
+        assert_eq!(
+            sequence_groups[0].request_id,
+            sequence_group_a.request_id.clone()
+        );
+        assert_eq!(sequence_groups[0].sequences.values().len(), 1);
+
+        {
+            let sequence = sequence_groups[0]
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .borrow();
+            let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+
+            assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+            assert_eq!(
+                sequence.get_num_new_tokens(),
+                sequence_a.get_num_new_tokens()
+            );
+            assert_eq!(sequence.get_last_token_id(), sequence_a.get_last_token_id());
+            assert_eq!(
+                sequence.get_num_new_tokens(),
+                sequence_a.get_num_new_tokens()
+            );
+            assert_eq!(
+                sequence.get_num_total_logical_token_blocks(),
+                sequence_a.get_num_total_logical_token_blocks()
+            );
+            assert_eq!(sequence.get_token_ids(), sequence_a.get_token_ids());
+            assert_eq!(
+                sequence.get_sequence_status(),
+                sequence_a.get_sequence_status()
+            );
+
+            assert_eq!(
+                sequence_groups[1].request_id,
+                sequence_group_b.request_id.clone()
+            );
+            assert_eq!(sequence_groups[1].sequences.values().len(), 1);
+        }
+
+        assert_eq!(
+            sequence_groups[1].request_id,
+            sequence_group_b.request_id.clone()
+        );
+        assert_eq!(sequence_groups[1].sequences.values().len(), 1);
+
+        {
+            let sequence = sequence_groups[1]
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .borrow();
+            let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+
+            assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+            assert_eq!(
+                sequence.get_num_new_tokens(),
+                sequence_b.get_num_new_tokens()
+            );
+            assert_eq!(sequence.get_last_token_id(), sequence_b.get_last_token_id());
+            assert_eq!(
+                sequence.get_num_new_tokens(),
+                sequence_b.get_num_new_tokens()
+            );
+            assert_eq!(
+                sequence.get_num_total_logical_token_blocks(),
+                sequence_b.get_num_total_logical_token_blocks()
+            );
+            assert_eq!(sequence.get_token_ids(), sequence_b.get_token_ids());
+            assert_eq!(
+                sequence.get_sequence_status(),
+                sequence_b.get_sequence_status()
+            );
+
+            assert_eq!(out.num_batched_tokens, BLOCK_SIZE * 2);
+            assert!(
+                out.blocks_to_copy.is_empty()
+                    && out.blocks_to_swap_in.is_empty()
+                    && out.blocks_to_swap_out.is_empty()
+            );
+            assert_eq!(sequence_group_metadata.len(), 2);
+            assert_eq!(scheduler.num_unfinished_sequeces(), 2);
+        }
+
+        // Append "generated" tokens, allowing the sequence to mark prompt tokens as
+        // processed
+        add_new_token(&mut scheduler, 1);
+
+        // Schedule sequence groups generation and preempt sequence b
+        let (sequence_group_metadata, out) = schedule_and_update_computed_tokens(&mut scheduler);
+
+        let sequence_groups = get_sequence_groups(&out);
+        assert_eq!(sequence_groups.len(), 1);
+        assert_eq!(out.preempted, 1);
+        assert_eq!(sequence_group_metadata.len(), 1);
+        assert_eq!(scheduler.num_unfinished_sequeces(), 2);
+        assert_eq!(out.num_batched_tokens, 1);
+        assert!(
+            out.blocks_to_copy.is_empty()
+                && out.blocks_to_swap_in.is_empty()
+                && out.blocks_to_swap_out.is_empty()
+        );
+        assert_eq!(scheduler.waiting.len(), 1);
+        assert_eq!(scheduler.running.len(), 1);
+        assert_eq!(scheduler.swapped.len(), 0);
+
+        // Abort sequence a and reschedule sequence b with recomputation
+        scheduler
+            .abort_sequence_group(format!("1"))
+            .expect("Failed to abort sequence group");
+        let (sequence_group_metadata, out) = schedule_and_update_computed_tokens(&mut scheduler);
+
+        let sequences_groups = get_sequence_groups(&out);
+
+        assert_eq!(sequences_groups.len(), 1);
+        assert_eq!(sequences_groups[0].request_id, sequence_group_b.request_id);
+        assert_eq!(scheduler.waiting.len(), 0);
+        assert_eq!(scheduler.running.len(), 1);
+        assert_eq!(scheduler.swapped.len(), 0);
+
+        assert_eq!(sequence_group_metadata.len(), 1);
     }
 }
