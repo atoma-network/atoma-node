@@ -1077,15 +1077,15 @@ pub(crate) mod tests {
             .expect("Failed to allocate sequence group");
 
         // Free allocated sequence
-        let prompt_blocks = block_manager
+        let _prompt_blocks = block_manager
             .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to get block table ides")
             .len();
-        let before_blocks = block_manager.get_number_of_free_gpu_blocks();
+        let _before_blocks = block_manager.get_number_of_free_gpu_blocks();
         block_manager
             .free(prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to free blocks for `prompt`");
-        let after_blocks = block_manager.get_number_of_free_gpu_blocks();
+        let _after_blocks = block_manager.get_number_of_free_gpu_blocks();
 
         // Assert that block table for freed sequence is deleted
         assert!(block_manager

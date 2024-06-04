@@ -1618,6 +1618,7 @@ mod tests {
     use super::*;
     use crate::{
         policy::FcfsPolicy,
+        scheduler,
         sequence::{tests::create_dummy_prompt, LogProb},
     };
 
@@ -1656,6 +1657,18 @@ mod tests {
                 }
             }
         });
+    }
+
+    fn add_new_token_to_output(out: &SchedulerOutputs, token_id: u32) {
+        let sequence_groups = get_sequence_groups(out);
+        for sequence_group in sequence_groups {
+            for sequence in sequence_group.sequences.values() {
+                sequence.borrow_mut().add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                )
+            }
+        }
     }
 
     #[test]
@@ -2196,5 +2209,83 @@ mod tests {
         assert_eq!(scheduler.swapped.len(), 0);
 
         assert_eq!(sequence_group_metadata.len(), 1);
+    }
+
+    #[test]
+    fn test_scheduler_max_seqs() {
+        const BLOCK_SIZE: usize = 4;
+        const NUM_SEQ_GROUP: usize = 4;
+        const MAX_SEQ_GROUP: usize = 2;
+        const MAX_MODEL_LEN: usize = 16;
+        const NUM_CPU_BLOCKS: usize = 8;
+        const NUM_GPU_BLOCKS: usize = 8;
+        let scheduler_config = SchedulerConfig::new(
+            64,
+            MAX_SEQ_GROUP,
+            MAX_MODEL_LEN,
+            Duration::from_secs(0),
+            false,
+            0,
+        )
+        .expect("Failed to get schedule config");
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            1.0,
+            1,
+            "auto".into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to generate cache config");
+
+        let mut scheduler =
+            Scheduler::new(cache_config, scheduler_config).expect("Failed to generate scheduler");
+        let mut all_sequence_groups = vec![];
+
+        // Add sequence groups to the scheduler
+        for i in 0..NUM_SEQ_GROUP {
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            all_sequence_groups.push(seq_group);
+        }
+
+        // Append sequence group 1
+        scheduler.add_sequence_group(all_sequence_groups[0].clone());
+
+        // Schedule sequence group prompts
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&out);
+        assert_eq!(sequence_groups.len(), 1);
+        assert_eq!(
+            sequence_groups[0].request_id,
+            all_sequence_groups[0].request_id
+        );
+
+        add_new_token_to_output(&out, 1);
+
+        // Schedule sequence groups generation
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&out);
+        assert_eq!(sequence_groups.len(), 1);
+        assert_eq!(
+            sequence_groups[0].request_id,
+            all_sequence_groups[0].request_id
+        );
+
+        // Append two more sequence groups
+        scheduler.add_sequence_group(all_sequence_groups[1].clone());
+        scheduler.add_sequence_group(all_sequence_groups[2].clone());
+
+        // Schedule sequence group prompts
+        // Only 1 sequence group should be scheduled since `max_seq_group` is 2
+        // and one is prompting
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        let sequence_groups = get_sequence_groups(&out);
+        assert_eq!(sequence_groups.len(), 1);
+        assert_eq!(
+            sequence_groups[0].request_id,
+            all_sequence_groups[1].request_id
+        )
     }
 }
