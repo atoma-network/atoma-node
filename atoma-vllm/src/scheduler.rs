@@ -733,7 +733,6 @@ impl<P: Policy> Scheduler<P> {
         // ownership of `waiting_queue` so that we don't change it in place, in this method.
 
         while !waiting_queue.is_empty() && self.passed_delay(Instant::now()) {
-            println!("FLAG: SCHEDULE PREFILLS LOOP");
             // DON'T PANIC: at this point, we are guaranteed that `waiting_queue` is non-empty
             let mut sequence_group = waiting_queue.pop_front().unwrap();
 
@@ -809,6 +808,8 @@ impl<P: Policy> Scheduler<P> {
 
             let num_new_sequences = sequence_group.get_max_num_running_seqs();
             if num_new_sequences == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? {
+                // Push the sequence group back to the `waiting_queue`
+                waiting_queue.push_front(sequence_group);
                 break;
             }
 
@@ -1526,22 +1527,16 @@ impl<P: Debug> Scheduler<P> {
         self.previous_prompt = false;
 
         // Delay scheduling prompts to let waiting queue fill up
-        let output = if self.scheduler_config.delay_factor() > 0.0 && !self.waiting.is_empty() {
+        if self.scheduler_config.delay_factor() > 0.0 && !self.waiting.is_empty() {
             // DON'T PANIC: at this point, we are guaranteed that `self.waiting` is non-empty
             let earliest_arrival_time =
                 self.waiting.iter().map(|s| s.arrival_time()).min().unwrap();
-            println!("FLAG: earliest_arrival_time = {:?}, diff = {}", earliest_arrival_time, (now - earliest_arrival_time).as_secs_f32());
             (now - earliest_arrival_time).as_secs_f32()
-                > self.scheduler_config.delay_factor()
-                    * self
-                        .last_prompt_latency
+                > self.scheduler_config.delay_factor() * self.last_prompt_latency
                 || self.running.is_empty()
         } else {
             true
-        };
-
-        println!("FLAG: passed_delay = {}, last_prompt_latency = {}", output, self.last_prompt_latency);
-        output
+        }
     }
 
     /// Get prompt limit
@@ -1618,7 +1613,7 @@ pub enum SchedulerError {
 
 #[cfg(test)]
 mod tests {
-    use std::time;
+    use std::{collections::vec_deque, time};
 
     use super::*;
     use crate::{
@@ -1644,7 +1639,6 @@ mod tests {
             .iter_mut()
             .zip(metadatas.iter())
         {
-            println!("FLAG: request_id = {}", s.scheduled_group.request_id);
             s.scheduled_group
                 .update_num_computed_tokens(meta.token_chunk_size)
                 .expect("Failed to updated number of computed tokens");
@@ -1675,6 +1669,16 @@ mod tests {
                 )
             }
         }
+    }
+
+    fn add_token_budget(
+        budget: &mut SchedulingBudget,
+        num_batched_tokens: usize,
+        num_current_sequences: usize,
+    ) {
+        let (_, mock_seq_group) = create_dummy_prompt(10, 60, None, false, 1);
+        budget.add_num_batched_tokens(mock_seq_group.request_id.clone(), num_batched_tokens);
+        budget.add_number_sequences(mock_seq_group.request_id, num_current_sequences);
     }
 
     #[test]
@@ -2225,15 +2229,9 @@ mod tests {
         const MAX_MODEL_LEN: usize = 16;
         const NUM_CPU_BLOCKS: usize = 8;
         const NUM_GPU_BLOCKS: usize = 8;
-        let scheduler_config = SchedulerConfig::new(
-            64,
-            MAX_SEQ_GROUP,
-            MAX_MODEL_LEN,
-            0.0,
-            false,
-            0,
-        )
-        .expect("Failed to get schedule config");
+        let scheduler_config =
+            SchedulerConfig::new(64, MAX_SEQ_GROUP, MAX_MODEL_LEN, 0.0, false, 0)
+                .expect("Failed to get schedule config");
         let cache_config = CacheConfig::new(
             BLOCK_SIZE,
             1.0,
@@ -2300,9 +2298,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         const NUM_CPU_BLOCKS: usize = 8;
         const NUM_GPU_BLOCKS: usize = 8;
-        let scheduler_config =
-            SchedulerConfig::new(100, 64, 16, 0.5, false, 0)
-                .expect("Failed to get scheduler config");
+        let scheduler_config = SchedulerConfig::new(100, 64, 16, 0.5, false, 0)
+            .expect("Failed to get scheduler config");
         let cache_config = CacheConfig::new(
             BLOCK_SIZE,
             1.0,
@@ -2345,6 +2342,146 @@ mod tests {
         assert!(out.number_prefill_groups > 0);
         assert_eq!(sequence_group_meta[0].request_id(), "1".to_string());
 
-        // add_new_token(&mut scheduler, 1);
+        add_new_token(&mut scheduler, 1);
+    }
+
+    #[test]
+    fn test_swapped_out_prioritized() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".into(), None, None, 8, 8)
+            .expect("Failed to get cache config");
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to get scheduler");
+
+        // best_of = 2 * 3 == 6 sequences
+        for i in 0..3 {
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            scheduler.add_sequence_group(sequence_group);
+        }
+
+        let (seq_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
+
+        // prefill is scheduled now
+        assert_eq!(out.scheduled_sequence_groups.len(), 3);
+        add_new_token_to_output(&out, 1);
+
+        // The last request should be swapped out
+        let (seq_group_metadata, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        assert_eq!(out.scheduled_sequence_groups.len(), 2);
+        assert_eq!(out.num_batched_tokens, 2);
+        assert!(!out.blocks_to_swap_out.is_empty());
+        assert!(out.blocks_to_swap_in.is_empty());
+
+        // Add 1 more task. Swap should be prioritized over prefill
+        let (_, sequence_group) = create_dummy_prompt(2, 60, None, false, 2);
+        scheduler.add_sequence_group(sequence_group);
+        let (_, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        add_new_token_to_output(&out, 1);
+
+        // assert_eq!(out.scheduled_sequence_groups.len(), 1);
+        // assert_eq!(out.num_batched_tokens, 3);
+        // assert!(out.blocks_to_swap_in.is_empty());
+        // assert!(out.blocks_to_swap_out.is_empty())
+    }
+
+    #[test]
+    /// Test prompt longer than max_prompt_len is aborted
+    fn test_prefill_schedule_max_prompt_len() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 30, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".into(), None, None, 8, 8)
+            .expect("Failed to get cache config");
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to get scheduler");
+
+        let (_, seq_group) = create_dummy_prompt(0, 60, None, false, 1);
+        let waiting = VecDeque::from_iter([seq_group]);
+        let mut budget = SchedulingBudget::new(10000, 10000);
+
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting, &mut budget, false)
+            .expect("Failed to schedule prefills");
+
+        assert_eq!(output.ignored_sequence_groups.len(), 1);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 0);
+        assert_eq!(budget.num_curr_seqs, 0);
+        assert_eq!(remaining_waiting.len(), 0);
+    }
+
+    #[test]
+    /// Test token budget respected.
+    fn test_prefill_schedule_token_budget() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config =
+            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
+                .expect("Failed to get cache config");
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+
+        let mut waiting: VecDeque<SequenceGroup> = VecDeque::new();
+        let mut budget = SchedulingBudget::new(0, 10_000);
+
+        for i in 0..2 {
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            waiting.push_back(sequence_group);
+        }
+
+        // 0 token budget == nothing is scheduled
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting.clone(), &mut budget, false)
+            .expect("Failed to run schedule prefills");
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 0);
+        assert_eq!(budget.num_curr_seqs, 0);
+        assert_eq!(remaining_waiting.len(), 2);
+
+        // 60 token budget == 1 request scheduled
+        let mut budget = SchedulingBudget::new(60, 10_000);
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting, &mut budget, false)
+            .expect("Failed to run schedule prefills");
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 1);
+        assert_eq!(budget.num_batched_tokens, 60);
+        assert_eq!(budget.num_curr_seqs, 1);
+        assert_eq!(remaining_waiting.len(), 1);
+
+        // Test when current_batched_tokens is respected
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to get scheduler");
+        let mut waiting = VecDeque::new();
+        let mut budget = SchedulingBudget::new(60, 10_000);
+        add_token_budget(&mut budget, 30, 0);
+        let (_, sequence_group) = create_dummy_prompt(1, 60, None, false, 1);
+        // Cannot schedule a prompt that doesn't fit the budget.
+        waiting.push_back(sequence_group);
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting.clone(), &mut budget, false)
+            .expect("Failed to schedule prefills");
+
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 30);
+        assert_eq!(budget.num_curr_seqs, 0);
+        assert_eq!(remaining_waiting.len(), 1);
+
+        let mut budget = SchedulingBudget::new(90, 10_000);
+        add_token_budget(&mut budget, 30, 0);
+
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting, &mut budget, false)
+            .expect("Failed to schedule prefills");
+        assert_eq!(output.sequence_groups.len(), 1);
+        assert_eq!(budget.num_batched_tokens, 90);
+        assert_eq!(budget.num_curr_seqs, 1);
+        assert_eq!(remaining_waiting.len(), 0);
     }
 }
