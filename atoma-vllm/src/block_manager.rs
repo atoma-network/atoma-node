@@ -17,7 +17,7 @@ use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
 
 /// `AllocationStatus` - keeps a state of status of possible block allocation
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AllocationStatus {
     /// Ok: seq_group can be allocated now.
     Ok,

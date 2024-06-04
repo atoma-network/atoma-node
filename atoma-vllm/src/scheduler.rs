@@ -1613,13 +1613,10 @@ pub enum SchedulerError {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::vec_deque, time};
-
     use super::*;
     use crate::{
         policy::FcfsPolicy,
-        scheduler,
-        sequence::{self, tests::create_dummy_prompt, LogProb},
+        sequence::{tests::create_dummy_prompt, LogProb},
     };
 
     fn get_sequence_groups(scheduler_outputs: &SchedulerOutputs) -> Vec<SequenceGroup> {
@@ -1668,6 +1665,22 @@ mod tests {
                     HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
                 )
             }
+        }
+    }
+
+    fn add_new_token_to_sequence_group(
+        token_chunk_size: usize,
+        sequence_group: &mut SequenceGroup,
+        token_id: u32,
+    ) {
+        sequence_group
+            .update_num_computed_tokens(token_chunk_size)
+            .expect("Failed ot update number compute tokens");
+        for sequence in sequence_group.sequences.values() {
+            sequence.borrow_mut().add_token_id(
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+            )
         }
     }
 
@@ -2483,5 +2496,457 @@ mod tests {
         assert_eq!(budget.num_batched_tokens, 90);
         assert_eq!(budget.num_curr_seqs, 1);
         assert_eq!(remaining_waiting.len(), 0);
+    }
+
+    #[test]
+    /// Test max seq respected
+    fn test_prefill_schedule_max_seqs() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config =
+            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
+                .expect("Failed to get cache config");
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+        let mut budget = SchedulingBudget::new(10_000, 2);
+
+        let mut waiting = VecDeque::new();
+        for i in 0..3 {
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            waiting.push_back(sequence_group);
+        }
+
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting.clone(), &mut budget, false)
+            .expect("Failed to run schedule prefills");
+
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 2);
+        assert_eq!(budget.num_batched_tokens, 120);
+        assert_eq!(budget.num_curr_seqs, 2);
+        assert_eq!(remaining_waiting.len(), 1);
+
+        // Verify curr_num_seqs is respected
+        let mut waiting = VecDeque::new();
+        let mut budget = SchedulingBudget::new(10_000, 2);
+        add_token_budget(&mut budget, 0, 2);
+
+        let (_, sequence_group) = create_dummy_prompt(2, 60, None, false, 1);
+        waiting.push_back(sequence_group);
+
+        let (remaining_waiting, output) = scheduler
+            .schedule_prefills(waiting.clone(), &mut budget, false)
+            .expect("Failed to run schedule prefills");
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 0);
+        assert_eq!(budget.num_curr_seqs, 2);
+        assert_eq!(remaining_waiting.len(), 1);
+    }
+
+    #[test]
+    /// Test sequence cannot be scheduled due to block manager has no capacity
+    fn test_prefill_schedule_no_block_manager_capacity() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config =
+            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
+                .expect("Failed to get cache config");
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+        let mut budget = SchedulingBudget::new(10_000, 10_000);
+
+        let mut waiting = VecDeque::new();
+        for i in 0..3 {
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            waiting.push_back(sequence_group);
+        }
+        let (remaining_waiting, output) = scheduler
+            .mock_schedule_prefill(waiting, &mut budget, false, AllocationStatus::Later)
+            .expect("Failed to schedule prefill");
+
+        assert_eq!(output.ignored_sequence_groups.len(), 0);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 0);
+        assert_eq!(budget.num_curr_seqs, 0);
+        assert_eq!(remaining_waiting.len(), 3);
+
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+        let mut budget = SchedulingBudget::new(10_000, 10_000);
+
+        let mut waiting = VecDeque::new();
+        for i in 0..3 {
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            waiting.push_back(sequence_group);
+        }
+
+        let (remaining_waiting, output) = scheduler
+            .mock_schedule_prefill(waiting, &mut budget, false, AllocationStatus::Never)
+            .expect("Failed to schedule prefill");
+
+        assert_eq!(output.ignored_sequence_groups.len(), 3);
+        assert_eq!(output.sequence_groups.len(), 0);
+        assert_eq!(budget.num_batched_tokens, 0);
+        assert_eq!(budget.num_curr_seqs, 0);
+        assert_eq!(remaining_waiting.len(), 0);
+    }
+
+    #[test]
+    /// Test sequence cannot be scheduled due to block manager has no capacity
+    fn test_decode_schedule_preempted() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config =
+            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
+                .expect("Failed to get cache config");
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+
+        let mut running = VecDeque::new();
+        for i in 0..3 {
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            scheduler
+                .allocate_and_set_running(&mut sequence_group)
+                .expect("Failed to allocate and set running");
+            add_new_token_to_sequence_group(60, &mut sequence_group, 1);
+            running.push_back(sequence_group);
+        }
+
+        // 1 cannot be scheduled, and the lowest priority (request 2)
+        // should be preempted. 1 will also be preempted.
+        let mut budget = SchedulingBudget::new(10_000, 10_000);
+        let (remaining_running, output) = scheduler
+            .mock_schedule_running(running, &mut budget, false, "1", None)
+            .expect("Failed to run mock schedule running");
+
+        assert_eq!(remaining_running.len(), 0);
+
+        assert_eq!(output.decode_seq_groups.len(), 1);
+        assert_eq!(output.prefill_seq_groups.len(), 0);
+        assert_eq!(
+            output.decode_seq_groups[0].scheduled_group.request_id,
+            "0".to_string()
+        );
+        assert_eq!(output.preempted.len(), 2);
+        // Verify budget is updated
+        assert_eq!(budget.num_batched_tokens, 1);
+
+        // NOTE: When enable_chunk is false, num_seqs budget is not updated.
+        // Both should be preempted, not swapped
+        assert!(output.blocks_to_swap_out.is_empty());
+        assert!(output.blocks_to_copy.is_empty());
+    }
+
+    #[test]
+    /// Test best_of > 1 swap out blocks
+    fn test_decode_swap_beam_search() {
+        const BLOCK_SIZE: usize = 4;
+        let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
+            .expect("Failed to get scheduler config");
+        let cache_config =
+            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
+                .expect("Failed to get cache config");
+        let mut scheduler =
+            Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
+                .expect("Failed to get scheduler");
+
+        let mut budget = SchedulingBudget::new(10_000, 10_000);
+
+        let mut running = VecDeque::new();
+        for i in 0..3 {
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            scheduler
+                .allocate_and_set_running(&mut sequence_group)
+                .expect("Failed to allocate and set running");
+            add_new_token_to_sequence_group(60, &mut sequence_group, 1);
+            running.push_back(sequence_group.clone());
+            budget.add_number_sequences(
+                sequence_group.request_id.clone(),
+                sequence_group.get_max_num_running_seqs(),
+            );
+            budget.add_num_batched_tokens(
+                sequence_group.request_id.clone(),
+                sequence_group.get_num_sequences(Some(SequenceStatus::Running)),
+            );
+        }
+
+        let (remaining_running, mut output) = scheduler
+            .mock_schedule_running(running, &mut budget, false, "2", Some(vec!["5", "7"]))
+            .expect("Failed to run mock schedule running");
+        // output.blocks_to_swap_out.extend([(5, 7)]);
+
+        assert_eq!(remaining_running.len(), 0);
+        assert_eq!(output.decode_seq_groups.len(), 2);
+        assert_eq!(output.prefill_seq_groups.len(), 0);
+        assert_eq!(output.decode_seq_groups[0].scheduled_group.request_id.as_str(), "0");
+        assert_eq!(output.decode_seq_groups[1].scheduled_group.request_id.as_str(), "1");
+        // assert_eq!(output.preempted.len(), 0);
+        assert_eq!(output.swapped_out.len(), 1);
+        // Budget should reflect preempted requests
+        assert_eq!(budget.num_batched_tokens, 2);
+        assert_eq!(budget.num_curr_seqs, 4);
+        assert!(output.blocks_to_copy.is_empty());
+    }
+
+    impl Scheduler<FcfsPolicy> {
+        fn mock_schedule_prefill(
+            &mut self,
+            mut waiting_queue: VecDeque<SequenceGroup>,
+            budget: &mut SchedulingBudget,
+            enable_chunking: bool,
+            allocation: AllocationStatus,
+        ) -> Result<(VecDeque<SequenceGroup>, SchedulerPrefillOutputs), SchedulerError> {
+            let mut ignored_sequence_groups = Vec::<SequenceGroup>::new();
+            let mut sequence_groups = Vec::<ScheduledSequenceGroup>::new();
+
+            // We don't sort `waiting_queue` because we assume it is sorted. We also require
+            // ownership of `waiting_queue` so that we don't change it in place, in this method.
+
+            while !waiting_queue.is_empty() && self.passed_delay(Instant::now()) {
+                // DON'T PANIC: at this point, we are guaranteed that `waiting_queue` is non-empty
+                let mut sequence_group = waiting_queue.pop_front().unwrap();
+
+                // To be used below
+                let can_allocate: AllocationStatus = allocation.clone();
+                let num_new_tokens = self.get_num_tokens(
+                    &sequence_group,
+                    SequenceStatus::Waiting,
+                    enable_chunking,
+                    budget,
+                )?;
+
+                let mut waiting_sequences = sequence_group
+                    .sequences
+                    .iter()
+                    .filter_map(|(_, s)| {
+                        if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if waiting_sequences.len() != 1 {
+                    error!("Waiting sequence group should have only one prompt sequence, it has {} for request = {}.", waiting_sequences.len(), sequence_group.request_id);
+                    return Err(SchedulerError::InvalidNumberWaitingSequence {
+                        request_id: sequence_group.request_id.clone(),
+                        num_sequences: waiting_sequences.len(),
+                    });
+                }
+
+                if !enable_chunking {
+                    // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
+                    let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
+                    if num_prompt_tokens != num_new_tokens {
+                        error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
+                        return Err(SchedulerError::InvalidNumberOfNewTokens {
+                            num_prompt_tokens,
+                            num_new_tokens,
+                        });
+                    }
+                }
+
+                let prompt_limit = self.get_prompt_limit();
+                if num_new_tokens > prompt_limit {
+                    warn!(
+                        "Input prompt ({} tokens) is too long and exceeds limits of {}",
+                        num_new_tokens, prompt_limit
+                    );
+                    for (_, sequence) in sequence_group.sequences.iter_mut() {
+                        sequence
+                            .borrow_mut()
+                            .set_sequence_status(SequenceStatus::FinishedIgnored)
+                    }
+                    ignored_sequence_groups.push(sequence_group.clone());
+                    continue;
+                }
+
+                // If the sequence cannot be allocated, just stop
+                if can_allocate == AllocationStatus::Later {
+                    waiting_queue.push_front(sequence_group);
+                    break;
+                } else if can_allocate == AllocationStatus::Never {
+                    warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
+                    for sequence in waiting_sequences.iter_mut() {
+                        sequence
+                            .borrow_mut()
+                            .set_sequence_status(SequenceStatus::FinishedIgnored);
+                    }
+                    ignored_sequence_groups.push(sequence_group.clone());
+                    continue;
+                }
+
+                let num_new_sequences = sequence_group.get_max_num_running_seqs();
+                if num_new_sequences == 0
+                    || !budget.can_schedule(num_new_tokens, num_new_sequences)?
+                {
+                    // Push the sequence group back to the `waiting_queue`
+                    waiting_queue.push_front(sequence_group);
+                    break;
+                }
+
+                // At this point, we can schedule this request
+                self.allocate_and_set_running(&mut sequence_group)?;
+                sequence_groups.push(ScheduledSequenceGroup {
+                    scheduled_group: sequence_group.clone(),
+                    token_chunk_size: num_new_tokens,
+                });
+
+                budget.add_num_batched_tokens(sequence_group.request_id.clone(), num_new_tokens);
+                budget.add_number_sequences(sequence_group.request_id.clone(), num_new_sequences);
+            }
+
+            if sequence_groups.len() > 0 {
+                self.previous_prompt = true;
+            }
+
+            Ok((
+                waiting_queue,
+                SchedulerPrefillOutputs {
+                    sequence_groups,
+                    ignored_sequence_groups,
+                },
+            ))
+        }
+
+        fn mock_schedule_running(
+            &mut self,
+            running_queue: VecDeque<SequenceGroup>,
+            budget: &mut SchedulingBudget,
+            enable_chunking: bool,
+            id: &str,
+            swap_out: Option<Vec<&str>>,
+        ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
+            // Blocks that need to be swapped or copied before model execution
+            let mut blocks_to_swap_out = HashMap::<u64, u64>::new();
+            let mut blocks_to_copy = HashMap::<u64, u64>::new();
+
+            let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
+            let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
+            let mut preempted = Vec::<SequenceGroup>::new();
+            let mut swapped_out = Vec::<SequenceGroup>::new();
+
+            // Preemption happens only when there is no available slot
+            // to keep all sequences groups in `Running` state.
+            // In this case, the policy is responsible for deciding which sequence
+            // groups should preempt next
+            let now = Instant::now();
+            let mut running_queue = FcfsPolicy::sort_by_priority(now, &running_queue);
+
+            while let Some(mut sequence_group) = running_queue.pop_front() {
+                let num_running_tokens = self.get_num_tokens(
+                    &sequence_group,
+                    SequenceStatus::Running,
+                    enable_chunking,
+                    budget,
+                )?;
+
+                // if no tokens are being processed, we break the loop
+                if num_running_tokens == 0 {
+                    break;
+                }
+
+                fn cannot_append_second_group(sequence_group: &SequenceGroup, id: &str) -> bool {
+                    &sequence_group.request_id != id
+                }
+
+                loop {
+                    if !cannot_append_second_group(&sequence_group, id) {
+                        budget.subtract_num_batched_tokens(
+                            &sequence_group.request_id,
+                            num_running_tokens,
+                        );
+                        let num_running_sequences = sequence_group.get_max_num_running_seqs();
+                        budget.subtracts_number_sequences(
+                            &sequence_group.request_id,
+                            num_running_sequences,
+                        );
+
+                        if !running_queue.is_empty() {
+                            // Preempt the lowest-priority sequence groups first
+                            // victim lies at the end of `runnning_queue`, as it is was last in, last out
+                            let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
+                            let preempted_mode = self.preempt(
+                                &mut victim_sequence_group,
+                                &mut blocks_to_swap_out,
+                                None,
+                            )?;
+                            if preempted_mode == PreemptionMode::Recomputation {
+                                preempted.push(victim_sequence_group);
+                            } else {
+                                swapped_out.push(victim_sequence_group);
+                            }
+                        } else {
+                            // No other sequence groups can be preempted.
+                            // Preempt the current `SequenceGroup`
+                            let preempted_mode =
+                                self.preempt(&mut sequence_group, &mut blocks_to_swap_out, None)?;
+
+                            if preempted_mode == PreemptionMode::Recomputation {
+                                preempted.push(sequence_group.clone());
+                            } else {
+                                swapped_out.push(sequence_group.clone());
+                            }
+
+                            // As no other sequence groups can be preempted, we stop the loop
+                            break;
+                        }
+                    } else {
+                        self.append_slots(&sequence_group, &mut blocks_to_copy)?;
+                        let is_prefill = sequence_group.is_prefill();
+                        if is_prefill {
+                            // Prefill computation
+                            prefill_seq_groups.push(ScheduledSequenceGroup {
+                                scheduled_group: sequence_group.clone(),
+                                token_chunk_size: num_running_tokens,
+                            });
+                        } else {
+                            // Decoding computation (only decodes 1 token at a time)
+                            decode_seq_groups.push(ScheduledSequenceGroup {
+                                scheduled_group: sequence_group.clone(),
+                                token_chunk_size: 1,
+                            });
+                        }
+                        budget.add_num_batched_tokens(
+                            sequence_group.request_id.clone(),
+                            num_running_tokens,
+                        );
+
+                        // OPTIMIZATION: Note that `get_max_num_running_seqs` is
+                        // expensive. For the default scheduling chase where
+                        // `enable_chunking` is false, `num_seqs` are updated before running
+                        // this method, so we don't have to update it again here.
+                        if enable_chunking {
+                            let num_running_seqs = sequence_group.get_max_num_running_seqs();
+                            budget.add_number_sequences(
+                                sequence_group.request_id.clone(),
+                                num_running_seqs,
+                            )
+                        }
+                        break;
+                    }
+                }
+            }
+
+            let scheduler_running_outputs = SchedulerRunningOutputs {
+                decode_seq_groups,
+                prefill_seq_groups,
+                preempted,
+                swapped_out,
+                blocks_to_swap_out,
+                blocks_to_copy,
+            };
+
+            Ok((running_queue, scheduler_running_outputs))
+        }
     }
 }
