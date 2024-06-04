@@ -65,7 +65,7 @@ impl SuiSubscriberConfig {
     }
 
     /// Constructs a new `SuiSubscriberConfig` instance, from a configuration file path.
-    /// 
+    ///
     /// It loads the file contents in memeory and deserializes it into an `SuiSubscriberConfig` instance.
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(

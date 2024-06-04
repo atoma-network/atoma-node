@@ -6,7 +6,7 @@ pub mod config;
 pub mod subscriber;
 
 /// `AtomaEvent` - enum to keep track of all available
-/// events being emitted by the Atoma smart contract, 
+/// events being emitted by the Atoma smart contract,
 /// on the Sui blockchain.
 pub enum AtomaEvent {
     DisputeEvent,

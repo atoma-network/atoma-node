@@ -18,12 +18,12 @@ const REQUEST_ID_HEX_SIZE: usize = 64;
 
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
-/// 
+///
 /// Once it listens to a new event to handle a new inference requests, it checks if the current
 /// node has been sampled to execute it. If so, it transmits the request to the `AtomaInference`
 /// service.
 pub struct SuiSubscriber {
-    /// Node's unique identifier small id (generated once when the 
+    /// Node's unique identifier small id (generated once when the
     /// node registers on Atoma's smart contract, on the Sui blockchain).
     id: SmallId,
     /// A `SuiClient` instance
@@ -103,7 +103,7 @@ impl SuiSubscriber {
 
 impl SuiSubscriber {
     /// Implements logic to handle a new listen event, by the Atoma smart contract on the Sui blockchain.
-    /// 
+    ///
     /// If the event contains a new AI inference request, to which the current node has been sampled to executed
     /// it will parse the content of the (JSON) event into a `Request` and send it to the `AtomaInference`
     /// service.
