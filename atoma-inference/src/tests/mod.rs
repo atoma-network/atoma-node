@@ -156,7 +156,7 @@ async fn test_mock_model_thread() {
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
         if let Ok(value) = response {
-            received_responses.push(value.response().as_u64().unwrap());
+            received_responses.push(value.response()["id"].as_u64().unwrap());
         }
     }
 

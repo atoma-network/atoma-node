@@ -19,8 +19,13 @@ use crate::models::{
     ModelError, ModelId, ModelTrait,
 };
 
+/// `ModelThreadCommand` - Model thread command, used to share new incoming requests with
+/// a `Model`'s thread
 pub struct ModelThreadCommand {
+    /// Request's body
     pub(crate) request: Request,
+    /// A oneshot sender response, so the `Model` thread can share
+    /// the generate output (as a `Response` type) with the main thread
     pub(crate) sender: oneshot::Sender<Response>,
 }
 
@@ -34,18 +39,31 @@ pub enum ModelThreadError {
     SerdeError(#[from] serde_json::Error),
 }
 
+/// `ModelThreadHandle` - Encapsulates the `Model`'s thread handler.
+/// 
+/// Additionally, it contains a sender mpsc channel that is responsible
+/// for sending new `ModelThreadCommand`'s to each spawned `Model` thread
 pub struct ModelThreadHandle {
+    /// A mpsc sender, for sending a new `ModelThreadCommand`.
     sender: mpsc::Sender<ModelThreadCommand>,
+    /// The spawned `Model`'s thread join handle
     join_handle: std::thread::JoinHandle<Result<(), ModelThreadError>>,
 }
 
 impl ModelThreadHandle {
+    /// Stops the current thread and drops the `self.sender`
     pub fn stop(self) {
         drop(self.sender);
         self.join_handle.join().ok();
     }
 }
 
+/// `ModelThread` - Structure that is responsible for holding a model 
+/// (deriving the `ModelTrait` interface). Such structure is hold by the
+/// actual `Model` spawned thread.
+/// 
+/// It additionally contains a mpsc `Receiver` channel, that receives new `ModelThreadCommand`s
+/// so that the `Model` (`M`) can run inference on.
 pub struct ModelThread<M: ModelTrait> {
     model: M,
     receiver: mpsc::Receiver<ModelThreadCommand>,
@@ -55,6 +73,14 @@ impl<M> ModelThread<M>
 where
     M: ModelTrait,
 {
+    /// Main loop.
+    /// 
+    /// The `self.receiver` listens to new incoming `ModelThreadCommand`,
+    /// which contains new AI inference requests. Once a new request is obtained,
+    /// the model performs inference on it, generating a new output, which is then
+    /// encapsulated into a `Response` type. From the `oneshot` Sender that is
+    /// encapsulated in the `ModelThreadCommand`, the response is then shared with the
+    /// main thread to share it with other services.
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
