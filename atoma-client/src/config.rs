@@ -26,8 +26,8 @@ pub struct AtomaSuiClientConfig {
 }
 
 impl AtomaSuiClientConfig {
-    /// Constructs a new instance of `AtomaSuiClientConfig` from a file path. 
-    /// 
+    /// Constructs a new instance of `AtomaSuiClientConfig` from a file path.
+    ///
     /// It deserializes the file content into a new `AtomaSuiClientConfig` instance.
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(

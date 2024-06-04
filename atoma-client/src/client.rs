@@ -34,12 +34,12 @@ pub struct AtomaSuiClient {
 }
 
 impl AtomaSuiClient {
-    /// Constructs a new instance from an `AtomaSuiClientConfig`. 
-    /// 
+    /// Constructs a new instance from an `AtomaSuiClientConfig`.
+    ///
     /// Inputs:
     ///     `config` - The Atoma Sui client configuration.
     ///     `response_rx` - A mpsc receiver, associated to a `Response`.
-    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for 
+    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for
     ///         sharing the actual output with the `OutputManager` service.
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
@@ -64,11 +64,11 @@ impl AtomaSuiClient {
     }
 
     /// Constructs a new instance from a configuration file path (which can be deserialized into a `AtomaSuiClientConfig`)
-    /// 
+    ///
     /// Inputs:
     ///     `config_path` - Path for the configuration file, which is deserialized into an `AtomaSuiClientConfig`.
     ///     `response_rx` - A mpsc receiver, associated to a `Response`.
-    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for 
+    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for
     ///         sharing the actual output with the `OutputManager` service.
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
@@ -199,7 +199,7 @@ impl AtomaSuiClient {
     }
 
     /// Responsible for running the `AtomaSuiClient` main loop.
-    /// 
+    ///
     /// It listens to new incoming `Response`'s from the `AtomaInference` service. Once it gets
     /// a new response in, it constructs a new commitment to the `Response` that is then submitted
     /// on the Atoma smart contract, on the Sui blockchain.
