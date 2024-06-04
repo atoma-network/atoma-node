@@ -16,14 +16,27 @@ use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 const REQUEST_ID_HEX_SIZE: usize = 64;
 
+/// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
+///     on the Sui blockchain.
+/// 
+/// Once it listens to a new event to handle a new inference requests, it checks if the current
+/// node has been sampled to execute it. If so, it transmits the request to the `AtomaInference`
+/// service.
 pub struct SuiSubscriber {
+    /// Node's unique identifier small id (generated once when the 
+    /// node registers on Atoma's smart contract, on the Sui blockchain).
     id: SmallId,
+    /// A `SuiClient` instance
     sui_client: SuiClient,
+    /// An `EventFilter` instance
     filter: EventFilter,
+    /// A mpsc sender, responsible for sending a new `Request` to the `AtomaInference`
+    /// service, if the node has been sampled to run inference
     event_sender: mpsc::Sender<Request>,
 }
 
 impl SuiSubscriber {
+    /// Constructor
     pub async fn new(
         id: SmallId,
         http_url: &str,
@@ -50,6 +63,7 @@ impl SuiSubscriber {
         })
     }
 
+    /// Generates a new instance of `SuiSubscriber`, from a configuration file
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
@@ -88,6 +102,11 @@ impl SuiSubscriber {
 }
 
 impl SuiSubscriber {
+    /// Implements logic to handle a new listen event, by the Atoma smart contract on the Sui blockchain.
+    /// 
+    /// If the event contains a new AI inference request, to which the current node has been sampled to executed
+    /// it will parse the content of the (JSON) event into a `Request` and send it to the `AtomaInference`
+    /// service.
     async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
         let event_type = event.type_.name.as_str();
         match AtomaEvent::from_str(event_type)? {
@@ -127,6 +146,7 @@ impl SuiSubscriber {
         Ok(())
     }
 
+    /// Handles a new prompt event (which contains a request for a new AI inference job).
     async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let request = Request::try_from((self.id, event_data))?;
@@ -148,6 +168,7 @@ impl SuiSubscriber {
         Ok(())
     }
 
+    /// Handles a newly sampled node event (which contains a request for a new AI inference job).
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,
@@ -189,6 +210,8 @@ impl SuiSubscriber {
     }
 }
 
+/// Helper function, used to extract which nodes have been sampled by the Atoma smart contract
+/// to run the current AI inference request.
 fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, SuiSubscriberError> {
     let new_nodes = value
         .get("new_nodes")
@@ -207,6 +230,8 @@ fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, Sui
     }))
 }
 
+/// Helper function that is responsible for extracting the ticket id from the
+/// event's JSON body.
 fn extract_ticket_id(value: &Value) -> Result<&str, SuiSubscriberError> {
     value
         .get("ticket_id")

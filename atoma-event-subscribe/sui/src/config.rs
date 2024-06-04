@@ -6,15 +6,23 @@ use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
 
 #[derive(Debug, Deserialize, Serialize)]
+/// `SuiSubscriberConfig` - Configuration parameters for a `SuiSubscriber`
 pub struct SuiSubscriberConfig {
+    /// The http url
     http_url: String,
+    /// The websocket address
     ws_url: String,
+    /// Atoma smart contract package id
     package_id: ObjectID,
+    /// Duration of a request timeout
     request_timeout: Duration,
+    /// Node's own small id (a unique identifier that is generated once the node register
+    ///  on the Atoma smart contract, on Sui's blockchain)
     small_id: u64,
 }
 
 impl SuiSubscriberConfig {
+    /// Constructor
     pub fn new(
         http_url: String,
         ws_url: String,
@@ -31,26 +39,34 @@ impl SuiSubscriberConfig {
         }
     }
 
+    /// Getter for `http_url`
     pub fn http_url(&self) -> String {
         self.http_url.clone()
     }
 
+    /// Getter for `ws_url`
     pub fn ws_url(&self) -> String {
         self.ws_url.clone()
     }
 
+    /// Getter for `package_id`
     pub fn package_id(&self) -> ObjectID {
         self.package_id
     }
 
+    /// Getter for `request_timeout`
     pub fn request_timeout(&self) -> Duration {
         self.request_timeout
     }
 
+    /// Getter for `small_id`
     pub fn small_id(&self) -> SmallId {
         self.small_id
     }
 
+    /// Constructs a new `SuiSubscriberConfig` instance, from a configuration file path.
+    /// 
+    /// It loads the file contents in memeory and deserializes it into an `SuiSubscriberConfig` instance.
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(
             config_file_path.as_ref().to_str().unwrap(),
