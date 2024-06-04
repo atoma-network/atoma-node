@@ -139,7 +139,7 @@ pub struct SchedulerConfig {
     /// Maximum length of a sequence (including prompt and generated text)
     max_model_len: usize,
     /// Delay factor
-    delay_factor: Duration,
+    delay_factor: f32,
     /// Enable chunked prefill
     enable_chunked_prefill: bool,
     /// Device ordinal
@@ -152,7 +152,7 @@ impl SchedulerConfig {
         max_num_batched_tokens: usize,
         max_num_sequences: usize,
         max_model_len: usize,
-        delay_factor: Duration,
+        delay_factor: f32,
         enable_chunked_prefill: bool,
         device: usize,
     ) -> Result<Self, SchedulerConfigError> {
@@ -193,7 +193,7 @@ impl SchedulerConfig {
     }
 
     /// Getter for `delay_factor`
-    pub fn delay_factor(&self) -> Duration {
+    pub fn delay_factor(&self) -> f32 {
         self.delay_factor
     }
 

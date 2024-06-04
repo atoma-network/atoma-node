@@ -1016,6 +1016,11 @@ impl SequenceGroupMetadata {
             multi_modal_data,
         }
     }
+
+    /// Getter for `request_id`
+    pub fn request_id(&self) -> String {
+        self.request_id.clone()
+    }
 }
 
 /// `SequenceOutput` - The model output associated with a sequence.

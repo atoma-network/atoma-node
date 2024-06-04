@@ -427,7 +427,7 @@ impl BlockSpaceManager {
             {
                 sequence
                     .borrow_mut()
-                    .set_sequence_status(SequenceStatus::Swapped);
+                    .set_sequence_status(SequenceStatus::Running);
             }
         }
 

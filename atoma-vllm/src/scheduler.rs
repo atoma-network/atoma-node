@@ -293,11 +293,11 @@ pub struct Scheduler<P> {
     /// Swapped `SequenceGroup` queue
     swapped: VecDeque<SequenceGroup>,
     /// Time at previous scheduling step
-    previous_time: Option<Instant>,
+    previous_time: Instant,
     /// Checks if we scheduled a prompt at previous steps
     previous_prompt: bool,
     /// Last prompt latency duration
-    last_prompt_latency: Option<Duration>,
+    last_prompt_latency: f32,
     /// Cumulative preemption
     num_cumulative_preemption: usize,
     /// Tracing span
@@ -324,9 +324,9 @@ impl<P> Scheduler<P> {
             waiting: VecDeque::new(),
             running: VecDeque::new(),
             swapped: VecDeque::new(),
-            previous_time: None,
+            previous_time: Instant::now(),
             previous_prompt: false,
-            last_prompt_latency: None,
+            last_prompt_latency: 0.0,
             num_cumulative_preemption: 0,
             span: info_span!("scheduler"),
             _phantom: PhantomData::default(),
@@ -733,6 +733,7 @@ impl<P: Policy> Scheduler<P> {
         // ownership of `waiting_queue` so that we don't change it in place, in this method.
 
         while !waiting_queue.is_empty() && self.passed_delay(Instant::now()) {
+            println!("FLAG: SCHEDULE PREFILLS LOOP");
             // DON'T PANIC: at this point, we are guaranteed that `waiting_queue` is non-empty
             let mut sequence_group = waiting_queue.pop_front().unwrap();
 
@@ -822,7 +823,7 @@ impl<P: Policy> Scheduler<P> {
             budget.add_number_sequences(sequence_group.request_id.clone(), num_new_sequences);
         }
 
-        if sequence_groups.len() > 1 {
+        if sequence_groups.len() > 0 {
             self.previous_prompt = true;
         }
 
@@ -1518,27 +1519,29 @@ impl<P: Debug> Scheduler<P> {
     /// Computes if duration change has been greater than scheduled delay
     fn passed_delay(&mut self, now: Instant) -> bool {
         if self.previous_prompt {
-            self.last_prompt_latency = self.previous_time.map(|t| now - t);
+            self.last_prompt_latency = (now - self.previous_time).as_secs_f32();
         }
 
-        self.previous_time = Some(now);
+        self.previous_time = now;
         self.previous_prompt = false;
 
         // Delay scheduling prompts to let waiting queue fill up
-        if self.scheduler_config.delay_factor().as_secs_f32() > 0.0 && !self.waiting.is_empty() {
+        let output = if self.scheduler_config.delay_factor() > 0.0 && !self.waiting.is_empty() {
             // DON'T PANIC: at this point, we are guaranteed that `self.waiting` is non-empty
             let earliest_arrival_time =
                 self.waiting.iter().map(|s| s.arrival_time()).min().unwrap();
-            ((now - earliest_arrival_time).as_secs_f32()
-                > self.scheduler_config.delay_factor().as_secs_f32()
+            println!("FLAG: earliest_arrival_time = {:?}, diff = {}", earliest_arrival_time, (now - earliest_arrival_time).as_secs_f32());
+            (now - earliest_arrival_time).as_secs_f32()
+                > self.scheduler_config.delay_factor()
                     * self
                         .last_prompt_latency
-                        .map(|d| d.as_secs_f32())
-                        .unwrap_or(0.0))
                 || self.running.is_empty()
         } else {
             true
-        }
+        };
+
+        println!("FLAG: passed_delay = {}, last_prompt_latency = {}", output, self.last_prompt_latency);
+        output
     }
 
     /// Get prompt limit
@@ -1615,11 +1618,13 @@ pub enum SchedulerError {
 
 #[cfg(test)]
 mod tests {
+    use std::time;
+
     use super::*;
     use crate::{
         policy::FcfsPolicy,
         scheduler,
-        sequence::{tests::create_dummy_prompt, LogProb},
+        sequence::{self, tests::create_dummy_prompt, LogProb},
     };
 
     fn get_sequence_groups(scheduler_outputs: &SchedulerOutputs) -> Vec<SequenceGroup> {
@@ -1639,6 +1644,7 @@ mod tests {
             .iter_mut()
             .zip(metadatas.iter())
         {
+            println!("FLAG: request_id = {}", s.scheduled_group.request_id);
             s.scheduled_group
                 .update_num_computed_tokens(meta.token_chunk_size)
                 .expect("Failed to updated number of computed tokens");
@@ -1687,7 +1693,7 @@ mod tests {
             MAX_NUM_BATCHED_TOKENS,
             MAX_NUM_SEQUENCES,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -1733,7 +1739,7 @@ mod tests {
             MAX_NUM_BATCHED_TOKENS,
             MAX_NUM_SEQUENCES,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -1786,7 +1792,7 @@ mod tests {
             MAX_NUM_BATCHED_TOKENS,
             MAX_NUM_SEQUENCES,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -1932,7 +1938,7 @@ mod tests {
             MAX_NUM_BATCHED_TOKENS,
             MAX_NUM_SEQUENCES,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -2053,7 +2059,7 @@ mod tests {
             MAX_NUM_BATCHED_TOKENS,
             MAX_NUM_SEQUENCES,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -2223,7 +2229,7 @@ mod tests {
             64,
             MAX_SEQ_GROUP,
             MAX_MODEL_LEN,
-            Duration::from_secs(0),
+            0.0,
             false,
             0,
         )
@@ -2287,5 +2293,58 @@ mod tests {
             sequence_groups[0].request_id,
             all_sequence_groups[1].request_id
         )
+    }
+
+    #[test]
+    fn test_scheduler_delay_factor() {
+        const BLOCK_SIZE: usize = 4;
+        const NUM_CPU_BLOCKS: usize = 8;
+        const NUM_GPU_BLOCKS: usize = 8;
+        let scheduler_config =
+            SchedulerConfig::new(100, 64, 16, 0.5, false, 0)
+                .expect("Failed to get scheduler config");
+        let cache_config = CacheConfig::new(
+            BLOCK_SIZE,
+            1.0,
+            1,
+            "auto".into(),
+            None,
+            None,
+            NUM_CPU_BLOCKS,
+            NUM_GPU_BLOCKS,
+        )
+        .expect("Failed to get cache config");
+        let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
+            .expect("Failed to get scheduler");
+
+        // schedule first prompt
+        let (_, sequence_group) = create_dummy_prompt(0, BLOCK_SIZE, None, false, 1);
+        scheduler.add_sequence_group(sequence_group.clone());
+        let (sequence_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        assert!(out.number_prefill_groups > 0);
+        assert_eq!(sequence_group_meta[0].request_id(), "0".to_string());
+
+        add_new_token_to_output(&out, 1);
+
+        // wait for a second before scheduling next prompt
+        std::thread::sleep(Duration::from_secs(1));
+
+        let (_, sequence_group) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
+        scheduler.add_sequence_group(sequence_group.clone());
+
+        // second prompt should NOT be scheduled
+        let (sequence_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        assert_eq!(out.number_prefill_groups, 0);
+        assert_eq!(sequence_group_meta[0].request_id(), "0".to_string());
+
+        add_new_token(&mut scheduler, 1);
+
+        // wait for more than 0.5 seconds and try again
+        std::thread::sleep(Duration::from_millis(600));
+        let (sequence_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
+        assert!(out.number_prefill_groups > 0);
+        assert_eq!(sequence_group_meta[0].request_id(), "1".to_string());
+
+        // add_new_token(&mut scheduler, 1);
     }
 }
