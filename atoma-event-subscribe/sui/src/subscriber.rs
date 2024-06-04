@@ -14,6 +14,7 @@ use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
+/// The size of a request id, expressed in hex format
 const REQUEST_ID_HEX_SIZE: usize = 64;
 
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
