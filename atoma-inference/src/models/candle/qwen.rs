@@ -181,12 +181,13 @@ impl ModelTrait for QwenModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
 
         let mut logits_processor =
@@ -221,20 +222,17 @@ impl ModelTrait for QwenModel {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token {
                 break;
             }
+            tokens.push(next_token);
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&t);
             }
         }
-        let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
-            output.push_str(&rest);
-        }
 
+        let dt = start_gen.elapsed();
         info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
@@ -251,7 +249,7 @@ impl ModelTrait for QwenModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }

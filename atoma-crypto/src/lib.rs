@@ -3,11 +3,15 @@ pub use blake2::{digest::consts::U32, Blake2b, Digest};
 const HASH_SIZE: usize = 32;
 pub type Hash = [u8; HASH_SIZE];
 
+/// `Hasher` - A basic hasher trait
 pub trait Hasher {
+    /// Initializes a new instance
     fn init() -> Self;
+    /// Hashes some data buffer
     fn hash<T: AsRef<[u8]>>(self, data: T) -> Hash;
 }
 
+/// Implementation of the `Hasher` trait to the `Blake2b` type
 impl Hasher for Blake2b<U32> {
     fn init() -> Self {
         Blake2b::new()

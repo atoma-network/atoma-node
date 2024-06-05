@@ -4,6 +4,7 @@ use serde_json::Value;
 
 pub const NON_SAMPLED_NODE_ERR: &str = "Node has not been selected";
 pub type Digest = String;
+pub type RequestId = Vec<u8>;
 pub type SmallId = u64;
 
 /// Represents a request object containing information about a request
@@ -11,14 +12,14 @@ pub type SmallId = u64;
 /// It includes information about a ticket ID, sampled nodes, and request parameters.
 ///
 /// Fields:
-/// id: Vec<u8> - The ticket ID associated with the request (or event).
+/// id: RequestId - The ticket ID associated with the request (or event).
 /// sampled_node_index: usize - Current node id in the list of sampled nodes.
 ///     This value should not be optional, as a request is only processed if a node has been selected, to begin with.
 /// num_sampled_nodes: usize - The total number of sampled nodes to process this request.
 /// body: serde_json::Value - JSON value containing request parameters.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
-    id: Vec<u8>,
+    id: RequestId,
     sampled_node_index: usize,
     num_sampled_nodes: usize,
     params: PromptParams,
@@ -26,7 +27,7 @@ pub struct Request {
 
 impl Request {
     pub fn new(
-        id: Vec<u8>,
+        id: RequestId,
         sampled_node_index: usize,
         num_sampled_nodes: usize,
         params: PromptParams,
@@ -39,7 +40,7 @@ impl Request {
         }
     }
 
-    pub fn id(&self) -> Vec<u8> {
+    pub fn id(&self) -> RequestId {
         self.id.clone()
     }
 
@@ -434,14 +435,14 @@ impl TryFrom<Value> for Text2ImagePromptParams {
 /// Represents a response object containing information about a response, including an ID, sampled nodes, and the response data.
 ///
 /// Fields:
-/// id: Vec<u8> - The ticket id associated with the request, that lead to the generation of this response.
+/// id: RequestId - The ticket id associated with the request, that lead to the generation of this response.
 /// sampled_node_index: usize - The node's index position in the request's original vector of sampled nodes.
 ///     This value should not be optional, as a node only processes a request if it was sampled to begin with.
 /// num_sampled_nodes: usize - The total number of sampled nodes, in the original request.
 /// response: serde_json::Value - JSON value containing the response data.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Response {
-    id: Vec<u8>,
+    id: RequestId,
     sampled_node_index: usize,
     num_sampled_nodes: usize,
     response: Value,
@@ -449,7 +450,7 @@ pub struct Response {
 
 impl Response {
     pub fn new(
-        id: Vec<u8>,
+        id: RequestId,
         sampled_node_index: usize,
         num_sampled_nodes: usize,
         response: Value,
@@ -462,7 +463,7 @@ impl Response {
         }
     }
 
-    pub fn id(&self) -> Vec<u8> {
+    pub fn id(&self) -> RequestId {
         self.id.clone()
     }
 

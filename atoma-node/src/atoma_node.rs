@@ -15,20 +15,14 @@ use tokio::{
         mpsc::{self, Receiver},
         oneshot,
     },
-    task::JoinHandle,
+    task::JoinError,
     try_join,
 };
 use tracing::{error, info};
 
 const CHANNEL_SIZE: usize = 32;
 
-pub struct AtomaNode {
-    pub atoma_sui_client_handle: JoinHandle<Result<(), AtomaNodeError>>,
-    pub atoma_output_manager_handle: JoinHandle<Result<(), AtomaNodeError>>,
-    pub atoma_streamer_handle: JoinHandle<Result<(), AtomaNodeError>>,
-    pub model_service_handle: JoinHandle<Result<(), AtomaNodeError>>,
-    pub sui_subscriber_handle: JoinHandle<Result<(), AtomaNodeError>>,
-}
+pub struct AtomaNode {}
 
 impl AtomaNode {
     pub async fn start<P>(
@@ -111,32 +105,37 @@ impl AtomaNode {
             })
         });
 
-        match try_join!(
-            model_service_handle,
-            sui_subscriber_handle,
-            atoma_sui_client_handle,
-            atoma_output_manager_handle,
-            atoma_streamer_handle,
-        ) {
-            Ok((
-                model_service_result,
-                sui_subscriber_result,
-                atoma_sui_client_result,
-                atoma_output_manager_result,
-                atoma_streamer_result,
-            )) => {
-                model_service_result?;
-                sui_subscriber_result?;
-                atoma_sui_client_result?;
-                atoma_output_manager_result?;
-                atoma_streamer_result?;
-            }
-            Err(e) => {
-                error!("Failed to join handles, with error: {e}")
-            }
-        }
+        // Store the handles to abort them if one of the tasks fails.
+        let model_service_abort_handle = model_service_handle.abort_handle();
+        let sui_subscriber_abort_handle = sui_subscriber_handle.abort_handle();
+        let atoma_sui_client_abort_handle = atoma_sui_client_handle.abort_handle();
+        let atoma_output_manager_abort_handle = atoma_output_manager_handle.abort_handle();
+        let atoma_streamer_abort_handle = atoma_streamer_handle.abort_handle();
 
-        Ok(())
+        // This is needed for the error propagation so the try_join! will fail if one of the tasks fails.
+        let model_service_task = async { model_service_handle.await? };
+        let sui_subscriber_task = async { sui_subscriber_handle.await? };
+        let atoma_sui_client_task = async { atoma_sui_client_handle.await? };
+        let atoma_output_manager_task = async { atoma_output_manager_handle.await? };
+        let atoma_streamer_task = async { atoma_streamer_handle.await? };
+
+        if let Err(e) = try_join!(
+            model_service_task,
+            sui_subscriber_task,
+            atoma_sui_client_task,
+            atoma_output_manager_task,
+            atoma_streamer_task
+        ) {
+            // If one of them fails, abort them all.
+            model_service_abort_handle.abort();
+            sui_subscriber_abort_handle.abort();
+            atoma_sui_client_abort_handle.abort();
+            atoma_output_manager_abort_handle.abort();
+            atoma_streamer_abort_handle.abort();
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -152,4 +151,6 @@ pub enum AtomaNodeError {
     AtomaOutputManagerError(#[from] AtomaOutputManagerError),
     #[error("Atoma streamer error: `{0}`")]
     AtomaStreamerError(#[from] AtomaStreamerError),
+    #[error("Tokio failed to join task: `{0}`")]
+    JoinError(#[from] JoinError),
 }
