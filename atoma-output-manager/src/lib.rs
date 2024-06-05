@@ -53,7 +53,10 @@ impl AtomaOutputManager {
         info!("Starting firebase service..");
         while let Some((ref output_metadata, output)) = self.output_manager_rx.recv().await {
             let output_destination = output_metadata.output_destination.clone();
-            info!("Received a new output to be submitted to a data storage {:?}..", output_destination);
+            info!(
+                "Received a new output to be submitted to a data storage {:?}..",
+                output_destination
+            );
             match output_destination {
                 OutputDestine::Firebase => {
                     self.firebase_output_manager
