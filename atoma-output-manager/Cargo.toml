@@ -9,6 +9,7 @@ edition.workspace = true
 atoma-types.workspace = true
 config.workspace = true
 futures.workspace = true
+gql_client.workspace = true
 hex.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true

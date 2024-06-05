@@ -138,7 +138,7 @@ async fn test_mock_model_thread() {
                 vec![],
                 false,
             ));
-            let request = Request::new(vec![], 0, 1, prompt_params);
+            let request = Request::new(vec![], 0, 1, prompt_params, vec![]);
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,
