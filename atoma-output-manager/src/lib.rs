@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use atoma_types::{AtomaOutputMetadata, OutputDestine};
+use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
@@ -52,20 +52,19 @@ impl AtomaOutputManager {
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
         info!("Starting firebase service..");
         while let Some((ref output_metadata, output)) = self.output_manager_rx.recv().await {
-            let output_destination = output_metadata.output_destination.clone();
             info!(
                 "Received a new output to be submitted to a data storage {:?}..",
-                output_destination
+                output_metadata.output_destination
             );
-            match output_destination {
-                OutputDestine::Firebase => {
+            match output_metadata.output_destination {
+                OutputDestination::Firebase => {
                     self.firebase_output_manager
                         .handle_post_request(output_metadata, output)
                         .await?
                 }
-                OutputDestine::Gatweway { gateway_user_id } => {
+                OutputDestination::Gateway { .. } => {
                     self.gateway_output_manager
-                        .handle_request(output_metadata, output, gateway_user_id)
+                        .handle_request(output_metadata, output)
                         .await?
                 }
             }
@@ -83,4 +82,6 @@ pub enum AtomaOutputManagerError {
     RequestError(#[from] reqwest::Error),
     #[error("GraphQl error: `{0}`")]
     GraphQlError(String),
+    #[error("Invalid output destiny: `{0}`")]
+    InvalidOutputDestiny(String),
 }

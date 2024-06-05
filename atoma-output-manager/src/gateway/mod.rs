@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use atoma_types::AtomaOutputMetadata;
+use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use gql_client::Client;
 use serde_json::Value;
 use tracing::info;
@@ -39,7 +39,6 @@ impl GatewayOutputManager {
         &self,
         output_metadata: &AtomaOutputMetadata,
         output: Value,
-        gateway_user_id: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let AtomaOutputMetadata {
             node_public_key,
@@ -52,30 +51,39 @@ impl GatewayOutputManager {
             index_of_node,
             leaf_hash,
             transaction_base_58,
-            ..
+            output_destination,
         } = output_metadata;
+
+        let gateway_user_id =
+            if let OutputDestination::Gateway { gateway_user_id } = output_destination {
+                gateway_user_id
+            } else {
+                return Err(AtomaOutputManagerError::InvalidOutputDestiny(
+                    "Missing `gateway_user_id` from `OutputDestinty".into(),
+                ));
+            };
         let query = format!(
             r#"mutation createPDA {{
             createPDA(
               input: {{
-                title: "Atoma's output for ticket id: {:?}",
-                description: "Atoma Node output for ticket id {:?}",
-                owner: {{ type: GATEWAY_ID, value: "{}" }},
+                title: "Atoma's output for ticket id: {ticket_id}",
+                description: "Atoma Node output for ticket id {ticket_id}",
+                owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
                 dataModelId: "d5011a1f-d6df-41ec-970f-36477e554dc2",
                 expirationDate: null,
                 organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
                 claim: {{
-                  nodePublicKey: "{:?}",
-                  ticketId: "{:?}",
-                  output: "{:?}",
-                  inputTokens: "{:?}",
-                  outputTokens: "{:?}",
-                  timeToGenerate: "{:?}",
-                  commitmentRootHash: "{:?}",
-                  numSampledNodes: "{:?}",
-                  indexSubmissionNode: "{:?}",
-                  leafHash: "{:?}",
-                  transactionBase58: "{:?}"
+                  nodePublicKey: "{node_public_key}",
+                  ticketId: "{ticket_id}",
+                  output: "{output}",
+                  inputTokens: "{num_input_tokens}",
+                  outputTokens: "{num_output_tokens}",
+                  timeToGenerate: "{time_to_generate}",
+                  commitmentRootHash: "{commitment_root_hash:?}",
+                  numSampledNodes: "{num_sampled_nodes}",
+                  indexSubmissionNode: "{index_of_node}",
+                  leafHash: "{leaf_hash:?}",
+                  transactionBase58: "{transaction_base_58}"
                 }}
               }}
             ) {{
@@ -92,21 +100,7 @@ impl GatewayOutputManager {
                 }}
               }}
             }}
-          }}"#,
-            ticket_id,
-            ticket_id,
-            gateway_user_id,
-            node_public_key,
-            ticket_id,
-            output,
-            num_input_tokens,
-            num_output_tokens,
-            time_to_generate,
-            commitment_root_hash,
-            num_sampled_nodes,
-            index_of_node,
-            leaf_hash,
-            transaction_base_58
+          }}"#
         );
 
         self.client
