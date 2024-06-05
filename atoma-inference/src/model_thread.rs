@@ -108,6 +108,8 @@ pub struct ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
+    /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
+    /// that continuously listens to incoming AI inference requests, and processes these.
     pub(crate) fn start(
         config: ModelsConfig,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
@@ -151,6 +153,8 @@ impl ModelThreadDispatcher {
         Ok((model_dispatcher, handles))
     }
 
+    /// Sends a `ModelThreadCommand` instance into the corresponding
+    /// `Model`'s thread, to be processed by the `Model` itself.
     fn send(&self, command: ModelThreadCommand) {
         let model_id = command.request.model();
 
@@ -168,6 +172,7 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
+    /// Responsible for handling requests from the node's inference JRPC service
     pub(crate) fn run_json_inference(
         &self,
         (request, sender): (Request, oneshot::Sender<Response>),
@@ -175,6 +180,8 @@ impl ModelThreadDispatcher {
         self.send(ModelThreadCommand { request, sender });
     }
 
+    /// Responsible for handling requests from the node's event listener service.
+    /// These correspond to requests that are generated through the Atoma's smart contract.
     pub(crate) fn run_subscriber_inference(&self, request: Request) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand { request, sender });
@@ -182,6 +189,9 @@ impl ModelThreadDispatcher {
     }
 }
 
+/// Contains logic to start a new model thread. This includes setting 
+/// HuggingFace's api key, specifying a cache directory for storage of models,
+/// the model's name and type together with the corresponding model configuration.
 pub(crate) fn dispatch_model_thread(
     api_key: String,
     cache_dir: PathBuf,
@@ -311,6 +321,7 @@ pub(crate) fn dispatch_model_thread(
     }
 }
 
+/// Spawns a new model thread
 pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
