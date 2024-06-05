@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use thiserror::Error;
 
 const GB: usize = 1 << 30;
@@ -26,6 +24,7 @@ pub struct CacheConfig {
     /// Swap space bytes
     swap_space_bytes: usize,
     /// Cache dtype
+    #[allow(dead_code)]
     cache_dtype: String,
     /// Number of GPU blocks to override (optional)
     num_gpu_blocks_override: Option<usize>,
@@ -39,6 +38,7 @@ pub struct CacheConfig {
 
 impl CacheConfig {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         block_size: usize,
         gpu_memory_utilization: f32,

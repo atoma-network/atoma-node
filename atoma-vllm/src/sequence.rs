@@ -768,14 +768,7 @@ impl SequenceGroup {
             Some(status) => self
                 .sequences
                 .values()
-                .filter_map(|seq| {
-                    if seq.borrow().sequence_status == status {
-                        Some(seq)
-                    } else {
-                        None
-                    }
-                })
-                .next(),
+                .find(|seq| seq.borrow().get_sequence_status() == status),
             None => self.sequences.values().next(),
         }
     }
@@ -784,8 +777,7 @@ impl SequenceGroup {
     pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.borrow().sequence_id() == sequence_id)
-            .next()
+            .find(|s| s.borrow().sequence_id() == sequence_id)
     }
 
     // TODO: remove this code if not necessary anymore

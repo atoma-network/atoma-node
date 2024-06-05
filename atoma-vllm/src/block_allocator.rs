@@ -76,7 +76,7 @@ impl BlockAllocator {
                     "Double free! {} is already freed.",
                     block_guard.block_number()
                 );
-                return Err(BlockAllocatorError::CannotDoubleFree(block_number as u64));
+                return Err(BlockAllocatorError::CannotDoubleFree(block_number));
             }
         }
 

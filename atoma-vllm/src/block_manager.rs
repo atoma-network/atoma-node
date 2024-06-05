@@ -39,6 +39,7 @@ pub struct BlockSpaceManager {
     /// Block tables, mapping: `seq_id` -> `BlockTable`
     block_tables: HashMap<u64, BlockTable>,
     /// Total umber of CPU blocks
+    #[allow(dead_code)]
     num_cpu_blocks: usize,
     /// Total number of GPU blocks
     num_gpu_blocks: usize,
@@ -65,12 +66,7 @@ impl BlockSpaceManager {
         let span = info_span!("block-space-manager");
 
         let (cpu_allocator, gpu_allocator): (BlockAllocator, BlockAllocator) =
-            if cuda_is_available() {
-                (
-                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
-                )
-            } else if metal_is_available() {
+            if cuda_is_available() || metal_is_available() {
                 (
                     BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
                     BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
@@ -87,8 +83,8 @@ impl BlockSpaceManager {
         Ok(Self {
             block_size,
             block_tables: HashMap::new(),
-            cpu_allocator: cpu_allocator,
-            gpu_allocator: gpu_allocator,
+            cpu_allocator,
+            gpu_allocator,
             num_cpu_blocks,
             num_gpu_blocks,
             block_sliding_window,
@@ -365,7 +361,7 @@ impl BlockSpaceManager {
             "Can swap in, for sequence group with id = {}",
             seq_group.request_id
         );
-        let blocks = self.get_physical_blocks(&seq_group)?;
+        let blocks = self.get_physical_blocks(seq_group)?;
         let num_swapped_sequences = seq_group.get_num_sequences(Some(SequenceStatus::Swapped));
         let num_free_blocks = self.gpu_allocator.get_num_free_blocks();
         // NOTE: Conservatively we assume that every sequence will allocate
@@ -446,7 +442,7 @@ impl BlockSpaceManager {
             "Can swap out, for sequence group with id = {}",
             seq_group.request_id
         );
-        let blocks = self.get_physical_blocks(&seq_group)?;
+        let blocks = self.get_physical_blocks(seq_group)?;
         Ok(blocks.len() <= self.cpu_allocator.get_num_free_blocks())
     }
 
@@ -587,15 +583,12 @@ impl BlockSpaceManager {
 
     /// Gets `BlockId` for each `Sequence` in `BlockTable`
     pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<u64>> {
-        self.block_tables
-            .get(sequence_id)
-            .map(|bt| {
-                bt.iter()
-                    .map(|b| b.deref_read().map(|ok| ok.block_number()))
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()
-            })
-            .flatten()
+        self.block_tables.get(sequence_id).and_then(|bt| {
+            bt.iter()
+                .map(|b| b.deref_read().map(|ok| ok.block_number()))
+                .collect::<Result<Vec<_>, _>>()
+                .ok()
+        })
     }
 
     /// Gets number of free gpu blocks
@@ -1110,7 +1103,7 @@ pub(crate) mod tests {
                 create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
             block_manager
                 .allocate(&seq_group)
-                .expect(&format!("Failed to allocate sequence group, index = {i}"));
+                .unwrap_or_else(|_| panic!("Failed to allocate sequence group, index = {i}"));
         }
 
         assert_eq!(block_manager.get_number_of_free_gpu_blocks(), 0);
