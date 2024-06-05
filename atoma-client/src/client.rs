@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{Digest, Response};
+use atoma_types::{AtomaOutputMetadata, Digest, Response};
+use serde_json::Value;
 use sui_sdk::{
     json::SuiJsonValue,
     types::base_types::{ObjectIDParseError, SuiAddress},
@@ -22,15 +23,16 @@ const METHOD: &str = "submit_commitment";
 pub struct AtomaSuiClient {
     /// Sui address
     address: SuiAddress,
-    /// Atoma's configuration for the Sui client
+    /// Atoma's configuration for the Sui client.
     config: AtomaSuiClientConfig,
     /// Sui's wallet context
     wallet_ctx: WalletContext,
     /// A mpsc receiver, which is responsible to receive new `Response`'s, so that the node
-    /// can then commit to these
+    /// can then commit to these.
     response_rx: mpsc::Receiver<Response>,
     /// A mpsc sender, responsible to send the actual output to the `OutputManager` service (for being shared with an end user or protocol)
-    output_manager_tx: mpsc::Sender<(Digest, Response)>,
+    /// It sends a tuple, containing the output's metadata and the actual output (in JSON format).
+    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, serde_json::Value)>,
 }
 
 impl AtomaSuiClient {
@@ -44,7 +46,7 @@ impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(Digest, Response)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
@@ -73,7 +75,7 @@ impl AtomaSuiClient {
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(Digest, Response)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
         Self::new_from_config(config, response_rx, output_manager_tx)
@@ -88,7 +90,7 @@ impl AtomaSuiClient {
     ///   - The second element as the image height,
     ///   - The third element as the image width.
     ///   These are then combined into a single byte vector where the image data is followed by the height and width.
-    fn get_data(&self, data: serde_json::Value) -> Result<Vec<u8>, AtomaSuiClientError> {
+    fn get_data(&self, data: Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
         if let Some(text) = data["text"].as_str() {
             Ok(text.as_bytes().to_owned())
@@ -166,7 +168,7 @@ impl AtomaSuiClient {
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db_id()),
                     SuiJsonValue::from_object_id(self.config.node_badge_id()),
-                    SuiJsonValue::new(request_id.into())?,
+                    SuiJsonValue::new(request_id.clone().into())?,
                     SuiJsonValue::new(num_input_tokens.to_string().into())?,
                     SuiJsonValue::new(num_output_tokens.to_string().into())?,
                     SuiJsonValue::new(root.as_ref().into())?,
@@ -184,12 +186,28 @@ impl AtomaSuiClient {
         debug!("Submitted transaction with response: {:?}", tx_response);
 
         let tx_digest = tx_response.digest.base58_encode();
+        let hex_request_id = hex::encode(request_id.as_slice());
+
         if let Some(events) = tx_response.events {
             for event in events.data.iter() {
                 debug!("Got a transaction event: {:?}", event.type_.name.as_str());
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
+                    let output = response.response();
+                    let output_metadata = AtomaOutputMetadata {
+                        transaction_base_58: tx_digest.clone(),
+                        node_public_key: self.address.to_string(),
+                        ticket_id: hex_request_id,
+                        num_input_tokens,
+                        num_output_tokens,
+                        num_sampled_nodes: num_leaves,
+                        index_of_node: index,
+                        time_to_generate: response.time_to_generate(),
+                        commitment_root_hash: root.to_vec(),
+                        leaf_hash: pre_image.to_vec(),
+                    };
+
                     self.output_manager_tx
-                        .send((tx_digest.clone(), response))
+                        .send((output_metadata, output))
                         .await?;
                     break; // we don't need to check other events, as at this point the node knows it has been selected for
                 }
@@ -225,7 +243,7 @@ pub enum AtomaSuiClientError {
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(Digest, Response)>),
+    SendError(#[from] mpsc::error::SendError<(AtomaOutputMetadata, Value)>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]

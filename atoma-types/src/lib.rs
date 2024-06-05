@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,52 +14,78 @@ pub type SmallId = u64;
 /// It includes information about a ticket ID, sampled nodes, and request parameters.
 ///
 /// Fields:
-/// id: RequestId - The ticket ID associated with the request (or event).
-/// sampled_node_index: usize - Current node id in the list of sampled nodes.
-///     This value should not be optional, as a request is only processed if a node has been selected, to begin with.
-/// num_sampled_nodes: usize - The total number of sampled nodes to process this request.
-/// body: serde_json::Value - JSON value containing request parameters.
+///     `id`: RequestId - The ticket ID associated with the request (or event).
+///     `sampled_node_index`: usize - Current node id in the list of sampled nodes.
+///         This value should not be optional, as a request is only processed if a node has been selected, to begin with.
+///     `num_sampled_nodes`: usize - The total number of sampled nodes to process this request.
+///     `params`: PromptParams - Contains the relevant data to run the requested AI inference, including
+///         which model to be used, the prompt input, temperature, etc.
+///     `output_destination`: Vec<u8> - The output destination, serialized into a byte buffer.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
+    /// The request id, which corresponds to the ticket id,
+    /// emitted from the Atoma smart contract.
     id: RequestId,
+    /// Current node index in the quorum of all sampled nodes, selected
+    /// to process the current request.
     sampled_node_index: usize,
+    /// Number of total sampled nodes that form the quorum to run
+    /// the current inference request
     num_sampled_nodes: usize,
+    /// Prompt parameters
     params: PromptParams,
+    /// The output destination, in a byte representation. The node
+    /// should be able to deserialize it into actual metadata
+    /// specifying how to store the actual output
+    output_destination: Vec<u8>,
 }
 
 impl Request {
+    /// Constructor
     pub fn new(
         id: RequestId,
         sampled_node_index: usize,
         num_sampled_nodes: usize,
         params: PromptParams,
+        output_destination: Vec<u8>,
     ) -> Self {
         Self {
             id,
             sampled_node_index,
             num_sampled_nodes,
             params,
+            output_destination,
         }
     }
 
+    /// Getter for `id`
     pub fn id(&self) -> RequestId {
         self.id.clone()
     }
 
+    /// Getter for `model`
     pub fn model(&self) -> String {
         self.params.model()
     }
 
+    /// Getter for `sampled_node_index`
     pub fn sampled_node_index(&self) -> usize {
         self.sampled_node_index
     }
 
+    /// Getter for `num_sampled_nodes`
     pub fn num_sampled_nodes(&self) -> usize {
         self.num_sampled_nodes
     }
 
+    /// Getter for `params`
     pub fn params(&self) -> PromptParams {
         self.params.clone()
+    }
+
+    /// Getter for `output_destination`
+    pub fn output_destination(&self) -> Vec<u8> {
+        self.output_destination.clone()
     }
 }
 
@@ -82,12 +110,26 @@ impl TryFrom<(u64, Value)> for Request {
             .position(|n| n == &node_id)
             .ok_or(anyhow!(NON_SAMPLED_NODE_ERR))?;
         let num_sampled_nodes = sampled_nodes.len();
-        let body = PromptParams::try_from(value["params"].clone())?;
+        let params = PromptParams::try_from(value["params"].clone())?;
+        let output_destination = value["output_destination"]
+            .as_array()
+            .ok_or(anyhow!(
+                "Request malformed, missing `output_destination` field"
+            ))?
+            .iter()
+            .map(|x| {
+                x.as_u64()
+                    .map(|b| b as u8)
+                    .ok_or(anyhow!("Invalid byte value for output destination"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(Request::new(
             id,
             sampled_node_index,
             num_sampled_nodes,
-            body,
+            params,
+            output_destination,
         ))
     }
 }
@@ -105,15 +147,31 @@ impl TryFrom<(&str, usize, Value)> for Request {
             .as_array()
             .ok_or(anyhow!("invalid `sampled_nodes` field",))?
             .len();
+
         let prompt_params_value = value
             .get("params")
             .ok_or(anyhow!("invalid `params` field",))?;
         let prompt_params = PromptParams::try_from(prompt_params_value.clone())?;
+
+        let output_destination = value["output_destination"]
+            .as_array()
+            .ok_or(anyhow!(
+                "Request malformed, missing `output_destination` field"
+            ))?
+            .iter()
+            .map(|x| {
+                x.as_u64()
+                    .map(|b| b as u8)
+                    .ok_or(anyhow!("Invalid byte value for output destination"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(Request::new(
             id,
             sampled_node_index,
             num_sampled_nodes,
             prompt_params,
+            output_destination,
         ))
     }
 }
@@ -128,6 +186,7 @@ pub enum PromptParams {
 }
 
 impl PromptParams {
+    /// Gets the model associated to the current instance of `Self`
     pub fn model(&self) -> String {
         match self {
             Self::Text2ImagePromptParams(p) => p.model(),
@@ -182,22 +241,36 @@ impl TryFrom<Value> for PromptParams {
 /// - should_stream_output: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2TextPromptParams {
+    /// The prompt, in String format
     prompt: String,
+    /// The specified model of the request
     model: String,
+    /// The temperature
     temperature: f64,
+    /// The random seed, used in sampling new tokens
     random_seed: u64,
+    /// The repeat penalty
     repeat_penalty: f32,
+    /// The repeat last n 
     repeat_last_n: u64,
+    /// Number of max tokens
     max_tokens: u64,
+    /// Optional top k value
     top_k: Option<u64>,
+    /// Optional top p value
     top_p: Option<f64>,
+    /// Boolean that controls if the request is to be used in chat mode or not
     chat: bool,
+    /// Pre prompt tokens, to be used solely in case `chat == true`
     pre_prompt_tokens: Vec<u32>,
+    /// Should stream output, if true the node should stream the output
+    /// back to the used (on the UI). Used only when `chat == true`
     should_stream_output: bool,
 }
 
 impl Text2TextPromptParams {
     #[allow(clippy::too_many_arguments)]
+    /// Constructor
     pub fn new(
         prompt: String,
         model: String,
@@ -228,50 +301,62 @@ impl Text2TextPromptParams {
         }
     }
 
+    /// Getter for `prompt`
     pub fn prompt(&self) -> String {
         self.prompt.clone()
     }
 
+    /// Getter for `model`
     pub fn model(&self) -> String {
         self.model.clone()
     }
 
+    /// Getter for `temperature`
     pub fn temperature(&self) -> f64 {
         self.temperature
     }
 
+    /// Getter for `random_seed`
     pub fn random_seed(&self) -> u64 {
         self.random_seed
     }
 
+    /// Getter for `repeat_penalty`
     pub fn repeat_penalty(&self) -> f32 {
         self.repeat_penalty
     }
 
+    /// Getter for `repeat_last_n`
     pub fn repeat_last_n(&self) -> u64 {
         self.repeat_last_n
     }
 
+    /// Getter for `max_tokens`
     pub fn max_tokens(&self) -> u64 {
         self.max_tokens
     }
 
+    /// Getter for `top_k`
     pub fn top_k(&self) -> Option<u64> {
         self.top_k
     }
 
+    /// Getter for `top_p`
     pub fn top_p(&self) -> Option<f64> {
         self.top_p
     }
 
+    /// Getter for `should_stream_output`
     pub fn should_stream_output(&self) -> bool {
         self.should_stream_output
     }
 
+    /// Getter for `chat`
     pub fn is_chat(&self) -> bool {
         self.chat
     }
 
+    /// Getter for `pre_prompt_tokens`
     pub fn pre_prompt_tokens(&self) -> Vec<u32> {
         self.pre_prompt_tokens.clone()
     }
@@ -307,7 +392,6 @@ impl TryFrom<Value> for Text2TextPromptParams {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
 /// Text to image prompt parameters. It includes:
 /// - prompt: prompt to be passed to model as input;
 /// - model: name of the model;
@@ -323,22 +407,35 @@ impl TryFrom<Value> for Text2TextPromptParams {
 ///   value must be between 0 and 1, a value of 1 discards the initial image
 ///   information;
 /// - random_seed: the seed to use when generating random samples.
+#[derive(Clone, Debug, Deserialize)]
 pub struct Text2ImagePromptParams {
+    /// Prompt, in String format
     prompt: String,
+    /// Model to run the inference
     model: String,
+    /// Unconditional prompt, used in stable diffusion models
     uncond_prompt: String,
+    /// Height of the final generated image
     height: Option<u64>,
+    /// Width of the final generated image
     width: Option<u64>,
+    /// Number of n steps (optional)
     n_steps: Option<u64>,
+    /// Number of samples, in the image generation
     num_samples: u64,
+    /// Guidance scale (optional)
     guidance_scale: Option<f64>,
+    /// Image to image (optional)
     img2img: Option<String>,
+    /// Image to image strength
     img2img_strength: f64,
+    /// The random seed for inference sampling
     random_seed: Option<u32>,
 }
 
 impl Text2ImagePromptParams {
     #[allow(clippy::too_many_arguments)]
+    /// Constructor
     pub fn new(
         prompt: String,
         model: String,
@@ -367,46 +464,57 @@ impl Text2ImagePromptParams {
         }
     }
 
+    /// Getter for `prompt`
     pub fn prompt(&self) -> String {
         self.prompt.clone()
     }
 
+    /// Getter for `model`
     pub fn model(&self) -> String {
         self.model.clone()
     }
 
+    /// Getter for `uncond_prompt`
     pub fn uncond_prompt(&self) -> String {
         self.uncond_prompt.clone()
     }
 
+    /// Getter for `height`
     pub fn height(&self) -> Option<u64> {
         self.height
     }
 
+    /// Getter for `width`
     pub fn width(&self) -> Option<u64> {
         self.width
     }
 
+    /// Getter for `n_steps`
     pub fn n_steps(&self) -> Option<u64> {
         self.n_steps
     }
 
+    /// Getter for `num_samples`
     pub fn num_samples(&self) -> u64 {
         self.num_samples
     }
 
+    /// Getter for `guidance_scale`
     pub fn guidance_scale(&self) -> Option<f64> {
         self.guidance_scale
     }
 
+    /// Getter for `img2img`
     pub fn img2img(&self) -> Option<String> {
         self.img2img.clone()
     }
 
+    /// Getter for `img2img_strength`
     pub fn img2img_strength(&self) -> f64 {
         self.img2img_strength
     }
 
+    /// Getter for `random_seed`
     pub fn random_seed(&self) -> Option<u32> {
         self.random_seed
     }
@@ -442,13 +550,20 @@ impl TryFrom<Value> for Text2ImagePromptParams {
 /// response: serde_json::Value - JSON value containing the response data.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Response {
+    /// The request id, which corresponds to the Atoma's smart contract
+    /// emitted ticket id.
     id: RequestId,
+    /// The current node index in the quorum of sampled nodes to run
+    /// the request, to which this response was generated from.
     sampled_node_index: usize,
+    /// Number of sampled nodes in the quorum of sampled nodes.
     num_sampled_nodes: usize,
+    /// The actual response output, in JSON format.
     response: Value,
 }
 
 impl Response {
+    /// Constructor
     pub fn new(
         id: RequestId,
         sampled_node_index: usize,
@@ -463,35 +578,70 @@ impl Response {
         }
     }
 
+    /// Getter for `id`
     pub fn id(&self) -> RequestId {
         self.id.clone()
     }
 
+    /// Getter for `sampled_node_index`
     pub fn sampled_node_index(&self) -> usize {
         self.sampled_node_index
     }
 
+    /// Getter for `num_sampled_nodes`
     pub fn num_sampled_nodes(&self) -> usize {
         self.num_sampled_nodes
     }
 
+    /// Getter for `response`
     pub fn response(&self) -> Value {
         self.response.clone()
     }
 }
 
 impl Response {
+    /// Extracts the number of `input_tokens` from the request's propmpt
     pub fn input_tokens(&self) -> u64 {
         self.response["input_tokens"].as_u64().unwrap_or(0)
     }
 
+    /// Extracts the number of `output_tokens` from the generated output
     pub fn tokens_count(&self) -> u64 {
         self.response["tokens_count"].as_u64().unwrap_or(0)
     }
 
+    /// The duration, in seconds, taken to generate the current output
     pub fn time_to_generate(&self) -> f64 {
         self.response["time"].as_f64().unwrap_or(0.0)
     }
+}
+
+/// `AtomaOutputMetadata` - metadata associated with the output generated by a node,
+///     for a given request
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AtomaOutputMetadata {
+    /// Node's own public key address, in hex format
+    pub node_public_key: String,
+    /// The ticket id associated with the request, in hex format
+    pub ticket_id: String,
+    /// Number of prompt input tokens
+    pub num_input_tokens: u64,
+    /// Number of generated output tokens
+    pub num_output_tokens: u64,
+    /// Time taken to generate the output, in seconds
+    pub time_to_generate: f64,
+    /// Byte representation of the output commitment, submitted on-chain
+    pub commitment_root_hash: Vec<u8>,
+    /// Number of sampled nodes to process the request
+    pub num_sampled_nodes: usize,
+    /// The index of the current node in the sampled quorum to process the output,
+    /// it should be comprised between `[0, num_sampled_nodes)`
+    pub index_of_node: usize,
+    /// The leaf hash, submitted by the current node
+    /// while providing the root_hash commitment on-chain
+    pub leaf_hash: Vec<u8>,
+    /// The transaction in base58 format (used in the Sui blockchain)
+    pub transaction_base_58: String,
 }
 
 mod utils {
@@ -542,10 +692,14 @@ mod utils {
             .map(|s| s.to_string())
     }
 
+    /// Util method that parses a suitable JSON value, to extracts
+    /// an underlying string
     pub(crate) fn parse_optional_str(value: &Value) -> Option<String> {
         value.as_str().map(|s| s.to_string())
     }
 
+    /// Util method that extract a boolean value from a JSON 
+    /// representing a boolean.
     pub(crate) fn parse_bool(value: &Value) -> Result<bool> {
         value
             .as_bool()

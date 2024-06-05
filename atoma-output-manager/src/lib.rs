@@ -1,25 +1,27 @@
 use std::path::{Path, PathBuf};
 
-use atoma_types::{Digest, Response};
+use atoma_types::AtomaOutputMetadata;
 use config::AtomaFirebaseConfig;
 use reqwest::Client;
+use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 mod config;
+mod gateway;
 
 pub struct AtomaOutputManager {
     firebase_uri: PathBuf,
     firebase_auth_token: String,
-    output_manager_rx: mpsc::Receiver<(Digest, Response)>,
+    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
 }
 
 impl AtomaOutputManager {
     pub fn new(
         firebase_uri: PathBuf,
         firebase_auth_token: String,
-        output_manager_rx: mpsc::Receiver<(Digest, Response)>,
+        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
     ) -> Self {
         Self {
             firebase_uri,
@@ -30,7 +32,7 @@ impl AtomaOutputManager {
 
     pub fn new_from_config<P: AsRef<Path>>(
         config_path: P,
-        output_manager_rx: mpsc::Receiver<(Digest, Response)>,
+        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
     ) -> Self {
         let config = AtomaFirebaseConfig::from_file_path(config_path);
         Self {
@@ -42,12 +44,9 @@ impl AtomaOutputManager {
 
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
         info!("Starting firebase service..");
-        while let Some(response) = self.output_manager_rx.recv().await {
+        while let Some((metadata, output)) = self.output_manager_rx.recv().await {
             info!("Received a new output to be submitted to Firebase..");
-            let tx_digest = response.0;
-            let response = response.1;
-            let data = serde_json::to_value(response)?;
-            self.handle_post_request(tx_digest, data).await?;
+            self.handle_post_request(metadata, output).await?;
         }
 
         Ok(())
@@ -57,17 +56,21 @@ impl AtomaOutputManager {
 impl AtomaOutputManager {
     async fn handle_post_request(
         &self,
-        tx_digest: Digest,
-        data: serde_json::Value,
+        output_metadata: AtomaOutputMetadata,
+        output: Value,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let mut url = self.firebase_uri.clone();
-        url.push(format!("{tx_digest}.json"));
+        url.push(format!("{}.json", output_metadata.ticket_id));
         info!("Firebase's output url: {:?}", url);
         debug!(
-            "Submitting to Firebase's real time storage, the data: {}",
-            data
+            "Submitting to Firebase's real time storage, with metadata: {:?}",
+            output_metadata
         );
+        let data = json!({
+            "metadata": output_metadata,
+            "data": output
+        });
         let response = client
             .post(url.to_str().unwrap())
             .bearer_auth(&self.firebase_auth_token)
@@ -86,4 +89,6 @@ pub enum AtomaOutputManagerError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Request error: `{0}`")]
     RequestError(#[from] reqwest::Error),
+    #[error("GraphQl error: `{0}`")]
+    GraphQlError(String),
 }

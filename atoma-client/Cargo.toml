@@ -10,6 +10,7 @@ anyhow.workspace = true
 atoma-crypto.workspace = true
 atoma-types.workspace = true
 config.workspace = true
+hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sui-keys.workspace = true
