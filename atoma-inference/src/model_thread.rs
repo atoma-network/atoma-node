@@ -67,7 +67,14 @@ where
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
-            let response = Response::new(request_id, sampled_node_index, num_sampled_nodes, output);
+            let output_destination = request.output_destination();
+            let response = Response::new(
+                request_id,
+                sampled_node_index,
+                num_sampled_nodes,
+                output,
+                output_destination,
+            );
             sender.send(response).ok();
         }
 

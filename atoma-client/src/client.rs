@@ -2,6 +2,7 @@ use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
 use atoma_types::{AtomaOutputMetadata, Digest, Response};
+use bincode::ErrorKind;
 use serde_json::Value;
 use sui_sdk::{
     json::SuiJsonValue,
@@ -149,7 +150,7 @@ impl AtomaSuiClient {
         response: Response,
     ) -> Result<Digest, AtomaSuiClientError> {
         let request_id = response.id();
-        let data = self.get_data(response.response())?;
+        let data = self.get_data(response.response().clone())?;
         let (index, num_leaves) = (response.sampled_node_index(), response.num_sampled_nodes());
         let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
 
@@ -193,6 +194,7 @@ impl AtomaSuiClient {
                 debug!("Got a transaction event: {:?}", event.type_.name.as_str());
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
                     let output = response.response();
+                    let output_destination = bincode::deserialize(&response.output_destination())?;
                     let output_metadata = AtomaOutputMetadata {
                         transaction_base_58: tx_digest.clone(),
                         node_public_key: self.address.to_string(),
@@ -204,12 +206,14 @@ impl AtomaSuiClient {
                         time_to_generate: response.time_to_generate(),
                         commitment_root_hash: root.to_vec(),
                         leaf_hash: pre_image.to_vec(),
+                        output_destination,
                     };
 
                     self.output_manager_tx
                         .send((output_metadata, output))
                         .await?;
-                    break; // we don't need to check other events, as at this point the node knows it has been selected for
+                    // we don't need to check other events, as at this point the node knows it has been selected for
+                    break;
                 }
             }
         }
@@ -254,4 +258,6 @@ pub enum AtomaSuiClientError {
     InvalidRequestId,
     #[error("Missing output data")]
     MissingOutputData,
+    #[error("Bincode error: `{0}`")]
+    BincodeError(#[from] Box<ErrorKind>),
 }

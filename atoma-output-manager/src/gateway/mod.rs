@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use atoma_types::AtomaOutputMetadata;
 use gql_client::Client;
 use serde_json::Value;
-use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::AtomaOutputManagerError;
 
 const GATEWAY_GRAPHQL_ENDPOINT: &str = "https://protocol.mygateway.xyz/graphql";
+
+/// Gateway
 
 /// `GatewayOutputManager` - Wrapper around a GraphQL client to interact with the
 ///   Gateway protocol API.
@@ -18,44 +19,27 @@ const GATEWAY_GRAPHQL_ENDPOINT: &str = "https://protocol.mygateway.xyz/graphql";
 pub struct GatewayOutputManager {
     /// GraphQL client
     client: Client,
-    /// A mpsc receiver of a tuple containing the output's metadata and actual content (in JSON format)
-    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
 }
 
 impl GatewayOutputManager {
     /// Constructor
-    pub fn new(
-        api_key: &str,
-        bearer_token: &str,
-        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
-    ) -> Self {
+    pub fn new(api_key: &str, bearer_token: &str) -> Self {
         let url = format!("{}", GATEWAY_GRAPHQL_ENDPOINT);
         let mut headers = HashMap::new();
         headers.insert("X-Api-Key", format!("{}", api_key));
         headers.insert("Authorization", format!("Bearer {}", bearer_token));
         let client = Client::new_with_headers(url, headers);
         info!("Created a new client for the gateway..");
-        Self {
-            client,
-            output_manager_rx,
-        }
+        Self { client }
     }
 
-    /// Main loop, it listens to newly received responses from the Node's client.
-    /// It then is responsible to send the request to Gateway's storage, via its API.
-    pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
-        info!("Starting firebase service..");
-        while let Some((output_metadata, output)) = self.output_manager_rx.recv().await {
-            info!("Received a new output to be submitted to Firebase..");
-            self.handle_request(output_metadata, output).await?;
-        }
-        Ok(())
-    }
-
-    async fn handle_request(
+    /// Handles a new request by submitting the inference output to the user
+    /// specified PDA, on behalf of the Atoma organization on the Gateway protocol
+    pub async fn handle_request(
         &self,
-        output_metadata: AtomaOutputMetadata,
+        output_metadata: &AtomaOutputMetadata,
         output: Value,
+        gateway_user_id: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let AtomaOutputMetadata {
             node_public_key,
@@ -68,6 +52,7 @@ impl GatewayOutputManager {
             index_of_node,
             leaf_hash,
             transaction_base_58,
+            ..
         } = output_metadata;
         let query = format!(
             r#"mutation createPDA {{

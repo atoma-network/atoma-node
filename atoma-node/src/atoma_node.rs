@@ -88,7 +88,7 @@ impl AtomaNode {
             tokio::spawn(async move {
                 info!("Starting Atoma output manager service..");
                 let atoma_output_manager =
-                    AtomaOutputManager::new_from_config(config_path, output_manager_rx);
+                    AtomaOutputManager::new(config_path, output_manager_rx);
                 atoma_output_manager
                     .run()
                     .await
