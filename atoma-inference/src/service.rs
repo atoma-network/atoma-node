@@ -14,14 +14,29 @@ use crate::{
     models::config::ModelsConfig,
 };
 
+/// `ModelService` - Responsible for listening to new AI inference requests, potentially
+/// to different hosted AI large language models.
 pub struct ModelService {
+    /// Vector containing each model's thread join handle.
     model_thread_handle: Vec<ModelThreadHandle>,
+    /// A model thread dispatcher.
     dispatcher: ModelThreadDispatcher,
+    /// Start time of the `ModelService`.
     start_time: Instant,
+    /// Boolean parameter that specifies if the service should flush all
+    /// stored AI models, on shutdown.
     flush_storage: bool,
+    /// The model weights, tokenizer and configuration data storage path.
     cache_dir: PathBuf,
+    /// A `mpsc` end `Receiver`, listening to new requests, from the node's
+    /// JRPC service.
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
+    /// A `mpsc` end `Receiver`, listening to new requests, from the node's
+    /// event listener service (requests coming from the Atoma's smart contract).
     subscriber_req_rx: Receiver<Request>,
+    /// Atoma's node response sender. Responsible for sending the generated output to
+    /// different the Atoma's client service (for on-chain submission of the
+    /// cryptographic commitment to the output).
     atoma_node_resp_tx: Sender<Response>,
 }
 
