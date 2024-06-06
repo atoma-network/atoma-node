@@ -6,6 +6,9 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct AtomaFirebaseStreamerConfig {
     firebase_uri: String,
+    firebase_email: String,
+    firebase_password: String,
+    firebase_api_key: String,
 }
 
 impl AtomaFirebaseStreamerConfig {
@@ -21,7 +24,23 @@ impl AtomaFirebaseStreamerConfig {
             .expect("Failed to generated Atoma Sui client config file")
     }
 
+    /// Get the firebase_uri from the config
     pub fn firebase_uri(&self) -> PathBuf {
         self.firebase_uri.clone().into()
+    }
+
+    /// Get the email from the config
+    pub fn firebase_email(&self) -> String {
+        self.firebase_email.clone()
+    }
+
+    /// Get the password from the config
+    pub fn firebase_password(&self) -> String {
+        self.firebase_password.clone()
+    }
+
+    /// Get the api_key from the config
+    pub fn firebase_api_key(&self) -> String {
+        self.firebase_api_key.clone()
     }
 }
