@@ -23,11 +23,20 @@ use crate::{
     },
 };
 
+/// `MistralModel` - encapsulates a Mistral model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct MistralModel {
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The actual Mistral model
     model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 

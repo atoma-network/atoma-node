@@ -200,7 +200,6 @@ async fn test_inference_service() {
         "./cache_dir".parse().unwrap(),
         true,
         model_configs,
-        true,
         JRPC_PORT,
     );
 

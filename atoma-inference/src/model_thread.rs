@@ -19,7 +19,7 @@ use crate::models::{
     ModelError, ModelId, ModelTrait,
 };
 
-/// `ModelThreadCommand` - Wrapper around an AI inference request to be 
+/// `ModelThreadCommand` - Wrapper around an AI inference request to be
 ///     processed in the corresponding model thread. It also encapsulates
 ///     a `oneshot` `Sender` that is used to send the `Response` back to
 ///     the main thread worker.
@@ -41,8 +41,8 @@ pub enum ModelThreadError {
 }
 
 /// `ModelThreadHandle` - Encapsulates the corresponding Model thread join handle
-/// 
-/// It also contains a `mpsc` `Sender` that can send new `ModelThreadCommand`'s to 
+///
+/// It also contains a `mpsc` `Sender` that can send new `ModelThreadCommand`'s to
 /// the corresponding model thread.
 pub struct ModelThreadHandle {
     /// A `mpsc` `Sender` channel, responsible to send new `ModelThreadCommand`
@@ -60,9 +60,9 @@ impl ModelThreadHandle {
     }
 }
 
-/// `ModelThread` - Wrapper around a `Model`'s thread. 
-/// 
-/// It contains the corresponding AI model, `M`, together with a 
+/// `ModelThread` - Wrapper around a `Model`'s thread.
+///
+/// It contains the corresponding AI model, `M`, together with a
 /// `mpsc` `Receiver` channel, listening to incoming `ModelThreadCommand`'s
 pub struct ModelThread<M: ModelTrait> {
     model: M,
@@ -74,7 +74,7 @@ where
     M: ModelTrait,
 {
     /// Main loop, it listenings to incoming requests, in the form `ModelThreadCommand`.
-    /// When a new request is received, it starts a new inference loop for the encapsulated 
+    /// When a new request is received, it starts a new inference loop for the encapsulated
     /// AI model `M`. Once the AI generated output is ready, it sends it back using the corresponding
     /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
     pub fn run(mut self) -> Result<(), ModelThreadError> {
@@ -189,7 +189,7 @@ impl ModelThreadDispatcher {
     }
 }
 
-/// Contains logic to start a new model thread. This includes setting 
+/// Contains logic to start a new model thread. This includes setting
 /// HuggingFace's api key, specifying a cache directory for storage of models,
 /// the model's name and type together with the corresponding model configuration.
 pub(crate) fn dispatch_model_thread(
