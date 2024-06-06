@@ -18,7 +18,7 @@ use crate::models::token_output_stream::TokenOutputStream;
 use crate::models::types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput};
 use crate::models::{ModelError, ModelTrait};
 
-/// Helper enum to differentiate between Qwen's 
+/// Helper enum to differentiate between Qwen's
 /// MoE model and the base model
 pub enum Model {
     Base(ModelBase),
