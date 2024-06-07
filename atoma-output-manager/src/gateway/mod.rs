@@ -52,6 +52,7 @@ impl GatewayOutputManager {
             leaf_hash,
             transaction_base_58,
             output_destination,
+            output_type,
         } = output_metadata;
 
         let gateway_user_id =
@@ -83,7 +84,8 @@ impl GatewayOutputManager {
                   numSampledNodes: "{num_sampled_nodes}",
                   indexSubmissionNode: "{index_of_node}",
                   leafHash: "{leaf_hash:?}",
-                  transactionBase58: "{transaction_base_58}"
+                  transactionBase58: "{transaction_base_58}",
+                  outputType: "{output_type}"
                 }}
               }}
             ) {{
