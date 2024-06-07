@@ -210,22 +210,22 @@ impl Eq for PhysicalTokenBlock {}
 
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
-pub trait DerefRead {
+pub trait BlockReadLock {
     fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError>;
 }
 
-pub trait DerefWrite {
+pub trait BlockWriteLock {
     fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError>;
 }
 
-impl DerefRead for SyncPhysicalTokenBlock {
+impl BlockReadLock for SyncPhysicalTokenBlock {
     fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
         self.read()
             .map_err(|e| BlockError::PoisonError(e.to_string()))
     }
 }
 
-impl DerefWrite for SyncPhysicalTokenBlock {
+impl BlockWriteLock for SyncPhysicalTokenBlock {
     fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
         self.write()
             .map_err(|e| BlockError::PoisonError(e.to_string()))

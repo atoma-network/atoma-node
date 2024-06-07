@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    block::{BlockError, BlockTable, DerefRead, DerefWrite, SyncPhysicalTokenBlock},
+    block::{BlockError, BlockTable, BlockReadLock, BlockWriteLock, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
 };
@@ -423,7 +423,7 @@ impl BlockSpaceManager {
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
             let sequence = seq_group.get_sequence_mut_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
-            sequence.set_sequence_status(SequenceStatus::Swapped);
+            sequence.set_sequence_status(SequenceStatus::Running);
         }
 
         let mut block_number_mapping = HashMap::with_capacity(mapping.len());
