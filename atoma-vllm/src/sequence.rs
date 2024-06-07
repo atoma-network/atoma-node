@@ -9,9 +9,12 @@ use std::{
 
 use candle::Tensor;
 use thiserror::Error;
-use tracing::{info_span, Span};
+use tracing::{error, info_span, instrument, Span};
 
-use crate::{block::LogicalTokenBlock, sampling_params::SamplingParams};
+use crate::{
+    block::{BlockError, LogicalTokenBlock},
+    sampling_params::SamplingParams,
+};
 
 /// `LogProb` - log probabilities and token ranks.
 #[derive(Clone, Debug, PartialEq)]
@@ -209,7 +212,7 @@ impl SequenceData {
             }
             return Ok(());
         }
-
+        error!("Failed to update number of computed tokens");
         Err(SequenceError::InvalidNumberGeneratedTokens)
     }
 
@@ -299,7 +302,7 @@ impl Sequence {
         prompt: String,
         prompt_token_ids: Vec<u32>,
         block_size: usize,
-    ) -> Self {
+    ) -> Result<Self, SequenceError> {
         let mut am = Self {
             sequence_id,
             eos_token_id,
@@ -318,8 +321,8 @@ impl Sequence {
         };
 
         // Initialize the logical token blocks with the prompt token ids.
-        am.append_tokens_to_blocks(&prompt_token_ids);
-        am
+        am.append_tokens_to_blocks(&prompt_token_ids)?;
+        Ok(am)
     }
 
     /// Get `output_text`
@@ -359,7 +362,7 @@ impl Sequence {
     /// we allocate a new logical block to accommodate a new `logical_block`, for this purpose. If `token_ids.len()` exceeds
     /// the number of free slots in a `logical_block`, we allocate consecutively more `logical_blocks` to accommodate for the
     /// whole sequence of `token_ids`.
-    fn append_tokens_to_blocks(&mut self, token_ids: &[u32]) {
+    fn append_tokens_to_blocks(&mut self, token_ids: &[u32]) -> Result<(), SequenceError> {
         let mut cursor = 0;
         while cursor < token_ids.len() {
             if self.logical_token_blocks.is_empty() {
@@ -378,9 +381,10 @@ impl Sequence {
             let num_empty_slots = last_block.get_num_empty_slots();
             let start = cursor;
             let end = token_ids.len().min(cursor + num_empty_slots);
-            last_block.append_tokens(&token_ids[start..end]);
+            last_block.append_tokens(&token_ids[start..end])?;
             cursor += num_empty_slots;
         }
+        Ok(())
     }
 
     /// Checks if last block in `Sequence` is full
@@ -397,14 +401,19 @@ impl Sequence {
     }
 
     /// Appends a single token to the `Sequence`
-    pub fn add_token_id(&mut self, token_id: u32, logprobs: HashMap<u32, LogProb>) {
+    pub fn add_token_id(
+        &mut self,
+        token_id: u32,
+        logprobs: HashMap<u32, LogProb>,
+    ) -> Result<(), SequenceError> {
         if logprobs.contains_key(&token_id) {
-            self.append_tokens_to_blocks(&[token_id]);
+            self.append_tokens_to_blocks(&[token_id])?;
             // DON'T PANIC: we have already verified that `token_id` is a valid key in `logprobs`
             let logprob = logprobs.get(&token_id).unwrap().logprob;
             self.sequence_data.add_token_id(token_id, logprob);
             self.output_logprobs.push(logprobs);
         }
+        Ok(())
     }
 
     /// Length of the underlying `Sequence`'s `SequenceData`
@@ -634,15 +643,19 @@ impl SequenceGroup {
     }
 
     /// Adds a `token_id` to a `Sequence` in `SequenceGroup` in place
+    #[instrument]
     pub fn add_token_id_to_seq(
         &self,
         sequence_id: u64,
         token_id: u32,
         logprobs: HashMap<u32, LogProb>,
-    ) {
-        if let Some(sequence) = self.sequences.get(&sequence_id) {
-            sequence.borrow_mut().add_token_id(token_id, logprobs);
+    ) -> Result<(), SequenceError> {
+        if let Some(sequence) = self.sequences.get_mut(&sequence_id) {
+            sequence.add_token_id(token_id, logprobs)?;
+            return Ok(());
         }
+        error!("Missing sequence, with id = {sequence_id}");
+        Err(SequenceError::MissingSequence(sequence_id))
     }
 
     /// Prompt token ids, all the sequences in the `SequenceGroup` should have the same prompt (thus same prompt token ids)
@@ -1179,6 +1192,10 @@ pub enum SequenceError {
     ConstructorError(String),
     #[error("Poison error: `{0}`")]
     PoisonError(String),
+    #[error("Block error: `{0}`")]
+    BlockError(#[from] BlockError),
+    #[error("Missing sequence with id = `{0}`")]
+    MissingSequence(usize),
 }
 
 #[cfg(test)]
@@ -1235,7 +1252,8 @@ pub(crate) mod tests {
             prompt_str,
             prompt_tokens,
             block_size,
-        );
+        )
+        .expect("Failed to create prompt sequence");
         let seq_group = SequenceGroup::new(
             request_id.to_string(),
             vec![prompt.clone()],

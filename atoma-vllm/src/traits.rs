@@ -1,13 +1,13 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
-pub trait DerefRead {
+pub trait BlockReadLock {
     type Error;
     type Inner;
-    fn deref_read(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error>;
+    fn read_lock(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error>;
 }
 
-pub trait DerefWrite {
+pub trait BlockWriteLock {
     type Error;
     type Inner;
-    fn deref_write(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error>;
+    fn write_lock(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error>;
 }

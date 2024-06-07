@@ -4,8 +4,9 @@ use std::{
 };
 
 use thiserror::Error;
+use tracing::{error, info_span, instrument, Span};
 
-use crate::traits::{DerefRead, DerefWrite};
+use crate::traits::{BlockReadLock, BlockWriteLock};
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
@@ -30,6 +31,8 @@ pub struct LogicalTokenBlock {
     token_ids: Vec<u32>,
     /// Number of tokens already allocated
     num_tokens: usize,
+    /// Tracing span
+    span: Span,
 }
 
 impl LogicalTokenBlock {
@@ -40,6 +43,7 @@ impl LogicalTokenBlock {
             block_size,
             token_ids: Vec::with_capacity(block_size),
             num_tokens: 0,
+            span: info_span!("block"),
         }
     }
 
@@ -69,11 +73,17 @@ impl LogicalTokenBlock {
     }
 
     /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
-    pub fn append_tokens(&mut self, token_ids: &[u32]) {
+    #[instrument]
+    pub fn append_tokens(&mut self, token_ids: &[u32]) -> Result<(), BlockError> {
         if token_ids.len() <= self.get_num_empty_slots() {
             self.token_ids.extend(token_ids);
             self.num_tokens += token_ids.len();
+            return Ok(());
         }
+        error!("Not enough space for allocation");
+        Err(BlockError::AllocationError(
+            "Not enough space for allocation".into(),
+        ))
     }
 
     /// Getter for `token_ids`
@@ -186,9 +196,13 @@ impl PhysicalTokenBlock {
     }
 
     /// Decreases the `ref_count` variable by -1, if possible
-    pub fn decrease_ref_count(&mut self) {
+    pub fn decrease_ref_count(&mut self) -> Result<(), BlockError> {
         if self.ref_count > 0 {
             self.ref_count -= 1;
+            Ok(())
+        } else {
+            error!("Reference counter is already zero, trying to dereference once more which should not be possible..");
+            Err(BlockError::ReferenceCountError)
         }
     }
 }
@@ -196,21 +210,15 @@ impl PhysicalTokenBlock {
 /// Sync and Send shared access physical block
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
-impl DerefRead for SyncPhysicalTokenBlock {
-    type Error = BlockError;
-    type Inner = PhysicalTokenBlock;
-
-    fn deref_read(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error> {
+impl BlockReadLock for SyncPhysicalTokenBlock {
+    fn read_lock(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
         self.read()
             .map_err(|e| BlockError::PoisonError(e.to_string()))
     }
 }
 
-impl DerefWrite for SyncPhysicalTokenBlock {
-    type Error = BlockError;
-    type Inner = PhysicalTokenBlock;
-
-    fn deref_write(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error> {
+impl BlockWriteLock for SyncPhysicalTokenBlock {
+    fn write_lock(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
         self.write()
             .map_err(|e| BlockError::PoisonError(e.to_string()))
     }
@@ -220,4 +228,8 @@ impl DerefWrite for SyncPhysicalTokenBlock {
 pub enum BlockError {
     #[error("Poison error: `{0}`")]
     PoisonError(String),
+    #[error("Allocation error: `{0}`Not enough space for allocation")]
+    AllocationError(String),
+    #[error("Reference counter error, it cannot be negative")]
+    ReferenceCountError,
 }

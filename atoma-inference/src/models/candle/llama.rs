@@ -26,12 +26,22 @@ use super::{device, hub_load_safetensors};
 const BOS_TOKEN: &str = "<|begin_of_text|>";
 const EOS_TOKEN: &str = "</s>";
 
+/// `LlamaModel` - encapsulates a Llama model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct LlamaModel {
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The actual Llama model
     model: model::Llama,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
+    /// Llama's configuration
     config: Config,
+    /// The model weights decimal precision
     dtype: DType,
 }
 

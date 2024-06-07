@@ -8,7 +8,6 @@ use candle_transformers::models::stable_diffusion::{
 
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
-use serde::Deserialize;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
@@ -16,64 +15,63 @@ use tracing::{debug, info};
 use crate::{
     bail,
     models::{
-        candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelId, ModelTrait,
+        candle::save_image,
+        config::ModelConfig,
+        types::{ModelType, StableDiffusionInput},
+        ModelError, ModelTrait,
     },
 };
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
-#[derive(Debug, Deserialize)]
-pub struct StableDiffusionInput {
-    pub request_id: Digest,
-    pub prompt: String,
-    pub uncond_prompt: String,
-
-    pub height: Option<usize>,
-    pub width: Option<usize>,
-
-    /// The number of steps to run the diffusion for.
-    pub n_steps: Option<usize>,
-
-    /// The number of samples to generate.
-    pub num_samples: i64,
-
-    pub model: ModelId,
-
-    pub guidance_scale: Option<f64>,
-
-    pub img2img: Option<String>,
-
-    /// The strength, indicates how much to transform the initial image. The
-    /// value must be between 0 and 1, a value of 1 discards the initial image
-    /// information.
-    pub img2img_strength: f64,
-
-    /// The seed to use when generating random samples.
-    pub random_seed: Option<u32>,
-}
-
+/// Stable diffusion load data
 pub struct StableDiffusionLoadData {
+    /// Device
     device: Device,
+    /// DType, for the decimal precision which the
+    /// model should run on
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Size of sliced attention, if applicable
     sliced_attention_size: Option<usize>,
+    /// The image clip file weights paths
     clip_weights_file_paths: Vec<PathBuf>,
+    /// Tokenizer file paths
     tokenizer_file_paths: Vec<PathBuf>,
+    /// Variational auto encoder file weights paths
     vae_weights_file_path: PathBuf,
+    /// Unet file weights paths
     unet_weights_file_path: PathBuf,
+    /// To use or not flash attention
     use_flash_attention: bool,
 }
 
+/// `StableDiffusion` - encapsulates a
+/// Stable diffusion model, together with further metadata
+/// necessary to run inference
 pub struct StableDiffusion {
+    /// Stable diffusion configuration
     config: StableDiffusionConfig,
+    /// Device hosting the model
     device: Device,
+    /// DType, to control model prevision
+    /// while running inference
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The text model, to parse the initial text
     text_model: ClipTextTransformer,
+    /// Optional second text model, for more detailed
+    /// expressivity
     text_model_2: Option<ClipTextTransformer>,
+    /// Tokenizer
     tokenizer: Tokenizer,
+    /// Optional tokenizer
     tokenizer_2: Option<Tokenizer>,
+    /// Unet 2-dimensional model
     unet: UNet2DConditionModel,
+    /// Variational auto-encoder model
     vae: AutoEncoderKL,
 }
 
@@ -323,7 +321,7 @@ impl ModelTrait for StableDiffusion {
         };
         let bsize = 1;
 
-        let model_type = ModelType::from_str(&input.model)?;
+        let model_type = input.model;
         let vae_scale = match model_type {
             ModelType::StableDiffusionV1_5
             | ModelType::StableDiffusionV2_1
@@ -415,6 +413,7 @@ impl ModelTrait for StableDiffusion {
 }
 
 impl ModelType {
+    /// The unet file specifier
     fn unet_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -431,6 +430,7 @@ impl ModelType {
         }
     }
 
+    /// The actual vae file specifier
     fn vae_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -447,6 +447,7 @@ impl ModelType {
         }
     }
 
+    /// The actual clip model file specifier
     fn clip_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -463,6 +464,7 @@ impl ModelType {
         }
     }
 
+    /// The actual clip2 model file specifier
     fn clip2_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -481,6 +483,7 @@ impl ModelType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Model's file
 enum ModelFile {
     Tokenizer,
     Tokenizer2,
@@ -491,6 +494,8 @@ enum ModelFile {
 }
 
 impl ModelFile {
+    /// Get the actual file path, after downloading
+    /// the required model weights/tokenizer
     fn get(
         &self,
         api_key: String,
@@ -547,6 +552,7 @@ impl ModelFile {
 
 impl StableDiffusion {
     #[allow(clippy::too_many_arguments)]
+    /// Performs text embeddings
     fn text_embeddings(
         prompt: &str,
         uncond_prompt: &str,
@@ -603,6 +609,7 @@ impl StableDiffusion {
         Ok(text_embeddings)
     }
 
+    /// Pre-processes image
     fn image_preprocess<T: AsRef<std::path::Path>>(path: T) -> Result<Tensor, ModelError> {
         let img = image::io::Reader::open(path)?.decode()?;
         let (height, width) = (img.height() as usize, img.width() as usize);
@@ -688,7 +695,6 @@ mod tests {
         let random_seed = 42;
 
         let input = StableDiffusionInput {
-            request_id: String::new(),
             prompt: prompt.clone(),
             uncond_prompt,
             height: None,
@@ -696,7 +702,7 @@ mod tests {
             random_seed: Some(random_seed),
             n_steps: None,
             num_samples: 1,
-            model: ModelType::StableDiffusionV1_5.to_string(),
+            model: ModelType::StableDiffusionV1_5,
             guidance_scale: None,
             img2img: None,
             img2img_strength: 1.0,

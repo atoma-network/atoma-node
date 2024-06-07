@@ -23,10 +23,18 @@ use crate::{
     },
 };
 
+/// `MixtralModel` - encapsulates a Mixtral model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct MixtralModel {
+    /// The actual Mistral model
     model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 

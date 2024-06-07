@@ -23,10 +23,18 @@ use crate::models::{
 };
 use candle_transformers::models::quantized_llama as model;
 
+/// `QuantizedModel` - encapsulates a quantized model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct QuantizedModel {
-    model: ModelWeights,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The actual quantized model weights
+    model: ModelWeights,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 

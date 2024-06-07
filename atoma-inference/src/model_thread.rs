@@ -19,8 +19,14 @@ use crate::models::{
     ModelError, ModelId, ModelTrait,
 };
 
+/// `ModelThreadCommand` - Wrapper around an AI inference request to be
+///     processed in the corresponding model thread. It also encapsulates
+///     a `oneshot` `Sender` that is used to send the `Response` back to
+///     the main thread worker.
 pub struct ModelThreadCommand {
+    /// The `Request` body
     pub(crate) request: Request,
+    /// A `oneshot` `Sender` used to send the AI generated `Response`
     pub(crate) sender: oneshot::Sender<Response>,
 }
 
@@ -34,18 +40,30 @@ pub enum ModelThreadError {
     SerdeError(#[from] serde_json::Error),
 }
 
+/// `ModelThreadHandle` - Encapsulates the corresponding Model thread join handle
+///
+/// It also contains a `mpsc` `Sender` that can send new `ModelThreadCommand`'s to
+/// the corresponding model thread.
 pub struct ModelThreadHandle {
+    /// A `mpsc` `Sender` channel, responsible to send new `ModelThreadCommand`
+    /// to the corresponding `Model`'s thread
     sender: mpsc::Sender<ModelThreadCommand>,
+    /// The join handle of the corresponding `Model`'s thread
     join_handle: std::thread::JoinHandle<Result<(), ModelThreadError>>,
 }
 
 impl ModelThreadHandle {
+    /// Stops the current thread from executing
     pub fn stop(self) {
         drop(self.sender);
         self.join_handle.join().ok();
     }
 }
 
+/// `ModelThread` - Wrapper around a `Model`'s thread.
+///
+/// It contains the corresponding AI model, `M`, together with a
+/// `mpsc` `Receiver` channel, listening to incoming `ModelThreadCommand`'s
 pub struct ModelThread<M: ModelTrait> {
     model: M,
     receiver: mpsc::Receiver<ModelThreadCommand>,
@@ -55,6 +73,10 @@ impl<M> ModelThread<M>
 where
     M: ModelTrait,
 {
+    /// Main loop, it listenings to incoming requests, in the form `ModelThreadCommand`.
+    /// When a new request is received, it starts a new inference loop for the encapsulated
+    /// AI model `M`. Once the AI generated output is ready, it sends it back using the corresponding
+    /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
@@ -67,7 +89,14 @@ where
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
-            let response = Response::new(request_id, sampled_node_index, num_sampled_nodes, output);
+            let output_destination = request.output_destination();
+            let response = Response::new(
+                request_id,
+                sampled_node_index,
+                num_sampled_nodes,
+                output,
+                output_destination,
+            );
             sender.send(response).ok();
         }
 
@@ -75,12 +104,19 @@ where
     }
 }
 
+/// `ModelThreadDispatcher` - Responsible for managing incoming requests to
+/// different AI models (being operated each on its own model threads).
 pub struct ModelThreadDispatcher {
+    /// Mapping from each model id to the remove `Sender`'s `ModelThreadCommand`
     pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
+    /// A `FuturesUnordered` containing each generated `Response`'s oneshot receiver.
+    /// It should yield everyime a new AI inference output is generated.
     pub(crate) responses: FuturesUnordered<oneshot::Receiver<Response>>,
 }
 
 impl ModelThreadDispatcher {
+    /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
+    /// that continuously listens to incoming AI inference requests, and processes these.
     pub(crate) fn start(
         config: ModelsConfig,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
@@ -124,6 +160,8 @@ impl ModelThreadDispatcher {
         Ok((model_dispatcher, handles))
     }
 
+    /// Sends a `ModelThreadCommand` instance into the corresponding
+    /// `Model`'s thread, to be processed by the `Model` itself.
     fn send(&self, command: ModelThreadCommand) {
         let model_id = command.request.model();
 
@@ -141,6 +179,7 @@ impl ModelThreadDispatcher {
 }
 
 impl ModelThreadDispatcher {
+    /// Responsible for handling requests from the node's inference JRPC service
     pub(crate) fn run_json_inference(
         &self,
         (request, sender): (Request, oneshot::Sender<Response>),
@@ -148,6 +187,8 @@ impl ModelThreadDispatcher {
         self.send(ModelThreadCommand { request, sender });
     }
 
+    /// Responsible for handling requests from the node's event listener service.
+    /// These correspond to requests that are generated through the Atoma's smart contract.
     pub(crate) fn run_subscriber_inference(&self, request: Request) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand { request, sender });
@@ -155,6 +196,9 @@ impl ModelThreadDispatcher {
     }
 }
 
+/// Contains logic to start a new model thread. This includes setting
+/// HuggingFace's api key, specifying a cache directory for storage of models,
+/// the model's name and type together with the corresponding model configuration.
 pub(crate) fn dispatch_model_thread(
     api_key: String,
     cache_dir: PathBuf,
@@ -284,6 +328,7 @@ pub(crate) fn dispatch_model_thread(
     }
 }
 
+/// Spawns a new model thread
 pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,

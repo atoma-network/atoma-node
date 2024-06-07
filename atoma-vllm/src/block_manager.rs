@@ -8,7 +8,7 @@ use crate::{
     block::{BlockDevice, BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
-    traits::{DerefRead, DerefWrite},
+    traits::{BlockReadLock, BlockWriteLock},
 };
 
 use candle::utils::{cuda_is_available, metal_is_available};
@@ -115,7 +115,7 @@ impl BlockSpaceManager {
         } else {
             // No `Sequence` awaiting to be allocated
             info!("No `Sequence` awaiting to be allocated in `SequenceGroup`");
-            return AllocationStatus::Nothing;
+            AllocationStatus::Nothing
         }
     }
 
@@ -141,7 +141,7 @@ impl BlockSpaceManager {
                     let block = block_table.get(logical_idx % block_sliding_window).unwrap();
                     // TODO: I don't think this code is necessary
                     {
-                        let mut block_guard = match block.deref_write() {
+                        let mut block_guard = match block.write_lock() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
@@ -159,7 +159,7 @@ impl BlockSpaceManager {
                 } else {
                     let block = self.gpu_allocator.allocate()?;
                     {
-                        let mut block_guard = match block.deref_write() {
+                        let mut block_guard = match block.write_lock() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
@@ -255,7 +255,7 @@ impl BlockSpaceManager {
             // We need to append the new token to the last block
             let last_block = block_table.last_mut().unwrap(); // DON'T PANIC: at this point we are sure that `block_table` is non-empty
             {
-                let guard = last_block.deref_read()?;
+                let guard = last_block.read_lock()?;
                 // if !guard.device().is_cuda() {
                 //     error!("Invalid device, it should be a `Cuda` device");
                 //     return Err(BlockSpaceManagerError::InvalidDevice);
@@ -272,8 +272,8 @@ impl BlockSpaceManager {
             self.gpu_allocator.free(last_block.clone())?;
             let (last_block_number, new_block_number) = {
                 (
-                    last_block.deref_read()?.block_number(),
-                    new_block.deref_read()?.block_number(),
+                    last_block.read_lock()?.block_number(),
+                    new_block.read_lock()?.block_number(),
                 )
             };
             *last_block = new_block;
@@ -317,7 +317,7 @@ impl BlockSpaceManager {
         // is only incremented by one, so we deduplicate them
         let mut block_ids = vec![];
         for block in source_block_table.iter() {
-            let mut guard = block.deref_write()?;
+            let mut guard = block.write_lock()?;
             if !block_ids.contains(&guard.block_number()) {
                 guard.increment_ref_count();
             }
@@ -339,7 +339,7 @@ impl BlockSpaceManager {
             if let Some(blocks) = self.block_tables.get(&sequence.borrow().sequence_id()) {
                 for block in blocks {
                     {
-                        let block_id = block.deref_read()?.block_number();
+                        let block_id = block.read_lock()?.block_number();
                         if !block_ids.contains(&block_id) {
                             block_ids.push(block_id);
                             output.push(block.clone());
@@ -396,7 +396,7 @@ impl BlockSpaceManager {
             let mut new_block_table: BlockTable = Vec::new();
             if let Some(block_table) = self.block_tables.get(sequence_id) {
                 for cpu_block in block_table {
-                    let cpu_block_id = { cpu_block.deref_read()?.block_number() };
+                    let cpu_block_id = { cpu_block.read_lock()?.block_number() };
                     let gpu_block = if let Entry::Vacant(e) = mapping.entry(cpu_block_id) {
                         // Create a new block
                         let gpu_block = self.gpu_allocator.allocate()?;
@@ -408,7 +408,7 @@ impl BlockSpaceManager {
                         let gpu_block = mapping.get(&cpu_block_id).unwrap();
                         // Increase the `ref_count` of `gpu_block`
                         {
-                            gpu_block.deref_write()?.increment_ref_count();
+                            gpu_block.write_lock()?.increment_ref_count();
                         }
                         gpu_block.clone()
                     };
@@ -429,7 +429,7 @@ impl BlockSpaceManager {
 
         let mut block_number_mapping = HashMap::with_capacity(mapping.len());
         for (cpu_block_id, gpu_block) in mapping.iter() {
-            let gpu_block_id = { gpu_block.deref_read()?.block_number() };
+            let gpu_block_id = { gpu_block.read_lock()?.block_number() };
             block_number_mapping.insert(*cpu_block_id, gpu_block_id);
         }
         Ok(block_number_mapping)
@@ -465,7 +465,7 @@ impl BlockSpaceManager {
             let mut new_block_table: BlockTable = Vec::new();
             if let Some(block_table) = self.block_tables.get(sequence_id) {
                 for gpu_block in block_table {
-                    let gpu_block_id = { gpu_block.deref_read()?.block_number() };
+                    let gpu_block_id = { gpu_block.read_lock()?.block_number() };
                     let cpu_block = if let Entry::Vacant(e) = mapping.entry(gpu_block_id) {
                         // Create a new block
                         let cpu_block = self.cpu_allocator.allocate()?;
@@ -477,7 +477,7 @@ impl BlockSpaceManager {
                         let cpu_block = mapping.get(&gpu_block_id).unwrap();
                         // Increase the `ref_count` of `gpu_block`
                         {
-                            cpu_block.deref_write()?.increment_ref_count();
+                            cpu_block.write_lock()?.increment_ref_count();
                         }
                         cpu_block.clone()
                     };
@@ -498,7 +498,7 @@ impl BlockSpaceManager {
 
         let mut block_number_mapping = HashMap::with_capacity(mapping.len());
         for (gpu_block_id, cpu_block) in mapping.iter() {
-            let cpu_block_id = { cpu_block.deref_read()?.block_number() };
+            let cpu_block_id = { cpu_block.read_lock()?.block_number() };
             block_number_mapping.insert(*gpu_block_id, cpu_block_id);
         }
         Ok(block_number_mapping)
@@ -521,7 +521,7 @@ impl BlockSpaceManager {
 
         for block in blocks_to_free {
             let block_device = {
-                let block_guard = block.deref_read()?;
+                let block_guard = block.read_lock()?;
                 let block_id = block_guard.block_number();
                 if block_ids.contains(&block_id) {
                     continue;
@@ -585,7 +585,7 @@ impl BlockSpaceManager {
     pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<u64>> {
         self.block_tables.get(sequence_id).and_then(|bt| {
             bt.iter()
-                .map(|b| b.deref_read().map(|ok| ok.block_number()))
+                .map(|b| b.read_lock().map(|ok| ok.block_number()))
                 .collect::<Result<Vec<_>, _>>()
                 .ok()
         })
@@ -610,7 +610,7 @@ impl BlockSpaceManager {
         if let Some(block_table) = self.block_tables.get(sequence_id) {
             for block in block_table {
                 {
-                    block.deref_write()?.set_last_accessed(access_time)
+                    block.write_lock()?.set_last_accessed(access_time)
                 }
             }
         }
@@ -637,7 +637,7 @@ impl BlockSpaceManager {
             for i in (0..max_full_block).rev() {
                 if let Some(block) = block_table.get(i) {
                     {
-                        let mut block_guard = block.deref_write()?;
+                        let mut block_guard = block.write_lock()?;
                         if block_guard.computed() {
                             break;
                         } else {
@@ -667,7 +667,7 @@ impl BlockSpaceManager {
             let mut output = Vec::new();
             for block in block_table[..block_table.len() - 1].iter() {
                 {
-                    let block_guard = block.deref_read()?;
+                    let block_guard = block.read_lock()?;
                     if block_guard.computed() {
                         output.push(block_guard.block_number());
                     }
@@ -822,7 +822,8 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
-        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE);
+        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
+            .expect("Failed to build prompt sequence");
 
         // Fork the `Sequence` (increase `ref_count` by one) so that CoW will be required when we append a new `token_id`
         let child = prompt.fork(2);
@@ -849,11 +850,13 @@ pub(crate) mod tests {
 
         // Fork and append a new token id, we expect CoW to be scheduled
         let token_id = 4;
-        seq_group.add_token_id_to_seq(
-            2, // child sequence id
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        seq_group
+            .add_token_id_to_seq(
+                2, // child sequence id
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to get add token id");
 
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
         // as `child` only contains tokens `[1, 2, 3]` and not the `4`
@@ -913,15 +916,14 @@ pub(crate) mod tests {
             .iter()
             .zip(child_block_table)
             .all(|(pb, cb)| {
-                pb.deref_read().unwrap().block_number() == cb.deref_read().unwrap().block_number()
-                    && pb.deref_read().unwrap().block_size()
-                        == cb.deref_read().unwrap().block_size()
-                    && pb.deref_read().unwrap().computed() == cb.deref_read().unwrap().computed()
-                    && pb.deref_read().unwrap().ref_count() == cb.deref_read().unwrap().ref_count()
-                    && pb.deref_read().unwrap().last_accessed()
-                        == cb.deref_read().unwrap().last_accessed()
-                    && pb.deref_read().unwrap().num_hashed_tokens()
-                        == cb.deref_read().unwrap().num_hashed_tokens()
+                pb.read_lock().unwrap().block_number() == cb.read_lock().unwrap().block_number()
+                    && pb.read_lock().unwrap().block_size() == cb.read_lock().unwrap().block_size()
+                    && pb.read_lock().unwrap().computed() == cb.read_lock().unwrap().computed()
+                    && pb.read_lock().unwrap().ref_count() == cb.read_lock().unwrap().ref_count()
+                    && pb.read_lock().unwrap().last_accessed()
+                        == cb.read_lock().unwrap().last_accessed()
+                    && pb.read_lock().unwrap().num_hashed_tokens()
+                        == cb.read_lock().unwrap().num_hashed_tokens()
             }));
 
         let token_id = 4;
@@ -948,7 +950,7 @@ pub(crate) mod tests {
             .iter()
             .zip(new_child_block_table)
             .all(|(pb, cb)| {
-                pb.deref_read().unwrap().block_number() != cb.deref_read().unwrap().block_number()
+                pb.read_lock().unwrap().block_number() != cb.read_lock().unwrap().block_number()
             }));
     }
 
@@ -1143,7 +1145,8 @@ pub(crate) mod tests {
             "one two three".to_string(),
             vec![1, 2, 3],
             BLOCK_SIZE,
-        );
+        )
+        .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             "1".into(),
             vec![parent.clone()],

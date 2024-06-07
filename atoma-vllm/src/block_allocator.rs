@@ -5,7 +5,7 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockDevice, BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
-    traits::{DerefRead, DerefWrite},
+    traits::{BlockReadLock, BlockWriteLock},
 };
 
 /// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.
@@ -17,6 +17,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BlockAllocator {
     /// Block size
+    #[allow(dead_code)]
     block_size: usize,
     /// Device
     device: BlockDevice,
@@ -56,7 +57,7 @@ impl BlockAllocator {
     /// Allocates a new physical block
     pub fn allocate(&mut self) -> Result<SyncPhysicalTokenBlock, BlockAllocatorError> {
         if let Some(block) = self.free_blocks.pop() {
-            block.deref_write()?.increment_ref_count();
+            block.write_lock()?.increment_ref_count();
             Ok(block)
         } else {
             error!("Out of memory, no available free blocks!");
@@ -68,7 +69,7 @@ impl BlockAllocator {
     #[instrument]
     pub fn free(&mut self, block: SyncPhysicalTokenBlock) -> Result<(), BlockAllocatorError> {
         {
-            let block_guard = block.deref_read()?;
+            let block_guard = block.read_lock()?;
             let block_ref_count = block_guard.ref_count();
             let block_number = block_guard.block_number();
             if block_ref_count == 0 {
@@ -81,8 +82,8 @@ impl BlockAllocator {
         }
 
         let block_clone = block.clone();
-        let mut block_write_guard = block_clone.deref_write()?;
-        block_write_guard.decrease_ref_count();
+        let mut block_write_guard = block_clone.write_lock()?;
+        block_write_guard.decrease_ref_count()?;
 
         if block_write_guard.ref_count() == 0 {
             self.free_blocks.push(block);
@@ -140,7 +141,7 @@ mod tests {
             let block = cpu_allocator.allocate().expect("Failed to allocate block");
             num_free_blocks -= 1;
 
-            let block_id = block.deref_read().unwrap().block_number();
+            let block_id = block.read_lock().unwrap().block_number();
             // Allocated block is not part of free blocks, anymore
             assert!(cpu_allocator.free_blocks.iter().all(|block| block
                 .read()

@@ -6,9 +6,11 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+atoma-helpers.workspace = true
 atoma-types.workspace = true
 config.workspace = true
 futures.workspace = true
+gql_client.workspace = true
 hex.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true
