@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    block::{BlockError, BlockTable, BlockReadLock, BlockWriteLock, SyncPhysicalTokenBlock},
+    block::{BlockError, BlockReadLock, BlockTable, BlockWriteLock, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
 };
