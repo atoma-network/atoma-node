@@ -5,6 +5,7 @@ use std::{
 
 use candle::Device;
 use thiserror::Error;
+use tracing::{error, info_span, instrument, Span};
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
@@ -22,6 +23,8 @@ pub struct LogicalTokenBlock {
     token_ids: Vec<u32>,
     /// Number of tokens already allocated
     num_tokens: usize,
+    /// Tracing span
+    span: Span,
 }
 
 impl LogicalTokenBlock {
@@ -32,6 +35,7 @@ impl LogicalTokenBlock {
             block_size,
             token_ids: Vec::with_capacity(block_size),
             num_tokens: 0,
+            span: info_span!("block"),
         }
     }
 
@@ -61,12 +65,14 @@ impl LogicalTokenBlock {
     }
 
     /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
+    #[instrument]
     pub fn append_tokens(&mut self, token_ids: &[u32]) -> Result<(), BlockError> {
         if token_ids.len() <= self.get_num_empty_slots() {
             self.token_ids.extend(token_ids);
             self.num_tokens += token_ids.len();
             return Ok(());
         }
+        error!("Not enough space for allocation");
         Err(BlockError::AllocationError(
             "Not enough space for allocation".into(),
         ))
@@ -192,6 +198,7 @@ impl PhysicalTokenBlock {
             self.ref_count -= 1;
             Ok(())
         } else {
+            error!("Reference counter is already zero, trying to dereference once more which should not be possible..");
             Err(BlockError::ReferenceCountError)
         }
     }
