@@ -7,6 +7,18 @@ use thiserror::Error;
 
 /// If we are within this amount seconds of the token expiring, we will refresh it
 const EXPIRATION_DELTA: usize = 10;
+const SIGN_IN_URL: fn(&str) -> String = |api_key: &str| {
+    format!(
+        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={}",
+        api_key
+    )
+};
+const REFRESH_URL: fn(&str) -> String = |api_key: &str| {
+    format!(
+        "https://securetoken.googleapis.com/v1/token?key={}",
+        api_key
+    )
+};
 
 /// Firebase Auth struct
 pub struct FirebaseAuth {
@@ -67,10 +79,7 @@ impl FirebaseAuth {
     /// Sign in with email and password
     async fn sign_in(&self) -> Result<SignInResponse, FirebaseAuthError> {
         let client = Client::new();
-        let url = format!(
-            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={}",
-            self.api_key
-        );
+        let url = SIGN_IN_URL(&self.api_key);
         let res = client
             .post(url)
             .json(
@@ -83,10 +92,7 @@ impl FirebaseAuth {
 
     pub async fn refresh(&mut self) -> Result<(), FirebaseAuthError> {
         let client = Client::new();
-        let url = format!(
-            "https://securetoken.googleapis.com/v1/token?key={}",
-            self.api_key
-        );
+        let url = REFRESH_URL(&self.api_key);
         let res = client
             .post(url)
             .json(&json!({"grant_type": "refresh_token", "refresh_token": self.refresh_token}))
