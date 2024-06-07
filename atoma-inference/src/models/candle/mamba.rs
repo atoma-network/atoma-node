@@ -24,13 +24,23 @@ use crate::{
     },
 };
 
+/// `MambaModel` - encapsulates a Mamba model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct MambaModel {
-    model: Model,
-    config: Config,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
-    dtype: DType,
+    /// The actual Mamba model
+    model: Model,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
+    /// mamba's configuration
+    config: Config,
+    /// The model weights decimal precision
+    dtype: DType,
 }
 
 impl MambaModel {
