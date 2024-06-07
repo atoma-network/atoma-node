@@ -18,12 +18,15 @@ use crate::models::token_output_stream::TokenOutputStream;
 use crate::models::types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput};
 use crate::models::{ModelError, ModelTrait};
 
+/// Helper enum to differentiate between Qwen's
+/// MoE model and the base model
 pub enum Model {
     Base(ModelBase),
     MoE(ModelMoe),
 }
 
 impl Model {
+    /// Performs a forward pass, based on the type of Qwen model available
     fn forward(&mut self, input: &Tensor, start_pos: usize) -> Result<Tensor, ModelError> {
         match self {
             Model::Base(ref mut base) => base
@@ -35,6 +38,7 @@ impl Model {
         }
     }
 
+    /// Clears the key-value cache
     fn clear_kv_cache(&mut self) {
         match self {
             Model::Base(m) => m.clear_kv_cache(),
@@ -43,11 +47,20 @@ impl Model {
     }
 }
 
+/// `QwenModel` - encapsulates a Qwen model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct QwenModel {
-    model: Model,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The actual Qwen model
+    model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 

@@ -21,10 +21,18 @@ use crate::{
     },
 };
 
+/// `Phi3Model` - encapsulates a Phi-3 model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct Phi3Model {
+    /// The actual Phi-3 model
     model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 

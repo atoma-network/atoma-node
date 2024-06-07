@@ -15,38 +15,32 @@ pub mod types;
 
 pub type ModelId = String;
 
+/// `ModelTrait` - An interface to host and run inference on any large language model
+///
+/// Such interface abstracts the fetching, loading and running of an LLM. Moreover, it
+/// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
     type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
     type Output: Serialize;
     type LoadData;
 
+    /// Fetching the model, from an external API.
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError>;
+    /// Loading the model from a `LoadData`
     fn load(
         load_data: Self::LoadData,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized;
+    /// Specifies which model is being encapsulated within this type
     fn model_type(&self) -> ModelType;
+    /// Responsible for running inference on a prompt request
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
-}
-
-pub trait Request: Send + 'static {
-    type ModelInput;
-
-    fn into_model_input(self) -> Self::ModelInput;
-    fn requested_model(&self) -> ModelId;
-    fn request_id(&self) -> usize; // TODO: replace with Uuid
-}
-
-pub trait Response: Send + 'static {
-    type ModelOutput;
-
-    fn from_model_output(model_output: Self::ModelOutput) -> Self;
 }
 
 #[derive(Debug, Error)]

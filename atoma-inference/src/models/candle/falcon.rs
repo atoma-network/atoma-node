@@ -23,15 +23,25 @@ use crate::models::{
 
 use super::device;
 
+/// `FalconModel` - encapsulates a Falcon model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct FalconModel {
+    /// The actual Falcon model
     model: Falcon,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The decimal precisions of the model's weights
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 
 impl FalconModel {
+    /// Constructor
     pub fn new(
         model: Falcon,
         device: Device,

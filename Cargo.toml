@@ -8,13 +8,15 @@ members = [
     "atoma-event-subscribe/solana",
     "atoma-event-subscribe/sui",
     "atoma-inference",
+    "atoma-helpers",
     "atoma-networking",
     "atoma-node",
     "atoma-json-rpc",
     "atoma-storage",
     "atoma-types",
     "atoma-output-manager",
-    "atoma-streamer", 
+    "atoma-streamer",
+    "atoma-helpers",
     "atoma-vllm"
 ]
 
@@ -27,12 +29,14 @@ anyhow = "1.0.81"
 async-trait = "0.1.78"
 atoma-client = { path = "./atoma-client/" }
 atoma-crypto = { path = "./atoma-crypto/" }
+atoma-helpers = { path = "./atoma-helpers/" }
 atoma-inference = { path = "./atoma-inference/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-streamer = { path = "./atoma-streamer" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
+bincode = "1.3.3"
 blake2 = "0.10.6"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }
 candle-flash-attn = { git = "https://github.com/huggingface/candle", package = "candle-flash-attn", branch = "main" }
@@ -44,9 +48,13 @@ dotenv = "0.15.0"
 ethers = "2.0.14"
 futures = "0.3.30"
 futures-util = "0.3.30"
+gql_client = "1.0.7"
 hex = "0.4.3"
 hf-hub = "0.3.2"
-image = { version = "0.25.0", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25.0", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 indexmap = "2.2.6"
 metrics = "0.22.3"
 metrics-exporter-prometheus = "0.14.0"
@@ -59,7 +67,7 @@ serde_json = "1.0.114"
 # solana-client = "1.18.9"
 # solana-sdk = "1.18.8"
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk"}
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
 thiserror = "1.0.58"
 tokenizers = "0.15.2"
 tokio = "1.36.0"
