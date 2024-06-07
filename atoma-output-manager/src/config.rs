@@ -8,10 +8,13 @@ use serde::Deserialize;
 pub struct AtomaOutputManagerConfig {
     /// The Atoma's Firebase authentication URI
     pub firebase_uri: PathBuf,
-    /// The node's own Firebase authentication token,
-    /// to be able to perform write operations on the
-    /// Atoma's Firebase storage
-    pub firebase_auth_token: String,
+    /// Currently we use email/password authentication for Firebase
+    /// Email
+    pub firebase_email: String,
+    /// Password
+    pub firebase_password: String,
+    /// The node's Firebase api key
+    pub firebase_api_key: String,
     /// The node's Gateway api key
     pub gateway_api_key: String,
     /// The node's Gateway's bearer token

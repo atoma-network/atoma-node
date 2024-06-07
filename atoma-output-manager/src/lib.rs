@@ -36,8 +36,12 @@ impl AtomaOutputManager {
         output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
     ) -> Self {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
-        let firebase_output_manager =
-            FirebaseOutputManager::new(config.firebase_uri, config.firebase_auth_token.clone());
+        let firebase_output_manager = FirebaseOutputManager::new(
+            config.firebase_uri,
+            config.firebase_email,
+            config.firebase_password,
+            config.firebase_api_key,
+        );
         let gateway_output_manager =
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
         Self {
@@ -84,4 +88,6 @@ pub enum AtomaOutputManagerError {
     GraphQlError(String),
     #[error("Invalid output destiny: `{0}`")]
     InvalidOutputDestiny(String),
+    #[error("Firebase authentication error: `{0}`")]
+    FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
 }

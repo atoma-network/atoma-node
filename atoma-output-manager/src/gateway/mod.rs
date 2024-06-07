@@ -24,9 +24,9 @@ pub struct GatewayOutputManager {
 impl GatewayOutputManager {
     /// Constructor
     pub fn new(api_key: &str, bearer_token: &str) -> Self {
-        let url = format!("{}", GATEWAY_GRAPHQL_ENDPOINT);
+        let url = GATEWAY_GRAPHQL_ENDPOINT.to_string();
         let mut headers = HashMap::new();
-        headers.insert("X-Api-Key", format!("{}", api_key));
+        headers.insert("X-Api-Key", api_key.to_string());
         headers.insert("Authorization", format!("Bearer {}", bearer_token));
         let client = Client::new_with_headers(url, headers);
         info!("Created a new client for the gateway..");

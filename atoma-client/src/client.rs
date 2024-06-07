@@ -90,6 +90,7 @@ impl AtomaSuiClient {
     ///   - The first element as an array of bytes (representing an image byte content),
     ///   - The second element as the image height,
     ///   - The third element as the image width.
+    ///
     ///   These are then combined into a single byte vector where the image data is followed by the height and width.
     fn get_data(&self, data: Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure

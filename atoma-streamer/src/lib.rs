@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use atoma_helpers::FirebaseAuth;
 use atoma_types::Digest;
 use config::AtomaFirebaseStreamerConfig;
 use reqwest::Client;
@@ -17,14 +18,20 @@ pub struct AtomaStreamer {
     firebase_uri: PathBuf,
     streamer_rx: mpsc::Receiver<(Digest, String)>,
     last_streamed_index: HashMap<Digest, usize>,
+    auth: FirebaseAuth,
 }
 
 impl AtomaStreamer {
-    pub fn new(firebase_uri: PathBuf, streamer_rx: mpsc::Receiver<(Digest, String)>) -> Self {
+    pub fn new(
+        firebase_uri: PathBuf,
+        streamer_rx: mpsc::Receiver<(Digest, String)>,
+        auth: FirebaseAuth,
+    ) -> Self {
         Self {
             firebase_uri,
             streamer_rx,
             last_streamed_index: HashMap::new(),
+            auth,
         }
     }
 
@@ -37,6 +44,11 @@ impl AtomaStreamer {
             firebase_uri: config.firebase_uri(),
             streamer_rx,
             last_streamed_index: HashMap::new(),
+            auth: FirebaseAuth::new(
+                config.firebase_email(),
+                config.firebase_password(),
+                config.firebase_api_key(),
+            ),
         }
     }
 
@@ -59,7 +71,10 @@ impl AtomaStreamer {
     ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
         let mut url = self.firebase_uri.clone();
+        let token = self.auth.get_id_token().await?;
+        let local_id = self.auth.get_local_id()?;
         url.push(format!("{tx_digest}.json"));
+        url.push(format!("?auth={token}"));
         info!("Firebase's output url: {:?}", url);
         debug!(
             "Submitting to Firebase's real time storage, the data: {}",
@@ -71,7 +86,7 @@ impl AtomaStreamer {
         tokio::spawn(async move {
             let response = client
                 .patch(url.to_str().unwrap())
-                .json(&json!({index: data}))
+                .json(&json!({index: data, "creatorUid": local_id}))
                 .send()
                 .await
                 .unwrap();
@@ -89,4 +104,6 @@ pub enum AtomaStreamerError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Request error: `{0}`")]
     RequestError(#[from] reqwest::Error),
+    #[error("Firebase authentication error: `{0}`")]
+    FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
 }
