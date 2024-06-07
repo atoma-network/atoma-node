@@ -8,8 +8,7 @@ use tracing::info;
 use crate::AtomaOutputManagerError;
 
 const GATEWAY_GRAPHQL_ENDPOINT: &str = "https://protocol.mygateway.xyz/graphql";
-
-/// Gateway
+const ATOMA_DATA_MODEL_ID: &str = "2a27c67f-64bc-4b23-8121-72c57e5dbb2f";
 
 /// `GatewayOutputManager` - Wrapper around a GraphQL client to interact with the
 ///   Gateway protocol API.
@@ -70,7 +69,7 @@ impl GatewayOutputManager {
                 title: "Atoma's output for ticket id: {ticket_id}",
                 description: "Atoma Node output for ticket id {ticket_id}",
                 owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
-                dataModelId: "d5011a1f-d6df-41ec-970f-36477e554dc2",
+                dataModelId: "{ATOMA_DATA_MODEL_ID}",
                 expirationDate: null,
                 organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
                 claim: {{
