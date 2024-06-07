@@ -119,7 +119,7 @@ impl BlockSpaceManager {
         } else {
             // No `Sequence` awaiting to be allocated
             info!("No `Sequence` awaiting to be allocated in `SequenceGroup`");
-            return AllocationStatus::Nothing;
+            AllocationStatus::Nothing
         }
     }
 
@@ -738,7 +738,8 @@ mod tests {
             prompt_str,
             prompt_tokens,
             block_size,
-        );
+        )
+        .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             request_id.to_string(),
             vec![prompt.clone()],
@@ -828,11 +829,13 @@ mod tests {
         // Add `block_size` number of new tokens and append slot
         for i in 0..BLOCK_SIZE {
             let token_id = i + BLOCK_SIZE + 1;
-            seq_group.add_token_id_to_seq(
-                prompt.sequence_id(),
-                token_id as u32,
-                HashMap::from_iter([(token_id as u32, LogProb::new(0.0, None, None))]),
-            );
+            seq_group
+                .add_token_id_to_seq(
+                    prompt.sequence_id(),
+                    token_id as u32,
+                    HashMap::from_iter([(token_id as u32, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id");
         }
 
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
@@ -862,7 +865,8 @@ mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
-        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE);
+        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
+            .expect("Failed to build prompt sequence");
 
         // Fork the `Sequence` (increase `ref_count` by one) so that CoW will be required when we append a new `token_id`
         let child = prompt.fork(2);
@@ -887,11 +891,13 @@ mod tests {
 
         // Fork and append a new token id, we expect CoW to be scheduled
         let token_id = 4;
-        seq_group.add_token_id_to_seq(
-            2, // child sequence id
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        seq_group
+            .add_token_id_to_seq(
+                2, // child sequence id
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to get add token id");
 
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
         // as `child` only contains tokens `[1, 2, 3]` and not the `4`
@@ -961,10 +967,12 @@ mod tests {
 
         let token_id = 4;
         // Append token to `child` `Sequence`. Block is shared so Copy on Write occurs
-        child.add_token_id(
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        child
+            .add_token_id(
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to add token id");
 
         block_manager
             .append_slots(&child)
@@ -1009,10 +1017,12 @@ mod tests {
             .get_sequence_mut_from_id(prompt.sequence_id())
             .unwrap();
         prompt.set_sequence_status(SequenceStatus::Running);
-        prompt.add_token_id(
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        prompt
+            .add_token_id(
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to add token id");
 
         // make sure we don't incur double mutable access to seq_group
         let prompt = prompt.clone();
@@ -1174,7 +1184,8 @@ mod tests {
             "one two three".to_string(),
             vec![1, 2, 3],
             BLOCK_SIZE,
-        );
+        )
+        .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             "1".into(),
             vec![parent.clone()],
@@ -1218,10 +1229,12 @@ mod tests {
 
         let token_id = 4;
         // Append token to child. Block is shared so copy on write occurs.
-        child.add_token_id(
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        child
+            .add_token_id(
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to add token id");
         block_manager
             .append_slots(&child)
             .expect("Failed to append slots");
@@ -1235,10 +1248,12 @@ mod tests {
         );
 
         let token_id = 5;
-        parent.add_token_id(
-            token_id,
-            HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-        );
+        parent
+            .add_token_id(
+                token_id,
+                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+            )
+            .expect("Failed to add token id");
         block_manager
             .append_slots(&parent)
             .expect("Failed to append slots");

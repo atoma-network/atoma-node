@@ -61,11 +61,15 @@ impl LogicalTokenBlock {
     }
 
     /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
-    pub fn append_tokens(&mut self, token_ids: &[u32]) {
+    pub fn append_tokens(&mut self, token_ids: &[u32]) -> Result<(), BlockError> {
         if token_ids.len() <= self.get_num_empty_slots() {
             self.token_ids.extend(token_ids);
             self.num_tokens += token_ids.len();
+            return Ok(());
         }
+        Err(BlockError::AllocationError(
+            "Not enough space for allocation".into(),
+        ))
     }
 
     /// Getter for `token_ids`
@@ -183,9 +187,12 @@ impl PhysicalTokenBlock {
     }
 
     /// Decreases the `ref_count` variable by -1, if possible
-    pub fn decrease_ref_count(&mut self) {
+    pub fn decrease_ref_count(&mut self) -> Result<(), BlockError> {
         if self.ref_count > 0 {
             self.ref_count -= 1;
+            Ok(())
+        } else {
+            Err(BlockError::ReferenceCountError)
         }
     }
 }
@@ -229,4 +236,8 @@ impl DerefWrite for SyncPhysicalTokenBlock {
 pub enum BlockError {
     #[error("Poison error: `{0}`")]
     PoisonError(String),
+    #[error("Allocation error: `{0}`Not enough space for allocation")]
+    AllocationError(String),
+    #[error("Reference counter error, it cannot be negative")]
+    ReferenceCountError,
 }

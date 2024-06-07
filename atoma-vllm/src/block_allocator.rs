@@ -84,7 +84,7 @@ impl BlockAllocator {
 
         let block_clone = block.clone();
         let mut block_write_guard = block_clone.deref_write()?;
-        block_write_guard.decrease_ref_count();
+        block_write_guard.decrease_ref_count()?;
 
         if block_write_guard.ref_count() == 0 {
             self.free_blocks.push(block);
