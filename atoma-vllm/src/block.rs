@@ -21,7 +21,7 @@ pub enum BlockDevice {
 
 /// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
 /// physical blocks in the KV cache (allocated on the GPU).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LogicalTokenBlock {
     /// Block number
     block_number: usize,
@@ -96,6 +96,8 @@ impl LogicalTokenBlock {
         self.token_ids.last().cloned()
     }
 }
+
+impl Eq for LogicalTokenBlock {}
 
 /// A physical block structure. It represents a contiguous memory KV cache block, usually allocated on the 'physical' GPU.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,16 +213,22 @@ impl PhysicalTokenBlock {
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
 impl BlockReadLock for SyncPhysicalTokenBlock {
-    fn read_lock(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn read_lock(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error> {
         self.read()
-            .map_err(|e| BlockError::PoisonError(e.to_string()))
+            .map_err(|e| Self::Error::PoisonError(e.to_string()))
     }
 }
 
 impl BlockWriteLock for SyncPhysicalTokenBlock {
-    fn write_lock(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn write_lock(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error> {
         self.write()
-            .map_err(|e| BlockError::PoisonError(e.to_string()))
+            .map_err(|e| Self::Error::PoisonError(e.to_string()))
     }
 }
 

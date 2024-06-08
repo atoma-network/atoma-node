@@ -788,11 +788,13 @@ pub(crate) mod tests {
         for i in 0..BLOCK_SIZE {
             let token_id = i + BLOCK_SIZE + 1;
             let sequence_id = { prompt.try_borrow().unwrap().sequence_id() };
-            seq_group.add_token_id_to_seq(
-                sequence_id,
-                token_id as u32,
-                HashMap::from_iter([(token_id as u32, LogProb::new(0.0, None, None))]),
-            );
+            seq_group
+                .add_token_id_to_seq(
+                    sequence_id,
+                    token_id as u32,
+                    HashMap::from_iter([(token_id as u32, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
         }
 
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
@@ -929,10 +931,13 @@ pub(crate) mod tests {
         let token_id = 4;
         // Append token to `child` `Sequence`. Block is shared so Copy on Write occurs
         {
-            child.borrow_mut().add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            );
+            child
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
         }
 
         block_manager
@@ -983,10 +988,13 @@ pub(crate) mod tests {
                 .set_sequence_status(SequenceStatus::Running);
         }
         {
-            prompt.borrow_mut().add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            );
+            prompt
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
         }
 
         // make sure we don't incur double mutable access to seq_group
@@ -1196,10 +1204,13 @@ pub(crate) mod tests {
         let token_id = 4;
         // Append token to child. Block is shared so copy on write occurs.
         {
-            child.borrow_mut().add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            );
+            child
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
         }
         block_manager
             .append_slots(child.try_borrow().unwrap())
@@ -1215,10 +1226,13 @@ pub(crate) mod tests {
 
         let token_id = 5;
         {
-            parent.borrow_mut().add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            );
+            parent
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
         }
         block_manager
             .append_slots(parent.try_borrow().unwrap())

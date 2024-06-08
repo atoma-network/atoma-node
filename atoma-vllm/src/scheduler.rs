@@ -9,7 +9,7 @@ use crate::{
     block_manager::{AllocationStatus, BlockSpaceManager, BlockSpaceManagerError},
     config::{CacheConfig, SchedulerConfig},
     policy::Policy,
-    sequence::{SequenceData, SequenceGroup, SequenceGroupMetadata, SequenceStatus},
+    sequence::{SequenceData, SequenceError, SequenceGroup, SequenceGroupMetadata, SequenceStatus},
 };
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -1616,6 +1616,8 @@ pub enum SchedulerError {
     ChunkedPrefillsNotAllowed(String),
     #[error("Invalid prefill sequence: `{0}`")]
     InvalidPrefillSequences(String),
+    #[error("Sequence error: `{0}`")]
+    SequenceError(#[from] SequenceError),
 }
 
 #[cfg(test)]
@@ -1655,10 +1657,13 @@ mod tests {
         scheduler.running.iter_mut().for_each(|s| {
             for (_, sequence) in s.sequences.iter() {
                 {
-                    sequence.borrow_mut().add_token_id(
-                        token_id,
-                        HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
-                    )
+                    sequence
+                        .borrow_mut()
+                        .add_token_id(
+                            token_id,
+                            HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                        )
+                        .expect("Failed to add token id");
                 }
             }
         });
@@ -1668,10 +1673,13 @@ mod tests {
         let sequence_groups = get_sequence_groups(out);
         for sequence_group in sequence_groups {
             for sequence in sequence_group.sequences.values() {
-                sequence.borrow_mut().add_token_id(
-                    token_id,
-                    HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
-                )
+                sequence
+                    .borrow_mut()
+                    .add_token_id(
+                        token_id,
+                        HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                    )
+                    .expect("Failed to add token id");
             }
         }
     }
@@ -1685,10 +1693,13 @@ mod tests {
             .update_num_computed_tokens(token_chunk_size)
             .expect("Failed ot update number compute tokens");
         for sequence in sequence_group.sequences.values() {
-            sequence.borrow_mut().add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
-            )
+            sequence
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
+                )
+                .expect("Failed to add new token to sequence group")
         }
     }
 

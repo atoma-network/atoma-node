@@ -650,8 +650,8 @@ impl SequenceGroup {
         token_id: u32,
         logprobs: HashMap<u32, LogProb>,
     ) -> Result<(), SequenceError> {
-        if let Some(sequence) = self.sequences.get_mut(&sequence_id) {
-            sequence.add_token_id(token_id, logprobs)?;
+        if let Some(sequence) = self.sequences.get(&sequence_id) {
+            sequence.borrow_mut().add_token_id(token_id, logprobs)?;
             return Ok(());
         }
         error!("Missing sequence, with id = {sequence_id}");
@@ -1195,7 +1195,7 @@ pub enum SequenceError {
     #[error("Block error: `{0}`")]
     BlockError(#[from] BlockError),
     #[error("Missing sequence with id = `{0}`")]
-    MissingSequence(usize),
+    MissingSequence(u64),
 }
 
 #[cfg(test)]
