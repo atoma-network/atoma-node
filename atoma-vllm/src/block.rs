@@ -6,7 +6,7 @@ use std::{
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
 
-use crate::traits::{BlockReadLock, BlockWriteLock};
+use crate::types::{BlockReadLock, BlockWriteLock};
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.

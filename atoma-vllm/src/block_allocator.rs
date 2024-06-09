@@ -5,7 +5,7 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockDevice, BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
-    traits::{BlockReadLock, BlockWriteLock},
+    types::{BlockReadLock, BlockWriteLock},
 };
 
 /// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.
