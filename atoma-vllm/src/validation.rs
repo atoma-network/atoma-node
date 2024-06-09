@@ -9,7 +9,6 @@ use crate::{
 };
 
 const DEFAULT_RANDOM_SEED: u64 = 1_283_768_955;
-const DEFAULT_MAX_NEW_TOKENS: u32 = 64;
 
 /// `Validator` - Responsible for `Request`/`Response` validation
 #[derive(Clone, Debug)]
@@ -212,6 +211,7 @@ impl Validation {
         // If seed is None, assign a default value
         // TODO: how secure is this for Atoma nodes ?
         let random_seed = match random_seed {
+            // TODO: this approach might be unsecure for Atoma nodes
             None => DEFAULT_RANDOM_SEED,
             Some(seed) => {
                 if best_of > 1 {
