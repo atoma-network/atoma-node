@@ -486,8 +486,8 @@ impl<P: Policy> Scheduler<P> {
     ///         scheduling and SchedulerRunningOutputs.
     fn schedule_running(
         &mut self,
-        budget: &mut SchedulingBudget,
         running_queue: VecDeque<SequenceGroup>,
+        budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         info!("Schedule running..");
@@ -629,8 +629,8 @@ impl<P: Policy> Scheduler<P> {
     #[instrument]
     fn schedule_swapped(
         &mut self,
-        budget: &mut SchedulingBudget,
         swapped_queue: VecDeque<SequenceGroup>,
+        budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
         info!("Schedule swapped..");
@@ -898,13 +898,13 @@ impl<P: Policy> Scheduler<P> {
         if prefills.sequence_groups.is_empty() {
             // NOTE: we don't mutate `self.running` in place, instead we clone the `running` queue
             (remaining_running, running_scheduled) =
-                self.schedule_running(&mut budget, remaining_running, false)?;
+                self.schedule_running(remaining_running, &mut budget, false)?;
 
             // If any sequence group is preempted, do not swap in any sequence
             // group, because it means there's no slot for new running requests
             if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
                 (remaining_swapped, swapped_in) =
-                    self.schedule_swapped(&mut budget, remaining_swapped, false)?
+                    self.schedule_swapped(remaining_swapped, &mut budget, false)?
             }
         }
 
@@ -923,7 +923,8 @@ impl<P: Policy> Scheduler<P> {
         }
 
         // To be used later for method output
-        let preempted = running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
+        let preempted: usize =
+            running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
 
         // Update waiting requests
         self.waiting = remaining_waiting;
@@ -1048,13 +1049,13 @@ impl<P: Policy> Scheduler<P> {
 
         // Decoding should be always scheduled first by fcfs
         let (remaining_running, running_scheduled) =
-            self.schedule_running(&mut budget, self.running.clone(), true)?;
+            self.schedule_running(self.running.clone(), &mut budget, true)?;
 
         // Schedule swapped out requests.
         // If preemption happens, it means we don't have space for swap in
         if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
             (remaining_swapped, swapped_in) =
-                self.schedule_swapped(&mut budget, remaining_swapped, true)?;
+                self.schedule_swapped(remaining_swapped, &mut budget, true)?;
         }
 
         // Schedule new prefills.
@@ -2778,7 +2779,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(10_000, 10_000);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped, false)
+            .schedule_swapped(swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 0);
@@ -2824,7 +2825,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(1, 10_000);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped.clone(), false)
+            .schedule_swapped(swapped.clone(), &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 1);
@@ -2837,7 +2838,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(1, 10_000);
         add_token_budget(&mut budget, 1, 0);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, remaining_swapped, false)
+            .schedule_swapped(remaining_swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 1);
@@ -2876,7 +2877,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(10_000, 2);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped, false)
+            .schedule_swapped(swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 2);
@@ -2887,7 +2888,7 @@ mod tests {
 
         // Verify that `num_curr_seqs` is respected
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, remaining_swapped, false)
+            .schedule_swapped(remaining_swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 2);
