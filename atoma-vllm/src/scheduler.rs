@@ -532,10 +532,9 @@ impl<P: Policy> Scheduler<P> {
                         num_running_sequences,
                     );
 
-                    if !running_queue.is_empty() {
+                    if let Some(mut victim_sequence_group) = running_queue.pop_back() {
                         // Preempt the lowest-priority sequence groups first
                         // victim lies at the end of `runnning_queue`, as it is was last in, last out
-                        let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
                         let preempted_mode = self.preempt(
                             &mut victim_sequence_group,
                             &mut blocks_to_swap_out,
@@ -645,9 +644,7 @@ impl<P: Policy> Scheduler<P> {
         let mut swapped_queue = P::sort_by_priority(now, &swapped_queue);
         let mut infeasible_seq_groups = Vec::<SequenceGroup>::new();
 
-        while !swapped_queue.is_empty() {
-            let mut sequence_group = swapped_queue.pop_front().unwrap(); // DON'T PANIC: we are guaranteed that `swapped_queue` is non-empty at this point
-
+        while let Some(mut sequence_group) = swapped_queue.pop_front() {
             // If the sequence group cannot be swapped in, stop.
             let allocation_status = self.block_manager.can_swap_in(&sequence_group)?;
             if allocation_status == AllocationStatus::Later {
@@ -3250,10 +3247,9 @@ mod tests {
                             num_running_sequences,
                         );
 
-                        if !running_queue.is_empty() {
+                        if let Some(mut victim_sequence_group) = running_queue.pop_back() {
                             // Preempt the lowest-priority sequence groups first
                             // victim lies at the end of `runnning_queue`, as it is was last in, last out
-                            let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
                             let preempted_mode = self.preempt(
                                 &mut victim_sequence_group,
                                 &mut blocks_to_swap_out,
@@ -3377,9 +3373,7 @@ mod tests {
             let mut swapped_queue = FcfsPolicy::sort_by_priority(now, &swapped_queue);
             let mut infeasible_seq_groups = Vec::<SequenceGroup>::new();
 
-            while !swapped_queue.is_empty() {
-                let mut sequence_group = swapped_queue.pop_front().unwrap(); // DON'T PANIC: we are guaranteed that `swapped_queue` is non-empty at this point
-
+            while let Some(mut sequence_group) = swapped_queue.pop_front() {
                 // If the sequence group cannot be swapped in, stop.
                 let allocation_status = if let Some(allocation_status) = allocation_status.clone() {
                     allocation_status
