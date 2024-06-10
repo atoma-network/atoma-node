@@ -2,7 +2,8 @@ use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
 use atoma_types::{AtomaOutputMetadata, Digest, Response};
-use bincode::ErrorKind;
+use rmp_serde::Deserializer;
+use serde::Deserialize;
 use serde_json::Value;
 use sui_sdk::{
     json::SuiJsonValue,
@@ -195,7 +196,9 @@ impl AtomaSuiClient {
                 debug!("Got a transaction event: {:?}", event.type_.name.as_str());
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
                     let output = response.response();
-                    let output_destination = bincode::deserialize(&response.output_destination())?;
+                    let output_destination = Deserialize::deserialize(&mut Deserializer::new(
+                        &response.output_destination()[..],
+                    ))?;
                     let output_metadata = AtomaOutputMetadata {
                         transaction_base_58: tx_digest.clone(),
                         node_public_key: self.address.to_string(),
@@ -259,6 +262,6 @@ pub enum AtomaSuiClientError {
     InvalidRequestId,
     #[error("Missing output data")]
     MissingOutputData,
-    #[error("Bincode error: `{0}`")]
-    BincodeError(#[from] Box<ErrorKind>),
+    #[error("Rmp deserialize error: `{0}`")]
+    RmpDeseriliazeError(#[from] rmp_serde::decode::Error),
 }
