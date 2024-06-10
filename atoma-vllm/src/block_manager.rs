@@ -199,13 +199,6 @@ impl BlockSpaceManager {
         num_seqs <= num_free_gpu_blocks
     }
 
-    /// Checks if the last block is already full
-    #[instrument]
-    fn is_last_block_full(&self, sequence: &Sequence) -> bool {
-        let token_ids_len = sequence.length();
-        token_ids_len > 0 && (token_ids_len % sequence.block_size() == 0)
-    }
-
     /// Allocates a new physical slot for a new token
     #[instrument]
     pub fn append_slots(
@@ -231,27 +224,34 @@ impl BlockSpaceManager {
                     ));
                 }
 
-                if self.block_sliding_window.is_some()
-                    && block_table.len() >= self.block_sliding_window.unwrap()
-                {
-                    // Block table has more than `block_sliding_window` blocks, so we might as well
-                    // reuse a block prior to beginning of `block_table.len() - block_sliding_window`
-                    //
-                    // DON'T PANIC: `self.block_sliding_window` is not `None` and
-                    // `block_table.len() % self.block_sliding_window.unwrap() <= block_table.len()`, forcibly
-                    block_table.push(
-                        block_table
-                            .get(block_table.len() % self.block_sliding_window.unwrap())
-                            .unwrap()
-                            .clone(),
-                    );
-                } else {
-                    // In this case, the sequence already has a new logical block to be appended
-                    // we need to allocate a new physical block
-                    let new_block = self.gpu_allocator.allocate()?;
-                    block_table.push(new_block);
+                match self.block_sliding_window {
+                    Some(bsw) => {
+                        if block_table.len() >= bsw {
+                            // Block table has more than `block_sliding_window` blocks, so we might as well
+                            // reuse a block prior to beginning of `block_table.len() - block_sliding_window`
+                            block_table.push(
+                                block_table
+                                    .get(block_table.len() % self.block_sliding_window.unwrap())
+                                    .unwrap()
+                                    .clone(),
+                            );
+                        } else {
+                            // In this case, the sequence already has a new logical block to be appended
+                            // we need to allocate a new physical block
+                            let new_block = self.gpu_allocator.allocate()?;
+                            block_table.push(new_block);
 
-                    return Ok(None);
+                            return Ok(None);
+                        }
+                    }
+                    None => {
+                        // The sequence already has a new logical block to be appended
+                        // we need to allocate a new physical block
+                        let new_block = self.gpu_allocator.allocate()?;
+                        block_table.push(new_block);
+
+                        return Ok(None);
+                    }
                 }
             }
 
