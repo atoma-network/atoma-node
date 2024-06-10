@@ -8,6 +8,7 @@ pub mod block_manager;
 pub mod config;
 pub mod evictor;
 pub mod llm_engine;
+pub mod models;
 pub mod policy;
 pub mod sampling_params;
 pub mod scheduler;
