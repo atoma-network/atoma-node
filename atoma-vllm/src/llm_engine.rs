@@ -3,11 +3,7 @@ use tokio::sync::mpsc;
 use tracing::{info_span, Span};
 
 use crate::{
-    config::{CacheConfig, SchedulerConfig},
-    policy::FcfsPolicy,
-    scheduler::{Scheduler, SchedulerError},
-    types::GenerateRequest,
-    validation::{Validation, ValidationError},
+    config::{CacheConfig, SchedulerConfig}, models::ModelExecutor, policy::FcfsPolicy, scheduler::{Scheduler, SchedulerError}, types::GenerateRequest, validation::{Validation, ValidationError}
 };
 
 /// `LlmEngine` - An LLM engine that receives requests and generates texts.
@@ -18,29 +14,34 @@ use crate::{
 ///    space allocated for intermediate states (aka KV cache). This class utilizes
 ///    iteration-level scheduling and efficient memory management to maximize the
 ///    serving throughput.
-pub struct LlmEngine {
+pub struct LlmEngine<M: ModelExecutor> {
     /// The scheduler, which handles CPU and GPU memory allocation
     scheduler: Scheduler<FcfsPolicy>,
     /// Request validator
     validation: Validation,
+    /// Model executor, responsible for running decoding steps to produce
+    /// AI generated outputs
+    model_executor: M,
     /// Blockchain event requests receiver
     request_receiver: mpsc::UnboundedReceiver<GenerateRequest>,
     /// Tracing span
     span: Span,
 }
 
-impl LlmEngine {
+impl<M: ModelExecutor> LlmEngine<M> {
     /// Constructor
     pub fn new(
         cache_config: CacheConfig,
         scheduler_config: SchedulerConfig,
         validation: Validation,
+        model_executor: M,
         request_receiver: mpsc::UnboundedReceiver<GenerateRequest>,
     ) -> Result<Self, EngineError> {
         let scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)?;
         Ok(Self {
             scheduler,
             validation,
+            model_executor,
             request_receiver,
             span: info_span!("llm-engine"),
         })
