@@ -858,7 +858,7 @@ impl<P: Policy> Scheduler<P> {
     ///
     /// The current policy is designed to optimize the throughput. First,
     /// it batches as many prefill requests as possible. And it schedules
-    ///  decodes. If there's a pressure on GPU memory, decode requests can
+    /// decodes. If there's a pressure on GPU memory, decode requests can
     /// be swapped or preempted.
     #[instrument]
     fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
