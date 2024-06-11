@@ -63,8 +63,12 @@ pub struct SignInResponse {
 }
 
 impl FirebaseAuth {
-    pub fn new(email: String, password: String, api_key: String) -> Self {
-        Self {
+    pub(crate) async fn new(
+        email: String,
+        password: String,
+        api_key: String,
+    ) -> Result<Self, FirebaseAuthError> {
+        let mut res = Self {
             email,
             password,
             id_token: None,
@@ -73,7 +77,33 @@ impl FirebaseAuth {
             expires_in: None,
             requested_at: None,
             local_id: None,
+        };
+        if let Ok(response) = res.sign_in().await {
+            // If we have an account, good, fill the token
+            res.set_from_response(response)?;
+        } else {
+            // If we don't have an account yet, sign up. This will fail if the email is already in use, that means the password is probably wrong
+            let response = res.sign_up().await?;
+            res.set_from_response(response)?;
         }
+        Ok(res)
+    }
+
+    /// Sign up with email and password
+    pub async fn sign_up(&self) -> Result<SignInResponse, FirebaseAuthError> {
+        let client = Client::new();
+        let url = format!(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={}",
+            self.api_key
+        );
+        let res = client
+            .post(url)
+            .json(
+                &json!({"email": self.email, "password": self.password, "returnSecureToken": true}),
+            )
+            .send()
+            .await?;
+        Ok(res.json::<SignInResponse>().await?)
     }
 
     /// Sign in with email and password
@@ -90,6 +120,7 @@ impl FirebaseAuth {
         Ok(res.json::<SignInResponse>().await?)
     }
 
+    // The token is about to expire (or it already has), refresh it
     pub async fn refresh(&mut self) -> Result<(), FirebaseAuthError> {
         let client = Client::new();
         let url = REFRESH_URL(&self.api_key);

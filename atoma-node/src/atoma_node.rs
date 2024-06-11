@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
+use atoma_helpers::Firebase;
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
@@ -38,6 +39,8 @@ impl AtomaNode {
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
         let (output_manager_tx, output_manager_rx) = mpsc::channel(CHANNEL_SIZE);
         let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
+
+        let firebase = Firebase::new();
 
         let model_service_handle = tokio::spawn(async move {
             info!("Spawning Model service..");
@@ -85,9 +88,11 @@ impl AtomaNode {
 
         let atoma_output_manager_handle = {
             let config_path = config_path.clone();
+            let firebase = firebase.clone();
             tokio::spawn(async move {
                 info!("Starting Atoma output manager service..");
-                let atoma_output_manager = AtomaOutputManager::new(config_path, output_manager_rx);
+                let atoma_output_manager =
+                    AtomaOutputManager::new(config_path, output_manager_rx, firebase).await?;
                 atoma_output_manager
                     .run()
                     .await
@@ -97,7 +102,8 @@ impl AtomaNode {
 
         let atoma_streamer_handle = tokio::spawn(async move {
             info!("Starting Atoma streamer service..");
-            let atoma_streamer = AtomaStreamer::new_from_config(config_path, streamer_rx);
+            let atoma_streamer =
+                AtomaStreamer::new_from_config(config_path, streamer_rx, firebase).await?;
             atoma_streamer.run().await.map_err(|e| {
                 error!("Error with Atoma streamer: {e}");
                 AtomaNodeError::AtomaStreamerError(e)
