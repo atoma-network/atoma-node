@@ -13,7 +13,7 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
-    sampling_params::SamplingParams,
+    validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
 };
 
 /// `LogProb` - log probabilities and token ranks.
@@ -261,13 +261,10 @@ impl SequenceData {
 pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
-    /// End of sequence token
-    #[allow(dead_code)]
-    eos_token_id: Option<u32>,
     /// Prompt
     prompt: String,
     /// Prompt associated token ids
-    prompt_token_ids: Vec<u32>,
+    pub prompt_token_ids: Vec<u32>,
     /// Sequence data
     sequence_data: SequenceData,
     /// Block size
@@ -281,14 +278,14 @@ pub struct Sequence {
     #[allow(dead_code)]
     read_offset: usize,
     /// Output generated text
-    output_text: String,
+    pub output_text: String,
     /// List of all possible mappings from each generated output id to its `LogProb`
-    output_logprobs: Vec<HashMap<u32, LogProb>>,
+    pub output_logprobs: Vec<HashMap<u32, LogProb>>,
     /// Sequence status
     sequence_status: SequenceStatus,
     /// Generated tokens
     #[allow(dead_code)]
-    tokens: Vec<String>,
+    pub tokens: Vec<String>,
     /// Span
     #[allow(dead_code)]
     span: Span,
@@ -298,14 +295,12 @@ impl Sequence {
     /// Constructor
     pub fn new(
         sequence_id: u64,
-        eos_token_id: Option<u32>,
         prompt: String,
         prompt_token_ids: Vec<u32>,
         block_size: usize,
     ) -> Result<Self, SequenceError> {
         let mut am = Self {
             sequence_id,
-            eos_token_id,
             prompt,
             prompt_token_ids: prompt_token_ids.clone(),
             sequence_data: SequenceData::new(prompt_token_ids.clone(), vec![]),
@@ -496,7 +491,8 @@ impl Sequence {
                 sequence_length = sequence_length.map(|l| l - 1);
             }
         }
-        self.cumulative_logprob() / (sequence_length.unwrap_or_default() as f32 * length_penalty)
+        self.cumulative_logprob() / (sequence_length.unwrap() as f32 * length_penalty)
+        // DON'T PANIC: sequence length already enforced to be non null
     }
 
     /// Fork a `Sequence`
@@ -565,11 +561,11 @@ pub struct MultiModalData {
     pub data: Tensor,
 }
 
-/// `Sequence` - A group of sequences that are generated from the same prompt.
+/// `SequenceGroup` - A group of sequences that are generated from the same prompt.
 ///
 /// Args:
 ///    `request_id`: The ID of the request.
-///    `seqs`: The list of sequences.
+///    `sequences`: The list of sequences.
 ///    `sampling_params`: The sampling parameters used to generate the outputs.
 ///    `arrival_time`: The arrival time of the request.
 ///    `multi_modal_data`: Multi modal data associated with the request.
@@ -582,16 +578,16 @@ pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
     /// Sequences
-    pub(crate) sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
+    pub sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
     /// Request metrics
-    metrics: RequestMetrics,
-    /// Multi modal data
-    multi_model_data: Option<MultiModalData>,
+    pub metrics: RequestMetrics,
     /// Prompt log probabilities
     #[allow(dead_code)]
-    prompt_logprobs: Option<LogProb>,
-    /// Sampling parameters
-    sampling_params: SamplingParams,
+    pub prompt_logprobs: Option<LogProb>,
+    /// Next token
+    next_token_chooser_params: NextTokenChooserParameters,
+    /// Stopping criteria
+    stopping_criteria: StoppingCriteriaParameters,
     /// State
     state: SequenceGroupState,
 }
@@ -602,10 +598,8 @@ impl SequenceGroup {
         request_id: String,
         sequences: Vec<Sequence>,
         arrival_time: Instant,
-        prompt_logprobs: Option<LogProb>,
-        sampling_params: SamplingParams,
-        multi_model_data: Option<MultiModalData>,
-        state: SequenceGroupState,
+        next_token_chooser_params: NextTokenChooserParameters,
+        stopping_criteria: StoppingCriteriaParameters,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
             return Err(SequenceError::ConstructorError(
@@ -626,10 +620,10 @@ impl SequenceGroup {
                 first_token_time: None,
                 time_in_queue: None,
             },
-            multi_model_data,
-            prompt_logprobs,
-            sampling_params,
-            state,
+            prompt_logprobs: None,
+            next_token_chooser_params,
+            stopping_criteria,
+            state: SequenceGroupState { generator: None },
         })
     }
 
@@ -716,16 +710,10 @@ impl SequenceGroup {
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
     pub fn get_max_num_running_seqs(&self) -> usize {
-        if self.sampling_params.use_beam_search {
+        if self.next_token_chooser_params.best_of > 1 {
             // For beam search, maximally there will always be `best_of` beam
             // candidates running in the future.
-            return self.sampling_params.best_of;
-        }
-        if self.sampling_params.best_of > self.get_num_sequences(None) {
-            // At prompt stage, the sequence group is not yet filled up
-            // and only have one sequence running. However, in the
-            // generation stage, we will have `best_of` sequences running.
-            return self.sampling_params.best_of;
+            return self.next_token_chooser_params.best_of;
         }
         // At sampling stages, return the number of actual sequences
         // that are not finished yet.
@@ -926,14 +914,14 @@ impl SequenceGroup {
         self.state.clone()
     }
 
-    /// Getter for `multi_modal_data`
-    pub fn multi_modal_data(&self) -> Option<MultiModalData> {
-        self.multi_model_data.clone()
+    /// Getter for sampling next token chooser params
+    pub fn next_token_chooser_params(&self) -> NextTokenChooserParameters {
+        self.next_token_chooser_params.clone()
     }
 
-    /// Getter for sampling parameters
-    pub fn sampling_params(&self) -> SamplingParams {
-        self.sampling_params.clone()
+    /// Getter for stopping parameters
+    pub fn stopping_params(&self) -> StoppingCriteriaParameters {
+        self.stopping_criteria.clone()
     }
 }
 
@@ -954,6 +942,7 @@ impl SequenceGroup {
 ///          used in prefix caching.
 ///     `state`: Internal state tied to this sequence group.
 ///     `multi_modal_data`: Multi modal data.
+#[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
     #[allow(dead_code)]
@@ -961,9 +950,11 @@ pub struct SequenceGroupMetadata {
     /// Is prompt (bool)
     #[allow(dead_code)]
     is_prompt: bool,
-    /// Sampling parameters
+    /// Next token chooser parameters
     #[allow(dead_code)]
-    sampling_params: SamplingParams,
+    next_token_chooser_params: NextTokenChooserParameters,
+    /// Stopping criteria parameters
+    stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
     #[allow(dead_code)]
     block_tables: HashMap<u64, Vec<u64>>,
@@ -978,9 +969,6 @@ pub struct SequenceGroupMetadata {
     /// Internal state tied to this sequence group
     #[allow(dead_code)]
     state: SequenceGroupState,
-    /// Optional multi model data
-    #[allow(dead_code)]
-    multi_modal_data: Option<MultiModalData>,
 }
 
 impl SequenceGroupMetadata {
@@ -990,12 +978,12 @@ impl SequenceGroupMetadata {
         request_id: String,
         is_prompt: bool,
         sequence_data: HashMap<u64, SequenceData>,
-        sampling_params: SamplingParams,
+        next_token_chooser_params: NextTokenChooserParameters,
+        stopping_criteria_params: StoppingCriteriaParameters,
         block_tables: HashMap<u64, Vec<u64>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,
-        multi_modal_data: Option<MultiModalData>,
     ) -> Self {
         let token_chunk_size = if let Some(size) = token_chunk_size {
             size
@@ -1013,12 +1001,12 @@ impl SequenceGroupMetadata {
             request_id,
             is_prompt,
             sequence_data,
-            sampling_params,
+            next_token_chooser_params,
+            stopping_criteria_params,
             block_tables,
             do_sample,
             token_chunk_size,
             state,
-            multi_modal_data,
         }
     }
 
@@ -1043,25 +1031,25 @@ pub struct SequenceOutput {
     /// Output token
     pub output_token: u32,
     /// Log probabilities
-    pub logprob: HashMap<u64, LogProb>,
+    pub logprob: HashMap<u32, LogProb>,
 }
 
-/// `CompletionSequenceGroupOutput` - The model output associated with a completion sequence group.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompletionSequenceGroupOutput {
-    pub samples: Vec<SequenceOutput>,
-    pub prompt_logprobs: Vec<HashMap<u64, LogProb>>,
-}
+// /// `CompletionSequenceGroupOutput` - The model output associated with a completion sequence group.
+// #[derive(Clone, Debug, PartialEq)]
+// pub struct CompletionSequenceGroupOutput {
+//     pub samples: Vec<SequenceOutput>,
+//     pub prompt_logprobs: Vec<HashMap<u32, LogProb>>,
+// }
 
-/// `SampledOutput` - For each sequence group, we generate a list of SequenceOutput object,
+/// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
 ///     each of which contains one possible candidate for the next token.
-
+///
 /// This data structure implements methods, so it can be used like a list, but
 ///     also has optional fields for device tensors.
 #[derive(Debug)]
-pub struct SamplerOutput {
-    /// Outputs
-    pub outputs: Vec<CompletionSequenceGroupOutput>,
+pub struct SequenceGroupOutput {
+    /// Outputs, in the form of a mapping from `sequence_id` -> `CompletionSequenceGroupOutput`
+    pub outputs: HashMap<u64, SequenceOutput>,
     /// Sampled token probabilities
     pub sampled_token_probs: Option<Tensor>,
     /// Log probabilities
@@ -1070,30 +1058,6 @@ pub struct SamplerOutput {
     pub sampled_token_ids: Option<Tensor>,
     /// Spec decoder worker metrics
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
-}
-
-impl Index<usize> for SamplerOutput {
-    type Output = CompletionSequenceGroupOutput;
-
-    fn index(&self, idx: usize) -> &Self::Output {
-        &self.outputs[idx]
-    }
-}
-
-impl IndexMut<usize> for SamplerOutput {
-    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        &mut self.outputs[idx]
-    }
-}
-
-impl SamplerOutput {
-    pub fn len(&self) -> usize {
-        self.outputs.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.outputs.is_empty()
-    }
 }
 
 #[derive(Debug)]
@@ -1202,24 +1166,23 @@ pub enum SequenceError {
 pub(crate) mod tests {
     use super::*;
 
-    fn sample_outputs() -> Vec<CompletionSequenceGroupOutput> {
-        (0..5)
+    fn sample_outputs() -> HashMap<u64, SequenceOutput> {
+        (0..5_u64)
             .map(|i| {
-                let sequence_output = SequenceOutput {
-                    parent_sequence_id: 0,
-                    output_token: i,
-                    logprob: HashMap::new(),
-                };
-                CompletionSequenceGroupOutput {
-                    samples: vec![sequence_output],
-                    prompt_logprobs: vec![],
-                }
+                (
+                    i,
+                    SequenceOutput {
+                        parent_sequence_id: 0,
+                        output_token: i as u32,
+                        logprob: HashMap::new(),
+                    },
+                )
             })
             .collect()
     }
 
-    fn sampler_output(sample_outputs: Vec<CompletionSequenceGroupOutput>) -> SamplerOutput {
-        SamplerOutput {
+    fn sampler_output(sample_outputs: HashMap<u64, SequenceOutput>) -> SequenceGroupOutput {
+        SequenceGroupOutput {
             outputs: sample_outputs,
             sampled_token_ids: None,
             sampled_token_probs: None,
@@ -1246,28 +1209,17 @@ pub(crate) mod tests {
             .map(|t| t.to_string())
             .collect::<Vec<String>>()
             .join(" ");
-        let prompt = Sequence::new(
-            request_id,
-            Some(1000),
-            prompt_str,
-            prompt_tokens,
-            block_size,
-        )
-        .expect("Failed to create prompt sequence");
+        let prompt = Sequence::new(request_id, prompt_str, prompt_tokens, block_size)
+            .expect("Failed to create prompt sequence");
         let seq_group = SequenceGroup::new(
             request_id.to_string(),
             vec![prompt.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                use_beam_search,
+            NextTokenChooserParameters {
                 best_of,
                 ..Default::default()
             },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
         )
         .expect("Failed to construct a new sequence group");
 
@@ -1284,32 +1236,6 @@ pub(crate) mod tests {
         assert!(sampler_output.spec_decode_worker_metrics.is_none());
         assert!(sampler_output.sampled_token_ids.is_none());
         assert!(sampler_output.sampled_token_probs.is_none());
-    }
-
-    #[test]
-    fn test_sampler_output_item() {
-        let sample_outputs = sample_outputs();
-        let mut sampler_output = sampler_output(sample_outputs.clone());
-        assert_eq!(sampler_output[2], sample_outputs[2]);
-
-        let sequence_output = SequenceOutput {
-            parent_sequence_id: 0,
-            output_token: 99,
-            logprob: HashMap::new(),
-        };
-        let new_output = CompletionSequenceGroupOutput {
-            samples: vec![sequence_output],
-            prompt_logprobs: vec![],
-        };
-        sampler_output[2] = new_output.clone();
-        assert_eq!(sampler_output[2], new_output)
-    }
-
-    #[test]
-    fn test_sampler_output_len() {
-        let sample_outputs = sample_outputs();
-        let sampler_output = sampler_output(sample_outputs.clone());
-        assert_eq!(sampler_output.len(), sample_outputs.len())
     }
 
     // #[test]

@@ -291,9 +291,9 @@ impl SchedulerOutputs {
 pub struct Scheduler<P> {
     /// Cache configuration
     #[allow(dead_code)]
-    cache_config: CacheConfig,
+    pub(crate) cache_config: CacheConfig,
     /// `Scheduler` configuration
-    scheduler_config: SchedulerConfig,
+    pub(crate) scheduler_config: SchedulerConfig,
     /// `BlockSpaceManager` to handle block resources efficiently
     block_manager: BlockSpaceManager,
     /// Waiting `SequenceGroup` queue
@@ -1238,12 +1238,6 @@ impl<P: Policy> Scheduler<P> {
                 }
             }
 
-            let multi_modal_data = if scheduler_outputs.number_prefill_groups > 0 {
-                sequence_group.multi_modal_data()
-            } else {
-                None
-            };
-
             // It assumes the scheduled_seq_groups is ordered by
             // prefill < decoding.
             let is_prompt = sequence_group.is_prefill();
@@ -1251,12 +1245,12 @@ impl<P: Policy> Scheduler<P> {
                 sequence_group.request_id.clone(),
                 is_prompt,
                 sequence_data,
-                sequence_group.sampling_params(),
+                sequence_group.next_token_chooser_params(),
+                sequence_group.stopping_params(),
                 block_tables,
                 do_sample,
                 Some(token_chunk_size),
                 sequence_group.state(),
-                multi_modal_data,
             );
             sequence_groups_metadata.push(sequence_group_metadata);
         }
@@ -1360,7 +1354,7 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Adds new `SequenceGroup`'s to `waiting` queue
+    /// Adds new `SequenceGroup`'s to the end of the `waiting` queue
     pub fn add_sequence_group(&mut self, sequence_group: SequenceGroup) {
         self.waiting.push_back(sequence_group)
     }
@@ -1571,17 +1565,33 @@ impl<P: Debug> Scheduler<P> {
         });
         Ok(())
     }
+
+    /// Frees a sequence from a block table
+    #[instrument(skip(self))]
+    pub fn free_finished_sequence(&mut self) {
+        self.running = self
+            .running
+            .iter()
+            .filter_map(|s| {
+                if !s.is_finished() {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
 }
 
 /// A `SequenceGroup` that has been scheduled
 #[derive(Debug)]
-struct ScheduledSequenceGroup {
+pub struct ScheduledSequenceGroup {
     /// Sequence group
-    scheduled_group: SequenceGroup,
+    pub scheduled_group: SequenceGroup,
     /// The total chunk size (number of tokens) to process for next iteration.
     /// 1 for decoding. Same as prompt tokens for prefill, but if prefill is
     /// chunked, it can be smaller than that.
-    token_chunk_size: usize,
+    pub token_chunk_size: usize,
 }
 
 #[derive(Debug, Error)]
@@ -1880,8 +1890,8 @@ mod tests {
                 .unwrap()
                 .clone();
             assert_eq!(
-                running_sequence_group.sampling_params(),
-                sequence_group.sampling_params()
+                running_sequence_group.next_token_chooser_params(),
+                sequence_group.next_token_chooser_params()
             );
             assert_eq!(
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),
@@ -1921,8 +1931,12 @@ mod tests {
                 .unwrap()
                 .clone();
             assert_eq!(
-                running_sequence_group.sampling_params(),
-                sequence_group.sampling_params()
+                running_sequence_group.next_token_chooser_params(),
+                sequence_group.next_token_chooser_params()
+            );
+            assert_eq!(
+                running_sequence_group.stopping_params(),
+                sequence_group.stopping_params(),
             );
             assert_eq!(
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),

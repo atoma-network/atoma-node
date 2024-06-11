@@ -711,10 +711,7 @@ pub enum BlockSpaceManagerError {
 pub(crate) mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{
-        sampling_params::SamplingParams,
-        sequence::{tests::create_dummy_prompt, LogProb, SequenceGroupState},
-    };
+    use crate::sequence::{tests::create_dummy_prompt, LogProb};
 
     use super::*;
 
@@ -824,7 +821,7 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
-        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
+        let prompt = Sequence::new(0, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
             .expect("Failed to build prompt sequence");
 
         // Fork the `Sequence` (increase `ref_count` by one) so that CoW will be required when we append a new `token_id`
@@ -835,14 +832,8 @@ pub(crate) mod tests {
             0.to_string(),
             vec![prompt.clone(), child.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                ..Default::default()
-            },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
+            Default::default(),
         )
         .expect("Failed to construct a new `SequenceGroup`");
 
@@ -1147,26 +1138,14 @@ pub(crate) mod tests {
             NUM_GPU_BLOCKS
         );
 
-        let parent = Sequence::new(
-            1,
-            None,
-            "one two three".to_string(),
-            vec![1, 2, 3],
-            BLOCK_SIZE,
-        )
-        .expect("Failed to build prompt sequence");
+        let parent = Sequence::new(1, "one two three".to_string(), vec![1, 2, 3], BLOCK_SIZE)
+            .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             "1".into(),
             vec![parent.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                ..Default::default()
-            },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
+            Default::default(),
         )
         .expect("Failed to get `SequenceGroup`");
         let parent = seq_group.sequences.values().next().unwrap().clone();

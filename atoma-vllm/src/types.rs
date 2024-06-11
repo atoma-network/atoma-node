@@ -17,6 +17,8 @@ pub trait BlockWriteLock {
 /// `GenerateRequest` - LLM inference request
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenerateRequest {
+    /// The request id
+    pub request_id: String,
     /// Inputs in the form of a `String`
     pub inputs: String,
     /// Generation parameters
@@ -39,6 +41,8 @@ pub struct GenerateParameters {
     /// Penalize new tokens based on their existing frequency in the text so far,
     /// decreasing the model's likelihood to repeat the same line verbatim
     pub frequency_penalty: Option<f32>,
+    /// Don't repeat last n tokens
+    pub repeat_last_n: Option<u64>,
     /// The number of highest probability vocabulary tokens to keep for top-k-filtering
     pub top_k: Option<u32>,
     /// Top-p value for nucleus sampling
@@ -78,6 +82,7 @@ fn default_parameters() -> GenerateParameters {
         return_full_text: None,
         stop: Vec::new(),
         truncate: None,
+        repeat_last_n: None,
         decoder_input_details: false,
         random_seed: None,
         top_n_tokens: None,
