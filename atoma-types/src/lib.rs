@@ -606,8 +606,8 @@ impl Response {
     }
 
     /// Getter for `output_destination`
-    pub fn output_destination(&self) -> Vec<u8> {
-        self.output_destination.clone()
+    pub fn output_destination(&self) -> &[u8] {
+        self.output_destination.as_slice()
     }
 
     /// Getter for `output_type`
