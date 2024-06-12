@@ -183,6 +183,28 @@ impl LlmEngine {
                     sequence.borrow_mut().tokens.push(generated_token);
                 }
             }
+
+            // add metrics
+            let arrival_time_histogram = metrics::histogram!("sequence-group-arrival-time");
+            arrival_time_histogram.record(
+                scheduled_sequence_group
+                    .scheduled_group
+                    .metrics
+                    .borrow()
+                    .arrival_time
+                    .elapsed()
+                    .as_secs_f32(),
+            );
+            let last_token_time_histogram = metrics::histogram!("sequence-group-last-token-time");
+            last_token_time_histogram.record(
+                scheduled_sequence_group
+                    .scheduled_group
+                    .metrics
+                    .borrow()
+                    .last_token_time
+                    .elapsed()
+                    .as_secs_f32(),
+            );
         }
 
         // Free all finished sequence groups
@@ -270,6 +292,7 @@ impl LlmEngine {
     /// 3. Once the execution is complete, the `self.model_thread_dispatcher.responses`
     ///     `FuturesUnordered` should be able to poll next `response`. This is executed
     ///     through the main loop in the `self.run()` main method.
+    ///
     #[instrument(skip(self))]
     pub fn step(&mut self) -> Result<(), EngineError> {
         // 1. Schedule new requests
