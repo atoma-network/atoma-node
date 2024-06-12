@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{AtomaOutputMetadata, Digest, Response};
+use atoma_types::{AtomaOutputMetadata, Digest, OutputType, Response};
 use rmp_serde::Deserializer;
 use serde::Deserialize;
 use serde_json::Value;
@@ -34,7 +34,7 @@ pub struct AtomaSuiClient {
     response_rx: mpsc::Receiver<Response>,
     /// A mpsc sender, responsible to send the actual output to the `OutputManager` service (for being shared with an end user or protocol)
     /// It sends a tuple, containing the output's metadata and the actual output (in JSON format).
-    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, serde_json::Value)>,
+    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
 }
 
 impl AtomaSuiClient {
@@ -48,7 +48,7 @@ impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
@@ -72,12 +72,12 @@ impl AtomaSuiClient {
     /// Inputs:
     ///     `config_path` - Path for the configuration file, which is deserialized into an `AtomaSuiClientConfig`.
     ///     `response_rx` - A mpsc receiver, associated to a `Response`.
-    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for
+    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`AtomaOutputMetadata`, `String`), responsible for
     ///         sharing the actual output with the `OutputManager` service.
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
         Self::new_from_config(config, response_rx, output_manager_tx)
@@ -200,6 +200,15 @@ impl AtomaSuiClient {
                         &response.output_destination()[..],
                     ))?;
                     let output_type = response.output_type();
+                    let output = match output_type {
+                        OutputType::Text => output["text"]
+                            .as_str()
+                            .ok_or(AtomaSuiClientError::MissingOutputData)?
+                            .to_string(),
+                        OutputType::Image => {
+                            todo!()
+                        }
+                    };
                     let output_metadata = AtomaOutputMetadata {
                         transaction_base_58: tx_digest.clone(),
                         node_public_key: self.address.to_string(),
@@ -253,7 +262,7 @@ pub enum AtomaSuiClientError {
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(AtomaOutputMetadata, Value)>),
+    SendError(#[from] mpsc::error::SendError<(AtomaOutputMetadata, String)>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]
