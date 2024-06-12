@@ -2,8 +2,8 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
-    ops::{Index, IndexMut},
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -283,6 +283,8 @@ pub struct Sequence {
     pub output_logprobs: Vec<HashMap<u32, LogProb>>,
     /// Sequence status
     sequence_status: SequenceStatus,
+    /// Stop reason:
+    pub stop_reason: Option<u32>,
     /// Generated tokens
     #[allow(dead_code)]
     pub tokens: Vec<String>,
@@ -311,6 +313,7 @@ impl Sequence {
             output_logprobs: vec![],
             output_text: String::new(),
             sequence_status: SequenceStatus::Waiting,
+            stop_reason: None,
             tokens: vec![],
             span: info_span!("sequence"),
         };
@@ -580,7 +583,7 @@ pub struct SequenceGroup {
     /// Sequences
     pub sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
     /// Request metrics
-    pub metrics: RequestMetrics,
+    pub metrics: Rc<RefCell<RequestMetrics>>,
     /// Prompt log probabilities
     #[allow(dead_code)]
     pub prompt_logprobs: Option<LogProb>,
@@ -612,14 +615,14 @@ impl SequenceGroup {
                 .into_iter()
                 .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
                 .collect(),
-            metrics: RequestMetrics {
+            metrics: Rc::new(RefCell::new(RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
                 finished_time: None,
                 first_scheduled_time: None,
                 first_token_time: None,
                 time_in_queue: None,
-            },
+            })),
             prompt_logprobs: None,
             next_token_chooser_params,
             stopping_criteria,
@@ -666,8 +669,10 @@ impl SequenceGroup {
         if self.is_prefill() {
             return Err(SequenceError::WhileInPrefix);
         }
-        let latency = now - self.metrics.last_token_time;
-        self.metrics.last_token_time = now;
+        let latency = { now - self.metrics.borrow().last_token_time };
+        {
+            self.metrics.borrow_mut().last_token_time = now;
+        }
         Ok(latency)
     }
 
@@ -684,28 +689,37 @@ impl SequenceGroup {
             .next()
             .map(|(_, s)| s.borrow().get_output_len())
             .unwrap_or_default();
-        if self.metrics.first_token_time.is_none() && initial_seq_len == 1 {
-            self.metrics.first_token_time = Some(time);
+        let first_token_time = { self.metrics.borrow().first_token_time };
+        if first_token_time.is_none() && initial_seq_len == 1 {
+            self.metrics.borrow_mut().first_token_time = Some(time);
         }
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
-    pub fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
-        if self.metrics.first_scheduled_time.is_none() {
-            self.metrics.first_scheduled_time = Some(time);
-            self.metrics.time_in_queue = Some(time - self.metrics.arrival_time);
+    pub fn maybe_set_first_scheduled_time(&self, time: Instant) {
+        let (arrival_time, first_scheduled_time) = {
+            (
+                self.metrics.borrow().arrival_time,
+                self.metrics.borrow().first_scheduled_time,
+            )
+        };
+        if first_scheduled_time.is_none() {
+            {
+                self.metrics.borrow_mut().first_scheduled_time = Some(time);
+            }
+            self.metrics.borrow_mut().time_in_queue = Some(time - arrival_time);
         }
     }
 
     /// Sets finished time
     #[allow(dead_code)]
     fn set_finished_time(&mut self, time: Instant) {
-        self.metrics.finished_time = Some(time);
+        self.metrics.borrow_mut().finished_time = Some(time);
     }
 
     /// Get `SequenceGroup`'s arrival time
     pub fn arrival_time(&self) -> Instant {
-        self.metrics.arrival_time
+        self.metrics.borrow().arrival_time
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
@@ -945,29 +959,22 @@ impl SequenceGroup {
 #[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
-    #[allow(dead_code)]
     request_id: String,
     /// Is prompt (bool)
-    #[allow(dead_code)]
     is_prompt: bool,
     /// Next token chooser parameters
-    #[allow(dead_code)]
     next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria parameters
     stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    #[allow(dead_code)]
     block_tables: HashMap<u64, Vec<u64>>,
     /// Do sample (bool)
-    #[allow(dead_code)]
     do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
     /// Sequence data
-    #[allow(dead_code)]
     sequence_data: HashMap<u64, SequenceData>,
     /// Internal state tied to this sequence group
-    #[allow(dead_code)]
     state: SequenceGroupState,
 }
 
@@ -1046,7 +1053,7 @@ pub struct SequenceOutput {
 ///
 /// This data structure implements methods, so it can be used like a list, but
 ///     also has optional fields for device tensors.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SequenceGroupOutput {
     /// Outputs, in the form of a mapping from `sequence_id` -> `CompletionSequenceGroupOutput`
     pub outputs: HashMap<u64, SequenceOutput>,
@@ -1058,6 +1065,24 @@ pub struct SequenceGroupOutput {
     pub sampled_token_ids: Option<Tensor>,
     /// Spec decoder worker metrics
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
+}
+
+impl SequenceGroupOutput {
+    // Creates an empty instance of `Self`
+    pub fn empty() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    /// Checks if the current instance is empty
+    pub fn is_empty(&self) -> bool {
+        self.outputs.is_empty()
+            && self.sampled_token_ids.is_none()
+            && self.logprobs.is_none()
+            && self.sampled_token_ids.is_none()
+            && self.spec_decode_worker_metrics.is_none()
+    }
 }
 
 #[derive(Debug)]
@@ -1093,56 +1118,59 @@ pub struct SpecDecodeWorkerMetrics {
 }
 
 /// `ExecuteModelRequest` - The model execution request
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExecuteModelRequest {
     /// The sequence group metadata list
-    #[allow(dead_code)]
-    seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
+    sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
-    blocks_to_swap_in: Vec<(i32, i32)>,
+    blocks_to_swap_in: HashMap<u64, u64>,
     /// Blocks to swap out. List of GPU -> CPU block number
-    blocks_to_swap_out: Vec<(i32, i32)>,
+    blocks_to_swap_out: HashMap<u64, u64>,
     /// Blocks to copy. Source to dest block
-    blocks_to_copy: Vec<(i32, i32)>,
-    /// The number of slots for lookahead decoding
-    num_lookahead_slots: i32,
+    blocks_to_copy: HashMap<u64, u64>,
     /// The number of requests in the running queue
-    running_queue_size: i32,
+    running_queue_size: usize,
 }
 
 impl ExecuteModelRequest {
     /// Constructor
     pub fn new(
-        seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
-        blocks_to_swap_in: Vec<(i32, i32)>,
-        blocks_to_swap_out: Vec<(i32, i32)>,
-        blocks_to_copy: Vec<(i32, i32)>,
-        num_lookahead_slots: i32,
-        running_queue_size: i32,
+        sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
+        blocks_to_swap_in: HashMap<u64, u64>,
+        blocks_to_swap_out: HashMap<u64, u64>,
+        blocks_to_copy: HashMap<u64, u64>,
+        running_queue_size: usize,
     ) -> Self {
         Self {
-            seq_group_metadata_list,
+            sequence_groups_metadata,
             blocks_to_swap_in,
             blocks_to_swap_out,
             blocks_to_copy,
-            num_lookahead_slots,
             running_queue_size,
         }
     }
 
-    /// Clone the request with a new sequence group metadata list.
-    pub fn clone_with_seq_group_metadata_list(
-        &self,
-        seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
-    ) -> Self {
+    /// Creates a new empty instance. This is useful
+    /// to communicate to the `ModelExecutor` service
+    /// when there is no scheduled running sequences,
+    /// and therefore we should just wait until
+    /// new requests arrive
+    pub fn empty() -> Self {
         Self {
-            seq_group_metadata_list,
-            blocks_to_swap_in: self.blocks_to_swap_in.clone(),
-            blocks_to_swap_out: self.blocks_to_swap_out.clone(),
-            blocks_to_copy: self.blocks_to_copy.clone(),
-            num_lookahead_slots: self.num_lookahead_slots,
-            running_queue_size: self.running_queue_size,
+            sequence_groups_metadata: vec![],
+            blocks_to_copy: HashMap::default(),
+            blocks_to_swap_in: HashMap::default(),
+            blocks_to_swap_out: HashMap::default(),
+            running_queue_size: 0,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sequence_groups_metadata.is_empty()
+            && self.blocks_to_copy.is_empty()
+            && self.blocks_to_swap_in.is_empty()
+            && self.blocks_to_swap_out.is_empty()
+            && self.running_queue_size == 0
     }
 }
 

@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
     marker::PhantomData,
+    sync::Arc,
     time::Instant,
 };
 
@@ -240,27 +241,23 @@ impl SchedulerPrefillOutputs {
 #[derive(Debug)]
 pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
-    scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
+    pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
     /// Number of prefill groups scheduled.
     number_prefill_groups: usize,
     /// Total number of batched tokens.
     #[allow(dead_code)]
     num_batched_tokens: usize,
     /// Blocks to swap in. List of CPU -> GPU block number.
-    #[allow(dead_code)]
-    blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<u64, u64>,
     /// Blocks to swap out. List of GPU -> CPU block number.
-    #[allow(dead_code)]
-    blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<u64, u64>,
     /// Blocks to copy. Source to dest block.
-    #[allow(dead_code)]
-    blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<u64, u64>,
     /// Ignored sequence groups
     #[allow(dead_code)]
     ignored_seq_groups: Vec<SequenceGroup>,
     /// The number of requests in the running queue
-    #[allow(dead_code)]
-    running_queue_size: usize,
+    pub running_queue_size: usize,
     /// Number of preempted sequnce groups
     #[allow(dead_code)]
     preempted: usize,
@@ -280,6 +277,14 @@ impl SchedulerOutputs {
             ));
         }
         Ok(())
+    }
+
+    /// Checks if the current instance is empty
+    pub fn is_empty(&self) -> bool {
+        self.scheduled_sequence_groups.is_empty()
+            && self.blocks_to_swap_in.is_empty()
+            && self.blocks_to_swap_out.is_empty()
+            && self.blocks_to_copy.is_empty()
     }
 }
 
@@ -1176,7 +1181,7 @@ impl<P: Policy> Scheduler<P> {
     #[instrument]
     pub fn schedule(
         &mut self,
-    ) -> Result<(Vec<SequenceGroupMetadata>, SchedulerOutputs), SchedulerError> {
+    ) -> Result<(Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs), SchedulerError> {
         let scheduler_outputs = self.schedule_()?;
         let now = Instant::now();
 
@@ -1241,7 +1246,7 @@ impl<P: Policy> Scheduler<P> {
             // It assumes the scheduled_seq_groups is ordered by
             // prefill < decoding.
             let is_prompt = sequence_group.is_prefill();
-            let sequence_group_metadata = SequenceGroupMetadata::new(
+            let sequence_group_metadata = Arc::new(SequenceGroupMetadata::new(
                 sequence_group.request_id.clone(),
                 is_prompt,
                 sequence_data,
@@ -1251,7 +1256,7 @@ impl<P: Policy> Scheduler<P> {
                 do_sample,
                 Some(token_chunk_size),
                 sequence_group.state(),
-            );
+            ));
             sequence_groups_metadata.push(sequence_group_metadata);
         }
 
@@ -1649,7 +1654,7 @@ mod tests {
 
     fn schedule_and_update_computed_tokens(
         scheduler: &mut Scheduler<FcfsPolicy>,
-    ) -> (Vec<SequenceGroupMetadata>, SchedulerOutputs) {
+    ) -> (Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs) {
         let (metadatas, mut outputs) = scheduler.schedule().expect("Failed to schedule");
         for (s, meta) in outputs
             .scheduled_sequence_groups

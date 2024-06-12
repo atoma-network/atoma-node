@@ -66,6 +66,8 @@ pub struct GenerateParameters {
     pub random_seed: Option<u64>,
     /// The number of highest probability vocabulary tokens to keep for top-n-filtering.
     pub top_n_tokens: Option<u32>,
+    /// Top n sequences to generate
+    pub n: usize,
 }
 
 fn default_parameters() -> GenerateParameters {
@@ -86,5 +88,6 @@ fn default_parameters() -> GenerateParameters {
         decoder_input_details: false,
         random_seed: None,
         top_n_tokens: None,
+        n: 1,
     }
 }

@@ -140,6 +140,7 @@ impl Validation {
             random_seed,
             decoder_input_details,
             top_n_tokens,
+            n,
             ..
         } = request.parameters;
 
@@ -260,6 +261,7 @@ impl Validation {
             typical_p,
             do_sample,
             random_seed,
+            n,
         };
         let stopping_parameters = StoppingCriteriaParameters {
             max_new_tokens,
@@ -272,6 +274,7 @@ impl Validation {
 
         let input_token_len = encoding.len();
         Ok(ValidGenerateRequest {
+            request_id: request.request_id,
             inputs,
             decoder_input_details,
             encoding,
@@ -289,6 +292,8 @@ impl Validation {
 /// `GenerateRequest`, after input validation has
 /// taken place
 pub(crate) struct ValidGenerateRequest {
+    /// The request id
+    pub request_id: String,
     /// Inputs, in the form of a `String`
     pub inputs: String,
     /// Input tokenizer encoding
@@ -313,6 +318,8 @@ pub(crate) struct ValidGenerateRequest {
 /// forward pass of a LLM
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NextTokenChooserParameters {
+    /// Top n sequences
+    pub n: usize,
     /// best of sequences
     pub best_of: usize,
     /// exponential scaling output probability distribution
