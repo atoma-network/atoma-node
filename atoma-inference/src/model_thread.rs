@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
-use atoma_types::{Digest, Request, Response};
+use atoma_types::{Digest, OutputType, PromptParams, Request, Response};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
@@ -86,6 +86,10 @@ where
             let sampled_node_index = request.sampled_node_index();
             let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();
+            let output_type = match params {
+                PromptParams::Text2ImagePromptParams(_) => OutputType::Image,
+                PromptParams::Text2TextPromptParams(_) => OutputType::Text,
+            };
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
@@ -96,6 +100,7 @@ where
                 num_sampled_nodes,
                 output,
                 output_destination,
+                output_type,
             );
             sender.send(response).ok();
         }

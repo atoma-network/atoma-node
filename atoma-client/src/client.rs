@@ -199,6 +199,7 @@ impl AtomaSuiClient {
                     let output_destination = Deserialize::deserialize(&mut Deserializer::new(
                         &response.output_destination()[..],
                     ))?;
+                    let output_type = response.output_type();
                     let output_metadata = AtomaOutputMetadata {
                         transaction_base_58: tx_digest.clone(),
                         node_public_key: self.address.to_string(),
@@ -211,6 +212,7 @@ impl AtomaSuiClient {
                         commitment_root_hash: root.to_vec(),
                         leaf_hash: pre_image.to_vec(),
                         output_destination,
+                        output_type,
                     };
 
                     self.output_manager_tx
