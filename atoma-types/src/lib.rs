@@ -611,7 +611,7 @@ impl Response {
     }
 
     /// Getter for `output_type`
-    pub fn output_type(&self) -> OutputType { 
+    pub fn output_type(&self) -> OutputType {
         self.output_type
     }
 }
@@ -642,12 +642,12 @@ pub enum OutputDestination {
 
 /// `OutputType` - enum encapsulating the output type (e.g. `Text`, `Image`, etc)
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum OutputType { 
+pub enum OutputType {
     Text,
     Image,
 }
 
-impl std::fmt::Display for OutputType { 
+impl std::fmt::Display for OutputType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OutputType::Text => write!(f, "Text"),
@@ -685,7 +685,7 @@ pub struct AtomaOutputMetadata {
     /// The output destiny
     pub output_destination: OutputDestination,
     /// The output type (e.g. `Text`, `Image`)
-    pub output_type: OutputType
+    pub output_type: OutputType,
 }
 
 mod utils {
