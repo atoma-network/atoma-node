@@ -5,6 +5,10 @@
 pub mod block;
 pub mod block_allocator;
 pub mod block_manager;
+pub mod config;
 pub mod evictor;
+pub mod policy;
 pub mod sampling_params;
+pub mod scheduler;
 pub mod sequence;
+pub mod traits;

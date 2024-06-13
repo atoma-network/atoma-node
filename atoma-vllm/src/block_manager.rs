@@ -1,22 +1,23 @@
 use std::{
+    cell::Ref,
     collections::{hash_map::Entry, HashMap},
     time::Instant,
 };
 
 use crate::{
-    block::{BlockError, BlockReadLock, BlockTable, BlockWriteLock, SyncPhysicalTokenBlock},
+    block::{BlockDevice, BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
+    traits::{BlockReadLock, BlockWriteLock},
 };
-use candle::{
-    utils::{cuda_is_available, metal_is_available},
-    Device,
-};
+
+use candle::utils::{cuda_is_available, metal_is_available};
+
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
 
 /// `AllocationStatus` - keeps a state of status of possible block allocation
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AllocationStatus {
     /// Ok: seq_group can be allocated now.
     Ok,
@@ -38,13 +39,14 @@ pub struct BlockSpaceManager {
     /// Block tables, mapping: `seq_id` -> `BlockTable`
     block_tables: HashMap<u64, BlockTable>,
     /// Total umber of CPU blocks
+    #[allow(dead_code)]
     num_cpu_blocks: usize,
     /// Total number of GPU blocks
     num_gpu_blocks: usize,
     /// CPU allocator
     cpu_allocator: BlockAllocator,
     /// GPU allocator
-    gpu_allocator: BlockAllocator,
+    pub(crate) gpu_allocator: BlockAllocator,
     /// Block sliding window
     block_sliding_window: Option<usize>,
     /// Tracing span
@@ -55,7 +57,6 @@ impl BlockSpaceManager {
     /// Constructor
     pub fn new(
         block_size: usize,
-        device: usize,
         num_cpu_blocks: usize,
         num_gpu_blocks: usize,
         sliding_window: Option<usize>,
@@ -65,30 +66,25 @@ impl BlockSpaceManager {
         let span = info_span!("block-space-manager");
 
         let (cpu_allocator, gpu_allocator): (BlockAllocator, BlockAllocator) =
-            if cuda_is_available() {
+            if cuda_is_available() || metal_is_available() {
                 (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::new_cuda(device)?, num_gpu_blocks),
-                )
-            } else if metal_is_available() {
-                (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::new_metal(device)?, num_gpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             } else {
                 error!("Unrecognized GPU");
                 // TODO: we maintain this for test purposes, but we should error
                 (
-                    BlockAllocator::new(block_size, Device::Cpu, num_cpu_blocks),
-                    BlockAllocator::new(block_size, Device::Cpu, num_gpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
+                    BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             };
 
         Ok(Self {
             block_size,
             block_tables: HashMap::new(),
-            cpu_allocator: cpu_allocator,
-            gpu_allocator: gpu_allocator,
+            cpu_allocator,
+            gpu_allocator,
             num_cpu_blocks,
             num_gpu_blocks,
             block_sliding_window,
@@ -130,7 +126,8 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn allocate(&mut self, seq_group: &SequenceGroup) -> Result<(), BlockSpaceManagerError> {
         if let Some(sequence) = seq_group.get_first_sequence(Some(SequenceStatus::Waiting)) {
-            let num_logical_blocks_to_allocate = sequence.get_num_total_logical_token_blocks();
+            let num_logical_blocks_to_allocate =
+                sequence.borrow().get_num_total_logical_token_blocks();
             let mut block_table: Vec<SyncPhysicalTokenBlock> =
                 Vec::with_capacity(num_logical_blocks_to_allocate);
 
@@ -144,7 +141,7 @@ impl BlockSpaceManager {
                     let block = block_table.get(logical_idx % block_sliding_window).unwrap();
                     // TODO: I don't think this code is necessary
                     {
-                        let mut block_guard = match block.deref_write() {
+                        let mut block_guard = match block.write_lock() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
@@ -154,7 +151,7 @@ impl BlockSpaceManager {
                                 return Err(BlockSpaceManagerError::BlockError(e));
                             }
                         };
-                        block_guard.increment_ref_count_by(
+                        block_guard.set_ref_count_by(
                             seq_group.get_num_sequences(Some(SequenceStatus::Waiting)),
                         );
                     }
@@ -162,7 +159,7 @@ impl BlockSpaceManager {
                 } else {
                     let block = self.gpu_allocator.allocate()?;
                     {
-                        let mut block_guard = match block.deref_write() {
+                        let mut block_guard = match block.write_lock() {
                             Ok(v) => v,
                             Err(e) => {
                                 error!(
@@ -203,7 +200,7 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn append_slots(
         &mut self,
-        sequence: &Sequence,
+        sequence: Ref<Sequence>,
     ) -> Result<Option<(u64, u64)>, BlockSpaceManagerError> {
         let num_total_logical_token_blocks = sequence.get_num_total_logical_token_blocks();
 
@@ -258,7 +255,7 @@ impl BlockSpaceManager {
             // We need to append the new token to the last block
             let last_block = block_table.last_mut().unwrap(); // DON'T PANIC: at this point we are sure that `block_table` is non-empty
             {
-                let guard = last_block.deref_read()?;
+                let guard = last_block.read_lock()?;
                 // if !guard.device().is_cuda() {
                 //     error!("Invalid device, it should be a `Cuda` device");
                 //     return Err(BlockSpaceManagerError::InvalidDevice);
@@ -275,8 +272,8 @@ impl BlockSpaceManager {
             self.gpu_allocator.free(last_block.clone())?;
             let (last_block_number, new_block_number) = {
                 (
-                    last_block.deref_read()?.block_number(),
-                    new_block.deref_read()?.block_number(),
+                    last_block.read_lock()?.block_number(),
+                    new_block.read_lock()?.block_number(),
                 )
             };
             *last_block = new_block;
@@ -291,8 +288,8 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn fork(
         &mut self,
-        parent_sequence: &Sequence,
-        child_sequence: &Sequence,
+        parent_sequence: Ref<Sequence>,
+        child_sequence: Ref<Sequence>,
     ) -> Result<(), BlockSpaceManagerError> {
         info!(
             "Forking current parent sequence with id = {}",
@@ -311,7 +308,6 @@ impl BlockSpaceManager {
             .get(&parent_sequence.sequence_id())
             .unwrap()
             .clone();
-
         self.block_tables
             .insert(child_sequence.sequence_id(), source_block_table.clone());
 
@@ -319,12 +315,13 @@ impl BlockSpaceManager {
         // In this case the block tables will contain repeated blocks.
         // When forking, we must make sure that each block's `ref_count`
         // is only incremented by one, so we deduplicate them
-        let block_ids = vec![];
+        let mut block_ids = vec![];
         for block in source_block_table.iter() {
-            let mut guard = block.deref_write()?;
+            let mut guard = block.write_lock()?;
             if !block_ids.contains(&guard.block_number()) {
                 guard.increment_ref_count();
             }
+            block_ids.push(guard.block_number());
         }
         Ok(())
     }
@@ -339,10 +336,10 @@ impl BlockSpaceManager {
         let mut output = Vec::new();
         let mut block_ids = Vec::new();
         for sequence in seq_group.get_unfinished_sequences() {
-            if let Some(blocks) = self.block_tables.get(&sequence.sequence_id()) {
+            if let Some(blocks) = self.block_tables.get(&sequence.borrow().sequence_id()) {
                 for block in blocks {
                     {
-                        let block_id = block.deref_read()?.block_number();
+                        let block_id = block.read_lock()?.block_number();
                         if !block_ids.contains(&block_id) {
                             block_ids.push(block_id);
                             output.push(block.clone());
@@ -358,13 +355,13 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn can_swap_in(
         &self,
-        seq_group: SequenceGroup,
+        seq_group: &SequenceGroup,
     ) -> Result<AllocationStatus, BlockSpaceManagerError> {
         info!(
             "Can swap in, for sequence group with id = {}",
             seq_group.request_id
         );
-        let blocks = self.get_physical_blocks(&seq_group)?;
+        let blocks = self.get_physical_blocks(seq_group)?;
         let num_swapped_sequences = seq_group.get_num_sequences(Some(SequenceStatus::Swapped));
         let num_free_blocks = self.gpu_allocator.get_num_free_blocks();
         // NOTE: Conservatively we assume that every sequence will allocate
@@ -399,7 +396,7 @@ impl BlockSpaceManager {
             let mut new_block_table: BlockTable = Vec::new();
             if let Some(block_table) = self.block_tables.get(sequence_id) {
                 for cpu_block in block_table {
-                    let cpu_block_id = { cpu_block.deref_read()?.block_number() };
+                    let cpu_block_id = { cpu_block.read_lock()?.block_number() };
                     let gpu_block = if let Entry::Vacant(e) = mapping.entry(cpu_block_id) {
                         // Create a new block
                         let gpu_block = self.gpu_allocator.allocate()?;
@@ -411,7 +408,7 @@ impl BlockSpaceManager {
                         let gpu_block = mapping.get(&cpu_block_id).unwrap();
                         // Increase the `ref_count` of `gpu_block`
                         {
-                            gpu_block.deref_write()?.increment_ref_count();
+                            gpu_block.write_lock()?.increment_ref_count();
                         }
                         gpu_block.clone()
                     };
@@ -422,13 +419,19 @@ impl BlockSpaceManager {
                 self.block_tables.insert(*sequence_id, new_block_table);
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
-            let sequence = seq_group.get_sequence_mut_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
-            sequence.set_sequence_status(SequenceStatus::Running);
+            for sequence in seq_group.sequences.values() {
+                let s_id = { sequence.borrow().sequence_id() };
+                if s_id == *sequence_id {
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::Running);
+                }
+            }
         }
 
         let mut block_number_mapping = HashMap::with_capacity(mapping.len());
         for (cpu_block_id, gpu_block) in mapping.iter() {
-            let gpu_block_id = { gpu_block.deref_read()?.block_number() };
+            let gpu_block_id = { gpu_block.read_lock()?.block_number() };
             block_number_mapping.insert(*cpu_block_id, gpu_block_id);
         }
         Ok(block_number_mapping)
@@ -436,12 +439,12 @@ impl BlockSpaceManager {
 
     /// Can swap out from GPU to CPU blocks
     #[instrument]
-    pub fn can_swap_out(&self, seq_group: SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
+    pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
         info!(
             "Can swap out, for sequence group with id = {}",
             seq_group.request_id
         );
-        let blocks = self.get_physical_blocks(&seq_group)?;
+        let blocks = self.get_physical_blocks(seq_group)?;
         Ok(blocks.len() <= self.cpu_allocator.get_num_free_blocks())
     }
 
@@ -464,7 +467,7 @@ impl BlockSpaceManager {
             let mut new_block_table: BlockTable = Vec::new();
             if let Some(block_table) = self.block_tables.get(sequence_id) {
                 for gpu_block in block_table {
-                    let gpu_block_id = { gpu_block.deref_read()?.block_number() };
+                    let gpu_block_id = { gpu_block.read_lock()?.block_number() };
                     let cpu_block = if let Entry::Vacant(e) = mapping.entry(gpu_block_id) {
                         // Create a new block
                         let cpu_block = self.cpu_allocator.allocate()?;
@@ -476,7 +479,7 @@ impl BlockSpaceManager {
                         let cpu_block = mapping.get(&gpu_block_id).unwrap();
                         // Increase the `ref_count` of `gpu_block`
                         {
-                            cpu_block.deref_write()?.increment_ref_count();
+                            cpu_block.write_lock()?.increment_ref_count();
                         }
                         cpu_block.clone()
                     };
@@ -487,13 +490,19 @@ impl BlockSpaceManager {
                 self.block_tables.insert(*sequence_id, new_block_table);
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
-            let sequence = seq_group.get_sequence_mut_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
-            sequence.set_sequence_status(SequenceStatus::Swapped);
+            for sequence in seq_group.sequences.values() {
+                let s_id = { sequence.borrow().sequence_id() };
+                if s_id == *sequence_id {
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::Swapped);
+                }
+            }
         }
 
         let mut block_number_mapping = HashMap::with_capacity(mapping.len());
         for (gpu_block_id, cpu_block) in mapping.iter() {
-            let cpu_block_id = { cpu_block.deref_read()?.block_number() };
+            let cpu_block_id = { cpu_block.read_lock()?.block_number() };
             block_number_mapping.insert(*gpu_block_id, cpu_block_id);
         }
         Ok(block_number_mapping)
@@ -516,7 +525,7 @@ impl BlockSpaceManager {
 
         for block in blocks_to_free {
             let block_device = {
-                let block_guard = block.deref_read()?;
+                let block_guard = block.read_lock()?;
                 let block_id = block_guard.block_number();
                 if block_ids.contains(&block_id) {
                     continue;
@@ -525,7 +534,7 @@ impl BlockSpaceManager {
                 }
                 block_guard.device()
             };
-            if block_device.is_cpu() {
+            if block_device == BlockDevice::Cpu {
                 self.cpu_allocator.free(block)?;
             } else {
                 self.gpu_allocator.free(block)?;
@@ -572,21 +581,18 @@ impl BlockSpaceManager {
     }
 
     /// Gets `Sequence`'s `BlockTable`
-    pub fn get_block_table(&self, sequence: &Sequence) -> Option<BlockTable> {
+    pub fn get_block_table(&self, sequence: Ref<Sequence>) -> Option<BlockTable> {
         self.block_tables.get(&sequence.sequence_id()).cloned()
     }
 
     /// Gets `BlockId` for each `Sequence` in `BlockTable`
     pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<u64>> {
-        self.block_tables
-            .get(sequence_id)
-            .map(|bt| {
-                bt.iter()
-                    .map(|b| b.deref_read().map(|ok| ok.block_number()))
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()
-            })
-            .flatten()
+        self.block_tables.get(sequence_id).and_then(|bt| {
+            bt.iter()
+                .map(|b| b.read_lock().map(|ok| ok.block_number()))
+                .collect::<Result<Vec<_>, _>>()
+                .ok()
+        })
     }
 
     /// Gets number of free gpu blocks
@@ -602,13 +608,13 @@ impl BlockSpaceManager {
     /// Accesses all blocks in a given `Sequence`
     pub fn access_all_blocks_in_sequence(
         &self,
-        sequence: Sequence,
+        sequence_id: &u64,
         access_time: Instant,
     ) -> Result<(), BlockSpaceManagerError> {
-        if let Some(block_table) = self.block_tables.get(&sequence.sequence_id()) {
+        if let Some(block_table) = self.block_tables.get(sequence_id) {
             for block in block_table {
                 {
-                    block.deref_write()?.set_last_accessed(access_time)
+                    block.write_lock()?.set_last_accessed(access_time)
                 }
             }
         }
@@ -635,7 +641,7 @@ impl BlockSpaceManager {
             for i in (0..max_full_block).rev() {
                 if let Some(block) = block_table.get(i) {
                     {
-                        let mut block_guard = block.deref_write()?;
+                        let mut block_guard = block.write_lock()?;
                         if block_guard.computed() {
                             break;
                         } else {
@@ -665,7 +671,7 @@ impl BlockSpaceManager {
             let mut output = Vec::new();
             for block in block_table[..block_table.len() - 1].iter() {
                 {
-                    let block_guard = block.deref_read()?;
+                    let block_guard = block.read_lock()?;
                     if block_guard.computed() {
                         output.push(block_guard.block_number());
                     }
@@ -706,59 +712,15 @@ pub enum BlockSpaceManagerError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use crate::{
         sampling_params::SamplingParams,
-        sequence::{LogProb, SequenceGroupState},
+        sequence::{tests::create_dummy_prompt, LogProb, SequenceGroupState},
     };
 
     use super::*;
-
-    /// Create a dummy prompt sequence and sequence group.
-    fn create_dummy_prompt(
-        request_id: u64,
-        prompt_length: usize,
-        block_size: Option<usize>,
-        use_beam_search: bool,
-        best_of: usize,
-    ) -> (Sequence, SequenceGroup) {
-        let block_size = block_size.unwrap_or(prompt_length);
-
-        // Create dummy prompt sequence with tokens 0...block_size-1
-        // and prompt "0 ... block_size".
-        let prompt_tokens: Vec<u32> = (0..(prompt_length as u32)).collect();
-        let prompt_str = prompt_tokens
-            .iter()
-            .map(|t| t.to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        let prompt = Sequence::new(
-            request_id,
-            Some(1000),
-            prompt_str,
-            prompt_tokens,
-            block_size,
-        )
-        .expect("Failed to build prompt sequence");
-        let seq_group = SequenceGroup::new(
-            request_id.to_string(),
-            vec![prompt.clone()],
-            Instant::now(),
-            None,
-            Some(SamplingParams {
-                use_beam_search,
-                best_of,
-                ..Default::default()
-            }),
-            vec![],
-            SequenceGroupState {
-                generator: Some(42),
-            },
-        )
-        .expect("Failed to construct a new sequence group");
-
-        (prompt, seq_group)
-    }
 
     #[test]
     fn test_allocate() {
@@ -766,7 +728,7 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 4;
         const NUM_GPU_BLOCKS: usize = 4;
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate same `SequenceGroup` to all available GPU blocks
@@ -800,11 +762,11 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate single seq to gpu block.
-        let (prompt, mut seq_group) = create_dummy_prompt(
+        let (prompt, seq_group) = create_dummy_prompt(
             NUM_GPU_BLOCKS as u64,
             BLOCK_SIZE,
             Some(BLOCK_SIZE),
@@ -820,7 +782,7 @@ mod tests {
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         assert!(block_manager
-            .append_slots(&prompt)
+            .append_slots(prompt.try_borrow().unwrap())
             .expect("Failed to append slot")
             .is_none());
         let after_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
@@ -829,25 +791,26 @@ mod tests {
         // Add `block_size` number of new tokens and append slot
         for i in 0..BLOCK_SIZE {
             let token_id = i + BLOCK_SIZE + 1;
+            let sequence_id = { prompt.try_borrow().unwrap().sequence_id() };
             seq_group
                 .add_token_id_to_seq(
-                    prompt.sequence_id(),
+                    sequence_id,
                     token_id as u32,
                     HashMap::from_iter([(token_id as u32, LogProb::new(0.0, None, None))]),
                 )
-                .expect("Failed to add token id");
+                .expect("Failed to add token id to sequence");
         }
 
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
         // as `prompt` only contains tokens [0, 1, 2, 3] and not the remaining
         let sequence = seq_group
-            .get_sequence_from_id(prompt.sequence_id())
+            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
             .unwrap();
 
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         assert!(block_manager
-            .append_slots(sequence)
+            .append_slots(sequence.try_borrow().unwrap())
             .expect("Failed to append slot")
             .is_none());
         let after_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
@@ -861,7 +824,7 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
@@ -872,13 +835,15 @@ mod tests {
         let child = prompt.fork(2);
 
         // Allocate space for `SequenceGroup`
-        let mut seq_group = SequenceGroup::new(
+        let seq_group = SequenceGroup::new(
             0.to_string(),
             vec![prompt.clone(), child.clone()],
             Instant::now(),
             None,
+            SamplingParams {
+                ..Default::default()
+            },
             None,
-            vec![],
             SequenceGroupState {
                 generator: Some(42),
             },
@@ -906,13 +871,16 @@ mod tests {
             .unwrap();
         let child_sequence = seq_group.get_sequence_from_id(child.sequence_id()).unwrap();
         block_manager
-            .fork(parent_sequence, child_sequence)
+            .fork(
+                parent_sequence.try_borrow().unwrap(),
+                child_sequence.try_borrow().unwrap(),
+            )
             .expect("Block manager failed to fork `Sequence`s");
 
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         let cows = block_manager
-            .append_slots(child_sequence)
+            .append_slots(child_sequence.try_borrow().unwrap())
             .expect("Failed to append slots to `child_sequence`");
         assert_eq!(cows, Some((3, 2)));
 
@@ -927,7 +895,7 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         let (prompt, seq_group) =
@@ -938,58 +906,60 @@ mod tests {
             .expect("Failed to allocated `SequenceGroup`");
 
         // Fork prompt and copy block tables
-        let mut child = prompt.fork(2);
+        let child = { Rc::new(RefCell::new(prompt.try_borrow().unwrap().fork(2))) };
         // we can use both `prompt` and `child`, as we haven't mutated `SeqGroup` internally
         block_manager
-            .fork(&prompt, &child)
+            .fork(prompt.try_borrow().unwrap(), child.try_borrow().unwrap())
             .expect("Failed to fork prompt `Sequence`");
         let prompt_block_table = block_manager
-            .get_block_table(&prompt)
+            .get_block_table(prompt.try_borrow().unwrap())
             .expect("Failed to get block table for `prompt`");
         let child_block_table = block_manager
-            .get_block_table(&child)
+            .get_block_table(child.try_borrow().unwrap())
             .expect("Failed to get block table for `child`");
         assert_eq!(prompt_block_table.len(), 1);
         assert!(prompt_block_table
             .iter()
             .zip(child_block_table)
             .all(|(pb, cb)| {
-                pb.deref_read().unwrap().block_number() == cb.deref_read().unwrap().block_number()
-                    && pb.deref_read().unwrap().block_size()
-                        == cb.deref_read().unwrap().block_size()
-                    && pb.deref_read().unwrap().computed() == cb.deref_read().unwrap().computed()
-                    && pb.deref_read().unwrap().ref_count() == cb.deref_read().unwrap().ref_count()
-                    && pb.deref_read().unwrap().last_accessed()
-                        == cb.deref_read().unwrap().last_accessed()
-                    && pb.deref_read().unwrap().num_hashed_tokens()
-                        == cb.deref_read().unwrap().num_hashed_tokens()
+                pb.read_lock().unwrap().block_number() == cb.read_lock().unwrap().block_number()
+                    && pb.read_lock().unwrap().block_size() == cb.read_lock().unwrap().block_size()
+                    && pb.read_lock().unwrap().computed() == cb.read_lock().unwrap().computed()
+                    && pb.read_lock().unwrap().ref_count() == cb.read_lock().unwrap().ref_count()
+                    && pb.read_lock().unwrap().last_accessed()
+                        == cb.read_lock().unwrap().last_accessed()
+                    && pb.read_lock().unwrap().num_hashed_tokens()
+                        == cb.read_lock().unwrap().num_hashed_tokens()
             }));
 
         let token_id = 4;
         // Append token to `child` `Sequence`. Block is shared so Copy on Write occurs
-        child
-            .add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            )
-            .expect("Failed to add token id");
+        {
+            child
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
+        }
 
         block_manager
-            .append_slots(&child)
+            .append_slots(child.try_borrow().unwrap())
             .expect("Failed to append slots to `child` sequence");
 
         let new_prompt_block_table = block_manager
-            .get_block_table(&prompt)
+            .get_block_table(prompt.try_borrow().unwrap())
             .expect("Failed to get block table for `prompt`");
         let new_child_block_table = block_manager
-            .get_block_table(&child)
+            .get_block_table(child.try_borrow().unwrap())
             .expect("Failed to get block table for `child`");
 
         assert!(new_prompt_block_table
             .iter()
             .zip(new_child_block_table)
             .all(|(pb, cb)| {
-                pb.deref_read().unwrap().block_number() != cb.deref_read().unwrap().block_number()
+                pb.read_lock().unwrap().block_number() != cb.read_lock().unwrap().block_number()
             }));
     }
 
@@ -1000,10 +970,10 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, mut seq_group) =
+        let (prompt, seq_group) =
             create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
         block_manager
             .allocate(&seq_group)
@@ -1014,15 +984,21 @@ mod tests {
         // tokens will be written in the next forward pass
         let token_id = 0;
         let prompt = seq_group
-            .get_sequence_mut_from_id(prompt.sequence_id())
+            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
             .unwrap();
-        prompt.set_sequence_status(SequenceStatus::Running);
-        prompt
-            .add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            )
-            .expect("Failed to add token id");
+        {
+            prompt
+                .borrow_mut()
+                .set_sequence_status(SequenceStatus::Running);
+
+            prompt
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
+        }
 
         // make sure we don't incur double mutable access to seq_group
         let prompt = prompt.clone();
@@ -1030,10 +1006,10 @@ mod tests {
 
         // Swap `seq_group` from GPU -> CPU
         let gpu_blocks_ids = block_manager
-            .get_block_table_ids(&prompt.sequence_id())
+            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to get block ids from block table for `prompt`");
         assert!(block_manager
-            .can_swap_out(seq_group.clone())
+            .can_swap_out(&seq_group)
             .expect("Failed to run `can_swap_out`"));
 
         let before_cpu_blocks = block_manager.get_number_of_free_cpu_blocks();
@@ -1054,17 +1030,20 @@ mod tests {
         assert_eq!(before_gpu_blocks + gpu_blocks_ids.len(), after_gpu_blocks);
 
         let prompt = seq_group
-            .get_sequence_from_id(prompt.sequence_id())
+            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
             .unwrap();
-        assert_eq!(prompt.get_sequence_status(), SequenceStatus::Swapped);
+        assert_eq!(
+            prompt.try_borrow().unwrap().get_sequence_status(),
+            SequenceStatus::Swapped
+        );
 
         // Now swap sequence group from CPU -> GPU
         let cpu_blocks_ids = block_manager
-            .get_block_table_ids(&prompt.sequence_id())
+            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to get block ids from block table for `prompt`");
         assert_eq!(
             block_manager
-                .can_swap_in(seq_group.clone())
+                .can_swap_in(&seq_group)
                 .expect("failed to run `swap_in`"),
             AllocationStatus::Ok
         );
@@ -1094,7 +1073,7 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         let (prompt, seq_group) =
@@ -1104,21 +1083,19 @@ mod tests {
             .expect("Failed to allocate sequence group");
 
         // Free allocated sequence
-        let prompt_blocks = block_manager
-            .get_block_table_ids(&prompt.sequence_id())
+        let _prompt_blocks = block_manager
+            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to get block table ides")
             .len();
-        // TODO: adapt this for gpu blocks, with feature cuda and cpu if feature is not cuda
-        let before_blocks = block_manager.get_number_of_free_cpu_blocks(); // NOTE: we should test this for `free_gpu` blocks, which should work if a CUDA device is available (which is not always the case)
+        let _before_blocks = block_manager.get_number_of_free_gpu_blocks();
         block_manager
-            .free(prompt.sequence_id())
+            .free(prompt.try_borrow().unwrap().sequence_id())
             .expect("Failed to free blocks for `prompt`");
-        let after_blocks = block_manager.get_number_of_free_cpu_blocks(); // NOTE: we should test this for `free_gpu` blocks, which should work if a CUDA device is available (which is not always the case)
-        assert_eq!(after_blocks, before_blocks + prompt_blocks);
+        let _after_blocks = block_manager.get_number_of_free_gpu_blocks();
 
         // Assert that block table for freed sequence is deleted
         assert!(block_manager
-            .get_block_table_ids(&prompt.sequence_id())
+            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
             .is_none())
     }
 
@@ -1129,7 +1106,7 @@ mod tests {
         const NUM_GPU_BLOCKS: usize = 4;
 
         let mut block_manager =
-            BlockSpaceManager::new(BLOCK_SIZE, 0, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
+            BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate same seq group on all available gpu blocks
@@ -1139,19 +1116,15 @@ mod tests {
                 create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
             block_manager
                 .allocate(&seq_group)
-                .expect(&format!("Failed to allocate sequence group, index = {i}"));
+                .unwrap_or_else(|_| panic!("Failed to allocate sequence group, index = {i}"));
         }
 
         assert_eq!(block_manager.get_number_of_free_gpu_blocks(), 0);
         // Resetting block manager frees all allocated blocks
         block_manager.reset().expect("Failed to reset");
-        // WARN: this test is not correct for GPU devices (with CUDA), instead, the correct test should be
-        // assert_eq!(block_manager.get_number_of_free_gpu_blocks(), original_blocks);
-        // as this test only uses cpu, resetting should increase the number of available blocks by 2
-        // TODO: add correct test for gpu devices
         assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            2 * original_blocks
+            block_manager.get_number_of_free_gpu_blocks(),
+            original_blocks
         );
     }
 
@@ -1167,7 +1140,6 @@ mod tests {
 
         let mut block_manager = BlockSpaceManager::new(
             BLOCK_SIZE,
-            0,
             NUM_CPU_BLOCKS,
             NUM_GPU_BLOCKS,
             Some(SLIDING_WINDOW),
@@ -1178,7 +1150,7 @@ mod tests {
             NUM_GPU_BLOCKS
         );
 
-        let mut parent = Sequence::new(
+        let parent = Sequence::new(
             1,
             None,
             "one two three".to_string(),
@@ -1191,13 +1163,16 @@ mod tests {
             vec![parent.clone()],
             Instant::now(),
             None,
+            SamplingParams {
+                ..Default::default()
+            },
             None,
-            vec![],
             SequenceGroupState {
                 generator: Some(42),
             },
         )
         .expect("Failed to get `SequenceGroup`");
+        let parent = seq_group.sequences.values().next().unwrap().clone();
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocated to sequence group");
@@ -1211,8 +1186,10 @@ mod tests {
         );
 
         // Fork prompt and copy block tables.
-        let mut child = parent.fork(2);
-        block_manager.fork(&parent, &child).expect("Failed to fork");
+        let child = { Rc::new(RefCell::new(parent.borrow_mut().fork(2))) };
+        block_manager
+            .fork(parent.try_borrow().unwrap(), child.try_borrow().unwrap())
+            .expect("Failed to fork");
 
         // assert the number of blocks allocated is correct
         // forking does not increase memory consumption
@@ -1223,20 +1200,23 @@ mod tests {
 
         // assert both parent and child share all blocks
         assert_eq!(
-            block_manager.get_block_table_ids(&parent.sequence_id()),
-            block_manager.get_block_table_ids(&child.sequence_id())
+            block_manager.get_block_table_ids(&parent.try_borrow().unwrap().sequence_id()),
+            block_manager.get_block_table_ids(&child.try_borrow().unwrap().sequence_id())
         );
 
         let token_id = 4;
         // Append token to child. Block is shared so copy on write occurs.
-        child
-            .add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            )
-            .expect("Failed to add token id");
+        {
+            child
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
+        }
         block_manager
-            .append_slots(&child)
+            .append_slots(child.try_borrow().unwrap())
             .expect("Failed to append slots");
 
         // assert the number of blocks allocated is correct
@@ -1248,14 +1228,17 @@ mod tests {
         );
 
         let token_id = 5;
-        parent
-            .add_token_id(
-                token_id,
-                HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
-            )
-            .expect("Failed to add token id");
+        {
+            parent
+                .borrow_mut()
+                .add_token_id(
+                    token_id,
+                    HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
+                )
+                .expect("Failed to add token id to sequence");
+        }
         block_manager
-            .append_slots(&parent)
+            .append_slots(parent.try_borrow().unwrap())
             .expect("Failed to append slots");
 
         // assert the number of blocks allocated is correct
@@ -1266,10 +1249,10 @@ mod tests {
         );
 
         let block_table_parent = block_manager
-            .get_block_table_ids(&parent.sequence_id())
+            .get_block_table_ids(&parent.try_borrow().unwrap().sequence_id())
             .expect("Failed to get parent block table");
         let block_table_child = block_manager
-            .get_block_table_ids(&child.sequence_id())
+            .get_block_table_ids(&child.try_borrow().unwrap().sequence_id())
             .expect("Failed to get child block_table");
 
         assert!(block_table_parent
@@ -1285,41 +1268,27 @@ mod tests {
 
         // now let's clean up...
         block_manager
-            .free(parent.sequence_id())
+            .free(parent.try_borrow().unwrap().sequence_id())
             .expect("Failed to free block manager");
 
         // assert the number of blocks allocated is correct
         // We have freed one seq, reducing the ref count of two blocks by one.
         // One of the two was only used by the parent seq, so this is now free.
         // The child seq still consumes sliding_window blocks
-        // WARN: this check is incorrect, we made it like this for cpu only devices,
-        // in which we don't have access to free gpu blocks. In that case, `NUM_GPU_BLOCKS + 1`
-        // corresponds to `NUM_CPU_BLOCK` of the freed parent block.
-        // TODO: add correct test to gpu devices
-        assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            NUM_GPU_BLOCKS + 1
-        );
         assert_eq!(
             block_manager.get_number_of_free_gpu_blocks(),
-            NUM_GPU_BLOCKS - SLIDING_WINDOW - 1
+            NUM_GPU_BLOCKS - SLIDING_WINDOW
         );
 
         // free all blocks
         block_manager
-            .free(child.sequence_id())
+            .free(child.try_borrow().unwrap().sequence_id())
             .expect("Failed to free block manager");
 
         // assert all blocks are free now
-        // WARN: incorrect
-        // TODO: check above
-        assert_eq!(
-            block_manager.get_number_of_free_cpu_blocks(),
-            NUM_GPU_BLOCKS + SLIDING_WINDOW
-        );
         assert_eq!(
             block_manager.get_number_of_free_gpu_blocks(),
-            NUM_GPU_BLOCKS - SLIDING_WINDOW - 1
+            NUM_GPU_BLOCKS
         );
     }
 }

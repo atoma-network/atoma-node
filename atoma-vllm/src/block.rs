@@ -3,17 +3,25 @@ use std::{
     time::Instant,
 };
 
-use candle::Device;
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
+
+use crate::traits::{BlockReadLock, BlockWriteLock};
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
 pub type BlockTable = Vec<SyncPhysicalTokenBlock>;
 
+/// Block device (either CPU or GPU)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BlockDevice {
+    Cpu,
+    Gpu,
+}
+
 /// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
 /// physical blocks in the KV cache (allocated on the GPU).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LogicalTokenBlock {
     /// Block number
     block_number: usize,
@@ -89,8 +97,10 @@ impl LogicalTokenBlock {
     }
 }
 
+impl Eq for LogicalTokenBlock {}
+
 /// A physical block structure. It represents a contiguous memory KV cache block, usually allocated on the 'physical' GPU.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicalTokenBlock {
     /// Block number
     block_number: u64,
@@ -99,7 +109,7 @@ pub struct PhysicalTokenBlock {
     /// Block has been computed
     computed: bool,
     /// Device to which the physical block is allocated
-    device: Device,
+    device: BlockDevice,
     /// Last instant in which the block has been accessed
     last_accessed: Option<Instant>,
     /// Number of hashed tokens
@@ -110,7 +120,7 @@ pub struct PhysicalTokenBlock {
 
 impl PhysicalTokenBlock {
     /// Constructor
-    pub fn new(block_number: u64, block_size: usize, device: Device) -> Self {
+    pub fn new(block_number: u64, block_size: usize, device: BlockDevice) -> Self {
         Self {
             block_number,
             block_size,
@@ -143,7 +153,7 @@ impl PhysicalTokenBlock {
     }
 
     /// Getter for `device`
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> BlockDevice {
         self.device.clone()
     }
 
@@ -182,11 +192,6 @@ impl PhysicalTokenBlock {
         self.ref_count += 1;
     }
 
-    /// Increment `ref_count` by `value`
-    pub fn increment_ref_count_by(&mut self, value: usize) {
-        self.ref_count += value;
-    }
-
     /// Sets the `ref_count` by `value`
     pub fn set_ref_count_by(&mut self, value: usize) {
         self.ref_count = value;
@@ -204,38 +209,26 @@ impl PhysicalTokenBlock {
     }
 }
 
-impl PartialEq for PhysicalTokenBlock {
-    fn eq(&self, other: &Self) -> bool {
-        self.block_number == other.block_number
-            && self.block_size == other.block_size
-            && self.device.same_device(&other.device)
-            && self.ref_count == other.ref_count
-    }
-}
-
-impl Eq for PhysicalTokenBlock {}
-
+/// Sync and Send shared access physical block
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
-pub trait BlockReadLock {
-    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError>;
-}
-
-pub trait BlockWriteLock {
-    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError>;
-}
-
 impl BlockReadLock for SyncPhysicalTokenBlock {
-    fn deref_read(&self) -> Result<RwLockReadGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn read_lock(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error> {
         self.read()
-            .map_err(|e| BlockError::PoisonError(e.to_string()))
+            .map_err(|e| Self::Error::PoisonError(e.to_string()))
     }
 }
 
 impl BlockWriteLock for SyncPhysicalTokenBlock {
-    fn deref_write(&self) -> Result<RwLockWriteGuard<PhysicalTokenBlock>, BlockError> {
+    type Error = BlockError;
+    type Inner = PhysicalTokenBlock;
+
+    fn write_lock(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error> {
         self.write()
-            .map_err(|e| BlockError::PoisonError(e.to_string()))
+            .map_err(|e| Self::Error::PoisonError(e.to_string()))
     }
 }
 

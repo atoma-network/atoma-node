@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     ops::{Index, IndexMut},
@@ -8,7 +9,7 @@ use std::{
 
 use candle::Tensor;
 use thiserror::Error;
-use tracing::{info_span, Span};
+use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
@@ -117,7 +118,7 @@ pub struct RequestMetrics {
 /// Args:
 ///    `prompt_token_ids``: The token IDs of the prompt.
 ///    `output_token_ids``: The token IDs of the output. Set to an empty list if None.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SequenceData {
     /// Prompt token ids
     prompt_token_ids: Vec<u32>,
@@ -198,20 +199,20 @@ impl SequenceData {
         self.length() - self.get_num_computed_tokens()
     }
 
-    /// Updates the number of computed tokens
+    /// Updates the number of computed tokens, so far
     pub fn update_num_computed_tokens(
         &mut self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
-        if self.num_computed_tokens + num_new_computed_tokens <= self.length() {
-            self.num_computed_tokens += num_new_computed_tokens;
-            if self.num_computed_tokens == self.length() {
-                // All tokens have been already generated, so sequence transits to decode stage
+        self.num_computed_tokens += num_new_computed_tokens;
+        if self.num_computed_tokens <= self.length() {
+            if self.get_num_uncomputed_tokens() == 0 {
+                // Prompt tokens attention layers have been now computed, so sequence transits to decode stage
                 self.stage = SequenceStage::Decode;
             }
             return Ok(());
         }
-
+        error!("Failed to update number of computed tokens");
         Err(SequenceError::InvalidNumberGeneratedTokens)
     }
 
@@ -256,7 +257,7 @@ impl SequenceData {
 ///        block size used by the block manager and cache engine.
 ///
 /// Warn: Contrary to vLLM, we are not dealing with LoRA requests
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
@@ -526,10 +527,15 @@ impl Sequence {
     pub fn sequence_id(&self) -> u64 {
         self.sequence_id
     }
+
+    /// Getter for internal `SequenceData`
+    pub fn sequence_data(&self) -> SequenceData {
+        self.sequence_data.clone()
+    }
 }
 
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SequenceGroupState {
     /// Generator used in seeded sampling
     pub generator: Option<usize>,
@@ -574,26 +580,19 @@ pub struct MultiModalData {
 #[derive(Clone, Debug)]
 pub struct SequenceGroup {
     /// Request Id
-    #[allow(dead_code)]
     pub request_id: String,
     /// Sequences
-    sequences: HashMap<u64, Sequence>,
-    /// Request's arrival time
-    #[allow(dead_code)]
-    arrival_time: Instant,
+    pub(crate) sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
     /// Request metrics
     metrics: RequestMetrics,
     /// Multi modal data
-    #[allow(dead_code)]
-    multi_model_data: Vec<MultiModalData>,
+    multi_model_data: Option<MultiModalData>,
     /// Prompt log probabilities
     #[allow(dead_code)]
     prompt_logprobs: Option<LogProb>,
     /// Sampling parameters
-    #[allow(dead_code)]
-    sampling_params: Option<SamplingParams>,
+    sampling_params: SamplingParams,
     /// State
-    #[allow(dead_code)]
     state: SequenceGroupState,
 }
 
@@ -604,8 +603,8 @@ impl SequenceGroup {
         sequences: Vec<Sequence>,
         arrival_time: Instant,
         prompt_logprobs: Option<LogProb>,
-        sampling_params: Option<SamplingParams>,
-        multi_model_data: Vec<MultiModalData>,
+        sampling_params: SamplingParams,
+        multi_model_data: Option<MultiModalData>,
         state: SequenceGroupState,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
@@ -615,8 +614,10 @@ impl SequenceGroup {
         }
         Ok(Self {
             request_id,
-            sequences: sequences.into_iter().map(|s| (s.sequence_id, s)).collect(),
-            arrival_time,
+            sequences: sequences
+                .into_iter()
+                .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
+                .collect(),
             metrics: RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
@@ -637,21 +638,24 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.prompt.clone())
+            .map(|(_, s)| s.borrow().prompt.clone())
             .unwrap_or_default()
     }
 
     /// Adds a `token_id` to a `Sequence` in `SequenceGroup` in place
+    #[instrument]
     pub fn add_token_id_to_seq(
-        &mut self,
+        &self,
         sequence_id: u64,
         token_id: u32,
         logprobs: HashMap<u32, LogProb>,
     ) -> Result<(), SequenceError> {
-        if let Some(sequence) = self.sequences.get_mut(&sequence_id) {
-            sequence.add_token_id(token_id, logprobs)?;
+        if let Some(sequence) = self.sequences.get(&sequence_id) {
+            sequence.borrow_mut().add_token_id(token_id, logprobs)?;
+            return Ok(());
         }
-        Ok(())
+        error!("Missing sequence, with id = {sequence_id}");
+        Err(SequenceError::MissingSequence(sequence_id))
     }
 
     /// Prompt token ids, all the sequences in the `SequenceGroup` should have the same prompt (thus same prompt token ids)
@@ -659,7 +663,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.prompt_token_ids.clone())
+            .map(|(_, s)| s.borrow().prompt_token_ids.clone())
             .unwrap_or_default()
     }
 
@@ -684,7 +688,7 @@ impl SequenceGroup {
             .sequences
             .iter()
             .next()
-            .map(|(_, s)| s.get_output_len())
+            .map(|(_, s)| s.borrow().get_output_len())
             .unwrap_or_default();
         if self.metrics.first_token_time.is_none() && initial_seq_len == 1 {
             self.metrics.first_token_time = Some(time);
@@ -692,8 +696,7 @@ impl SequenceGroup {
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
-    #[allow(dead_code)]
-    fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
+    pub fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
         if self.metrics.first_scheduled_time.is_none() {
             self.metrics.first_scheduled_time = Some(time);
             self.metrics.time_in_queue = Some(time - self.metrics.arrival_time);
@@ -706,22 +709,23 @@ impl SequenceGroup {
         self.metrics.finished_time = Some(time);
     }
 
+    /// Get `SequenceGroup`'s arrival time
+    pub fn arrival_time(&self) -> Instant {
+        self.metrics.arrival_time
+    }
+
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
-    #[allow(dead_code)]
-    fn get_max_num_running_seqs(&self) -> usize {
-        if self.sampling_params.is_some() && self.sampling_params.as_ref().unwrap().use_beam_search
-        {
+    pub fn get_max_num_running_seqs(&self) -> usize {
+        if self.sampling_params.use_beam_search {
             // For beam search, maximally there will always be `best_of` beam
             // candidates running in the future.
-            return self.sampling_params.as_ref().unwrap().best_of;
+            return self.sampling_params.best_of;
         }
-        if self.sampling_params.is_some()
-            && self.sampling_params.as_ref().unwrap().best_of > self.get_num_sequences(None)
-        {
+        if self.sampling_params.best_of > self.get_num_sequences(None) {
             // At prompt stage, the sequence group is not yet filled up
             // and only have one sequence running. However, in the
             // generation stage, we will have `best_of` sequences running.
-            return self.sampling_params.as_ref().unwrap().best_of;
+            return self.sampling_params.best_of;
         }
         // At sampling stages, return the number of actual sequences
         // that are not finished yet.
@@ -729,13 +733,13 @@ impl SequenceGroup {
     }
 
     /// Get sequences from `SequenceGroup`
-    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Sequence> {
+    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Rc<RefCell<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.sequence_status == status {
+                    if seq.borrow().sequence_status == status {
                         Some(seq.clone())
                     } else {
                         None
@@ -753,79 +757,83 @@ impl SequenceGroup {
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.sequence_status == status {
-                        Some(seq.sequence_id)
+                    if seq.borrow().sequence_status == status {
+                        Some(seq.borrow().sequence_id)
                     } else {
                         None
                     }
                 })
                 .collect(),
-            None => self.sequences.values().map(|s| s.sequence_id).collect(),
+            None => self
+                .sequences
+                .values()
+                .map(|s| s.borrow().sequence_id)
+                .collect(),
         }
     }
 
     /// Gets first sequence as a reference
-    pub fn get_first_sequence(&self, status: Option<SequenceStatus>) -> Option<&Sequence> {
+    pub fn get_first_sequence(
+        &self,
+        status: Option<SequenceStatus>,
+    ) -> Option<&Rc<RefCell<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
-                .filter_map(|seq| {
-                    if seq.sequence_status == status {
-                        Some(seq)
-                    } else {
-                        None
-                    }
-                })
-                .next(),
+                .find(|seq| seq.borrow().get_sequence_status() == status),
             None => self.sequences.values().next(),
         }
     }
 
     /// Gets a shared reference to `Sequence` with `sequence_id`
-    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Sequence> {
+    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.sequence_id() == sequence_id)
-            .next()
+            .find(|s| s.borrow().sequence_id() == sequence_id)
     }
 
-    /// Gets a mutable reference to a `Sequence` with `sequence_id`
-    pub fn get_sequence_mut_from_id(&mut self, sequence_id: u64) -> Option<&mut Sequence> {
-        self.sequences
-            .values_mut()
-            .filter(|s| s.sequence_id() == sequence_id)
-            .next()
-    }
+    // TODO: remove this code if not necessary anymore
+    // /// Gets a mutable reference to a `Sequence` with `sequence_id`
+    // pub fn get_sequence_mut_from_id(&mut self, sequence_id: u64) -> Option<&mut Sequence> {
+    //     self.sequences
+    //         .values_mut()
+    //         .filter(|s| s.sequence_id() == sequence_id)
+    //         .next()
+    // }
 
     /// Get a vector of unfinished sequences
-    pub fn get_unfinished_sequences(&self) -> Vec<Sequence> {
+    pub fn get_unfinished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| !s.is_finished())
+            .filter(|s| !s.borrow().is_finished())
             .cloned()
             .collect()
     }
 
     /// Get a vector of finished sequences
-    pub fn get_finished_sequences(&self) -> Vec<Sequence> {
+    pub fn get_finished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.is_finished())
+            .filter(|s| s.borrow().is_finished())
             .cloned()
             .collect()
     }
 
     /// Updates the number of computed tokens
     pub fn update_num_computed_tokens(
-        &mut self,
+        &self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
-        for sequence in self.sequences.values_mut() {
-            if !sequence.is_finished() {
-                sequence
-                    .sequence_data
-                    .update_num_computed_tokens(num_new_computed_tokens)?;
+        for sequence in self.sequences.values() {
+            let is_finished = { sequence.borrow().is_finished() };
+            if !is_finished {
+                {
+                    sequence
+                        .borrow_mut()
+                        .sequence_data
+                        .update_num_computed_tokens(num_new_computed_tokens)?;
+                }
             }
         }
         Ok(())
@@ -835,8 +843,9 @@ impl SequenceGroup {
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         let mut num_uncomputed_tokens = 0;
         for sequence in self.sequences.values() {
-            if !sequence.is_finished() {
-                num_uncomputed_tokens += sequence.sequence_data.get_num_uncomputed_tokens();
+            if !sequence.borrow().is_finished() {
+                num_uncomputed_tokens +=
+                    sequence.borrow().sequence_data.get_num_uncomputed_tokens();
             }
         }
         num_uncomputed_tokens
@@ -847,7 +856,7 @@ impl SequenceGroup {
         if let Some(status) = status {
             let mut len = 0;
             for sequence in self.sequences.values() {
-                if sequence.sequence_status == status {
+                if sequence.borrow().sequence_status == status {
                     len += 1;
                 }
             }
@@ -862,8 +871,8 @@ impl SequenceGroup {
         // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
         // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
         for sequence in self.sequences.values() {
-            if sequence.sequence_status == status {
-                return Some(sequence.get_num_total_logical_token_blocks());
+            if sequence.borrow().sequence_status == status {
+                return Some(sequence.borrow().get_num_total_logical_token_blocks());
             }
         }
         None
@@ -884,21 +893,22 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.is_prefill())
+            .map(|(_, s)| s.borrow().is_prefill())
             .unwrap_or(false)
     }
 
     /// Finds a `Sequence` with a given `sequence_id`
-    pub fn find(&self, sequence_id: u64) -> Option<Sequence> {
+    pub fn find(&self, sequence_id: u64) -> Option<Rc<RefCell<Sequence>>> {
         self.sequences.get(&sequence_id).cloned()
     }
 
     /// Adds a new `Sequence` to the `SequenceGroup`
-    pub fn add(&mut self, sequence: Sequence) {
-        if self.sequences.contains_key(&sequence.sequence_id) {
+    pub fn add(&mut self, sequence: Rc<RefCell<Sequence>>) {
+        let sequence_id = { sequence.borrow().sequence_id };
+        if self.sequences.contains_key(&sequence_id) {
             return;
         }
-        self.sequences.insert(sequence.sequence_id, sequence);
+        self.sequences.insert(sequence_id, sequence);
     }
 
     /// Removes a `Sequence` from the `SequenceGroup`, as an idempotent
@@ -908,7 +918,22 @@ impl SequenceGroup {
 
     /// Checks if generation is finished for all `Sequence`'s in `SequenceGroup`
     pub fn is_finished(&self) -> bool {
-        self.sequences.values().all(|s| s.is_finished())
+        self.sequences.values().all(|s| s.borrow().is_finished())
+    }
+
+    /// Getter for `state`
+    pub fn state(&self) -> SequenceGroupState {
+        self.state.clone()
+    }
+
+    /// Getter for `multi_modal_data`
+    pub fn multi_modal_data(&self) -> Option<MultiModalData> {
+        self.multi_model_data.clone()
+    }
+
+    /// Getter for sampling parameters
+    pub fn sampling_params(&self) -> SamplingParams {
+        self.sampling_params.clone()
     }
 }
 
@@ -947,9 +972,6 @@ pub struct SequenceGroupMetadata {
     do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
-    /// Computed block numbers
-    #[allow(dead_code)]
-    computed_block_nums: Vec<u32>,
     /// Sequence data
     #[allow(dead_code)]
     sequence_data: HashMap<u64, SequenceData>,
@@ -972,7 +994,6 @@ impl SequenceGroupMetadata {
         block_tables: HashMap<u64, Vec<u64>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
-        computed_block_nums: Vec<u32>,
         state: SequenceGroupState,
         multi_modal_data: Option<MultiModalData>,
     ) -> Self {
@@ -996,10 +1017,14 @@ impl SequenceGroupMetadata {
             block_tables,
             do_sample,
             token_chunk_size,
-            computed_block_nums,
             state,
             multi_modal_data,
         }
+    }
+
+    /// Getter for `request_id`
+    pub fn request_id(&self) -> String {
+        self.request_id.clone()
     }
 }
 
@@ -1078,18 +1103,14 @@ pub struct SpecDecodeWorkerMetrics {
     /// This is useful for evaluating how well the proposal method aligns with the
     /// scoring method.
     pub draft_acceptance_rate: f32,
-
     /// The empirical efficiency, measured as the number of tokens emitted by the
     /// system divided by the number of tokens that could be emitted by the system
     /// if the proposal method were perfect.
     pub system_efficiency: f32,
-
     /// The number of speculative tokens produced by the proposal method.
     pub draft_tokens: i32,
-
     /// The number of tokens emitted by the entire system.
     pub emitted_tokens: i32,
-
     /// The number of tokens accepted by the scoring model and verification
     /// routine, e.g. Llama2-70B and lossless rejection sampling.
     ///
@@ -1098,7 +1119,6 @@ pub struct SpecDecodeWorkerMetrics {
     /// user will usually see less accepted tokens. This metric is helpful when
     /// evaluating alignment of the proposal method with the scoring model.
     pub accepted_tokens: i32,
-
     /// The number of speculative tokens per sequence.
     pub num_spec_tokens: i32,
 }
@@ -1165,12 +1185,16 @@ pub enum SequenceError {
     WhileInPrefix,
     #[error("Constructor error: `{0}`")]
     ConstructorError(String),
+    #[error("Poison error: `{0}`")]
+    PoisonError(String),
     #[error("Block error: `{0}`")]
     BlockError(#[from] BlockError),
+    #[error("Missing sequence with id = `{0}`")]
+    MissingSequence(u64),
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn sample_outputs() -> Vec<CompletionSequenceGroupOutput> {
@@ -1200,13 +1224,13 @@ mod tests {
     }
 
     /// Create a dummy prompt sequence and sequence group.
-    fn create_dummy_prompt(
+    pub(crate) fn create_dummy_prompt(
         request_id: u64,
         prompt_length: usize,
         block_size: Option<usize>,
         use_beam_search: bool,
         best_of: usize,
-    ) -> (Sequence, SequenceGroup) {
+    ) -> (Rc<RefCell<Sequence>>, SequenceGroup) {
         let block_size = block_size.unwrap_or(prompt_length);
 
         // Create dummy prompt sequence with tokens 0...block_size-1
@@ -1230,18 +1254,19 @@ mod tests {
             vec![prompt.clone()],
             Instant::now(),
             None,
-            Some(SamplingParams {
+            SamplingParams {
                 use_beam_search,
                 best_of,
                 ..Default::default()
-            }),
-            vec![],
+            },
+            None,
             SequenceGroupState {
                 generator: Some(42),
             },
         )
         .expect("Failed to construct a new sequence group");
 
+        let prompt = seq_group.sequences.values().next().unwrap().clone();
         (prompt, seq_group)
     }
 
@@ -1367,13 +1392,13 @@ mod tests {
             .enumerate()
             .for_each(|(i, v)| {
                 if i == 0 {
-                    v.sequence_data.add_token_id(1, 0.0);
+                    v.borrow_mut().sequence_data.add_token_id(1, 0.0);
                 }
             });
         seq_group
             .sequences
             .values_mut()
-            .for_each(|v| v.reset_state_for_recompute());
+            .for_each(|v| v.borrow_mut().reset_state_for_recompute());
         assert!(seq_group.is_prefill());
 
         seq_group

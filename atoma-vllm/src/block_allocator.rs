@@ -1,12 +1,11 @@
 use std::sync::{Arc, RwLock};
 
-use candle::Device;
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
 
-use crate::block::{
-    BlockError, BlockReadLock, BlockTable, BlockWriteLock, PhysicalTokenBlock,
-    SyncPhysicalTokenBlock,
+use crate::{
+    block::{BlockDevice, BlockError, BlockTable, PhysicalTokenBlock, SyncPhysicalTokenBlock},
+    traits::{BlockReadLock, BlockWriteLock},
 };
 
 /// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.
@@ -21,8 +20,7 @@ pub struct BlockAllocator {
     #[allow(dead_code)]
     block_size: usize,
     /// Device
-    #[allow(dead_code)]
-    device: Device,
+    device: BlockDevice,
     /// Number of blocks
     num_blocks: usize,
     /// Free blocks available
@@ -33,7 +31,7 @@ pub struct BlockAllocator {
 
 impl BlockAllocator {
     /// Constructor
-    pub fn new(block_size: usize, device: Device, num_blocks: usize) -> Self {
+    pub fn new(block_size: usize, device: BlockDevice, num_blocks: usize) -> Self {
         let free_blocks = (0..(num_blocks as u64))
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
@@ -59,7 +57,7 @@ impl BlockAllocator {
     /// Allocates a new physical block
     pub fn allocate(&mut self) -> Result<SyncPhysicalTokenBlock, BlockAllocatorError> {
         if let Some(block) = self.free_blocks.pop() {
-            block.deref_write()?.increment_ref_count();
+            block.write_lock()?.increment_ref_count();
             Ok(block)
         } else {
             error!("Out of memory, no available free blocks!");
@@ -71,7 +69,7 @@ impl BlockAllocator {
     #[instrument]
     pub fn free(&mut self, block: SyncPhysicalTokenBlock) -> Result<(), BlockAllocatorError> {
         {
-            let block_guard = block.deref_read()?;
+            let block_guard = block.read_lock()?;
             let block_ref_count = block_guard.ref_count();
             let block_number = block_guard.block_number();
             if block_ref_count == 0 {
@@ -79,12 +77,12 @@ impl BlockAllocator {
                     "Double free! {} is already freed.",
                     block_guard.block_number()
                 );
-                return Err(BlockAllocatorError::CannotDoubleFree(block_number as u64));
+                return Err(BlockAllocatorError::CannotDoubleFree(block_number));
             }
         }
 
         let block_clone = block.clone();
-        let mut block_write_guard = block_clone.deref_write()?;
+        let mut block_write_guard = block_clone.write_lock()?;
         block_write_guard.decrease_ref_count()?;
 
         if block_write_guard.ref_count() == 0 {
@@ -134,7 +132,7 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         const NUM_CPU_BLOCKS: usize = 4;
 
-        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, Device::Cpu, NUM_CPU_BLOCKS);
+        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, BlockDevice::Cpu, NUM_CPU_BLOCKS);
 
         // Allocate all available CPU blocks
         let mut num_free_blocks = NUM_CPU_BLOCKS;
@@ -143,7 +141,7 @@ mod tests {
             let block = cpu_allocator.allocate().expect("Failed to allocate block");
             num_free_blocks -= 1;
 
-            let block_id = block.deref_read().unwrap().block_number();
+            let block_id = block.read_lock().unwrap().block_number();
             // Allocated block is not part of free blocks, anymore
             assert!(cpu_allocator.free_blocks.iter().all(|block| block
                 .read()
@@ -166,7 +164,7 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         const NUM_CPU_BLOCKS: usize = 4;
 
-        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, Device::Cpu, NUM_CPU_BLOCKS);
+        let mut cpu_allocator = BlockAllocator::new(BLOCK_SIZE, BlockDevice::Cpu, NUM_CPU_BLOCKS);
 
         // Allocate all available CPU blocks
         let mut blocks = Vec::with_capacity(NUM_CPU_BLOCKS);
