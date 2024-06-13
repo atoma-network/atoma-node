@@ -13,6 +13,12 @@ const SIGN_IN_URL: fn(&str) -> String = |api_key: &str| {
         api_key
     )
 };
+const SIGN_UP_URL: fn(&str) -> String = |api_key: &str| {
+    format!(
+        "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={}",
+        api_key
+    )
+};
 const REFRESH_URL: fn(&str) -> String = |api_key: &str| {
     format!(
         "https://securetoken.googleapis.com/v1/token?key={}",
@@ -92,10 +98,7 @@ impl FirebaseAuth {
     /// Sign up with email and password
     pub async fn sign_up(&self) -> Result<SignInResponse, FirebaseAuthError> {
         let client = Client::new();
-        let url = format!(
-            "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={}",
-            self.api_key
-        );
+        let url = SIGN_UP_URL(&self.api_key);
         let res = client
             .post(url)
             .json(
