@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use atoma_helpers::Firebase;
 use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
@@ -31,24 +32,27 @@ pub struct AtomaOutputManager {
 
 impl AtomaOutputManager {
     /// Constructor
-    pub fn new<P: AsRef<Path>>(
+    pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
         output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
-    ) -> Self {
+        firebase: Firebase,
+    ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
         let firebase_output_manager = FirebaseOutputManager::new(
             config.firebase_uri,
             config.firebase_email,
             config.firebase_password,
             config.firebase_api_key,
-        );
+            firebase,
+        )
+        .await?;
         let gateway_output_manager =
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
-        Self {
+        Ok(Self {
             firebase_output_manager,
             gateway_output_manager,
             output_manager_rx,
-        }
+        })
     }
 
     /// Main loop, responsible for continuously listening to incoming
