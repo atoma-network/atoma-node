@@ -1205,7 +1205,7 @@ impl<P: Policy> Scheduler<P> {
                 }
             }) {
                 let sequence_id = sequence.borrow().sequence_id();
-                sequence_data.insert(sequence_id, sequence.borrow().sequence_data());
+                sequence_data.insert(sequence_id, sequence.borrow().sequence_data.clone());
                 if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)
                 {
                     block_tables.insert(sequence_id, block_table_ids);
@@ -1236,8 +1236,8 @@ impl<P: Policy> Scheduler<P> {
                 // NOTE: We use get_len instead of get_prompt_len because when
                 // a sequence is preempted, prefill includes previous generated
                 // output tokens.
-                if token_chunk_size + sequence.borrow().sequence_data().get_num_computed_tokens()
-                    < sequence.borrow().sequence_data().length()
+                if token_chunk_size + sequence.borrow().sequence_data.get_num_computed_tokens()
+                    < sequence.borrow().sequence_data.length()
                 {
                     do_sample = false;
                 }
@@ -2019,7 +2019,7 @@ mod tests {
             .borrow();
         let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
 
-        assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+        assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
         assert_eq!(
             sequence.get_num_new_tokens(),
             sequence_a.get_num_new_tokens()
@@ -2061,7 +2061,7 @@ mod tests {
             .borrow();
         let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
 
-        assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+        assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
         assert_eq!(
             sequence.get_num_new_tokens(),
             sequence_b.get_num_new_tokens()
@@ -2145,7 +2145,7 @@ mod tests {
                 .borrow();
             let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
 
-            assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+            assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
             assert_eq!(
                 sequence.get_num_new_tokens(),
                 sequence_a.get_num_new_tokens()
@@ -2187,7 +2187,7 @@ mod tests {
                 .borrow();
             let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
 
-            assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+            assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
             assert_eq!(
                 sequence.get_num_new_tokens(),
                 sequence_b.get_num_new_tokens()

@@ -1,10 +1,16 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::{Arc, RwLock},
+    time::Instant,
+};
 
 use futures::StreamExt;
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{error, info_span, instrument, Span};
+use tracing::{error, info, info_span, instrument, Span};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
@@ -13,7 +19,7 @@ use crate::{
     scheduler::{ScheduledSequenceGroup, Scheduler, SchedulerError},
     sequence::{
         ExecuteModelRequest, LogProb, RequestMetrics, Sequence, SequenceError, SequenceGroup,
-        SequenceGroupMetadata, SequenceGroupOutput,
+        SequenceGroupMetadata, SequenceGroupOutput, SequenceStatus,
     },
     tokenizer::DetokenizerRequest,
     types::GenerateRequest,
@@ -45,6 +51,8 @@ pub struct LlmEngine {
     request_counter: u64,
     /// Tokenizer for decoding sequences
     tokenizer: Tokenizer,
+    /// End of sentence token, for the current model's tokenizer
+    eos_token_id: u32,
     /// Tracing span
     span: Span,
 }
@@ -63,6 +71,9 @@ impl LlmEngine {
     where
         M: ModelExecutor + Send + Sync + 'static,
     {
+        let eos_token_id = model_executor
+            .eos_token_id()
+            .ok_or(EngineError::MissingEosTokenId)?;
         let scheduler = Scheduler::new(cache_config, scheduler_config)?;
         let model_thread_dispatcher = ModelThreadDispatcher::start(model_executor)?;
         Ok(Self {
@@ -73,6 +84,7 @@ impl LlmEngine {
             atoma_client_sender,
             request_receiver,
             request_counter: 0,
+            eos_token_id,
             span: info_span!("llm-engine"),
         })
     }
@@ -106,6 +118,7 @@ impl LlmEngine {
             valid_request.inputs.clone(),
             valid_request.encoding.get_ids().to_vec(),
             block_size,
+            valid_request.return_full_text,
         )?;
         let sequence_group = SequenceGroup::new(
             request_id,
@@ -127,11 +140,14 @@ impl LlmEngine {
         outputs: HashMap<String, SequenceGroupOutput>,
         scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
         ignored_sequence_groups: Vec<SequenceGroup>,
-        sequence_group_metadata: Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<Vec<GenerateRequestOutput>, EngineError> {
         let now = Instant::now();
 
-        for scheduled_sequence_group in scheduled_sequence_groups.iter() {
+        for (scheduled_sequence_group, sequence_group_metadata) in scheduled_sequence_groups
+            .iter()
+            .zip(sequence_groups_metadata.iter())
+        {
             // update the number of computed tokens for scheduled `SequenceGroup`
             scheduled_sequence_group
                 .scheduled_group
@@ -150,6 +166,9 @@ impl LlmEngine {
                 ));
             };
 
+            let stopping_criteria_params =
+                scheduled_sequence_group.scheduled_group.stopping_params();
+
             // TODO: we can process this concurrently
             for (sequence_id, sequence) in scheduled_sequence_group.scheduled_group.sequences.iter()
             {
@@ -164,47 +183,152 @@ impl LlmEngine {
                         return Err(EngineError::MissingSequenceOutputToken(*sequence_id));
                     };
                 {
+                    // We need to add process the `Sequence` state. This includes:
+                    //
+                    // 1. Get the AI generated next output token id.
+                    //
+                    // 2. Update the `Sequence`'s output log-probabilities.
+                    //
+                    // 3. Update the `Sequence`'s `SequenceData` cumulative probabilities,
+                    //    if we are in decoding phase.
+                    //
+                    // 4. Update the `Sequence`'s `SequenceData` output tokens,
+                    //    if we are in decoding phase.
+                    //
+                    // 5. Decode the generated output token id.
+                    //
+                    // 6. Update the `Sequence`'s tokens vec.
+                    //
+                    // 7. Update the `output_text` with the newly generated token,
+                    //    if in decoding phase.
+                    //
+                    // 8. Check if the last generated token is a stop token.
+                    //    If so, update the `Sequence`'s `SequenceState` and
+                    //    the `stop_reason`, as well.
+                    //
+                    // 9. Check if the current `Sequence` last generated token
+                    //    id equals to the `eos_token_id`, in which case the
+                    //    the `Sequence`'s status should become `FinishedStopped`.
+                    //
+                    //
+                    // 10. Check if the `Sequence`'s length exceeds that of
+                    //    `SchedulerConfig`'s.
+                    //
+                    // 11. Check if the `Sequence`'s output length exceeds that of
+                    //     Request's `max_new_tokens`.
+                    //
+                    // NOTE: We do not need to update the `Sequence`'s `SequenceData`
+                    // `num_computed_tokens` and `sequence_stage`, as this was already
+                    // done above, at the `SequenceGroup` stage (using `update_num_computed_tokens`).
+                    //
+
+                    // 1.
                     let generated_token_id = sequence_output.output_token;
-                    let generated_token = self
-                        .tokenizer
-                        .decode(&[generated_token_id], true)
-                        .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
 
-                    sequence
-                        .borrow_mut()
-                        .output_logprobs
-                        .push(sequence_output.logprob.clone());
+                    if sequence_group_metadata.do_sample {
+                        // NOTE: this means we are in decoding phase.
+                        // That said, we are generating new output tokens
+                        // and these should be added to the `Sequence`'s
+                        // state.
 
-                    sequence.borrow_mut().output_text.push_str(&generated_token);
-                    sequence
-                        .borrow_mut()
-                        .prompt_token_ids
-                        .push(generated_token_id);
-                    sequence.borrow_mut().tokens.push(generated_token);
+                        // 2. 3. 4.
+                        {
+                            sequence
+                                .borrow_mut()
+                                .add_token_id(generated_token_id, sequence_output.logprob)?;
+                        }
+
+                        // 5.
+                        let generated_token = self
+                            .tokenizer
+                            .decode(&[generated_token_id], true)
+                            .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
+
+                        // 6.
+                        {
+                            sequence.borrow_mut().tokens.push(generated_token)
+                        }
+                        // 7.
+                        {
+                            sequence.borrow_mut().output_text.push_str(&generated_token)
+                        }
+                        // 8.
+                        if stopping_criteria_params
+                            .stop_sequences
+                            .contains(&generated_token)
+                        {
+                            info!("Current sequence with id = {sequence_id} has finished execution due to stopping token = {generated_token}");
+                            {
+                                sequence.borrow_mut().stop_reason = Some(generated_token_id)
+                            }
+
+                            sequence
+                                .borrow()
+                                .set_sequence_status(SequenceStatus::FinishedStopped)
+                        }
+
+                        // 9.
+                        if self.eos_token_id == generated_token_id
+                            && !stopping_criteria_params.ignore_eos_token
+                        {
+                            sequence
+                                .borrow()
+                                .set_sequence_status(SequenceStatus::FinishedStopped)
+                        }
+
+                        // 10.
+                        if sequence.borrow().length()
+                            > self.scheduler.scheduler_config.max_model_len()
+                        {
+                            sequence
+                                .borrow()
+                                .set_sequence_status(SequenceStatus::FinishedLengthCapped)
+                        }
+
+                        // 11.
+                        if sequence.borrow().get_output_len()
+                            > stopping_criteria_params.max_new_tokens as usize
+                        {
+                            sequence
+                                .borrow()
+                                .set_sequence_status(SequenceStatus::FinishedLengthCapped)
+                        }
+                    } else {
+                        // NOTE: in this case, we are not sampling newly
+                        // generated tokens. That is, we are in prefill
+                        // phase (possibly while chunking). For this reason,
+                        // we do not have to add tokens to the current
+                        // `Sequence`'s state.
+
+                        // 2.
+                        sequence
+                            .borrow_mut()
+                            .output_logprobs
+                            .push(sequence_output.logprob.clone());
+                    }
                 }
             }
 
-            // add metrics
+            // Now that we have processed all `Sequence`'s in `SequenceGroup`.
+            // We need to update the `SequenceGroup` state. This includes:
+            //
+            // 1. Check if all sequences are finished
+            //
+            // 2. add metrics
+            //
+
+            if scheduled_sequence_group.scheduled_group.is_finished() {
+                // TODO: send the finished output to the atoma client
+            }
             let arrival_time_histogram = metrics::histogram!("sequence-group-arrival-time");
-            arrival_time_histogram.record(
-                scheduled_sequence_group
-                    .scheduled_group
-                    .metrics
-                    .borrow()
-                    .arrival_time
-                    .elapsed()
-                    .as_secs_f32(),
-            );
+            let metrics_guard = scheduled_sequence_group
+                .scheduled_group
+                .metrics
+                .read()
+                .unwrap();
+            arrival_time_histogram.record(metrics_guard.arrival_time.elapsed().as_secs_f32());
             let last_token_time_histogram = metrics::histogram!("sequence-group-last-token-time");
-            last_token_time_histogram.record(
-                scheduled_sequence_group
-                    .scheduled_group
-                    .metrics
-                    .borrow()
-                    .last_token_time
-                    .elapsed()
-                    .as_secs_f32(),
-            );
+            last_token_time_histogram.record(metrics_guard.last_token_time.elapsed().as_secs_f32());
         }
 
         // Free all finished sequence groups
@@ -321,6 +445,9 @@ impl LlmEngine {
     }
 }
 
+fn update_sequence(sequence_id: u64, sequence: Rc<RefCell<Sequence>>) {
+    
+}
 /// `RequestOutput` - Output of running AI inference over a `SequenceGroup`
 pub struct GenerateRequestOutput {
     /// Request id
@@ -334,7 +461,7 @@ pub struct GenerateRequestOutput {
     /// Is finished
     pub is_finished: bool,
     /// Metrics
-    pub metrics: Rc<RefCell<RequestMetrics>>,
+    pub metrics: Arc<RwLock<RequestMetrics>>,
 }
 
 impl GenerateRequestOutput {
@@ -423,4 +550,6 @@ pub enum EngineError {
     TokenizerError(String),
     #[error("Model thread error: `{0}`")]
     ModelThreadError(#[from] ModelThreadError),
+    #[error("Missing eos token id")]
+    MissingEosTokenId,
 }

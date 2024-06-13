@@ -22,14 +22,18 @@ const AWAIT_DURATION_EMPTY_REQUESTS: Duration = Duration::from_millis(500);
 
 #[async_trait]
 /// `ModelLoader` trait - interface for fetching
-/// and loading a LLM model weights
+/// and loading a LLM model weights. Also has a method
+/// providing the `eos_token_id` for the current model's
+/// tokenizer.
 pub trait ModelLoader {
+    type FilePaths;
     type Error;
 
-    async fn fetch();
+    async fn fetch() -> Result<Self::FilePaths, Self::Error>;
     async fn load() -> Result<Self, Self::Error>
     where
         Self: Sized;
+    fn eos_token_id(&self) -> Option<u32>;
 }
 
 #[async_trait]

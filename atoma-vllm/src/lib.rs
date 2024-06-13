@@ -9,6 +9,7 @@ pub mod config;
 pub mod evictor;
 pub mod llm_engine;
 pub mod model_executor;
+pub mod output_processor;
 pub mod policy;
 pub mod sampling_params;
 pub mod scheduler;

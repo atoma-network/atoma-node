@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -266,7 +266,7 @@ pub struct Sequence {
     /// Prompt associated token ids
     pub prompt_token_ids: Vec<u32>,
     /// Sequence data
-    sequence_data: SequenceData,
+    pub sequence_data: SequenceData,
     /// Block size
     block_size: usize,
     /// Logical token blocks
@@ -286,7 +286,6 @@ pub struct Sequence {
     /// Stop reason:
     pub stop_reason: Option<u32>,
     /// Generated tokens
-    #[allow(dead_code)]
     pub tokens: Vec<String>,
     /// Span
     #[allow(dead_code)]
@@ -300,7 +299,14 @@ impl Sequence {
         prompt: String,
         prompt_token_ids: Vec<u32>,
         block_size: usize,
+        return_full_text: bool,
     ) -> Result<Self, SequenceError> {
+        let output_text = if return_full_text {
+            prompt.clone()
+        } else {
+            String::new()
+        };
+
         let mut am = Self {
             sequence_id,
             prompt,
@@ -311,7 +317,7 @@ impl Sequence {
             prefix_offset: 0,
             read_offset: 0,
             output_logprobs: vec![],
-            output_text: String::new(),
+            output_text,
             sequence_status: SequenceStatus::Waiting,
             stop_reason: None,
             tokens: vec![],
@@ -526,11 +532,6 @@ impl Sequence {
     pub fn sequence_id(&self) -> u64 {
         self.sequence_id
     }
-
-    /// Getter for internal `SequenceData`
-    pub fn sequence_data(&self) -> SequenceData {
-        self.sequence_data.clone()
-    }
 }
 
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
@@ -583,7 +584,7 @@ pub struct SequenceGroup {
     /// Sequences
     pub sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
     /// Request metrics
-    pub metrics: Rc<RefCell<RequestMetrics>>,
+    pub metrics: Arc<RwLock<RequestMetrics>>,
     /// Prompt log probabilities
     #[allow(dead_code)]
     pub prompt_logprobs: Option<LogProb>,
@@ -615,7 +616,7 @@ impl SequenceGroup {
                 .into_iter()
                 .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
                 .collect(),
-            metrics: Rc::new(RefCell::new(RequestMetrics {
+            metrics: Arc::new(RwLock::new(RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
                 finished_time: None,
@@ -669,9 +670,9 @@ impl SequenceGroup {
         if self.is_prefill() {
             return Err(SequenceError::WhileInPrefix);
         }
-        let latency = { now - self.metrics.borrow().last_token_time };
+        let latency = { now - self.metrics.read().unwrap().last_token_time };
         {
-            self.metrics.borrow_mut().last_token_time = now;
+            self.metrics.write().unwrap().last_token_time = now;
         }
         Ok(latency)
     }
@@ -689,37 +690,35 @@ impl SequenceGroup {
             .next()
             .map(|(_, s)| s.borrow().get_output_len())
             .unwrap_or_default();
-        let first_token_time = { self.metrics.borrow().first_token_time };
+        let mut metrics_guard = self.metrics.write().unwrap();
+        let first_token_time = metrics_guard.first_token_time;
         if first_token_time.is_none() && initial_seq_len == 1 {
-            self.metrics.borrow_mut().first_token_time = Some(time);
+            metrics_guard.first_token_time = Some(time);
         }
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
     pub fn maybe_set_first_scheduled_time(&self, time: Instant) {
-        let (arrival_time, first_scheduled_time) = {
-            (
-                self.metrics.borrow().arrival_time,
-                self.metrics.borrow().first_scheduled_time,
-            )
-        };
+        let mut metrics_guard = self.metrics.write().unwrap();
+        let (arrival_time, first_scheduled_time) = (
+            metrics_guard.arrival_time,
+            metrics_guard.first_scheduled_time,
+        );
         if first_scheduled_time.is_none() {
-            {
-                self.metrics.borrow_mut().first_scheduled_time = Some(time);
-            }
-            self.metrics.borrow_mut().time_in_queue = Some(time - arrival_time);
+            metrics_guard.first_scheduled_time = Some(time);
+            metrics_guard.time_in_queue = Some(time - arrival_time);
         }
     }
 
     /// Sets finished time
     #[allow(dead_code)]
     fn set_finished_time(&mut self, time: Instant) {
-        self.metrics.borrow_mut().finished_time = Some(time);
+        self.metrics.write().unwrap().finished_time = Some(time);
     }
 
     /// Get `SequenceGroup`'s arrival time
     pub fn arrival_time(&self) -> Instant {
-        self.metrics.borrow().arrival_time
+        self.metrics.read().unwrap().arrival_time
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
@@ -969,7 +968,7 @@ pub struct SequenceGroupMetadata {
     /// Block tables
     block_tables: HashMap<u64, Vec<u64>>,
     /// Do sample (bool)
-    do_sample: bool,
+    pub do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
     /// Sequence data
@@ -1237,7 +1236,7 @@ pub(crate) mod tests {
             .map(|t| t.to_string())
             .collect::<Vec<String>>()
             .join(" ");
-        let prompt = Sequence::new(request_id, prompt_str, prompt_tokens, block_size)
+        let prompt = Sequence::new(request_id, prompt_str, prompt_tokens, block_size, false)
             .expect("Failed to create prompt sequence");
         let seq_group = SequenceGroup::new(
             request_id.to_string(),

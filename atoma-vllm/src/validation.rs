@@ -141,6 +141,7 @@ impl Validation {
             decoder_input_details,
             top_n_tokens,
             n,
+            return_full_text,
             ..
         } = request.parameters;
 
@@ -283,6 +284,7 @@ impl Validation {
             parameters,
             stopping_parameters,
             top_n_tokens,
+            return_full_text: return_full_text.unwrap_or(false),
         })
     }
 }
@@ -311,6 +313,8 @@ pub(crate) struct ValidGenerateRequest {
     pub stopping_parameters: StoppingCriteriaParameters,
     /// Top `n` tokens
     pub top_n_tokens: u32,
+    /// Whether to prepend the prompt to the generated text
+    pub return_full_text: bool,
 }
 
 /// `NextTokenChooseParameters` - Set of parameters which

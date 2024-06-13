@@ -821,7 +821,7 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
-        let prompt = Sequence::new(0, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
+        let prompt = Sequence::new(0, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE, false)
             .expect("Failed to build prompt sequence");
 
         // Fork the `Sequence` (increase `ref_count` by one) so that CoW will be required when we append a new `token_id`
@@ -1138,8 +1138,14 @@ pub(crate) mod tests {
             NUM_GPU_BLOCKS
         );
 
-        let parent = Sequence::new(1, "one two three".to_string(), vec![1, 2, 3], BLOCK_SIZE)
-            .expect("Failed to build prompt sequence");
+        let parent = Sequence::new(
+            1,
+            "one two three".to_string(),
+            vec![1, 2, 3],
+            BLOCK_SIZE,
+            false,
+        )
+        .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             "1".into(),
             vec![parent.clone()],
