@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use gql_client::Client;
-use serde_json::Value;
 use tracing::info;
 
 use crate::AtomaOutputManagerError;
@@ -37,7 +36,7 @@ impl GatewayOutputManager {
     pub async fn handle_request(
         &self,
         output_metadata: &AtomaOutputMetadata,
-        output: Value,
+        output: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let AtomaOutputMetadata {
             node_public_key,
@@ -76,12 +75,12 @@ impl GatewayOutputManager {
                   nodePublicKey: "{node_public_key}",
                   ticketId: "{ticket_id}",
                   output: "{output}",
-                  inputTokens: "{num_input_tokens}",
-                  outputTokens: "{num_output_tokens}",
-                  timeToGenerate: "{time_to_generate}",
+                  inputTokens: {num_input_tokens},
+                  outputTokens: {num_output_tokens},
+                  timeToGenerate: {time_to_generate},
                   commitmentRootHash: "{commitment_root_hash:?}",
-                  numSampledNodes: "{num_sampled_nodes}",
-                  indexSubmissionNode: "{index_of_node}",
+                  numSampledNodes: {num_sampled_nodes},
+                  indexSubmissionNode: {index_of_node},
                   leafHash: "{leaf_hash:?}",
                   transactionBase58: "{transaction_base_58}",
                   outputType: "{output_type}"
