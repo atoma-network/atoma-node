@@ -707,12 +707,12 @@ pub enum BlockSpaceManagerError {
     #[error("Unrecognized GPU")]
     UnrecognizedGpu,
     #[error("Sequence error: `{0}`")]
-    SequenceError(#[from] SequenceError)
+    SequenceError(#[from] SequenceError),
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
+    use std::sync::{Arc, RwLock};
 
     use crate::sequence::{tests::create_dummy_prompt, LogProb};
 
@@ -729,8 +729,7 @@ pub(crate) mod tests {
 
         // Allocate same `SequenceGroup` to all available GPU blocks
         for i in 0..NUM_GPU_BLOCKS {
-            let (_, seq_group) =
-                create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
             assert_eq!(block_manager.can_allocate(&seq_group), AllocationStatus::Ok);
             block_manager
                 .allocate(&seq_group)
@@ -738,13 +737,8 @@ pub(crate) mod tests {
         }
 
         // We can't allocate further blocks, as all available blocks have been already allocated
-        let (_, seq_group) = create_dummy_prompt(
-            NUM_GPU_BLOCKS as u64,
-            BLOCK_SIZE,
-            Some(BLOCK_SIZE),
-            false,
-            1,
-        );
+        let (_, seq_group) =
+            create_dummy_prompt(NUM_GPU_BLOCKS as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
         assert_eq!(
             block_manager.can_allocate(&seq_group),
             AllocationStatus::Later
@@ -762,13 +756,8 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate single seq to gpu block.
-        let (prompt, seq_group) = create_dummy_prompt(
-            NUM_GPU_BLOCKS as u64,
-            BLOCK_SIZE,
-            Some(BLOCK_SIZE),
-            false,
-            1,
-        );
+        let (prompt, seq_group) =
+            create_dummy_prompt(NUM_GPU_BLOCKS as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
 
         block_manager
             .allocate(&seq_group)
@@ -888,8 +877,7 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
 
         block_manager
             .allocate(&seq_group)
@@ -926,7 +914,8 @@ pub(crate) mod tests {
         // Append token to `child` `Sequence`. Block is shared so Copy on Write occurs
         {
             child
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -963,8 +952,7 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocate sequence group");
@@ -978,12 +966,14 @@ pub(crate) mod tests {
             .unwrap();
         {
             prompt
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .set_sequence_status(SequenceStatus::Running);
         }
         {
             prompt
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -1067,8 +1057,7 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocate sequence group");
@@ -1103,8 +1092,7 @@ pub(crate) mod tests {
         // Allocate same seq group on all available gpu blocks
         let original_blocks = block_manager.get_number_of_free_gpu_blocks();
         for i in 0..NUM_GPU_BLOCKS {
-            let (_, seq_group) =
-                create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
             block_manager
                 .allocate(&seq_group)
                 .unwrap_or_else(|_| panic!("Failed to allocate sequence group, index = {i}"));
@@ -1193,7 +1181,8 @@ pub(crate) mod tests {
         // Append token to child. Block is shared so copy on write occurs.
         {
             child
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -1215,7 +1204,8 @@ pub(crate) mod tests {
         let token_id = 5;
         {
             parent
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),

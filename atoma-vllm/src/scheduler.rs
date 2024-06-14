@@ -1201,7 +1201,7 @@ impl<P: Policy> Scheduler<P> {
         // Create input data structures
         let mut sequence_groups_metadata = Vec::new();
         for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter() {
-            let mut sequence_group = scheduled_sequence_group.scheduled_group.clone();
+            let sequence_group = scheduled_sequence_group.scheduled_group.clone();
             let token_chunk_size = scheduled_sequence_group.token_chunk_size;
             sequence_group.maybe_set_first_scheduled_time(now);
 
@@ -1739,7 +1739,7 @@ mod tests {
         num_batched_tokens: usize,
         num_current_sequences: usize,
     ) {
-        let (_, mock_seq_group) = create_dummy_prompt(10, 60, None, false, 1);
+        let (_, mock_seq_group) = create_dummy_prompt(10, 60, None, 1);
         budget.add_num_batched_tokens(mock_seq_group.request_id.clone(), num_batched_tokens);
         budget.add_number_sequences(mock_seq_group.request_id, num_current_sequences);
     }
@@ -1784,7 +1784,7 @@ mod tests {
         // adds multiple sequence groups to `Scheduler` instance
         let num_sequence_group: usize = 4;
         for i in 0..num_sequence_group {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group);
             assert_eq!(scheduler.num_unfinished_sequeces(), i + 1);
         }
@@ -1831,7 +1831,7 @@ mod tests {
         let num_sequence_group: usize = 4;
         let mut requests_ids = HashSet::new();
         for i in 0..num_sequence_group {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group);
             requests_ids.insert(format!("{i}"));
         }
@@ -1884,7 +1884,7 @@ mod tests {
         let mut running = vec![];
 
         for i in 0..num_sequence_groups {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group.clone());
             running.push(sequence_group);
         }
@@ -2015,7 +2015,7 @@ mod tests {
             .expect("Failed to generate `Scheduler`");
 
         // Add seq groups to scheduler
-        let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, false, 1);
+        let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, 1);
         scheduler.add_sequence_group(sequence_group_a.clone());
 
         // Schedule seq groups prompts
@@ -2063,7 +2063,7 @@ mod tests {
         );
 
         // Add a new prefill request B
-        let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, false, 1);
+        let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, 1);
         scheduler.add_sequence_group(sequence_group_b.clone());
 
         // Verify prefill requests are prioritized. Since max_batched_num_tokens
@@ -2150,8 +2150,8 @@ mod tests {
             .expect("Failed to generate `Scheduler`");
 
         // Add seq groups to scheduler
-        let (_, sequence_group_a) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
-        let (_, sequence_group_b) = create_dummy_prompt(2, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group_a) = create_dummy_prompt(1, BLOCK_SIZE, None, 1);
+        let (_, sequence_group_b) = create_dummy_prompt(2, BLOCK_SIZE, None, 1);
 
         scheduler.add_sequence_group(sequence_group_a.clone());
         scheduler.add_sequence_group(sequence_group_b.clone());
@@ -2329,7 +2329,7 @@ mod tests {
 
         // Add sequence groups to the scheduler
         for i in 0..NUM_SEQ_GROUP {
-            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             all_sequence_groups.push(seq_group);
         }
 
@@ -2394,7 +2394,7 @@ mod tests {
             .expect("Failed to get scheduler");
 
         // schedule first prompt
-        let (_, sequence_group) = create_dummy_prompt(0, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(0, BLOCK_SIZE, None, 1);
         scheduler.add_sequence_group(sequence_group.clone());
         let (sequence_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
         assert!(out.number_prefill_groups > 0);
@@ -2405,7 +2405,7 @@ mod tests {
         // wait for a second before scheduling next prompt
         std::thread::sleep(Duration::from_secs(1));
 
-        let (_, sequence_group) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(1, BLOCK_SIZE, None, 1);
         scheduler.add_sequence_group(sequence_group.clone());
 
         // second prompt should NOT be scheduled
@@ -2476,7 +2476,7 @@ mod tests {
         let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
             .expect("Failed to get scheduler");
 
-        let (_, seq_group) = create_dummy_prompt(0, 60, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(0, 60, None, 1);
         let waiting = VecDeque::from_iter([seq_group]);
         let mut budget = SchedulingBudget::new(10000, 10000);
 
@@ -2508,7 +2508,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(0, 10_000);
 
         for i in 0..2 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2539,7 +2539,7 @@ mod tests {
         let mut waiting = VecDeque::new();
         let mut budget = SchedulingBudget::new(60, 10_000);
         add_token_budget(&mut budget, 30, 0);
-        let (_, sequence_group) = create_dummy_prompt(1, 60, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(1, 60, None, 1);
         // Cannot schedule a prompt that doesn't fit the budget.
         waiting.push_back(sequence_group);
         let (remaining_waiting, output) = scheduler
@@ -2580,7 +2580,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2599,7 +2599,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(10_000, 2);
         add_token_budget(&mut budget, 0, 2);
 
-        let (_, sequence_group) = create_dummy_prompt(2, 60, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(2, 60, None, 1);
         waiting.push_back(sequence_group);
 
         let (remaining_waiting, output) = scheduler
@@ -2628,7 +2628,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
         let (remaining_waiting, output) = scheduler
@@ -2648,7 +2648,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2678,7 +2678,7 @@ mod tests {
 
         let mut running = VecDeque::new();
         for i in 0..3 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 1);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2728,7 +2728,7 @@ mod tests {
 
         let mut running = VecDeque::new();
         for i in 0..3 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2788,7 +2788,7 @@ mod tests {
 
         let mut running = VecDeque::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -2828,7 +2828,7 @@ mod tests {
         let mut swapped = VecDeque::new();
         let mut blocks_to_swap_out = HashMap::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -2874,7 +2874,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2926,7 +2926,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..4 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 1);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2976,7 +2976,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -3021,7 +3021,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -3066,7 +3066,7 @@ mod tests {
         let mut swapped = VecDeque::new();
         let mut blocks_to_swap_out = HashMap::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -3103,7 +3103,7 @@ mod tests {
         assert_eq!(budget.remaining_budget_tokens(), TOKEN_BUDGET);
 
         // Verify add/subtract num batched tokens.
-        let (_, seq_group) = create_dummy_prompt(1, 3, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(1, 3, None, 1);
         budget.add_num_batched_tokens(seq_group.request_id.clone(), 2);
         assert_eq!(budget.remaining_budget_tokens(), 2);
         assert_eq!(budget.num_batched_tokens, 2);
@@ -3122,7 +3122,7 @@ mod tests {
         assert_eq!(budget.num_batched_tokens, 0);
 
         // Verify add/subtract max seqs.
-        let (_, seq_group) = create_dummy_prompt(1, 3, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(1, 3, None, 1);
         budget.add_number_sequences(seq_group.request_id.clone(), 2);
         assert!(budget.can_schedule(1, 2).expect("Failed to can schedule"));
         assert!(!budget.can_schedule(1, 3).expect("Failed to can schedule"));

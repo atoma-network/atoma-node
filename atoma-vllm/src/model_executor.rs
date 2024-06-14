@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -33,6 +33,7 @@ pub trait ModelLoader {
     async fn load() -> Result<Self, Self::Error>
     where
         Self: Sized;
+    fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
 }
 

@@ -1250,7 +1250,6 @@ pub(crate) mod tests {
         request_id: u64,
         prompt_length: usize,
         block_size: Option<usize>,
-        use_beam_search: bool,
         best_of: usize,
     ) -> (Arc<RwLock<Sequence>>, SequenceGroup) {
         let block_size = block_size.unwrap_or(prompt_length);
@@ -1350,7 +1349,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_sequence_group_stage() {
-        let (_, mut seq_group) = create_dummy_prompt(1, 12, None, false, 5);
+        let (_, mut seq_group) = create_dummy_prompt(1, 12, None, 5);
         assert!(seq_group.is_prefill());
 
         seq_group
