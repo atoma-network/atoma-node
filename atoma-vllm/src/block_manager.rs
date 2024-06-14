@@ -8,7 +8,7 @@ use crate::{
     block::{BlockDevice, BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
     sequence::{Sequence, SequenceGroup, SequenceStatus},
-    traits::{BlockReadLock, BlockWriteLock},
+    types::{BlockReadLock, BlockWriteLock},
 };
 
 use candle::utils::{cuda_is_available, metal_is_available};
@@ -990,7 +990,6 @@ pub(crate) mod tests {
             prompt
                 .borrow_mut()
                 .set_sequence_status(SequenceStatus::Running);
-
             prompt
                 .borrow_mut()
                 .add_token_id(

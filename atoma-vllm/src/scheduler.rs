@@ -920,8 +920,7 @@ impl<P: Policy> Scheduler<P> {
         }
 
         // To be used later for method output
-        let preempted: usize =
-            running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
+        let preempted = running_scheduled.preempted.len() + running_scheduled.swapped_out.len();
 
         // Update waiting requests
         self.waiting = remaining_waiting;
