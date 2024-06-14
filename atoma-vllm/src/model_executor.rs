@@ -58,7 +58,7 @@ pub trait ModelExecutor: ModelLoader {
 /// main task
 pub struct ModelThreadCommand {
     request: ExecuteModelRequest,
-    sender: oneshot::Sender<SequenceGroupOutput>,
+    sender: oneshot::Sender<Vec<SequenceGroupOutput>>,
 }
 
 /// `ModelThread` - encapsulates the logic
@@ -89,7 +89,7 @@ where
                 // TODO: Check if this makes sense, or we can improve this logic
                 std::thread::sleep(AWAIT_DURATION_EMPTY_REQUESTS);
                 sender
-                    .send(SequenceGroupOutput::empty())
+                    .send(vec![SequenceGroupOutput::empty()])
                     .map_err(|_| ModelThreadError::SendError)?;
             }
             // sender.send(response).ok();
@@ -106,7 +106,7 @@ pub struct ModelThreadDispatcher {
     pub sender: mpsc::UnboundedSender<ModelThreadCommand>,
     /// A `FuturesUnordered` containing each generated `Response`'s oneshot receiver.
     /// It should yield everytime a new AI inference output is generated.
-    pub responses: FuturesUnordered<oneshot::Receiver<SequenceGroupOutput>>,
+    pub responses: FuturesUnordered<oneshot::Receiver<Vec<SequenceGroupOutput>>>,
     /// The model's thread join handle
     pub join_handle: JoinHandle<Result<(), ModelThreadError>>,
 }

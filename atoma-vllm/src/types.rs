@@ -2,13 +2,13 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use serde::{Deserialize, Serialize};
 
-pub trait BlockReadLock {
+pub trait ReadLock {
     type Error;
     type Inner;
     fn read_lock(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error>;
 }
 
-pub trait BlockWriteLock {
+pub trait WriteLock {
     type Error;
     type Inner;
     fn write_lock(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error>;

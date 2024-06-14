@@ -11,6 +11,7 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     policy::Policy,
     sequence::{SequenceData, SequenceError, SequenceGroup, SequenceGroupMetadata, SequenceStatus},
+    types::{ReadLock, WriteLock},
 };
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -238,7 +239,7 @@ impl SchedulerPrefillOutputs {
 }
 
 /// `SchedulerOutputs` - The scheduling decision made from a scheduler.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
     pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
@@ -254,8 +255,7 @@ pub struct SchedulerOutputs {
     /// Blocks to copy. Source to dest block.
     pub blocks_to_copy: HashMap<u64, u64>,
     /// Ignored sequence groups
-    #[allow(dead_code)]
-    ignored_seq_groups: Vec<SequenceGroup>,
+    pub ignored_seq_groups: Vec<SequenceGroup>,
     /// The number of requests in the running queue
     pub running_queue_size: usize,
     /// Number of preempted sequnce groups
@@ -277,6 +277,22 @@ impl SchedulerOutputs {
             ));
         }
         Ok(())
+    }
+
+    /// Creates a new empty instance
+    pub fn create_empty() -> Self {
+        Self {
+            scheduled_sequence_groups: vec![],
+            num_batched_tokens: 0,
+            number_prefill_groups: 0,
+            blocks_to_copy: HashMap::default(),
+            blocks_to_swap_in: HashMap::default(),
+            blocks_to_swap_out: HashMap::default(),
+            ignored_seq_groups: vec![],
+            running_queue_size: 0,
+            preempted: 0,
+            span: info_span!("scheduler-output"),
+        }
     }
 
     /// Checks if the current instance is empty
@@ -377,18 +393,15 @@ impl<P> Scheduler<P> {
         {
             if sequence_group.request_id == request_id {
                 for sequence in sequence_group.sequences.values() {
-                    let (sequence_id, is_finished) = {
-                        (
-                            sequence.borrow().sequence_id(),
-                            sequence.borrow().is_finished(),
-                        )
-                    };
+                    let mut sequence_guard_lock = sequence.write_lock()?;
+                    let (sequence_id, is_finished) = (
+                        sequence_guard_lock.sequence_id(),
+                        sequence_guard_lock.is_finished(),
+                    );
                     if is_finished {
                         continue;
                     }
-                    sequence
-                        .borrow_mut()
-                        .set_sequence_status(SequenceStatus::FinishedAborted);
+                    sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedAborted);
                     sequence_ids_to_free.push(sequence_id);
                 }
 
@@ -664,7 +677,7 @@ impl<P: Policy> Scheduler<P> {
                         sequence_group.request_id);
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 infeasible_seq_groups.push(sequence_group.clone());
@@ -770,7 +783,7 @@ impl<P: Policy> Scheduler<P> {
                 .sequences
                 .iter()
                 .filter_map(|(_, s)| {
-                    if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
+                    if s.read().unwrap().get_sequence_status() == SequenceStatus::Waiting {
                         Some(s)
                     } else {
                         None
@@ -788,7 +801,7 @@ impl<P: Policy> Scheduler<P> {
 
             if !enable_chunking {
                 // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
-                let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
+                let num_prompt_tokens = waiting_sequences.first().unwrap().read().unwrap().length();
                 if num_prompt_tokens != num_new_tokens {
                     error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
                     return Err(SchedulerError::InvalidNumberOfNewTokens {
@@ -806,7 +819,7 @@ impl<P: Policy> Scheduler<P> {
                 );
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored)
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
@@ -821,7 +834,7 @@ impl<P: Policy> Scheduler<P> {
                 warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
                 for sequence in waiting_sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
@@ -1198,14 +1211,15 @@ impl<P: Policy> Scheduler<P> {
             let mut block_tables = HashMap::<u64, Vec<u64>>::new();
 
             for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
                 }
             }) {
-                let sequence_id = sequence.borrow().sequence_id();
-                sequence_data.insert(sequence_id, sequence.borrow().sequence_data.clone());
+                let sequence_guard_lock = sequence.read_lock()?;
+                let sequence_id = sequence_guard_lock.sequence_id();
+                sequence_data.insert(sequence_id, sequence_guard_lock.sequence_data.clone());
                 if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)
                 {
                     block_tables.insert(sequence_id, block_table_ids);
@@ -1214,7 +1228,7 @@ impl<P: Policy> Scheduler<P> {
                 } else {
                     error!(
                         "Missing block table for sequence with id = {}",
-                        sequence.borrow().sequence_id()
+                        sequence_guard_lock.sequence_id()
                     );
                 }
             }
@@ -1236,8 +1250,9 @@ impl<P: Policy> Scheduler<P> {
                 // NOTE: We use get_len instead of get_prompt_len because when
                 // a sequence is preempted, prefill includes previous generated
                 // output tokens.
-                if token_chunk_size + sequence.borrow().sequence_data.get_num_computed_tokens()
-                    < sequence.borrow().sequence_data.length()
+                let sequence_guard_lock = sequence.read_lock()?;
+                if token_chunk_size + sequence_guard_lock.sequence_data.get_num_computed_tokens()
+                    < sequence_guard_lock.sequence_data.length()
                 {
                     do_sample = false;
                 }
@@ -1295,8 +1310,9 @@ impl<P: Debug> Scheduler<P> {
         let mut num_sequences_in_status = 0;
 
         for (_, seq) in sequence_group.sequences.iter() {
-            if seq.borrow().get_sequence_status() == sequence_status {
-                num_new_tokens += seq.borrow().get_num_new_tokens();
+            let sequence_guard_lock = seq.read_lock()?;
+            if sequence_guard_lock.get_sequence_status() == sequence_status {
+                num_new_tokens += sequence_guard_lock.get_num_new_tokens();
                 num_sequences_in_status += 1;
             }
         }
@@ -1341,19 +1357,19 @@ impl<P: Debug> Scheduler<P> {
             sequence_group.request_id
         );
         let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
-            if s.borrow().get_sequence_status() == SequenceStatus::Running {
+            if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                 Some(s)
             } else {
                 None
             }
         });
         for sequence in running_sequences {
-            let cows = self.block_manager.append_slots(sequence.borrow())?;
+            let cows = self.block_manager.append_slots(sequence.read_lock()?)?;
             if let Some(cow) = cows {
                 blocks_to_copy.insert(cow.0, cow.1);
             } else {
                 warn!("No Copy on Write new blocks to append, for sequence with id = {} in sequence group with id = {}", 
-                    sequence.borrow().sequence_id(), sequence_group.request_id);
+                    sequence.read_lock()?.sequence_id(), sequence_group.request_id);
             }
         }
         Ok(())
@@ -1426,7 +1442,7 @@ impl<P: Debug> Scheduler<P> {
             .sequences
             .iter_mut()
             .filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
@@ -1442,17 +1458,11 @@ impl<P: Debug> Scheduler<P> {
         }
 
         for sequence in sequences {
-            {
-                sequence
-                    .borrow_mut()
-                    .set_sequence_status(SequenceStatus::Waiting);
-            }
-            {
-                self.free_sequence(sequence.borrow().sequence_id())?;
-            }
-            {
-                sequence.borrow_mut().reset_state_for_recompute();
-            }
+            let mut sequence_guard_lock = sequence.write_lock()?;
+            sequence_guard_lock.set_sequence_status(SequenceStatus::Waiting);
+
+            self.free_sequence(sequence_guard_lock.sequence_id())?;
+            sequence_guard_lock.reset_state_for_recompute();
         }
 
         Ok(())
@@ -1495,9 +1505,10 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_out(sequence_group)?;
         blocks_to_swap_out.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Running {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Swapped)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Swapped)
             }
         });
 
@@ -1514,9 +1525,10 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_in(sequence_group)?;
         blocks_to_swap_in.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Swapped {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Running)
             }
         });
 
@@ -1563,9 +1575,10 @@ impl<P: Debug> Scheduler<P> {
     ) -> Result<(), SchedulerError> {
         self.block_manager.allocate(sequence_group)?;
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Waiting {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Running)
             }
         });
         Ok(())
@@ -1589,7 +1602,7 @@ impl<P: Debug> Scheduler<P> {
 }
 
 /// A `SequenceGroup` that has been scheduled
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ScheduledSequenceGroup {
     /// Sequence group
     pub scheduled_group: SequenceGroup,
@@ -1673,7 +1686,8 @@ mod tests {
             for (_, sequence) in s.sequences.iter() {
                 {
                     sequence
-                        .borrow_mut()
+                        .write()
+                        .unwrap()
                         .add_token_id(
                             token_id,
                             HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -1689,7 +1703,8 @@ mod tests {
         for sequence_group in sequence_groups {
             for sequence in sequence_group.sequences.values() {
                 sequence
-                    .borrow_mut()
+                    .write()
+                    .unwrap()
                     .add_token_id(
                         token_id,
                         HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -1709,7 +1724,8 @@ mod tests {
             .expect("Failed ot update number compute tokens");
         for sequence in sequence_group.sequences.values() {
             sequence
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -2016,8 +2032,15 @@ mod tests {
             .values()
             .next()
             .unwrap()
-            .borrow();
-        let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+            .read()
+            .unwrap();
+        let sequence_a = sequence_group_a
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .read()
+            .unwrap();
 
         assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
         assert_eq!(
@@ -2058,8 +2081,15 @@ mod tests {
             .values()
             .next()
             .unwrap()
-            .borrow();
-        let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+            .read()
+            .unwrap();
+        let sequence_b = sequence_group_b
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .read()
+            .unwrap();
 
         assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
         assert_eq!(
@@ -2142,8 +2172,15 @@ mod tests {
                 .values()
                 .next()
                 .unwrap()
-                .borrow();
-            let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+                .read()
+                .unwrap();
+            let sequence_a = sequence_group_a
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .read()
+                .unwrap();
 
             assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
             assert_eq!(
@@ -2184,8 +2221,15 @@ mod tests {
                 .values()
                 .next()
                 .unwrap()
-                .borrow();
-            let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+                .read()
+                .unwrap();
+            let sequence_b = sequence_group_b
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .read()
+                .unwrap();
 
             assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
             assert_eq!(
@@ -3124,7 +3168,7 @@ mod tests {
                     .sequences
                     .iter()
                     .filter_map(|(_, s)| {
-                        if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
+                        if s.read().unwrap().get_sequence_status() == SequenceStatus::Waiting {
                             Some(s)
                         } else {
                             None
@@ -3142,7 +3186,8 @@ mod tests {
 
                 if !enable_chunking {
                     // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
-                    let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
+                    let num_prompt_tokens =
+                        waiting_sequences.first().unwrap().read().unwrap().length();
                     if num_prompt_tokens != num_new_tokens {
                         error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
                         return Err(SchedulerError::InvalidNumberOfNewTokens {
@@ -3160,7 +3205,8 @@ mod tests {
                     );
                     for (_, sequence) in sequence_group.sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored)
                     }
                     ignored_sequence_groups.push(sequence_group.clone());
@@ -3175,7 +3221,8 @@ mod tests {
                     warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
                     for sequence in waiting_sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored);
                     }
                     ignored_sequence_groups.push(sequence_group.clone());
@@ -3363,7 +3410,7 @@ mod tests {
                 sequence_group.request_id
             );
             let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
@@ -3414,7 +3461,8 @@ mod tests {
                             sequence_group.request_id);
                     for (_, sequence) in sequence_group.sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored);
                     }
                     infeasible_seq_groups.push(sequence_group.clone());

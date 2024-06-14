@@ -1,409 +1,143 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
-    rc::Rc,
     sync::{Arc, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use futures::StreamExt;
 use thiserror::Error;
 use tokenizers::Tokenizer;
-use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{error, info, info_span, instrument, Span};
+use tokio::sync::{
+    mpsc::{error::SendError, UnboundedReceiver, UnboundedSender},
+    oneshot::error::RecvError,
+};
+use tracing::{error, info, instrument};
 
 use crate::{
-    config::{CacheConfig, SchedulerConfig},
-    model_executor::{ModelExecutor, ModelThreadDispatcher, ModelThreadError},
+    model_executor::ModelThreadDispatcher,
     policy::FcfsPolicy,
-    scheduler::{ScheduledSequenceGroup, Scheduler, SchedulerError},
+    scheduler::{Scheduler, SchedulerError, SchedulerOutputs},
     sequence::{
         ExecuteModelRequest, LogProb, RequestMetrics, Sequence, SequenceError, SequenceGroup,
-        SequenceGroupMetadata, SequenceGroupOutput, SequenceStatus,
+        SequenceGroupMetadata, SequenceGroupOutput, SequenceOutput, SequenceStatus,
     },
-    tokenizer::DetokenizerRequest,
-    types::GenerateRequest,
-    validation::{ValidGenerateRequest, Validation, ValidationError},
+    types::{ReadLock, WriteLock},
+    validation::StoppingCriteriaParameters,
 };
 
-/// `LlmEngine` - An LLM engine that receives requests and generates texts.
-///
-///    This is the main class for the atoma-vllm engine. It receives requests
-///    from clients and generates texts from the LLM. It includes a tokenizer, a
-///    language model (possibly distributed across multiple GPUs), and GPU memory
-///    space allocated for intermediate states (aka KV cache). This class utilizes
-///    iteration-level scheduling and efficient memory management to maximize the
-///    serving throughput.
+/// Time in milliseconds we wait until we schedule new received requests,
+/// in case the `LlmEngine` was on halt.
+const SCHEDULE_WAIT_PERIOD: u64 = 100;
+
+/// `LlmEngine` - An asynchronous worker
+/// to handle scheduling new requests. It is also responsible
+/// to communicate with the `ModelExecutor` service to send new requests
+/// for batched AI inference
 pub struct LlmEngine {
-    /// The scheduler, which handles CPU and GPU memory allocation
-    scheduler: Scheduler<FcfsPolicy>,
-    /// Request validator
-    validation: Validation,
-    /// Model executor, responsible for running decoding steps to produce
-    /// AI generated outputs
-    model_thread_dispatcher: ModelThreadDispatcher,
-    /// Blockchain event requests receiver
-    request_receiver: mpsc::UnboundedReceiver<GenerateRequest>,
-    /// Unbounded `mpsc` Sender channel, to send newly AI generated outputs
-    /// to the Atoma's client service
-    atoma_client_sender: mpsc::UnboundedSender<Vec<GenerateRequestOutput>>,
-    /// Request counter
-    request_counter: u64,
-    /// Tokenizer for decoding sequences
-    tokenizer: Tokenizer,
+    /// Atoma's client sender channel, to share newly AI
+    /// generated outputs
+    atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
     /// End of sentence token, for the current model's tokenizer
     eos_token_id: u32,
-    /// Tracing span
-    span: Span,
+    /// Model executor, responsible for running
+    /// decoding steps to produce AI generated outputs
+    model_thread_dispatcher: ModelThreadDispatcher,
+    /// Receiver responsible for receiving new
+    /// requests from the `LllmEngine` service
+    request_receiver: UnboundedReceiver<SequenceGroup>,
+    /// Current scheduled `SequenceGroup`'s metadata
+    sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
+    /// Current `SchedulerOutputs`
+    scheduler_outputs: SchedulerOutputs,
+    /// A `Scheduler` instance
+    scheduler: Scheduler<FcfsPolicy>,
+    /// Tokenizer for decoding sequences
+    tokenizer: Tokenizer,
 }
 
 impl LlmEngine {
     /// Constructor
-    pub async fn new<M>(
-        cache_config: CacheConfig,
-        scheduler_config: SchedulerConfig,
-        validation: Validation,
-        model_executor: M,
+    pub fn new(
+        atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
+        eos_token_id: u32,
+        model_thread_dispatcher: ModelThreadDispatcher,
+        request_receiver: UnboundedReceiver<SequenceGroup>,
+        scheduler: Scheduler<FcfsPolicy>,
         tokenizer: Tokenizer,
-        atoma_client_sender: mpsc::UnboundedSender<Vec<GenerateRequestOutput>>,
-        request_receiver: mpsc::UnboundedReceiver<GenerateRequest>,
-    ) -> Result<Self, EngineError>
-    where
-        M: ModelExecutor + Send + Sync + 'static,
-    {
-        let eos_token_id = model_executor
-            .eos_token_id()
-            .ok_or(EngineError::MissingEosTokenId)?;
-        let scheduler = Scheduler::new(cache_config, scheduler_config)?;
-        let model_thread_dispatcher = ModelThreadDispatcher::start(model_executor)?;
-        Ok(Self {
-            scheduler,
-            validation,
-            model_thread_dispatcher,
-            tokenizer,
+    ) -> Self {
+        Self {
             atoma_client_sender,
-            request_receiver,
-            request_counter: 0,
             eos_token_id,
-            span: info_span!("llm-engine"),
-        })
-    }
-
-    /// Processes newly arrived inputs
-    #[instrument(skip(self))]
-    async fn process_received_request(
-        &self,
-        request: GenerateRequest,
-    ) -> Result<ValidGenerateRequest, EngineError> {
-        Ok(self.validation.validate(request).await?)
-    }
-
-    /// Add a newly arrived request to the `LlmEngine`'s request pool.
-    ///
-    /// The request is added to the request pool and will be processed
-    /// by the scheduler as `engine.step()` is called. The exact scheduling
-    /// policy is determined by the `Scheduler`.
-    #[instrument(skip(self))]
-    async fn add_request(&mut self, request: GenerateRequest) -> Result<(), EngineError> {
-        let arrival_time = Instant::now();
-        let request_id = request.request_id.clone();
-        let valid_request = self.process_received_request(request).await?;
-
-        let block_size = self.scheduler.cache_config.block_size;
-        let sequence_id = self.request_counter;
-        self.request_counter += 1;
-
-        let sequence = Sequence::new(
-            sequence_id,
-            valid_request.inputs.clone(),
-            valid_request.encoding.get_ids().to_vec(),
-            block_size,
-            valid_request.return_full_text,
-        )?;
-        let sequence_group = SequenceGroup::new(
-            request_id,
-            vec![sequence],
-            arrival_time,
-            valid_request.parameters.clone(),
-            valid_request.stopping_parameters.clone(),
-        )?;
-
-        self.scheduler.add_sequence_group(sequence_group);
-        Ok(())
-    }
-
-    /// Process AI generated outputs, outputs come in the form of a mapping
-    /// from `request_id` -> `SequenceGroupOutput`
-    #[instrument(skip(self))]
-    fn process_model_outputs(
-        &mut self,
-        outputs: HashMap<String, SequenceGroupOutput>,
-        scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
-        ignored_sequence_groups: Vec<SequenceGroup>,
-        sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
-    ) -> Result<Vec<GenerateRequestOutput>, EngineError> {
-        let now = Instant::now();
-
-        for (scheduled_sequence_group, sequence_group_metadata) in scheduled_sequence_groups
-            .iter()
-            .zip(sequence_groups_metadata.iter())
-        {
-            // update the number of computed tokens for scheduled `SequenceGroup`
-            scheduled_sequence_group
-                .scheduled_group
-                .update_num_computed_tokens(scheduled_sequence_group.token_chunk_size)?;
-
-            let sequence_group_id = &scheduled_sequence_group.scheduled_group.request_id;
-            let sequence_group_output = if let Some(output) = outputs.get(sequence_group_id) {
-                output
-            } else {
-                error!(
-                    "Missing scheduled sequence group output for processing, with id = {}",
-                    sequence_group_id
-                );
-                return Err(EngineError::MissingScheduleGroupOutput(
-                    sequence_group_id.clone(),
-                ));
-            };
-
-            let stopping_criteria_params =
-                scheduled_sequence_group.scheduled_group.stopping_params();
-
-            // TODO: we can process this concurrently
-            for (sequence_id, sequence) in scheduled_sequence_group.scheduled_group.sequences.iter()
-            {
-                let sequence_output =
-                    if let Some(output) = sequence_group_output.outputs.get(sequence_id) {
-                        output
-                    } else {
-                        error!(
-                            "Missing generated sequence output token for sequence with id = {}",
-                            sequence_id
-                        );
-                        return Err(EngineError::MissingSequenceOutputToken(*sequence_id));
-                    };
-                {
-                    // We need to add process the `Sequence` state. This includes:
-                    //
-                    // 1. Get the AI generated next output token id.
-                    //
-                    // 2. Update the `Sequence`'s output log-probabilities.
-                    //
-                    // 3. Update the `Sequence`'s `SequenceData` cumulative probabilities,
-                    //    if we are in decoding phase.
-                    //
-                    // 4. Update the `Sequence`'s `SequenceData` output tokens,
-                    //    if we are in decoding phase.
-                    //
-                    // 5. Decode the generated output token id.
-                    //
-                    // 6. Update the `Sequence`'s tokens vec.
-                    //
-                    // 7. Update the `output_text` with the newly generated token,
-                    //    if in decoding phase.
-                    //
-                    // 8. Check if the last generated token is a stop token.
-                    //    If so, update the `Sequence`'s `SequenceState` and
-                    //    the `stop_reason`, as well.
-                    //
-                    // 9. Check if the current `Sequence` last generated token
-                    //    id equals to the `eos_token_id`, in which case the
-                    //    the `Sequence`'s status should become `FinishedStopped`.
-                    //
-                    //
-                    // 10. Check if the `Sequence`'s length exceeds that of
-                    //    `SchedulerConfig`'s.
-                    //
-                    // 11. Check if the `Sequence`'s output length exceeds that of
-                    //     Request's `max_new_tokens`.
-                    //
-                    // NOTE: We do not need to update the `Sequence`'s `SequenceData`
-                    // `num_computed_tokens` and `sequence_stage`, as this was already
-                    // done above, at the `SequenceGroup` stage (using `update_num_computed_tokens`).
-                    //
-
-                    // 1.
-                    let generated_token_id = sequence_output.output_token;
-
-                    if sequence_group_metadata.do_sample {
-                        // NOTE: this means we are in decoding phase.
-                        // That said, we are generating new output tokens
-                        // and these should be added to the `Sequence`'s
-                        // state.
-
-                        // 2. 3. 4.
-                        {
-                            sequence
-                                .borrow_mut()
-                                .add_token_id(generated_token_id, sequence_output.logprob)?;
-                        }
-
-                        // 5.
-                        let generated_token = self
-                            .tokenizer
-                            .decode(&[generated_token_id], true)
-                            .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
-
-                        // 6.
-                        {
-                            sequence.borrow_mut().tokens.push(generated_token)
-                        }
-                        // 7.
-                        {
-                            sequence.borrow_mut().output_text.push_str(&generated_token)
-                        }
-                        // 8.
-                        if stopping_criteria_params
-                            .stop_sequences
-                            .contains(&generated_token)
-                        {
-                            info!("Current sequence with id = {sequence_id} has finished execution due to stopping token = {generated_token}");
-                            {
-                                sequence.borrow_mut().stop_reason = Some(generated_token_id)
-                            }
-
-                            sequence
-                                .borrow()
-                                .set_sequence_status(SequenceStatus::FinishedStopped)
-                        }
-
-                        // 9.
-                        if self.eos_token_id == generated_token_id
-                            && !stopping_criteria_params.ignore_eos_token
-                        {
-                            sequence
-                                .borrow()
-                                .set_sequence_status(SequenceStatus::FinishedStopped)
-                        }
-
-                        // 10.
-                        if sequence.borrow().length()
-                            > self.scheduler.scheduler_config.max_model_len()
-                        {
-                            sequence
-                                .borrow()
-                                .set_sequence_status(SequenceStatus::FinishedLengthCapped)
-                        }
-
-                        // 11.
-                        if sequence.borrow().get_output_len()
-                            > stopping_criteria_params.max_new_tokens as usize
-                        {
-                            sequence
-                                .borrow()
-                                .set_sequence_status(SequenceStatus::FinishedLengthCapped)
-                        }
-                    } else {
-                        // NOTE: in this case, we are not sampling newly
-                        // generated tokens. That is, we are in prefill
-                        // phase (possibly while chunking). For this reason,
-                        // we do not have to add tokens to the current
-                        // `Sequence`'s state.
-
-                        // 2.
-                        sequence
-                            .borrow_mut()
-                            .output_logprobs
-                            .push(sequence_output.logprob.clone());
-                    }
-                }
-            }
-
-            // Now that we have processed all `Sequence`'s in `SequenceGroup`.
-            // We need to update the `SequenceGroup` state. This includes:
-            //
-            // 1. Check if all sequences are finished
-            //
-            // 2. add metrics
-            //
-
-            if scheduled_sequence_group.scheduled_group.is_finished() {
-                // TODO: send the finished output to the atoma client
-            }
-            let arrival_time_histogram = metrics::histogram!("sequence-group-arrival-time");
-            let metrics_guard = scheduled_sequence_group
-                .scheduled_group
-                .metrics
-                .read()
-                .unwrap();
-            arrival_time_histogram.record(metrics_guard.arrival_time.elapsed().as_secs_f32());
-            let last_token_time_histogram = metrics::histogram!("sequence-group-last-token-time");
-            last_token_time_histogram.record(metrics_guard.last_token_time.elapsed().as_secs_f32());
+            model_thread_dispatcher,
+            sequence_groups_metadata: vec![],
+            scheduler_outputs: SchedulerOutputs::create_empty(),
+            scheduler,
+            tokenizer,
+            request_receiver,
         }
-
-        // Free all finished sequence groups
-        self.scheduler.free_finished_sequence();
-
-        let mut request_outputs = Vec::new();
-        for scheduled_sequence_group in scheduled_sequence_groups.iter() {
-            scheduled_sequence_group
-                .scheduled_group
-                .maybe_set_first_scheduled_time(now);
-            request_outputs.push(GenerateRequestOutput::from_sequence_group(
-                &scheduled_sequence_group.scheduled_group,
-            ));
-        }
-        for sequence_group in ignored_sequence_groups.iter() {
-            sequence_group.maybe_set_first_scheduled_time(now);
-            request_outputs.push(GenerateRequestOutput::from_sequence_group(&sequence_group));
-        }
-
-        Ok(request_outputs)
     }
 
-    /// Runs the `LlmEngine` instance, it listens to new arriving requests and processes these
+    /// Main loop -
+    ///     1. Listens to incoming requests and adds these to the underlying
+    ///         `Scheduler`.
+    ///     2. Awaits until new outputs are generated from the `ModelExecutor`
+    ///         service. It thens processes the outputs to update the associated
+    ///         `SequenceGroup` states and re-schedules new requests.
+    ///     3. Sends finished `SequenceGroup` outputs to the Atoma's client
+    ///         service.
     #[instrument(skip(self))]
     pub async fn run(mut self) -> Result<(), EngineError> {
         loop {
             tokio::select! {
-                    Some(request) = self.request_receiver.recv() => {
-                        self.add_request(request).await?;
+                Some(sequence_group) = self.request_receiver.recv() => {
+                    // 1. Adds the received `SequenceGroup` to the `Scheduler` instance.
+                    self.scheduler.add_sequence_group(sequence_group);
+
+                    // 2. If the current `LlmInstance` doesn't have any on-going
+                    //    scheduled sequence groups, we wait some time and then
+                    //    schedule all the received requests so far.
+                    //    This includes the request added in 1.
+                    if self.sequence_groups_metadata.is_empty() && self.scheduler_outputs.is_empty() {
+                        tokio::time::sleep(Duration::from_millis(SCHEDULE_WAIT_PERIOD)).await;
+                        self.step()?;
                     }
-                    Some(resp) = self.model_thread_dispatcher.responses.next() => {
-                        // REF[response_received]
-                        match resp {
-                            Ok(response) => {
-                                // We have received a new LLM inference loop response,
-                                // we now start the next model inference, we need:
-                                //
-                                // 1. Check if the response is non-empty.
-                                //
-                                // 2. If the response is not empty, we then need
-                                //    to process the generated output
-                                //
-                                // 3. If the responses is not empty, we
-                                //    send the output back to the Atoma output manager
-                                //
-                                // 4. Run a `self.step()` to run the next inference step
-                                //    even if the sequence is empty, otherwise the system
-                                //    can't make progress
-                                //
-
-                                // 1.
-                                if !response.is_empty() {
-                                    // 2.
-                                    let outputs = self.process_model_outputs()?;
-
-                                    // 3.
-                                    self.atoma_client_sender.send(outputs);
-                                } else {
-                                    // The received response is empty, so we might just continue
-                                    // with the next iteration of the loop
-                                }
-
-                                // 4.
-                                self.step()?;
-                        }
-                        Err(e) => {
-                            error!("Failed to generate model inference response, with error: {e}");
-                            // NOTE: In order to maintain the system live, we need to keep calling
-                            // the `self.step()` method, even in possible failure scenarios.
-                            self.step();
-                        }
-                    }
+                },
+                Some(outputs) = self.model_thread_dispatcher.responses.next() => {
+                    self.handle_outputs(outputs.map_err(EngineError::RecvError)).await?;
                 }
             }
         }
+    }
+
+    /// Handles newly AI generated `SequenceGroupOutput`'s
+    #[instrument(skip_all)]
+    async fn handle_outputs(
+        &mut self,
+        outputs: Result<Vec<SequenceGroupOutput>, EngineError>,
+    ) -> Result<(), EngineError> {
+        match outputs {
+            Ok(outputs) => {
+                // 1. Processes the newly AI generated outputs
+                let request_outputs = self.process_generated_outputs(outputs)?;
+
+                // 2. Schedules new requests
+                self.step()?;
+
+                // 3. After scheduling new requests to the `ModelExecutor`
+                //    we can send the finished outputs to the atoma client
+                //    service.
+                if !request_outputs.is_empty() {
+                    self.atoma_client_sender.send(request_outputs)?;
+                }
+            }
+            Err(e) => {
+                error!("Invalid generated outputs with error: {e}");
+                // NOTE: In order to maintain the system live, we need to keep calling
+                // the `self.step()` method, even in possible scenarios of failure.
+                self.step()?;
+            }
+        }
+        Ok(())
     }
 
     /// Main method of `LlmEngine`.
@@ -412,42 +146,214 @@ impl LlmEngine {
     ///     requests, via the associated `Scheduler`. Once scheduling is complete,
     ///
     /// 2. It sends a new `ExecuteModelRequest` to the `ModelExecutor`'s thread.
-    ///
-    /// 3. Once the execution is complete, the `self.model_thread_dispatcher.responses`
-    ///     `FuturesUnordered` should be able to poll next `response`. This is executed
-    ///     through the main loop in the `self.run()` main method.
-    ///
     #[instrument(skip(self))]
     pub fn step(&mut self) -> Result<(), EngineError> {
         // 1. Schedule new requests
-        let (scheduler_groups_metadata, scheduler_outputs) = self.scheduler.schedule()?;
+        let (sequence_groups_metadata, scheduler_outputs) = self.scheduler.schedule()?;
 
-        if !scheduler_outputs.is_empty() {
-            let execute_model_request = ExecuteModelRequest::new(
-                scheduler_groups_metadata,
-                scheduler_outputs.blocks_to_swap_in,
-                scheduler_outputs.blocks_to_swap_out,
-                scheduler_outputs.blocks_to_copy,
-                scheduler_outputs.running_queue_size,
-            );
+        // 2. Update `self.scheduler_groups_metadata` and `scheduler_outputs`
+        self.sequence_groups_metadata = sequence_groups_metadata.clone();
+        self.scheduler_outputs = scheduler_outputs.clone();
 
-            // 2. Sends a new `ExecuteModelRequest` to the underlying `ModelExecutor`'s thread
-            self.model_thread_dispatcher.send(execute_model_request);
-
-            // 3. Is handled by the `self.run()` method in REF[response_received]
-        } else {
-            // TODO: check if we can improve the logic of sending empty requests/receiving empty responses
-            // just to maintain the system live
-            self.model_thread_dispatcher
-                .send(ExecuteModelRequest::empty());
+        // 3. If the scheduled data is empty, it means that
+        //     no new requests were received.
+        if scheduler_outputs.is_empty() {
+            return Ok(());
         }
+
+        let execute_model_request = ExecuteModelRequest::new(
+            sequence_groups_metadata,
+            scheduler_outputs.blocks_to_swap_in,
+            scheduler_outputs.blocks_to_swap_out,
+            scheduler_outputs.blocks_to_copy,
+            scheduler_outputs.running_queue_size,
+        );
+
+        // 4. Sends a new `ExecuteModelRequest` to the underlying `ModelExecutor`'s thread
+        self.model_thread_dispatcher.send(execute_model_request);
+
+        Ok(())
+    }
+
+    /// Processes a newly AI generated output
+    #[instrument(skip_all)]
+    fn process_generated_outputs(
+        &mut self,
+        outputs: Vec<SequenceGroupOutput>,
+    ) -> Result<Vec<GenerateRequestOutput>, EngineError> {
+        let now = Instant::now();
+
+        for (output, (sequence_group_metadata, scheduled_sequence_group)) in outputs.iter().zip(
+            self.sequence_groups_metadata
+                .iter()
+                .zip(self.scheduler_outputs.scheduled_sequence_groups.iter()),
+        ) {
+            // 1. Update the number of computed tokens for scheduled `SequenceGroup`
+            scheduled_sequence_group
+                .scheduled_group
+                .update_num_computed_tokens(scheduled_sequence_group.token_chunk_size)?;
+
+            let stopping_criteria_params =
+                scheduled_sequence_group.scheduled_group.stopping_params();
+
+            // 2. Iterate over each `Sequence`s of `ScheduledSequenceGroup` and update its current state
+            // after the new LLM inference iteration has been performed
+            for (sequence_id, sequence) in scheduled_sequence_group.scheduled_group.sequences.iter()
+            {
+                let sequence_output = if let Some(output) = output.outputs.get(sequence_id) {
+                    output
+                } else {
+                    error!(
+                        "Missing generated sequence output token for sequence with id = {}",
+                        sequence_id
+                    );
+                    return Err(EngineError::MissingSequenceOutputToken(*sequence_id));
+                };
+
+                // 3. Updates the state of the current `Sequence`
+                self.update_sequence(
+                    sequence,
+                    sequence_output,
+                    sequence_group_metadata,
+                    &stopping_criteria_params,
+                )?;
+            }
+
+            // 4. Add a few metrics
+            let metrics_guard = scheduled_sequence_group
+                .scheduled_group
+                .metrics
+                .read()
+                .unwrap();
+
+            let arrival_time_histogram = metrics::histogram!("sequence-group-arrival-time");
+            arrival_time_histogram.record(metrics_guard.arrival_time.elapsed().as_secs_f32());
+
+            let last_token_time_histogram = metrics::histogram!("sequence-group-last-token-time");
+            last_token_time_histogram.record(metrics_guard.last_token_time.elapsed().as_secs_f32());
+        }
+
+        // 5. Free all finished sequence groups
+        self.scheduler.free_finished_sequence();
+
+        // 6. Keep track of all the finished `SequenceGroup`s
+        let mut request_outputs = Vec::new();
+        for scheduled_sequence_group in self.scheduler_outputs.scheduled_sequence_groups.iter() {
+            scheduled_sequence_group
+                .scheduled_group
+                .maybe_set_first_scheduled_time(now);
+
+            if scheduled_sequence_group.scheduled_group.is_finished() {
+                request_outputs.push(GenerateRequestOutput::from_sequence_group(
+                    &scheduled_sequence_group.scheduled_group,
+                ));
+            }
+        }
+        for sequence_group in self.scheduler_outputs.ignored_seq_groups.iter() {
+            sequence_group.maybe_set_first_scheduled_time(now);
+        }
+
+        Ok(request_outputs)
+    }
+
+    /// Updates the state of a `Sequence` after an LLM inference loop
+    #[instrument(skip_all)]
+    fn update_sequence(
+        &self,
+        sequence: &Arc<RwLock<Sequence>>,
+        sequence_output: &SequenceOutput,
+        sequence_group_metadata: &SequenceGroupMetadata,
+        stopping_criteria_params: &StoppingCriteriaParameters,
+    ) -> Result<(), EngineError> {
+        let sequence_id = { sequence.read_lock()?.sequence_id() };
+        // 1. Get the AI generated next output token id.
+        let generated_token_id = sequence_output.output_token;
+
+        if sequence_group_metadata.do_sample {
+            let mut sequence_guard_lock = sequence.write_lock()?;
+            // NOTE: this means we are in decoding phase.
+            // That is, we are generating new output tokens
+            // and these should be added to the `Sequence`'s
+            // state.
+
+            // 2. Update the `Sequence`'s output log-probabilities.
+            //
+            // 3. Update the `Sequence`'s `SequenceData` cumulative probabilities,
+            //    if we are in decoding phase.
+            //
+            // 4. Update the `Sequence`'s `SequenceData` output tokens,
+            //    if we are in decoding phase.
+            sequence_guard_lock
+                .add_token_id(generated_token_id, sequence_output.logprob.clone())?;
+
+            // 5. Decode the generated output token id.
+            let generated_token = self
+                .tokenizer
+                .decode(&[generated_token_id], true)
+                .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
+
+            // 6. Update the `output_text` with the newly generated token,
+            //    if in decoding phase.
+            sequence_guard_lock.output_text.push_str(&generated_token);
+
+            // 7. Check if the last generated token is a stop token.
+            //    If so, update the `Sequence`'s `SequenceState` and
+            //    the `stop_reason`, as well.
+            if stopping_criteria_params
+                .stop_sequences
+                .contains(&generated_token)
+            {
+                info!("Current sequence with id = {sequence_id} has finished execution due to stopping token = {generated_token}");
+                {
+                    sequence_guard_lock.stop_reason = Some(generated_token_id)
+                }
+
+                sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedStopped)
+            }
+
+            // 8. Check if the current `Sequence` last generated token
+            //    id equals to the `eos_token_id`, in which case the
+            //    the `Sequence`'s status should become `FinishedStopped`.
+            if self.eos_token_id == generated_token_id && !stopping_criteria_params.ignore_eos_token
+            {
+                sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedStopped)
+            }
+
+            // 9. Check if the `Sequence`'s length exceeds that of
+            //     `SchedulerConfig`'s. If so, update the `Sequence`'s
+            //     `SequenceStatus` to `FinishedLengthCapped`.
+            let sequence_len = sequence_guard_lock.length();
+            if sequence_len > self.scheduler.scheduler_config.max_model_len() {
+                sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedLengthCapped)
+            }
+
+            // 10. Check if the `Sequence`'s output length exceeds that of
+            //     Request's `max_new_tokens`.
+            let sequence_output_len = sequence_guard_lock.get_output_len();
+            if sequence_output_len > stopping_criteria_params.max_new_tokens as usize {
+                sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedLengthCapped)
+            }
+
+            // 11. Update the `Sequence`'s tokens vec.
+            sequence_guard_lock.tokens.push(generated_token)
+        } else {
+            // NOTE: in this case, we are not sampling newly
+            // generated tokens. That is, we are in prefill
+            // phase (possibly while chunking). For this reason,
+            // we do not have to add tokens to the current
+            // `Sequence`'s state.
+
+            // 2. Update the `Sequence`'s output log-probabilities.
+            sequence
+                .write_lock()?
+                .output_logprobs
+                .push(sequence_output.logprob.clone());
+        }
+
         Ok(())
     }
 }
 
-fn update_sequence(sequence_id: u64, sequence: Rc<RefCell<Sequence>>) {
-    
-}
 /// `RequestOutput` - Output of running AI inference over a `SequenceGroup`
 pub struct GenerateRequestOutput {
     /// Request id
@@ -475,9 +381,10 @@ impl GenerateRequestOutput {
             // Get top n sequences
             let n = sequence_group.next_token_chooser_params().n;
             sequences.sort_by(|s1, s2| {
-                s1.borrow()
+                s1.read()
+                    .unwrap()
                     .cumulative_logprob()
-                    .partial_cmp(&s2.borrow().cumulative_logprob())
+                    .partial_cmp(&s2.read().unwrap().cumulative_logprob())
                     .unwrap()
             });
             sequences[..n].to_vec()
@@ -486,14 +393,17 @@ impl GenerateRequestOutput {
         let inference_outputs = top_n_sequences
             .iter()
             .enumerate()
-            .map(|(i, s)| InferenceOutput {
-                index: i,
-                output_text: s.borrow().get_output_text(),
-                token_ids: s.borrow().get_token_ids(),
-                cumulative_logprob: s.borrow().cumulative_logprob(),
-                logprobs: s.borrow().output_logprobs.clone(),
-                finish_reason: s.borrow().get_sequence_status().finished_reason(),
-                stop_reason: s.borrow().stop_reason.clone(),
+            .map(|(i, s)| {
+                let s = s.read().unwrap();
+                InferenceOutput {
+                    index: i,
+                    output_text: s.get_output_text(),
+                    token_ids: s.get_token_ids(),
+                    cumulative_logprob: s.cumulative_logprob(),
+                    logprobs: s.output_logprobs.clone(),
+                    finish_reason: s.get_sequence_status().finished_reason(),
+                    stop_reason: s.stop_reason.clone(),
+                }
             })
             .collect::<Vec<_>>();
 
@@ -511,45 +421,37 @@ impl GenerateRequestOutput {
 /// `InferenceOutput` - Output of running a
 pub struct InferenceOutput {
     /// The index of the output in the request
-    index: usize,
+    pub index: usize,
     /// The generated output text
-    output_text: String,
+    pub output_text: String,
     /// The token ids of the generated output text
-    token_ids: Vec<u32>,
+    pub token_ids: Vec<u32>,
     /// The cumulative log probability of the generated
     /// output text
-    cumulative_logprob: f32,
+    pub cumulative_logprob: f32,
     /// The log probabilities of the top probability words at each
     /// position if the logprobs are requested
-    logprobs: Vec<HashMap<u32, LogProb>>,
+    pub logprobs: Vec<HashMap<u32, LogProb>>,
     /// The reason why the sequence is finished
-    finish_reason: Option<String>,
+    pub finish_reason: Option<String>,
     /// The stop token id that caused the completion
     /// to stop, None if the completion finished for some other reason
     /// including encountering the eos token
-    stop_reason: Option<u32>,
+    pub stop_reason: Option<u32>,
 }
 
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("Scheduler error: `{0}`")]
     SchedulerError(#[from] SchedulerError),
-    #[error("Validation error: `{0}`")]
-    ValidationError(#[from] ValidationError),
     #[error("Sequence error: `{0}`")]
     SequenceError(#[from] SequenceError),
-    #[error("Invalid output length: `{0}`")]
-    InvalidOutputLength(usize),
-    #[error("Missing scheduled group output, id = `{0}`")]
-    MissingScheduleGroupOutput(String),
     #[error("Missing sequence output token, id = `{0}`")]
     MissingSequenceOutputToken(u64),
-    #[error("SendError: `{0}`")]
-    SendError(#[from] SendError<DetokenizerRequest>),
     #[error("Tokenizer error: `{0}`")]
     TokenizerError(String),
-    #[error("Model thread error: `{0}`")]
-    ModelThreadError(#[from] ModelThreadError),
-    #[error("Missing eos token id")]
-    MissingEosTokenId,
+    #[error("Send error: `{0}`")]
+    SendError(#[from] SendError<Vec<GenerateRequestOutput>>),
+    #[error("Recv error: `{0}`")]
+    RecvError(#[from] RecvError),
 }

@@ -1,8 +1,6 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
-    rc::Rc,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -13,6 +11,7 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
+    types::{ReadLock, WriteLock},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
 };
 
@@ -534,6 +533,28 @@ impl Sequence {
     }
 }
 
+pub type SyncSequence = Arc<RwLock<Sequence>>;
+
+impl ReadLock for SyncSequence {
+    type Error = SequenceError;
+    type Inner = Sequence;
+
+    fn read_lock(&self) -> Result<std::sync::RwLockReadGuard<Self::Inner>, Self::Error> {
+        self.read()
+            .map_err(|e| SequenceError::ReadLockError(e.to_string()))
+    }
+}
+
+impl WriteLock for SyncSequence {
+    type Error = SequenceError;
+    type Inner = Sequence;
+
+    fn write_lock(&self) -> Result<std::sync::RwLockWriteGuard<Self::Inner>, Self::Error> {
+        self.write()
+            .map_err(|e| SequenceError::WriteLockError(e.to_string()))
+    }
+}
+
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SequenceGroupState {
@@ -582,11 +603,10 @@ pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
     /// Sequences
-    pub sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
+    pub sequences: HashMap<u64, Arc<RwLock<Sequence>>>,
     /// Request metrics
     pub metrics: Arc<RwLock<RequestMetrics>>,
     /// Prompt log probabilities
-    #[allow(dead_code)]
     pub prompt_logprobs: Option<LogProb>,
     /// Next token
     next_token_chooser_params: NextTokenChooserParameters,
@@ -614,7 +634,7 @@ impl SequenceGroup {
             request_id,
             sequences: sequences
                 .into_iter()
-                .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
+                .map(|s| (s.sequence_id, Arc::new(RwLock::new(s))))
                 .collect(),
             metrics: Arc::new(RwLock::new(RequestMetrics {
                 arrival_time,
@@ -636,7 +656,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().prompt.clone())
+            .map(|(_, s)| s.read().unwrap().prompt.clone())
             .unwrap_or_default()
     }
 
@@ -649,7 +669,7 @@ impl SequenceGroup {
         logprobs: HashMap<u32, LogProb>,
     ) -> Result<(), SequenceError> {
         if let Some(sequence) = self.sequences.get(&sequence_id) {
-            sequence.borrow_mut().add_token_id(token_id, logprobs)?;
+            sequence.write_lock()?.add_token_id(token_id, logprobs)?;
             return Ok(());
         }
         error!("Missing sequence, with id = {sequence_id}");
@@ -661,7 +681,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().prompt_token_ids.clone())
+            .map(|(_, s)| s.read().unwrap().prompt_token_ids.clone())
             .unwrap_or_default()
     }
 
@@ -688,7 +708,7 @@ impl SequenceGroup {
             .sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().get_output_len())
+            .map(|(_, s)| s.read().unwrap().get_output_len())
             .unwrap_or_default();
         let mut metrics_guard = self.metrics.write().unwrap();
         let first_token_time = metrics_guard.first_token_time;
@@ -734,13 +754,13 @@ impl SequenceGroup {
     }
 
     /// Get sequences from `SequenceGroup`
-    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Arc<RwLock<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.borrow().sequence_status == status {
+                    if seq.read().unwrap().sequence_status == status {
                         Some(seq.clone())
                     } else {
                         None
@@ -758,8 +778,8 @@ impl SequenceGroup {
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.borrow().sequence_status == status {
-                        Some(seq.borrow().sequence_id)
+                    if seq.read().unwrap().sequence_status == status {
+                        Some(seq.read().unwrap().sequence_id)
                     } else {
                         None
                     }
@@ -768,7 +788,7 @@ impl SequenceGroup {
             None => self
                 .sequences
                 .values()
-                .map(|s| s.borrow().sequence_id)
+                .map(|s| s.read().unwrap().sequence_id)
                 .collect(),
         }
     }
@@ -777,21 +797,21 @@ impl SequenceGroup {
     pub fn get_first_sequence(
         &self,
         status: Option<SequenceStatus>,
-    ) -> Option<&Rc<RefCell<Sequence>>> {
+    ) -> Option<&Arc<RwLock<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
-                .find(|seq| seq.borrow().get_sequence_status() == status),
+                .find(|seq| seq.read().unwrap().get_sequence_status() == status),
             None => self.sequences.values().next(),
         }
     }
 
     /// Gets a shared reference to `Sequence` with `sequence_id`
-    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Rc<RefCell<Sequence>>> {
+    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .find(|s| s.borrow().sequence_id() == sequence_id)
+            .find(|s| s.read().unwrap().sequence_id() == sequence_id)
     }
 
     // TODO: remove this code if not necessary anymore
@@ -804,19 +824,19 @@ impl SequenceGroup {
     // }
 
     /// Get a vector of unfinished sequences
-    pub fn get_unfinished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_unfinished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| !s.borrow().is_finished())
+            .filter(|s| !s.read().unwrap().is_finished())
             .cloned()
             .collect()
     }
 
     /// Get a vector of finished sequences
-    pub fn get_finished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_finished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.borrow().is_finished())
+            .filter(|s| s.read().unwrap().is_finished())
             .cloned()
             .collect()
     }
@@ -827,11 +847,11 @@ impl SequenceGroup {
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
         for sequence in self.sequences.values() {
-            let is_finished = { sequence.borrow().is_finished() };
+            let is_finished = { sequence.read_lock()?.is_finished() };
             if !is_finished {
                 {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .sequence_data
                         .update_num_computed_tokens(num_new_computed_tokens)?;
                 }
@@ -844,9 +864,12 @@ impl SequenceGroup {
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         let mut num_uncomputed_tokens = 0;
         for sequence in self.sequences.values() {
-            if !sequence.borrow().is_finished() {
-                num_uncomputed_tokens +=
-                    sequence.borrow().sequence_data.get_num_uncomputed_tokens();
+            if !sequence.read().unwrap().is_finished() {
+                num_uncomputed_tokens += sequence
+                    .read()
+                    .unwrap()
+                    .sequence_data
+                    .get_num_uncomputed_tokens();
             }
         }
         num_uncomputed_tokens
@@ -857,7 +880,7 @@ impl SequenceGroup {
         if let Some(status) = status {
             let mut len = 0;
             for sequence in self.sequences.values() {
-                if sequence.borrow().sequence_status == status {
+                if sequence.read().unwrap().sequence_status == status {
                     len += 1;
                 }
             }
@@ -872,8 +895,13 @@ impl SequenceGroup {
         // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
         // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
         for sequence in self.sequences.values() {
-            if sequence.borrow().sequence_status == status {
-                return Some(sequence.borrow().get_num_total_logical_token_blocks());
+            if sequence.read().unwrap().sequence_status == status {
+                return Some(
+                    sequence
+                        .read()
+                        .unwrap()
+                        .get_num_total_logical_token_blocks(),
+                );
             }
         }
         None
@@ -894,18 +922,18 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().is_prefill())
+            .map(|(_, s)| s.read().unwrap().is_prefill())
             .unwrap_or(false)
     }
 
     /// Finds a `Sequence` with a given `sequence_id`
-    pub fn find(&self, sequence_id: u64) -> Option<Rc<RefCell<Sequence>>> {
+    pub fn find(&self, sequence_id: u64) -> Option<Arc<RwLock<Sequence>>> {
         self.sequences.get(&sequence_id).cloned()
     }
 
     /// Adds a new `Sequence` to the `SequenceGroup`
-    pub fn add(&mut self, sequence: Rc<RefCell<Sequence>>) {
-        let sequence_id = { sequence.borrow().sequence_id };
+    pub fn add(&mut self, sequence: Arc<RwLock<Sequence>>) {
+        let sequence_id = { sequence.read().unwrap().sequence_id };
         if self.sequences.contains_key(&sequence_id) {
             return;
         }
@@ -919,7 +947,9 @@ impl SequenceGroup {
 
     /// Checks if generation is finished for all `Sequence`'s in `SequenceGroup`
     pub fn is_finished(&self) -> bool {
-        self.sequences.values().all(|s| s.borrow().is_finished())
+        self.sequences
+            .values()
+            .all(|s| s.read().unwrap().is_finished())
     }
 
     /// Getter for `state`
@@ -1040,13 +1070,6 @@ pub struct SequenceOutput {
     pub logprob: HashMap<u32, LogProb>,
 }
 
-// /// `CompletionSequenceGroupOutput` - The model output associated with a completion sequence group.
-// #[derive(Clone, Debug, PartialEq)]
-// pub struct CompletionSequenceGroupOutput {
-//     pub samples: Vec<SequenceOutput>,
-//     pub prompt_logprobs: Vec<HashMap<u32, LogProb>>,
-// }
-
 /// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
 ///     each of which contains one possible candidate for the next token.
 ///
@@ -1119,7 +1142,7 @@ pub struct SpecDecodeWorkerMetrics {
 /// `ExecuteModelRequest` - The model execution request
 #[derive(Clone, Debug)]
 pub struct ExecuteModelRequest {
-    /// The sequence group metadata list
+    /// The sequence groups metadata vector
     sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
     blocks_to_swap_in: HashMap<u64, u64>,
@@ -1187,6 +1210,10 @@ pub enum SequenceError {
     BlockError(#[from] BlockError),
     #[error("Missing sequence with id = `{0}`")]
     MissingSequence(u64),
+    #[error("Failed to acquire read lock: `{0}`")]
+    ReadLockError(String),
+    #[error("Failed to acquire write lock: `{0}`")]
+    WriteLockError(String),
 }
 
 #[cfg(test)]
@@ -1225,7 +1252,7 @@ pub(crate) mod tests {
         block_size: Option<usize>,
         use_beam_search: bool,
         best_of: usize,
-    ) -> (Rc<RefCell<Sequence>>, SequenceGroup) {
+    ) -> (Arc<RwLock<Sequence>>, SequenceGroup) {
         let block_size = block_size.unwrap_or(prompt_length);
 
         // Create dummy prompt sequence with tokens 0...block_size-1
@@ -1350,13 +1377,13 @@ pub(crate) mod tests {
             .enumerate()
             .for_each(|(i, v)| {
                 if i == 0 {
-                    v.borrow_mut().sequence_data.add_token_id(1, 0.0);
+                    v.write().unwrap().sequence_data.add_token_id(1, 0.0);
                 }
             });
         seq_group
             .sequences
             .values_mut()
-            .for_each(|v| v.borrow_mut().reset_state_for_recompute());
+            .for_each(|v| v.write().unwrap().reset_state_for_recompute());
         assert!(seq_group.is_prefill());
 
         seq_group
