@@ -419,11 +419,13 @@ impl BlockSpaceManager {
                 self.block_tables.insert(*sequence_id, new_block_table);
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
-            let sequence = seq_group.get_sequence_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
-            {
-                sequence
-                    .borrow_mut()
-                    .set_sequence_status(SequenceStatus::Running);
+            for sequence in seq_group.sequences.values() {
+                let s_id = { sequence.borrow().sequence_id() };
+                if s_id == *sequence_id {
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::Running);
+                }
             }
         }
 
@@ -488,11 +490,13 @@ impl BlockSpaceManager {
                 self.block_tables.insert(*sequence_id, new_block_table);
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
-            let sequence = seq_group.get_sequence_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
-            {
-                sequence
-                    .borrow_mut()
-                    .set_sequence_status(SequenceStatus::Swapped);
+            for sequence in seq_group.sequences.values() {
+                let s_id = { sequence.borrow().sequence_id() };
+                if s_id == *sequence_id {
+                    sequence
+                        .borrow_mut()
+                        .set_sequence_status(SequenceStatus::Swapped);
+                }
             }
         }
 
