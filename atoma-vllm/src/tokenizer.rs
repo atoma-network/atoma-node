@@ -34,7 +34,7 @@ pub struct DetokenizerRequest {
 pub struct TokenizerWorker {}
 
 impl TokenizerWorker {
-    /// Starts the tokenizer worker
+    /// Starts the tokenizer workers
     pub async fn start(
         tokenizer: Tokenizer,
         receiver: mpsc::UnboundedReceiver<TokenizerRequest>,

@@ -206,7 +206,7 @@ impl SequenceData {
         self.num_computed_tokens += num_new_computed_tokens;
         if self.num_computed_tokens <= self.length() {
             if self.get_num_uncomputed_tokens() == 0 {
-                // Prompt tokens attention layers have been now compute, so sequence transits to decode stage
+                // Prompt tokens attention layers have been now computed, so sequence transits to decode stage
                 self.stage = SequenceStage::Decode;
             }
             return Ok(());
@@ -530,6 +530,11 @@ impl Sequence {
     /// Getter for `sequence_id`
     pub fn sequence_id(&self) -> u64 {
         self.sequence_id
+    }
+
+    /// Getter for internal `SequenceData`
+    pub fn sequence_data(&self) -> SequenceData {
+        self.sequence_data.clone()
     }
 }
 
@@ -1114,18 +1119,14 @@ pub struct SpecDecodeWorkerMetrics {
     /// This is useful for evaluating how well the proposal method aligns with the
     /// scoring method.
     pub draft_acceptance_rate: f32,
-
     /// The empirical efficiency, measured as the number of tokens emitted by the
     /// system divided by the number of tokens that could be emitted by the system
     /// if the proposal method were perfect.
     pub system_efficiency: f32,
-
     /// The number of speculative tokens produced by the proposal method.
     pub draft_tokens: i32,
-
     /// The number of tokens emitted by the entire system.
     pub emitted_tokens: i32,
-
     /// The number of tokens accepted by the scoring model and verification
     /// routine, e.g. Llama2-70B and lossless rejection sampling.
     ///
@@ -1134,7 +1135,6 @@ pub struct SpecDecodeWorkerMetrics {
     /// user will usually see less accepted tokens. This metric is helpful when
     /// evaluating alignment of the proposal method with the scoring model.
     pub accepted_tokens: i32,
-
     /// The number of speculative tokens per sequence.
     pub num_spec_tokens: i32,
 }

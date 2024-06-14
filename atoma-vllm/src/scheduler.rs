@@ -504,8 +504,8 @@ impl<P: Policy> Scheduler<P> {
     ///         scheduling and SchedulerRunningOutputs.
     fn schedule_running(
         &mut self,
-        budget: &mut SchedulingBudget,
         running_queue: VecDeque<SequenceGroup>,
+        budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         info!("Schedule running..");
@@ -647,8 +647,8 @@ impl<P: Policy> Scheduler<P> {
     #[instrument]
     fn schedule_swapped(
         &mut self,
-        budget: &mut SchedulingBudget,
         swapped_queue: VecDeque<SequenceGroup>,
+        budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
         info!("Schedule swapped..");
@@ -663,9 +663,7 @@ impl<P: Policy> Scheduler<P> {
         let mut swapped_queue = P::sort_by_priority(now, &swapped_queue);
         let mut infeasible_seq_groups = Vec::<SequenceGroup>::new();
 
-        while !swapped_queue.is_empty() {
-            let mut sequence_group = swapped_queue.pop_front().unwrap(); // DON'T PANIC: we are guaranteed that `swapped_queue` is non-empty at this point
-
+        while let Some(mut sequence_group) = swapped_queue.pop_front() {
             // If the sequence group cannot be swapped in, stop.
             let allocation_status = self.block_manager.can_swap_in(&sequence_group)?;
             if allocation_status == AllocationStatus::Later {
@@ -876,7 +874,7 @@ impl<P: Policy> Scheduler<P> {
     ///
     /// The current policy is designed to optimize the throughput. First,
     /// it batches as many prefill requests as possible. And it schedules
-    ///  decodes. If there's a pressure on GPU memory, decode requests can
+    /// decodes. If there's a pressure on GPU memory, decode requests can
     /// be swapped or preempted.
     #[instrument]
     fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
@@ -916,13 +914,13 @@ impl<P: Policy> Scheduler<P> {
         if prefills.sequence_groups.is_empty() {
             // NOTE: we don't mutate `self.running` in place, instead we clone the `running` queue
             (remaining_running, running_scheduled) =
-                self.schedule_running(&mut budget, remaining_running, false)?;
+                self.schedule_running(remaining_running, &mut budget, false)?;
 
             // If any sequence group is preempted, do not swap in any sequence
             // group, because it means there's no slot for new running requests
             if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
                 (remaining_swapped, swapped_in) =
-                    self.schedule_swapped(&mut budget, remaining_swapped, false)?
+                    self.schedule_swapped(remaining_swapped, &mut budget, false)?
             }
         }
 
@@ -1066,13 +1064,13 @@ impl<P: Policy> Scheduler<P> {
 
         // Decoding should be always scheduled first by fcfs
         let (remaining_running, running_scheduled) =
-            self.schedule_running(&mut budget, self.running.clone(), true)?;
+            self.schedule_running(self.running.clone(), &mut budget, true)?;
 
         // Schedule swapped out requests.
         // If preemption happens, it means we don't have space for swap in
         if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
             (remaining_swapped, swapped_in) =
-                self.schedule_swapped(&mut budget, remaining_swapped, true)?;
+                self.schedule_swapped(remaining_swapped, &mut budget, true)?;
         }
 
         // Schedule new prefills.
@@ -2841,7 +2839,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(10_000, 10_000);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped, false)
+            .schedule_swapped(swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 0);
@@ -2887,7 +2885,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(1, 10_000);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped.clone(), false)
+            .schedule_swapped(swapped.clone(), &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 1);
@@ -2900,7 +2898,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(1, 10_000);
         add_token_budget(&mut budget, 1, 0);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, remaining_swapped, false)
+            .schedule_swapped(remaining_swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 1);
@@ -2939,7 +2937,7 @@ mod tests {
 
         let mut budget = SchedulingBudget::new(10_000, 2);
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, swapped, false)
+            .schedule_swapped(swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 2);
@@ -2950,7 +2948,7 @@ mod tests {
 
         // Verify that `num_curr_seqs` is respected
         let (remaining_swapped, output) = scheduler
-            .schedule_swapped(&mut budget, remaining_swapped, false)
+            .schedule_swapped(remaining_swapped, &mut budget, false)
             .expect("Failed to schedule swapped");
 
         assert_eq!(remaining_swapped.len(), 2);
@@ -3315,10 +3313,9 @@ mod tests {
                             num_running_sequences,
                         );
 
-                        if !running_queue.is_empty() {
+                        if let Some(mut victim_sequence_group) = running_queue.pop_back() {
                             // Preempt the lowest-priority sequence groups first
                             // victim lies at the end of `runnning_queue`, as it is was last in, last out
-                            let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
                             let preempted_mode = self.preempt(
                                 &mut victim_sequence_group,
                                 &mut blocks_to_swap_out,
@@ -3442,9 +3439,7 @@ mod tests {
             let mut swapped_queue = FcfsPolicy::sort_by_priority(now, &swapped_queue);
             let mut infeasible_seq_groups = Vec::<SequenceGroup>::new();
 
-            while !swapped_queue.is_empty() {
-                let mut sequence_group = swapped_queue.pop_front().unwrap(); // DON'T PANIC: we are guaranteed that `swapped_queue` is non-empty at this point
-
+            while let Some(mut sequence_group) = swapped_queue.pop_front() {
                 // If the sequence group cannot be swapped in, stop.
                 let allocation_status = if let Some(allocation_status) = allocation_status.clone() {
                     allocation_status
