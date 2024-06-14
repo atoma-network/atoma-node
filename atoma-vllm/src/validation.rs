@@ -188,12 +188,12 @@ impl Validation {
             })
             .unwrap_or(Ok(1.0))?;
 
-        let top_k: u32 = top_k
+        let top_k = top_k
             .map(|value| {
-                if value <= 0 {
+                if value == 0 {
                     return Err(ValidationError::TopK);
                 }
-                Ok(value as u32)
+                Ok(value)
             })
             .unwrap_or(Ok(0))?;
 
