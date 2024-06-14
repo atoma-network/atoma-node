@@ -402,7 +402,7 @@ impl GenerateRequestOutput {
                     cumulative_logprob: s.cumulative_logprob(),
                     logprobs: s.output_logprobs.clone(),
                     finish_reason: s.get_sequence_status().finished_reason(),
-                    stop_reason: s.stop_reason.clone(),
+                    stop_reason: s.stop_reason,
                 }
             })
             .collect::<Vec<_>>();

@@ -49,6 +49,7 @@ pub struct LlmService {
 impl LlmService {
     /// Starts the service
     #[instrument(skip_all)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn start<M>(
         atoma_event_subscriber_receiver: UnboundedReceiver<GenerateRequest>,
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
@@ -169,7 +170,7 @@ impl LlmService {
             };
         }
 
-        let _ = self.llm_engine_handle.abort();
+        self.llm_engine_handle.abort();
 
         Ok(())
     }
