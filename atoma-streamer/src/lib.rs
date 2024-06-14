@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use atoma_helpers::FirebaseAuth;
+use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::Digest;
 use config::AtomaFirebaseStreamerConfig;
 use reqwest::Client;
@@ -35,21 +35,24 @@ impl AtomaStreamer {
         }
     }
 
-    pub fn new_from_config<P: AsRef<Path>>(
+    pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         streamer_rx: mpsc::Receiver<(Digest, String)>,
-    ) -> Self {
+        firebase: Firebase,
+    ) -> Result<Self, AtomaStreamerError> {
         let config = AtomaFirebaseStreamerConfig::from_file_path(config_path);
-        Self {
+        Ok(Self {
             firebase_uri: config.firebase_uri(),
             streamer_rx,
             last_streamed_index: HashMap::new(),
-            auth: FirebaseAuth::new(
-                config.firebase_email(),
-                config.firebase_password(),
-                config.firebase_api_key(),
-            ),
-        }
+            auth: firebase
+                .add_user(
+                    config.firebase_email(),
+                    config.firebase_password(),
+                    config.firebase_api_key(),
+                )
+                .await?,
+        })
     }
 
     pub async fn run(mut self) -> Result<(), AtomaStreamerError> {

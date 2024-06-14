@@ -1,4 +1,4 @@
 #[cfg(feature = "firebase")]
-pub mod firebase_auth;
+pub mod firebase;
 #[cfg(feature = "firebase")]
-pub use firebase_auth::*;
+pub use firebase::*;
