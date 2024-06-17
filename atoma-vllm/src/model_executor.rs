@@ -85,14 +85,6 @@ where
 
         while let Some(command) = self.receiver.blocking_recv() {
             let ModelThreadCommand { request, sender } = command;
-            if request.is_empty() {
-                // await an instant before sending the empty response
-                // TODO: Check if this makes sense, or we can improve this logic
-                std::thread::sleep(AWAIT_DURATION_EMPTY_REQUESTS);
-                sender
-                    .send(vec![SequenceGroupOutput::empty()])
-                    .map_err(|_| ModelThreadError::SendError)?;
-            }
             // sender.send(response).ok();
         }
 

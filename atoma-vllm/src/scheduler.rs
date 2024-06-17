@@ -550,10 +550,9 @@ impl<P: Policy> Scheduler<P> {
                         num_running_sequences,
                     );
 
-                    if !running_queue.is_empty() {
+                    if let Some(mut victim_sequence_group) = running_queue.pop_back() {
                         // Preempt the lowest-priority sequence groups first
                         // victim lies at the end of `runnning_queue`, as it is was last in, last out
-                        let mut victim_sequence_group = running_queue.pop_back().unwrap(); // DON'T PANIC: already checked that `running_queue` is non-empty
                         let preempted_mode = self.preempt(
                             &mut victim_sequence_group,
                             &mut blocks_to_swap_out,

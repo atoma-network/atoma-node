@@ -81,7 +81,7 @@ impl LlmEngine {
     ///     1. Listens to incoming requests and adds these to the underlying
     ///         `Scheduler`.
     ///     2. Awaits until new outputs are generated from the `ModelExecutor`
-    ///         service. It thens processes the outputs to update the associated
+    ///         service. It then processes the outputs to update the associated
     ///         `SequenceGroup` states and re-schedules new requests.
     ///     3. Sends finished `SequenceGroup` outputs to the Atoma's client
     ///         service.
