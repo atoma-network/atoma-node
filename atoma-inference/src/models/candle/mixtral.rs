@@ -11,7 +11,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     bail,
@@ -54,6 +54,7 @@ impl ModelTrait for MixtralModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -92,6 +93,7 @@ impl ModelTrait for MixtralModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -124,6 +126,7 @@ impl ModelTrait for MixtralModel {
         ModelType::Mixtral8x7b
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running inference on prompt: {}", input.prompt);
         // clean tokenizer state

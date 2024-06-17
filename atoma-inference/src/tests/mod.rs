@@ -1,3 +1,4 @@
+use crate::models::types::LlmOutput;
 use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait};
 use std::{path::PathBuf, time::Duration};
 
@@ -30,6 +31,20 @@ struct TestModel {
 #[derive(Debug, Serialize)]
 struct MockInputOutput {
     id: u64,
+}
+
+impl LlmOutput for MockInputOutput {
+    fn num_input_tokens(&self) -> usize {
+        0
+    }
+
+    fn num_output_tokens(&self) -> Option<usize> {
+        None
+    }
+
+    fn time_to_generate(&self) -> f64 {
+        0.0
+    }
 }
 
 impl TryFrom<(Digest, PromptParams)> for MockInputOutput {

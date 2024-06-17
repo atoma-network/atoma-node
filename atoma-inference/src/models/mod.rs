@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{Digest, PromptParams};
-use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use types::LlmOutput;
 
 use self::{config::ModelConfig, types::ModelType};
 
@@ -21,7 +21,7 @@ pub type ModelId = String;
 /// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
     type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
-    type Output: Serialize;
+    type Output: LlmOutput;
     type LoadData;
 
     /// Fetching the model, from an external API.

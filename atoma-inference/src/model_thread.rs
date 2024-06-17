@@ -6,7 +6,7 @@ use atoma_types::{Digest, OutputType, PromptParams, Request, Response};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::models::{
     candle::{
@@ -15,7 +15,7 @@ use crate::models::{
         stable_diffusion::StableDiffusion,
     },
     config::{ModelConfig, ModelsConfig},
-    types::ModelType,
+    types::{LlmOutput, ModelType},
     ModelError, ModelId, ModelTrait,
 };
 
@@ -93,6 +93,9 @@ where
             };
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
+            let time_to_generate = model_output.time_to_generate();
+            let num_input_tokens = model_output.num_input_tokens();
+            let num_output_tokens = model_output.num_output_tokens();
             let output = serde_json::to_value(model_output)?;
             let output_destination = request.output_destination();
             let response = Response::new(
@@ -104,6 +107,16 @@ where
                 output_type,
             );
             sender.send(response).ok();
+
+            // set metrics
+            let histogram = metrics::histogram!("atoma-inference-time");
+            histogram.record(time_to_generate);
+            let histogram = metrics::histogram!("atoma-inference-input-tokens");
+            histogram.record(num_input_tokens as f32);
+            if let Some(output_tokens) = num_output_tokens {
+                let histogram = metrics::histogram!("atoma-inference-output-tokens");
+                histogram.record(output_tokens as f32);
+            }
         }
 
         Ok(())

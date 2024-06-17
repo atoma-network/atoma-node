@@ -437,6 +437,17 @@ impl TryFrom<(Digest, PromptParams)> for TextModelInput {
     }
 }
 
+/// Trait interface for LLM generated outputs
+pub trait LlmOutput: Serialize {
+    /// Number of input tokens
+    fn num_input_tokens(&self) -> usize;
+    /// Number of outputs generated. None in the case
+    /// of a `StableDiffusionModel`
+    fn num_output_tokens(&self) -> Option<usize>;
+    /// Time to generate the output
+    fn time_to_generate(&self) -> f64;
+}
+
 #[derive(Serialize)]
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
 /// request. It contains additional metadata about the generation that is relevant
@@ -465,6 +476,20 @@ impl Display for TextModelOutput {
             "Output: {}\nInput tokens: {}\nTime: {}\nTokens count: {}",
             self.text, self.input_tokens, self.time, self.tokens_count
         )
+    }
+}
+
+impl LlmOutput for TextModelOutput {
+    fn num_input_tokens(&self) -> usize {
+        self.input_tokens
+    }
+
+    fn num_output_tokens(&self) -> Option<usize> {
+        Some(self.tokens_count)
+    }
+
+    fn time_to_generate(&self) -> f64 {
+        self.time
     }
 }
 
