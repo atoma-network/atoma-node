@@ -84,6 +84,7 @@ where
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
             let request_id = request.id();
+            info!("Received model thread command, with id = {request_id:?}");
             let sampled_node_index = request.sampled_node_index();
             let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();

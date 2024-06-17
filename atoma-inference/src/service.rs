@@ -80,6 +80,7 @@ impl ModelService {
         loop {
             tokio::select! {
                 Some(request) = self.json_server_req_rx.recv() => {
+                    info!("Received a new request, with id = {:?}", request.0.id());
                     self.dispatcher.run_json_inference(request);
                 },
                 Some(request) = self.subscriber_req_rx.recv() => {
