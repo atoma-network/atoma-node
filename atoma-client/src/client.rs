@@ -12,7 +12,7 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::config::AtomaSuiClientConfig;
 
@@ -93,20 +93,12 @@ impl AtomaSuiClient {
     ///   - The third element as the image width.
     ///
     ///   These are then combined into a single byte vector where the image data is followed by the height and width.
+    #[instrument(skip(self, data))]
     fn get_data(&self, data: Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
         if let Some(text) = data["text"].as_str() {
             Ok(text.as_bytes().to_owned())
-        } else if let Some(array) = data.as_array() {
-            if array.len() < 3 {
-                error!("Incomplete image data");
-                return Err(AtomaSuiClientError::MissingOutputData);
-            }
-
-            let img_data = array
-                .first()
-                .and_then(|img| img.as_array())
-                .ok_or(AtomaSuiClientError::MissingOutputData)?;
+        } else if let Some(img_data) = data["image_data"].as_array() {
             let img = img_data
                 .iter()
                 .map(|b| b.as_u64().ok_or(AtomaSuiClientError::MissingOutputData))
@@ -114,14 +106,12 @@ impl AtomaSuiClient {
                 .into_iter()
                 .map(|b| b as u8)
                 .collect::<Vec<_>>();
-            let height = array
-                .get(1)
-                .and_then(|h| h.as_u64())
+            let height = data["height"]
+                .as_u64()
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
-            let width = array
-                .get(2)
-                .and_then(|w| w.as_u64())
+            let width = data["width"]
+                .as_u64()
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
 
@@ -147,6 +137,7 @@ impl AtomaSuiClient {
     ///
     /// This data is then submitted to the Sui blockchain
     /// as a cryptographic commitment to the node's work on inference.
+    #[instrument(skip_all)]
     pub async fn submit_response_commitment(
         &self,
         response: Response,
@@ -240,6 +231,7 @@ impl AtomaSuiClient {
     /// It listens to new incoming `Response`'s from the `AtomaInference` service. Once it gets
     /// a new response in, it constructs a new commitment to the `Response` that is then submitted
     /// on the Atoma smart contract, on the Sui blockchain.
+    #[instrument(skip(self))]
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_rx.recv().await {
             info!("Received new response: {:?}", response);
