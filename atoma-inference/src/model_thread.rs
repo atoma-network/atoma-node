@@ -6,7 +6,7 @@ use atoma_types::{Digest, OutputType, PromptParams, Request, Response};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn, Span};
 
 use crate::models::{
     candle::{
@@ -136,7 +136,7 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
     /// that continuously listens to incoming AI inference requests, and processes these.
-    #[instrument(skip(stream_tx))]
+    #[instrument(skip_all)]
     pub(crate) fn start(
         config: ModelsConfig,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
@@ -353,7 +353,7 @@ pub(crate) fn dispatch_model_thread(
 }
 
 /// Spawns a new model thread
-#[instrument(skip_all)]
+#[instrument(skip(api_key, cache_dir, model_config, model_receiver, stream_tx))]
 pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
@@ -365,7 +365,9 @@ pub(crate) fn spawn_model_thread<M>(
 where
     M: ModelTrait + Send + 'static,
 {
+    let span = Span::current();
     std::thread::spawn(move || {
+        let _enter = span.enter();
         info!("Fetching files for model: {model_name}");
         let load_data = M::fetch(api_key, cache_dir, model_config)?;
 
