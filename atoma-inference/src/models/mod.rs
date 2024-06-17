@@ -2,9 +2,12 @@ use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{Digest, PromptParams};
+#[cfg(feature = "nccl")]
+use cudarc::{driver::DriverError, nccl::result::NcclError};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use types::{TextModelInput, TextModelOutput};
 
 use self::{config::ModelConfig, types::ModelType};
 
@@ -69,6 +72,18 @@ pub enum ModelError {
     InvalidModelInput,
     #[error("Send error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    #[cfg(feature = "nccl")]
+    #[error("Nccl error: `{}`", 0.0)]
+    NcclError(NcclError),
+    #[cfg(feature = "nccl")]
+    #[error("DriverError error: `{0}`")]
+    DriverError(#[from] DriverError),
+    #[error("Tokio error: `{0}`")]
+    RecvError(#[from] tokio::sync::broadcast::error::RecvError),
+    #[error("Send error: `{0}`")]
+    SendErrorTextModelInput(#[from] tokio::sync::broadcast::error::SendError<TextModelInput>),
+    #[error("Send error: `{0}`")]
+    SendErrorTextModelOutput(#[from] tokio::sync::mpsc::error::SendError<TextModelOutput>),
 }
 
 #[macro_export]

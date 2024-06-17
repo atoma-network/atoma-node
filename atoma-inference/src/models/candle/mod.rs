@@ -12,6 +12,10 @@ use super::ModelError;
 
 pub mod falcon;
 pub mod llama;
+#[cfg(feature = "nccl")]
+pub mod llama_nccl;
+#[cfg(feature = "nccl")]
+mod llama_nccl_model;
 pub mod mamba;
 pub mod mistral;
 pub mod mixtral;
