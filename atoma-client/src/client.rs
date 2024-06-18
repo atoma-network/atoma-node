@@ -197,7 +197,7 @@ impl AtomaSuiClient {
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
                     let output = response.response();
                     let output_destination = Deserialize::deserialize(&mut Deserializer::new(
-                        &response.output_destination()[..],
+                        response.output_destination(),
                     ))?;
                     let output_type = response.output_type();
                     let output = match output_type {

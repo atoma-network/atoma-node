@@ -65,7 +65,7 @@ impl ModelTrait for QuantizedModel {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()

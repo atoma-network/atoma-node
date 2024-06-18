@@ -332,7 +332,7 @@ impl Display for ModelType {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 /// `TextModelInput` - used to specify all prompt
 /// parameters used for running LLM inference on a given
 /// text prompt. It should only be consumed by text to
@@ -437,7 +437,7 @@ impl TryFrom<(Digest, PromptParams)> for TextModelInput {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
 /// request. It contains additional metadata about the generation that is relevant
 /// to keep track. To be used in the context of text to text models and not

@@ -125,7 +125,7 @@ impl ModelTrait for QwenModel {
         };
         let config_filename = repo.get("config.json")?;
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let mut file_paths = Vec::with_capacity(2 + filenames.len());

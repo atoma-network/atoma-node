@@ -91,7 +91,7 @@ impl ModelTrait for MistralModel {
         file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
 
         Ok(Self::LoadData {
             model_type,

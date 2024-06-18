@@ -8,6 +8,12 @@ pub struct Firebase {
     add_user_lock: Arc<Mutex<()>>,
 }
 
+impl Default for Firebase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Firebase {
     pub fn new() -> Self {
         Self {
