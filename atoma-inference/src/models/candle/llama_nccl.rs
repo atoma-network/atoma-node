@@ -106,12 +106,11 @@ impl LlamaNcclWorker {
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
-        let tokens = if self.model_type == ModelType::Llama3_8b {
-            vec![bos_token_id].into_iter().chain(prompt_ids).collect()
-        } else {
+        let mut tokens = if input.pre_prompt_tokens.is_empty() {
             prompt_ids
+        } else {
+            [input.pre_prompt_tokens, vec![bos_token_id], prompt_ids].concat()
         };
-        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
 
         let mut logits_processor =
