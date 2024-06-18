@@ -8,7 +8,7 @@ use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
@@ -86,6 +86,8 @@ impl SuiSubscriber {
         .await
     }
 
+    /// Subscribes to Sui blockchain for event listening
+    #[instrument(skip_all)]
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
@@ -108,6 +110,7 @@ impl SuiSubscriber {
     /// If the event contains a new AI inference request, to which the current node has been sampled to executed
     /// it will parse the content of the (JSON) event into a `Request` and send it to the `AtomaInference`
     /// service.
+    #[instrument(skip(self, event))]
     async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
         let event_type = event.type_.name.as_str();
         match AtomaEvent::from_str(event_type)? {
@@ -148,6 +151,7 @@ impl SuiSubscriber {
     }
 
     /// Handles a new prompt event (which contains a request for a new AI inference job).
+    #[instrument(skip(self, event_data))]
     async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let request = Request::try_from((self.id, event_data))?;
@@ -170,6 +174,7 @@ impl SuiSubscriber {
     }
 
     /// Handles a newly sampled node event (which contains a request for a new AI inference job).
+    #[instrument(skip(self, event_data))]
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,

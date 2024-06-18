@@ -12,7 +12,7 @@ type Revision = String;
 /// Model configuration.
 ///
 /// It contains parameters such as:
-/// `device_id: usize` - ordinal specifying which GPU to host the current model
+/// `device_ids: Vec<usize>` - ordinal specifying which GPUs to host the current model
 /// `dtype: String` - corresponds to the precision of which the model
 ///     should run (e.g., `f16`, `bf16`, `f32`, etc)
 /// `model_id: String` - the model's identifier (from HuggingFace)
@@ -23,7 +23,7 @@ type Revision = String;
 pub struct ModelConfig {
     /// Device id that maps to the actual
     /// physical GPU card handling the current model
-    device_id: usize,
+    device_ids: Vec<usize>,
     /// Dtype for decimal precision
     dtype: String,
     /// The model's identifier
@@ -40,14 +40,14 @@ impl ModelConfig {
         model_id: ModelId,
         dtype: String,
         revision: Revision,
-        device_id: usize,
+        device_ids: Vec<usize>,
         use_flash_attention: bool,
     ) -> Self {
         Self {
             dtype,
             model_id,
             revision,
-            device_id,
+            device_ids,
             use_flash_attention,
         }
     }
@@ -67,9 +67,14 @@ impl ModelConfig {
         self.revision.clone()
     }
 
-    /// Getter for `device_id`
-    pub fn device_id(&self) -> usize {
-        self.device_id
+    /// Getter for the first `device_id`
+    pub fn device_first_id(&self) -> usize {
+        self.device_ids[0]
+    }
+
+    /// Getter for `device_ids`
+    pub fn device_ids(&self) -> Vec<usize> {
+        self.device_ids.clone()
     }
 
     /// Getter for `use_flash_attention`
@@ -201,14 +206,14 @@ pub mod tests {
                 "F16".to_string(),
                 "Llama2_7b".to_string(),
                 "".to_string(),
-                0,
+                vec![0],
                 true,
             )],
             18001,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\njrpc_port = 18001\n\n[[models]]\ndevice_id = 0\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
+        let should_be_toml_str = "api_key = \"my_key\"\ncache_dir = \"/\"\nflush_storage = true\njrpc_port = 18001\n\n[[models]]\ndevice_id = [0]\ndtype = \"Llama2_7b\"\nmodel_id = \"F16\"\nrevision = \"\"\nuse_flash_attention = true\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

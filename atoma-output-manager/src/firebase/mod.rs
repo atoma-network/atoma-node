@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use atoma_helpers::FirebaseAuth;
+use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::AtomaOutputMetadata;
 use reqwest::Client;
-use serde_json::{json, Value};
-use tracing::{debug, info};
+use serde_json::json;
+use tracing::{debug, info, instrument};
 
 use crate::AtomaOutputManagerError;
 
@@ -20,19 +20,26 @@ pub struct FirebaseOutputManager {
 
 impl FirebaseOutputManager {
     /// Constructor
-    pub fn new(firebase_uri: PathBuf, email: String, password: String, api_key: String) -> Self {
-        Self {
+    pub async fn new(
+        firebase_uri: PathBuf,
+        email: String,
+        password: String,
+        api_key: String,
+        firebase: Firebase,
+    ) -> Result<Self, AtomaOutputManagerError> {
+        Ok(Self {
             firebase_uri,
-            auth: FirebaseAuth::new(email, password, api_key),
-        }
+            auth: firebase.add_user(email, password, api_key).await?,
+        })
     }
 
     /// Handles  a new post request. Encapsulates the logic necessary
     /// to post new requests, using `reqwest::Client`.
+    #[instrument(skip_all)]
     pub async fn handle_post_request(
         &mut self,
         output_metadata: &AtomaOutputMetadata,
-        output: Value,
+        output: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;

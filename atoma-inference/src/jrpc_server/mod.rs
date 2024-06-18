@@ -4,7 +4,7 @@ use atoma_types::{Request, Response};
 use axum::{http::StatusCode, routing::post, Extension, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 pub type RequestSender = mpsc::Sender<(Request, oneshot::Sender<Response>)>;
 
@@ -51,6 +51,7 @@ async fn jrpc_call(
     }
 }
 
+#[instrument(skip_all)]
 async fn inner_jrpc_call(
     sender: Arc<RequestSender>,
     input: Value,
@@ -60,8 +61,15 @@ async fn inner_jrpc_call(
         Some(request) => {
             let (one_sender, one_receiver) = oneshot::channel();
             info!("Sending request to model service");
-            let request =
-                serde_json::from_value::<Request>(request.clone()).map_err(|e| e.to_string())?;
+            let request = match serde_json::from_value::<Request>(request.clone())
+                .map_err(|e| e.to_string())
+            {
+                Ok(req) => req,
+                Err(e) => {
+                    error!("Failed to deserialize `Request`, with error: {e}");
+                    return Err(e.to_string());
+                }
+            };
             sender
                 .send((request.clone(), one_sender))
                 .await
