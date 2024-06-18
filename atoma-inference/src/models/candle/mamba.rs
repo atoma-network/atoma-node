@@ -11,7 +11,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     bail,
@@ -69,6 +69,7 @@ impl ModelTrait for MambaModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
@@ -108,6 +109,7 @@ impl ModelTrait for MambaModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -153,6 +155,7 @@ impl ModelTrait for MambaModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         let TextModelInput {
             prompt,

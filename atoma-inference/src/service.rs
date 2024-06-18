@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use thiserror::Error;
 
@@ -75,14 +75,18 @@ impl ModelService {
     /// Listens to requests coming from either the node's JRPC service, or the
     /// node's blockchain event listener. It also processes newly processed responses
     /// containing the AI generated output (for a given request).
+    #[instrument(skip_all)]
     pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
                 Some(request) = self.json_server_req_rx.recv() => {
+                    info!("Received a new request, with id = {:?}", request.0.id());
                     self.dispatcher.run_json_inference(request);
                 },
                 Some(request) = self.subscriber_req_rx.recv() => {
                     self.dispatcher.run_subscriber_inference(request);
+                    let counter = metrics::counter!("atoma-inference-service-request");
+                    counter.increment(1);
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
@@ -103,6 +107,7 @@ impl ModelService {
 
 impl ModelService {
     /// Stops the `ModelService`
+    #[instrument(skip_all)]
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
@@ -143,10 +148,11 @@ pub enum ModelServiceError {
 #[cfg(test)]
 mod tests {
     use atoma_types::PromptParams;
+    use serde::Serialize;
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, ModelError, ModelTrait};
+    use crate::models::{config::ModelConfig, types::LlmOutput, ModelError, ModelTrait};
 
     use super::*;
 
@@ -154,6 +160,23 @@ mod tests {
     struct TestModelInstance {}
 
     struct MockInput {}
+
+    #[derive(Serialize)]
+    struct MockOutput {}
+
+    impl LlmOutput for MockOutput {
+        fn num_input_tokens(&self) -> usize {
+            0
+        }
+
+        fn num_output_tokens(&self) -> Option<usize> {
+            None
+        }
+
+        fn time_to_generate(&self) -> f64 {
+            0.0
+        }
+    }
 
     impl TryFrom<(Digest, PromptParams)> for MockInput {
         type Error = ModelError;
@@ -165,7 +188,7 @@ mod tests {
 
     impl ModelTrait for TestModelInstance {
         type Input = MockInput;
-        type Output = ();
+        type Output = MockOutput;
         type LoadData = ();
 
         fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
@@ -184,7 +207,7 @@ mod tests {
         }
 
         fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
-            Ok(())
+            Ok(MockOutput {})
         }
     }
 

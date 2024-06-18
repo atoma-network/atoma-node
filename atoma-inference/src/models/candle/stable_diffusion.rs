@@ -8,16 +8,17 @@ use candle_transformers::models::stable_diffusion::{
 
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
+use serde::Serialize;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 use crate::{
     bail,
     models::{
         candle::save_image,
         config::ModelConfig,
-        types::{ModelType, StableDiffusionInput},
+        types::{LlmOutput, ModelType, StableDiffusionInput},
         ModelError, ModelTrait,
     },
 };
@@ -75,11 +76,41 @@ pub struct StableDiffusion {
     vae: AutoEncoderKL,
 }
 
+/// Stable diffusion output
+#[derive(Serialize)]
+pub struct StableDiffusionOutput {
+    /// Data buffer of the image encoding
+    pub image_data: Vec<u8>,
+    /// Height of the image
+    pub height: usize,
+    /// Width of the image
+    pub width: usize,
+    /// Number of input tokens
+    input_tokens: usize,
+    /// Time to generate output
+    time_to_generate: f64,
+}
+
+impl LlmOutput for StableDiffusionOutput {
+    fn num_input_tokens(&self) -> usize {
+        self.input_tokens
+    }
+
+    fn num_output_tokens(&self) -> Option<usize> {
+        None
+    }
+
+    fn time_to_generate(&self) -> f64 {
+        self.time_to_generate
+    }
+}
+
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
-    type Output = (Vec<u8>, usize, usize);
+    type Output = StableDiffusionOutput;
     type LoadData = StableDiffusionLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
@@ -148,6 +179,7 @@ impl ModelTrait for StableDiffusion {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         _: mpsc::Sender<(Digest, String)>,
@@ -239,6 +271,7 @@ impl ModelTrait for StableDiffusion {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         if !(0. ..=1.).contains(&input.img2img_strength) {
             Err(ModelError::Config(format!(
@@ -285,7 +318,7 @@ impl ModelTrait for StableDiffusion {
         };
 
         debug!("Computing text embeddings...");
-        let text_embeddings = which
+        let text_embeddings_data = which
             .iter()
             .map(|first| {
                 Self::text_embeddings(
@@ -303,6 +336,16 @@ impl ModelTrait for StableDiffusion {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        // We sum all input tokens from each tokenizer run
+        let num_input_tokens = text_embeddings_data
+            .iter()
+            .map(|(_, input_tokens)| input_tokens)
+            .sum();
+        let text_embeddings = text_embeddings_data
+            .iter()
+            .map(|(t, _)| t)
+            .collect::<Vec<_>>();
 
         let text_embeddings = Tensor::cat(&text_embeddings, D::Minus1)?;
 
@@ -408,7 +451,15 @@ impl ModelTrait for StableDiffusion {
             res = convert_to_image(&image)?;
         }
 
-        Ok(res)
+        let time_to_generate = start_gen.elapsed().as_secs_f64();
+
+        Ok(StableDiffusionOutput {
+            image_data: res.0,
+            height: res.1,
+            width: res.2,
+            input_tokens: num_input_tokens,
+            time_to_generate,
+        })
     }
 }
 
@@ -565,7 +616,7 @@ impl StableDiffusion {
         dtype: DType,
         use_guide_scale: bool,
         first: bool,
-    ) -> Result<Tensor, ModelError> {
+    ) -> Result<(Tensor, usize), ModelError> {
         let (tokenizer, text_model) = if first {
             (tokenizer, text_model)
         } else {
@@ -586,6 +637,7 @@ impl StableDiffusion {
                 .ok_or(ModelError::Msg("".to_string()))?,
         };
         let mut tokens = tokenizer.encode(prompt, true)?.get_ids().to_vec();
+        let num_input_tokens = tokens.len();
         while tokens.len() < sd_config.clip.max_position_embeddings {
             tokens.push(pad_id)
         }
@@ -606,7 +658,7 @@ impl StableDiffusion {
         } else {
             text_embeddings.to_dtype(dtype)?
         };
-        Ok(text_embeddings)
+        Ok((text_embeddings, num_input_tokens))
     }
 
     /// Pre-processes image
@@ -709,10 +761,10 @@ mod tests {
         };
         println!("Running inference on input: {:?}", input);
         let output = model.run(input).expect("Failed to run inference");
-        println!("{:?}", output);
+        println!("{:?}", output.image_data);
 
-        assert_eq!(output.1, 512);
-        assert_eq!(output.2, 512);
+        assert_eq!(output.height, 512);
+        assert_eq!(output.width, 512);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
         std::fs::remove_file("tensor1").unwrap();

@@ -69,6 +69,7 @@ image = { version = "0.25.0", default-features = false, features = [
     "jpeg",
     "png",
 ] }
+metrics = "0.23"
 rand = "0.8.5"
 rayon = "1.10.0"
 reqwest = "0.12.1"

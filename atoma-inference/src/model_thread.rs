@@ -6,7 +6,7 @@ use atoma_types::{Digest, OutputType, PromptParams, Request, Response};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn, Span};
 
 #[cfg(feature = "nccl")]
 use crate::models::candle::llama_nccl::LlamaNcclModel;
@@ -18,7 +18,7 @@ use crate::models::{
         stable_diffusion::StableDiffusion,
     },
     config::{ModelConfig, ModelsConfig},
-    types::ModelType,
+    types::{LlmOutput, ModelType},
     ModelError, ModelId, ModelTrait,
 };
 
@@ -80,12 +80,14 @@ where
     /// When a new request is received, it starts a new inference loop for the encapsulated
     /// AI model `M`. Once the AI generated output is ready, it sends it back using the corresponding
     /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
+    #[instrument(skip_all)]
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
             let request_id = request.id();
+            info!("Received model thread command, with id = {request_id:?}");
             let sampled_node_index = request.sampled_node_index();
             let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();
@@ -95,6 +97,9 @@ where
             };
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
             let model_output = self.model.run(model_input)?;
+            let time_to_generate = model_output.time_to_generate();
+            let num_input_tokens = model_output.num_input_tokens();
+            let num_output_tokens = model_output.num_output_tokens();
             let output = serde_json::to_value(model_output)?;
             let output_destination = request.output_destination();
             let response = Response::new(
@@ -106,6 +111,16 @@ where
                 output_type,
             );
             sender.send(response).ok();
+
+            // set metrics
+            let histogram = metrics::histogram!("atoma-inference-time");
+            histogram.record(time_to_generate);
+            let histogram = metrics::histogram!("atoma-inference-input-tokens");
+            histogram.record(num_input_tokens as f32);
+            if let Some(output_tokens) = num_output_tokens {
+                let histogram = metrics::histogram!("atoma-inference-output-tokens");
+                histogram.record(output_tokens as f32);
+            }
         }
 
         Ok(())
@@ -125,6 +140,7 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
     /// that continuously listens to incoming AI inference requests, and processes these.
+    #[instrument(skip_all)]
     pub(crate) fn start(
         config: ModelsConfig,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
@@ -170,6 +186,7 @@ impl ModelThreadDispatcher {
 
     /// Sends a `ModelThreadCommand` instance into the corresponding
     /// `Model`'s thread, to be processed by the `Model` itself.
+    #[instrument(skip_all)]
     fn send(&self, command: ModelThreadCommand) {
         let model_id = command.request.model();
 
@@ -188,6 +205,7 @@ impl ModelThreadDispatcher {
 
 impl ModelThreadDispatcher {
     /// Responsible for handling requests from the node's inference JRPC service
+    #[instrument(skip_all)]
     pub(crate) fn run_json_inference(
         &self,
         (request, sender): (Request, oneshot::Sender<Response>),
@@ -197,6 +215,7 @@ impl ModelThreadDispatcher {
 
     /// Responsible for handling requests from the node's event listener service.
     /// These correspond to requests that are generated through the Atoma's smart contract.
+    #[instrument(skip_all)]
     pub(crate) fn run_subscriber_inference(&self, request: Request) {
         let (sender, receiver) = oneshot::channel();
         self.send(ModelThreadCommand { request, sender });
@@ -207,6 +226,7 @@ impl ModelThreadDispatcher {
 /// Contains logic to start a new model thread. This includes setting
 /// HuggingFace's api key, specifying a cache directory for storage of models,
 /// the model's name and type together with the corresponding model configuration.
+#[instrument(skip_all)]
 pub(crate) fn dispatch_model_thread(
     api_key: String,
     cache_dir: PathBuf,
@@ -360,6 +380,7 @@ pub(crate) fn dispatch_model_thread(
 }
 
 /// Spawns a new model thread
+#[instrument(skip(api_key, cache_dir, model_config, model_receiver, stream_tx))]
 pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
@@ -371,7 +392,9 @@ pub(crate) fn spawn_model_thread<M>(
 where
     M: ModelTrait + Send + 'static,
 {
+    let span = Span::current();
     std::thread::spawn(move || {
+        let _enter = span.enter();
         info!("Fetching files for model: {model_name}");
         let load_data = M::fetch(api_key, cache_dir, model_config)?;
 

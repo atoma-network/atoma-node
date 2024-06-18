@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use gql_client::Client;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::AtomaOutputManagerError;
 
@@ -33,6 +33,7 @@ impl GatewayOutputManager {
 
     /// Handles a new request by submitting the inference output to the user
     /// specified PDA, on behalf of the Atoma organization on the Gateway protocol
+    #[instrument(skip_all)]
     pub async fn handle_request(
         &self,
         output_metadata: &AtomaOutputMetadata,

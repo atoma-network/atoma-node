@@ -7,7 +7,7 @@ use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 mod config;
 mod firebase;
@@ -56,6 +56,7 @@ impl AtomaOutputManager {
 
     /// Main loop, responsible for continuously listening to incoming
     /// AI generated outputs, together with corresponding metadata
+    #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
         info!("Starting firebase service..");
         while let Some((ref output_metadata, output)) = self.output_manager_rx.recv().await {

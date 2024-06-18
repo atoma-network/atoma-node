@@ -4,12 +4,14 @@ use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{Digest, PromptParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
-use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use types::{TextModelInput, TextModelOutput};
 
-use self::{config::ModelConfig, types::ModelType};
+use self::{
+    config::ModelConfig,
+    types::{LlmOutput, ModelType},
+};
 
 pub mod candle;
 pub mod config;
@@ -24,7 +26,7 @@ pub type ModelId = String;
 /// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
     type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
-    type Output: Serialize;
+    type Output: LlmOutput;
     type LoadData;
 
     /// Fetching the model, from an external API.
