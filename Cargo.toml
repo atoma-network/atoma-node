@@ -42,11 +42,27 @@ candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-n
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", branch = "main" }
 clap = "4.5.4"
 config = "0.14.0"
+cudarc = { version = "0.11.6", features = [
+    "std",
+    "cublas",
+    "cublaslt",
+    "curand",
+    "driver",
+    "nvrtc",
+    "f16",
+    "cuda-version-from-build-system",
+    "dynamic-linking",
+], default-features = false }
 dotenv = "0.15.0"
 ethers = "2.0.14"
 futures = "0.3.30"
 futures-util = "0.3.30"
 gql_client = "1.0.7"
+half = { version = "2.3.1", features = [
+    "num-traits",
+    "use-intrinsics",
+    "rand_distr",
+] }
 hex = "0.4.3"
 hf-hub = "0.3.2"
 image = { version = "0.25.0", default-features = false, features = [

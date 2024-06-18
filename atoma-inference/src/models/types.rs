@@ -332,7 +332,7 @@ impl Display for ModelType {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 /// `TextModelInput` - used to specify all prompt
 /// parameters used for running LLM inference on a given
 /// text prompt. It should only be consumed by text to
@@ -448,11 +448,11 @@ pub trait LlmOutput: Serialize {
     fn time_to_generate(&self) -> f64;
 }
 
-#[derive(Serialize)]
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
 /// request. It contains additional metadata about the generation that is relevant
 /// to keep track. To be used in the context of text to text models and not
 /// multi modality ones
+#[derive(Debug, Serialize)]
 pub struct TextModelOutput {
     /// Number of input tokens for the request
     pub input_tokens: usize,

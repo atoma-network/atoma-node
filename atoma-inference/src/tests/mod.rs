@@ -107,8 +107,13 @@ impl ModelThreadDispatcher {
 
             let duration = format!("{i}");
             let cache_dir = "./".parse().unwrap();
-            let model_config =
-                ModelConfig::new(model_name.clone(), "".to_string(), "".to_string(), 0, false);
+            let model_config = ModelConfig::new(
+                model_name.clone(),
+                "".to_string(),
+                "".to_string(),
+                vec![0],
+                false,
+            );
 
             let _join_handle = spawn_model_thread::<TestModel>(
                 model_name,
@@ -192,21 +197,21 @@ async fn test_inference_service() {
             "mamba_130m".to_string(),
             "f32".to_string(),
             "refs/pr/1".to_string(),
-            0,
+            vec![0],
             false,
         ),
         ModelConfig::new(
             "mamba_370m".to_string(),
             "f32".to_string(),
             "refs/pr/1".to_string(),
-            0,
+            vec![0],
             false,
         ),
         ModelConfig::new(
             "llama_tiny_llama_1_1b_chat".to_string(),
             "f32".to_string(),
             "main".to_string(),
-            0,
+            vec![0],
             false,
         ),
     ];

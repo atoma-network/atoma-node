@@ -8,6 +8,9 @@ use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, instrument, warn, Span};
 
+#[cfg(feature = "nccl")]
+use crate::models::candle::llama_nccl::LlamaNcclModel;
+
 use crate::models::{
     candle::{
         falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
@@ -233,123 +236,146 @@ pub(crate) fn dispatch_model_thread(
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
     stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
-    match model_type {
-        ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
-            spawn_model_thread::<FalconModel>(
+    if model_config.device_ids().len() > 1 {
+        #[cfg(not(feature = "nccl"))]
+        panic!("Multi-GPU is not supported");
+        #[cfg(feature = "nccl")]
+        match model_type {
+            ModelType::LlamaV1
+            | ModelType::LlamaV2
+            | ModelType::LlamaTinyLlama1_1BChat
+            | ModelType::LlamaSolar10_7B
+            | ModelType::Llama3_8b
+            | ModelType::Llama3Instruct8b
+            | ModelType::Llama3_70b => spawn_model_thread::<LlamaNcclModel>(
                 model_name,
-                api_key.clone(),
-                cache_dir.clone(),
+                api_key,
+                cache_dir,
                 model_config,
                 model_receiver,
                 stream_tx,
-            )
+            ),
+            _ => panic!("This model is not supported"),
         }
-        ModelType::LlamaV1
-        | ModelType::LlamaV2
-        | ModelType::LlamaTinyLlama1_1BChat
-        | ModelType::LlamaSolar10_7B
-        | ModelType::Llama3_8b
-        | ModelType::Llama3Instruct8b
-        | ModelType::Llama3_70b => spawn_model_thread::<LlamaModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::Mamba130m
-        | ModelType::Mamba370m
-        | ModelType::Mamba790m
-        | ModelType::Mamba1_4b
-        | ModelType::Mamba2_8b => spawn_model_thread::<MambaModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::Mistral7bV01
-        | ModelType::Mistral7bV02
-        | ModelType::Mistral7bInstructV01
-        | ModelType::Mistral7bInstructV02 => spawn_model_thread::<MistralModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::StableDiffusionV1_5
-        | ModelType::StableDiffusionV2_1
-        | ModelType::StableDiffusionTurbo
-        | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::QuantizedLlamaV2_7b
-        | ModelType::QuantizedLlamaV2_13b
-        | ModelType::QuantizedLlamaV2_70b
-        | ModelType::QuantizedLlamaV2_7bChat
-        | ModelType::QuantizedLlamaV2_13bChat
-        | ModelType::QuantizedLlamaV2_70bChat
-        | ModelType::QuantizedLlama7b
-        | ModelType::QuantizedLlama13b
-        | ModelType::QuantizedLlama34b
-        | ModelType::QuantizedLeo7b
-        | ModelType::QuantizedLeo13b
-        | ModelType::QuantizedMistral7b
-        | ModelType::QuantizedMistral7bInstruct
-        | ModelType::QuantizedMistral7bInstructV02
-        | ModelType::QuantizedZephyr7bAlpha
-        | ModelType::QuantizedZephyr7bBeta
-        | ModelType::QuantizedOpenChat35
-        | ModelType::QuantizedStarling7bAlpha
-        | ModelType::QuantizedMixtral
-        | ModelType::QuantizedMixtralInstruct
-        | ModelType::QuantizedL8b => spawn_model_thread::<QuantizedModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
-        ModelType::QwenW0_5b
-        | ModelType::QwenW1_8b
-        | ModelType::QwenW4b
-        | ModelType::QwenW7b
-        | ModelType::QwenW14b
-        | ModelType::QwenW72b
-        | ModelType::QwenMoeA27b => spawn_model_thread::<QwenModel>(
-            model_name,
-            api_key,
-            cache_dir,
-            model_config,
-            model_receiver,
-            stream_tx,
-        ),
+    } else {
+        match model_type {
+            ModelType::Falcon7b | ModelType::Falcon40b | ModelType::Falcon180b => {
+                spawn_model_thread::<FalconModel>(
+                    model_name,
+                    api_key.clone(),
+                    cache_dir.clone(),
+                    model_config,
+                    model_receiver,
+                    stream_tx,
+                )
+            }
+            ModelType::LlamaV1
+            | ModelType::LlamaV2
+            | ModelType::LlamaTinyLlama1_1BChat
+            | ModelType::LlamaSolar10_7B
+            | ModelType::Llama3_8b
+            | ModelType::Llama3Instruct8b
+            | ModelType::Llama3_70b => spawn_model_thread::<LlamaModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::Mamba130m
+            | ModelType::Mamba370m
+            | ModelType::Mamba790m
+            | ModelType::Mamba1_4b
+            | ModelType::Mamba2_8b => spawn_model_thread::<MambaModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::Mistral7bV01
+            | ModelType::Mistral7bV02
+            | ModelType::Mistral7bInstructV01
+            | ModelType::Mistral7bInstructV02 => spawn_model_thread::<MistralModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::Phi3Mini => spawn_model_thread::<Phi3Model>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::StableDiffusionV1_5
+            | ModelType::StableDiffusionV2_1
+            | ModelType::StableDiffusionTurbo
+            | ModelType::StableDiffusionXl => spawn_model_thread::<StableDiffusion>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::QuantizedLlamaV2_7b
+            | ModelType::QuantizedLlamaV2_13b
+            | ModelType::QuantizedLlamaV2_70b
+            | ModelType::QuantizedLlamaV2_7bChat
+            | ModelType::QuantizedLlamaV2_13bChat
+            | ModelType::QuantizedLlamaV2_70bChat
+            | ModelType::QuantizedLlama7b
+            | ModelType::QuantizedLlama13b
+            | ModelType::QuantizedLlama34b
+            | ModelType::QuantizedLeo7b
+            | ModelType::QuantizedLeo13b
+            | ModelType::QuantizedMistral7b
+            | ModelType::QuantizedMistral7bInstruct
+            | ModelType::QuantizedMistral7bInstructV02
+            | ModelType::QuantizedZephyr7bAlpha
+            | ModelType::QuantizedZephyr7bBeta
+            | ModelType::QuantizedOpenChat35
+            | ModelType::QuantizedStarling7bAlpha
+            | ModelType::QuantizedMixtral
+            | ModelType::QuantizedMixtralInstruct
+            | ModelType::QuantizedL8b => spawn_model_thread::<QuantizedModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+            ModelType::QwenW0_5b
+            | ModelType::QwenW1_8b
+            | ModelType::QwenW4b
+            | ModelType::QwenW7b
+            | ModelType::QwenW14b
+            | ModelType::QwenW72b
+            | ModelType::QwenMoeA27b => spawn_model_thread::<QwenModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
+        }
     }
 }
 

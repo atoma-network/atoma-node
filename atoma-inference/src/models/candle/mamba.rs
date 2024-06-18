@@ -75,7 +75,7 @@ impl ModelTrait for MambaModel {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()
@@ -273,7 +273,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = MambaModel::fetch(api_key, cache_dir.clone(), config)
