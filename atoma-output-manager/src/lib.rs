@@ -5,7 +5,6 @@ use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
-use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{info, instrument};
@@ -27,14 +26,14 @@ pub struct AtomaOutputManager {
     gateway_output_manager: GatewayOutputManager,
     /// A mpsc receiver that receives tuples of `AtomaOutputMetadata` and
     /// the actual AI generated output, in JSON format.
-    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
+    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, String)>,
 }
 
 impl AtomaOutputManager {
     /// Constructor
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
+        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, String)>,
         firebase: Firebase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);

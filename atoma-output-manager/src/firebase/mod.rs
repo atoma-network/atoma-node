@@ -39,7 +39,7 @@ impl FirebaseOutputManager {
     pub async fn handle_post_request(
         &mut self,
         output_metadata: &AtomaOutputMetadata,
-        output: Value,
+        output: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
