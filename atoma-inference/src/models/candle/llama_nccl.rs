@@ -8,7 +8,7 @@ use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
+use tracing::{error, info, Span};
 
 use crate::models::{
     config::ModelConfig,
@@ -248,7 +248,9 @@ impl ModelTrait for LlamaNcclModel {
             let model_type = load_data.model_type.clone();
             let stream_tx = stream_tx.clone();
             let device_id = load_data.device_ids[rank];
+            let span = Span::current();
             thread::spawn(move || -> Result<(), ModelError> {
+                let _enter = span.enter();
                 let llama_worker = LlamaNcclWorker::new(
                     rank,
                     num_shards,
