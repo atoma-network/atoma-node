@@ -10,6 +10,8 @@ use tracing::{debug, error, info, instrument, warn, Span};
 
 #[cfg(feature = "nccl")]
 use crate::models::candle::llama_nccl::LlamaNcclModel;
+#[cfg(feature = "nccl")]
+use crate::models::candle::mixtral_nccl::MixtralNcclModel;
 
 use crate::models::{
     candle::{
