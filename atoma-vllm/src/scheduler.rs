@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
     marker::PhantomData,
+    sync::Arc,
     time::Instant,
 };
 
@@ -10,6 +11,7 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     policy::Policy,
     sequence::{SequenceData, SequenceError, SequenceGroup, SequenceGroupMetadata, SequenceStatus},
+    types::{ReadLock, WriteLock},
 };
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -237,30 +239,25 @@ impl SchedulerPrefillOutputs {
 }
 
 /// `SchedulerOutputs` - The scheduling decision made from a scheduler.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
-    scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
+    pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
     /// Number of prefill groups scheduled.
     number_prefill_groups: usize,
     /// Total number of batched tokens.
     #[allow(dead_code)]
     num_batched_tokens: usize,
     /// Blocks to swap in. List of CPU -> GPU block number.
-    #[allow(dead_code)]
-    blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<u64, u64>,
     /// Blocks to swap out. List of GPU -> CPU block number.
-    #[allow(dead_code)]
-    blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<u64, u64>,
     /// Blocks to copy. Source to dest block.
-    #[allow(dead_code)]
-    blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<u64, u64>,
     /// Ignored sequence groups
-    #[allow(dead_code)]
-    ignored_seq_groups: Vec<SequenceGroup>,
+    pub ignored_seq_groups: Vec<SequenceGroup>,
     /// The number of requests in the running queue
-    #[allow(dead_code)]
-    running_queue_size: usize,
+    pub running_queue_size: usize,
     /// Number of preempted sequnce groups
     #[allow(dead_code)]
     preempted: usize,
@@ -281,6 +278,30 @@ impl SchedulerOutputs {
         }
         Ok(())
     }
+
+    /// Creates a new empty instance
+    pub fn create_empty() -> Self {
+        Self {
+            scheduled_sequence_groups: vec![],
+            num_batched_tokens: 0,
+            number_prefill_groups: 0,
+            blocks_to_copy: HashMap::default(),
+            blocks_to_swap_in: HashMap::default(),
+            blocks_to_swap_out: HashMap::default(),
+            ignored_seq_groups: vec![],
+            running_queue_size: 0,
+            preempted: 0,
+            span: info_span!("scheduler-output"),
+        }
+    }
+
+    /// Checks if the current instance is empty
+    pub fn is_empty(&self) -> bool {
+        self.scheduled_sequence_groups.is_empty()
+            && self.blocks_to_swap_in.is_empty()
+            && self.blocks_to_swap_out.is_empty()
+            && self.blocks_to_copy.is_empty()
+    }
 }
 
 /// `Scheduler` - Responsible for managing the schedule of incoming inference `SequenceGroup` requests
@@ -291,9 +312,9 @@ impl SchedulerOutputs {
 pub struct Scheduler<P> {
     /// Cache configuration
     #[allow(dead_code)]
-    cache_config: CacheConfig,
+    pub(crate) cache_config: CacheConfig,
     /// `Scheduler` configuration
-    scheduler_config: SchedulerConfig,
+    pub(crate) scheduler_config: SchedulerConfig,
     /// `BlockSpaceManager` to handle block resources efficiently
     block_manager: BlockSpaceManager,
     /// Waiting `SequenceGroup` queue
@@ -372,18 +393,15 @@ impl<P> Scheduler<P> {
         {
             if sequence_group.request_id == request_id {
                 for sequence in sequence_group.sequences.values() {
-                    let (sequence_id, is_finished) = {
-                        (
-                            sequence.borrow().sequence_id(),
-                            sequence.borrow().is_finished(),
-                        )
-                    };
+                    let mut sequence_guard_lock = sequence.write_lock()?;
+                    let (sequence_id, is_finished) = (
+                        sequence_guard_lock.sequence_id(),
+                        sequence_guard_lock.is_finished(),
+                    );
                     if is_finished {
                         continue;
                     }
-                    sequence
-                        .borrow_mut()
-                        .set_sequence_status(SequenceStatus::FinishedAborted);
+                    sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedAborted);
                     sequence_ids_to_free.push(sequence_id);
                 }
 
@@ -656,7 +674,7 @@ impl<P: Policy> Scheduler<P> {
                         sequence_group.request_id);
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 infeasible_seq_groups.push(sequence_group.clone());
@@ -762,7 +780,7 @@ impl<P: Policy> Scheduler<P> {
                 .sequences
                 .iter()
                 .filter_map(|(_, s)| {
-                    if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
+                    if s.read().unwrap().get_sequence_status() == SequenceStatus::Waiting {
                         Some(s)
                     } else {
                         None
@@ -780,7 +798,7 @@ impl<P: Policy> Scheduler<P> {
 
             if !enable_chunking {
                 // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
-                let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
+                let num_prompt_tokens = waiting_sequences.first().unwrap().read().unwrap().length();
                 if num_prompt_tokens != num_new_tokens {
                     error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
                     return Err(SchedulerError::InvalidNumberOfNewTokens {
@@ -798,7 +816,7 @@ impl<P: Policy> Scheduler<P> {
                 );
                 for (_, sequence) in sequence_group.sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored)
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
@@ -813,7 +831,7 @@ impl<P: Policy> Scheduler<P> {
                 warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
                 for sequence in waiting_sequences.iter_mut() {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::FinishedIgnored);
                 }
                 ignored_sequence_groups.push(sequence_group.clone());
@@ -1173,14 +1191,14 @@ impl<P: Policy> Scheduler<P> {
     #[instrument]
     pub fn schedule(
         &mut self,
-    ) -> Result<(Vec<SequenceGroupMetadata>, SchedulerOutputs), SchedulerError> {
+    ) -> Result<(Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs), SchedulerError> {
         let scheduler_outputs = self.schedule_()?;
         let now = Instant::now();
 
         // Create input data structures
         let mut sequence_groups_metadata = Vec::new();
         for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter() {
-            let mut sequence_group = scheduled_sequence_group.scheduled_group.clone();
+            let sequence_group = scheduled_sequence_group.scheduled_group.clone();
             let token_chunk_size = scheduled_sequence_group.token_chunk_size;
             sequence_group.maybe_set_first_scheduled_time(now);
 
@@ -1190,14 +1208,15 @@ impl<P: Policy> Scheduler<P> {
             let mut block_tables = HashMap::<u64, Vec<u64>>::new();
 
             for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
                 }
             }) {
-                let sequence_id = sequence.borrow().sequence_id();
-                sequence_data.insert(sequence_id, sequence.borrow().sequence_data());
+                let sequence_guard_lock = sequence.read_lock()?;
+                let sequence_id = sequence_guard_lock.sequence_id();
+                sequence_data.insert(sequence_id, sequence_guard_lock.sequence_data.clone());
                 if let Some(block_table_ids) = self.block_manager.get_block_table_ids(&sequence_id)
                 {
                     block_tables.insert(sequence_id, block_table_ids);
@@ -1206,7 +1225,7 @@ impl<P: Policy> Scheduler<P> {
                 } else {
                     error!(
                         "Missing block table for sequence with id = {}",
-                        sequence.borrow().sequence_id()
+                        sequence_guard_lock.sequence_id()
                     );
                 }
             }
@@ -1228,33 +1247,28 @@ impl<P: Policy> Scheduler<P> {
                 // NOTE: We use get_len instead of get_prompt_len because when
                 // a sequence is preempted, prefill includes previous generated
                 // output tokens.
-                if token_chunk_size + sequence.borrow().sequence_data().get_num_computed_tokens()
-                    < sequence.borrow().sequence_data().length()
+                let sequence_guard_lock = sequence.read_lock()?;
+                if token_chunk_size + sequence_guard_lock.sequence_data.get_num_computed_tokens()
+                    < sequence_guard_lock.sequence_data.length()
                 {
                     do_sample = false;
                 }
             }
 
-            let multi_modal_data = if scheduler_outputs.number_prefill_groups > 0 {
-                sequence_group.multi_modal_data()
-            } else {
-                None
-            };
-
             // It assumes the scheduled_seq_groups is ordered by
             // prefill < decoding.
             let is_prompt = sequence_group.is_prefill();
-            let sequence_group_metadata = SequenceGroupMetadata::new(
+            let sequence_group_metadata = Arc::new(SequenceGroupMetadata::new(
                 sequence_group.request_id.clone(),
                 is_prompt,
                 sequence_data,
-                sequence_group.sampling_params(),
+                sequence_group.next_token_chooser_params(),
+                sequence_group.stopping_params(),
                 block_tables,
                 do_sample,
                 Some(token_chunk_size),
                 sequence_group.state(),
-                multi_modal_data,
-            );
+            ));
             sequence_groups_metadata.push(sequence_group_metadata);
         }
 
@@ -1293,8 +1307,9 @@ impl<P: Debug> Scheduler<P> {
         let mut num_sequences_in_status = 0;
 
         for (_, seq) in sequence_group.sequences.iter() {
-            if seq.borrow().get_sequence_status() == sequence_status {
-                num_new_tokens += seq.borrow().get_num_new_tokens();
+            let sequence_guard_lock = seq.read_lock()?;
+            if sequence_guard_lock.get_sequence_status() == sequence_status {
+                num_new_tokens += sequence_guard_lock.get_num_new_tokens();
                 num_sequences_in_status += 1;
             }
         }
@@ -1339,25 +1354,25 @@ impl<P: Debug> Scheduler<P> {
             sequence_group.request_id
         );
         let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
-            if s.borrow().get_sequence_status() == SequenceStatus::Running {
+            if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                 Some(s)
             } else {
                 None
             }
         });
         for sequence in running_sequences {
-            let cows = self.block_manager.append_slots(sequence.borrow())?;
+            let cows = self.block_manager.append_slots(sequence.read_lock()?)?;
             if let Some(cow) = cows {
                 blocks_to_copy.insert(cow.0, cow.1);
             } else {
                 warn!("No Copy on Write new blocks to append, for sequence with id = {} in sequence group with id = {}", 
-                    sequence.borrow().sequence_id(), sequence_group.request_id);
+                    sequence.read_lock()?.sequence_id(), sequence_group.request_id);
             }
         }
         Ok(())
     }
 
-    /// Adds new `SequenceGroup`'s to `waiting` queue
+    /// Adds new `SequenceGroup`'s to the end of the `waiting` queue
     pub fn add_sequence_group(&mut self, sequence_group: SequenceGroup) {
         self.waiting.push_back(sequence_group)
     }
@@ -1424,7 +1439,7 @@ impl<P: Debug> Scheduler<P> {
             .sequences
             .iter_mut()
             .filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
@@ -1440,17 +1455,11 @@ impl<P: Debug> Scheduler<P> {
         }
 
         for sequence in sequences {
-            {
-                sequence
-                    .borrow_mut()
-                    .set_sequence_status(SequenceStatus::Waiting);
-            }
-            {
-                self.free_sequence(sequence.borrow().sequence_id())?;
-            }
-            {
-                sequence.borrow_mut().reset_state_for_recompute();
-            }
+            let mut sequence_guard_lock = sequence.write_lock()?;
+            sequence_guard_lock.set_sequence_status(SequenceStatus::Waiting);
+
+            self.free_sequence(sequence_guard_lock.sequence_id())?;
+            sequence_guard_lock.reset_state_for_recompute();
         }
 
         Ok(())
@@ -1493,9 +1502,10 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_out(sequence_group)?;
         blocks_to_swap_out.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Running {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Swapped)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Swapped)
             }
         });
 
@@ -1512,9 +1522,10 @@ impl<P: Debug> Scheduler<P> {
         let mapping = self.block_manager.swap_in(sequence_group)?;
         blocks_to_swap_in.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Swapped {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Running)
             }
         });
 
@@ -1561,24 +1572,41 @@ impl<P: Debug> Scheduler<P> {
     ) -> Result<(), SchedulerError> {
         self.block_manager.allocate(sequence_group)?;
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
-            let sequence_status = { s.borrow().get_sequence_status() };
+            let mut sequence_guard_lock = s.write().unwrap();
+            let sequence_status = sequence_guard_lock.get_sequence_status();
             if sequence_status == SequenceStatus::Waiting {
-                s.borrow_mut().set_sequence_status(SequenceStatus::Running)
+                sequence_guard_lock.set_sequence_status(SequenceStatus::Running)
             }
         });
         Ok(())
     }
+
+    /// Frees a sequence from a block table
+    #[instrument(skip(self))]
+    pub fn free_finished_sequence(&mut self) {
+        self.running = self
+            .running
+            .iter()
+            .filter_map(|s| {
+                if !s.is_finished() {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
 }
 
 /// A `SequenceGroup` that has been scheduled
-#[derive(Debug)]
-struct ScheduledSequenceGroup {
+#[derive(Clone, Debug)]
+pub struct ScheduledSequenceGroup {
     /// Sequence group
-    scheduled_group: SequenceGroup,
+    pub scheduled_group: SequenceGroup,
     /// The total chunk size (number of tokens) to process for next iteration.
     /// 1 for decoding. Same as prompt tokens for prefill, but if prefill is
     /// chunked, it can be smaller than that.
-    token_chunk_size: usize,
+    pub token_chunk_size: usize,
 }
 
 #[derive(Debug, Error)]
@@ -1636,7 +1664,7 @@ mod tests {
 
     fn schedule_and_update_computed_tokens(
         scheduler: &mut Scheduler<FcfsPolicy>,
-    ) -> (Vec<SequenceGroupMetadata>, SchedulerOutputs) {
+    ) -> (Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs) {
         let (metadatas, mut outputs) = scheduler.schedule().expect("Failed to schedule");
         for (s, meta) in outputs
             .scheduled_sequence_groups
@@ -1655,7 +1683,8 @@ mod tests {
             for (_, sequence) in s.sequences.iter() {
                 {
                     sequence
-                        .borrow_mut()
+                        .write()
+                        .unwrap()
                         .add_token_id(
                             token_id,
                             HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -1671,7 +1700,8 @@ mod tests {
         for sequence_group in sequence_groups {
             for sequence in sequence_group.sequences.values() {
                 sequence
-                    .borrow_mut()
+                    .write()
+                    .unwrap()
                     .add_token_id(
                         token_id,
                         HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -1691,7 +1721,8 @@ mod tests {
             .expect("Failed ot update number compute tokens");
         for sequence in sequence_group.sequences.values() {
             sequence
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.5, None, None))]),
@@ -1705,7 +1736,7 @@ mod tests {
         num_batched_tokens: usize,
         num_current_sequences: usize,
     ) {
-        let (_, mock_seq_group) = create_dummy_prompt(10, 60, None, false, 1);
+        let (_, mock_seq_group) = create_dummy_prompt(10, 60, None, 1);
         budget.add_num_batched_tokens(mock_seq_group.request_id.clone(), num_batched_tokens);
         budget.add_number_sequences(mock_seq_group.request_id, num_current_sequences);
     }
@@ -1750,7 +1781,7 @@ mod tests {
         // adds multiple sequence groups to `Scheduler` instance
         let num_sequence_group: usize = 4;
         for i in 0..num_sequence_group {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group);
             assert_eq!(scheduler.num_unfinished_sequeces(), i + 1);
         }
@@ -1797,7 +1828,7 @@ mod tests {
         let num_sequence_group: usize = 4;
         let mut requests_ids = HashSet::new();
         for i in 0..num_sequence_group {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group);
             requests_ids.insert(format!("{i}"));
         }
@@ -1850,7 +1881,7 @@ mod tests {
         let mut running = vec![];
 
         for i in 0..num_sequence_groups {
-            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             scheduler.add_sequence_group(sequence_group.clone());
             running.push(sequence_group);
         }
@@ -1877,8 +1908,8 @@ mod tests {
                 .unwrap()
                 .clone();
             assert_eq!(
-                running_sequence_group.sampling_params(),
-                sequence_group.sampling_params()
+                running_sequence_group.next_token_chooser_params(),
+                sequence_group.next_token_chooser_params()
             );
             assert_eq!(
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),
@@ -1918,8 +1949,12 @@ mod tests {
                 .unwrap()
                 .clone();
             assert_eq!(
-                running_sequence_group.sampling_params(),
-                sequence_group.sampling_params()
+                running_sequence_group.next_token_chooser_params(),
+                sequence_group.next_token_chooser_params()
+            );
+            assert_eq!(
+                running_sequence_group.stopping_params(),
+                sequence_group.stopping_params(),
             );
             assert_eq!(
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),
@@ -1977,7 +2012,7 @@ mod tests {
             .expect("Failed to generate `Scheduler`");
 
         // Add seq groups to scheduler
-        let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, false, 1);
+        let (_, sequence_group_a) = create_dummy_prompt(1, 1, None, 1);
         scheduler.add_sequence_group(sequence_group_a.clone());
 
         // Schedule seq groups prompts
@@ -1994,10 +2029,17 @@ mod tests {
             .values()
             .next()
             .unwrap()
-            .borrow();
-        let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+            .read()
+            .unwrap();
+        let sequence_a = sequence_group_a
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .read()
+            .unwrap();
 
-        assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+        assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
         assert_eq!(
             sequence.get_num_new_tokens(),
             sequence_a.get_num_new_tokens()
@@ -2018,7 +2060,7 @@ mod tests {
         );
 
         // Add a new prefill request B
-        let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, false, 1);
+        let (_, sequence_group_b) = create_dummy_prompt(2, 30, None, 1);
         scheduler.add_sequence_group(sequence_group_b.clone());
 
         // Verify prefill requests are prioritized. Since max_batched_num_tokens
@@ -2036,10 +2078,17 @@ mod tests {
             .values()
             .next()
             .unwrap()
-            .borrow();
-        let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+            .read()
+            .unwrap();
+        let sequence_b = sequence_group_b
+            .sequences
+            .values()
+            .next()
+            .unwrap()
+            .read()
+            .unwrap();
 
-        assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+        assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
         assert_eq!(
             sequence.get_num_new_tokens(),
             sequence_b.get_num_new_tokens()
@@ -2098,8 +2147,8 @@ mod tests {
             .expect("Failed to generate `Scheduler`");
 
         // Add seq groups to scheduler
-        let (_, sequence_group_a) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
-        let (_, sequence_group_b) = create_dummy_prompt(2, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group_a) = create_dummy_prompt(1, BLOCK_SIZE, None, 1);
+        let (_, sequence_group_b) = create_dummy_prompt(2, BLOCK_SIZE, None, 1);
 
         scheduler.add_sequence_group(sequence_group_a.clone());
         scheduler.add_sequence_group(sequence_group_b.clone());
@@ -2120,10 +2169,17 @@ mod tests {
                 .values()
                 .next()
                 .unwrap()
-                .borrow();
-            let sequence_a = sequence_group_a.sequences.values().next().unwrap().borrow();
+                .read()
+                .unwrap();
+            let sequence_a = sequence_group_a
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .read()
+                .unwrap();
 
-            assert_eq!(sequence.sequence_data(), sequence_a.sequence_data());
+            assert_eq!(sequence.sequence_data, sequence_a.sequence_data);
             assert_eq!(
                 sequence.get_num_new_tokens(),
                 sequence_a.get_num_new_tokens()
@@ -2162,10 +2218,17 @@ mod tests {
                 .values()
                 .next()
                 .unwrap()
-                .borrow();
-            let sequence_b = sequence_group_b.sequences.values().next().unwrap().borrow();
+                .read()
+                .unwrap();
+            let sequence_b = sequence_group_b
+                .sequences
+                .values()
+                .next()
+                .unwrap()
+                .read()
+                .unwrap();
 
-            assert_eq!(sequence.sequence_data(), sequence_b.sequence_data());
+            assert_eq!(sequence.sequence_data, sequence_b.sequence_data);
             assert_eq!(
                 sequence.get_num_new_tokens(),
                 sequence_b.get_num_new_tokens()
@@ -2263,7 +2326,7 @@ mod tests {
 
         // Add sequence groups to the scheduler
         for i in 0..NUM_SEQ_GROUP {
-            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, None, 1);
             all_sequence_groups.push(seq_group);
         }
 
@@ -2328,7 +2391,7 @@ mod tests {
             .expect("Failed to get scheduler");
 
         // schedule first prompt
-        let (_, sequence_group) = create_dummy_prompt(0, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(0, BLOCK_SIZE, None, 1);
         scheduler.add_sequence_group(sequence_group.clone());
         let (sequence_group_meta, out) = schedule_and_update_computed_tokens(&mut scheduler);
         assert!(out.number_prefill_groups > 0);
@@ -2339,7 +2402,7 @@ mod tests {
         // wait for a second before scheduling next prompt
         std::thread::sleep(Duration::from_secs(1));
 
-        let (_, sequence_group) = create_dummy_prompt(1, BLOCK_SIZE, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(1, BLOCK_SIZE, None, 1);
         scheduler.add_sequence_group(sequence_group.clone());
 
         // second prompt should NOT be scheduled
@@ -2410,7 +2473,7 @@ mod tests {
         let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
             .expect("Failed to get scheduler");
 
-        let (_, seq_group) = create_dummy_prompt(0, 60, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(0, 60, None, 1);
         let waiting = VecDeque::from_iter([seq_group]);
         let mut budget = SchedulingBudget::new(10000, 10000);
 
@@ -2442,7 +2505,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(0, 10_000);
 
         for i in 0..2 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2473,7 +2536,7 @@ mod tests {
         let mut waiting = VecDeque::new();
         let mut budget = SchedulingBudget::new(60, 10_000);
         add_token_budget(&mut budget, 30, 0);
-        let (_, sequence_group) = create_dummy_prompt(1, 60, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(1, 60, None, 1);
         // Cannot schedule a prompt that doesn't fit the budget.
         waiting.push_back(sequence_group);
         let (remaining_waiting, output) = scheduler
@@ -2514,7 +2577,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2533,7 +2596,7 @@ mod tests {
         let mut budget = SchedulingBudget::new(10_000, 2);
         add_token_budget(&mut budget, 0, 2);
 
-        let (_, sequence_group) = create_dummy_prompt(2, 60, None, false, 1);
+        let (_, sequence_group) = create_dummy_prompt(2, 60, None, 1);
         waiting.push_back(sequence_group);
 
         let (remaining_waiting, output) = scheduler
@@ -2562,7 +2625,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
         let (remaining_waiting, output) = scheduler
@@ -2582,7 +2645,7 @@ mod tests {
 
         let mut waiting = VecDeque::new();
         for i in 0..3 {
-            let (_, sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, sequence_group) = create_dummy_prompt(i, 60, None, 1);
             waiting.push_back(sequence_group);
         }
 
@@ -2612,7 +2675,7 @@ mod tests {
 
         let mut running = VecDeque::new();
         for i in 0..3 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 1);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2662,7 +2725,7 @@ mod tests {
 
         let mut running = VecDeque::new();
         for i in 0..3 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2722,7 +2785,7 @@ mod tests {
 
         let mut running = VecDeque::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -2762,7 +2825,7 @@ mod tests {
         let mut swapped = VecDeque::new();
         let mut blocks_to_swap_out = HashMap::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -2808,7 +2871,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2860,7 +2923,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..4 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 1);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 1);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2910,7 +2973,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -2955,7 +3018,7 @@ mod tests {
         let mut blocks_to_swap_out = HashMap::new();
 
         for i in 0..2 {
-            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, false, 2);
+            let (_, mut sequence_group) = create_dummy_prompt(i, 60, None, 2);
             scheduler
                 .allocate_and_set_running(&mut sequence_group)
                 .expect("Failed to allocate and set running");
@@ -3000,7 +3063,7 @@ mod tests {
         let mut swapped = VecDeque::new();
         let mut blocks_to_swap_out = HashMap::new();
 
-        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, false, 2);
+        let (_, mut sequence_group) = create_dummy_prompt(1, 60, None, 2);
         scheduler
             .allocate_and_set_running(&mut sequence_group)
             .expect("Failed to allocate and set running");
@@ -3037,7 +3100,7 @@ mod tests {
         assert_eq!(budget.remaining_budget_tokens(), TOKEN_BUDGET);
 
         // Verify add/subtract num batched tokens.
-        let (_, seq_group) = create_dummy_prompt(1, 3, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(1, 3, None, 1);
         budget.add_num_batched_tokens(seq_group.request_id.clone(), 2);
         assert_eq!(budget.remaining_budget_tokens(), 2);
         assert_eq!(budget.num_batched_tokens, 2);
@@ -3056,7 +3119,7 @@ mod tests {
         assert_eq!(budget.num_batched_tokens, 0);
 
         // Verify add/subtract max seqs.
-        let (_, seq_group) = create_dummy_prompt(1, 3, None, false, 1);
+        let (_, seq_group) = create_dummy_prompt(1, 3, None, 1);
         budget.add_number_sequences(seq_group.request_id.clone(), 2);
         assert!(budget.can_schedule(1, 2).expect("Failed to can schedule"));
         assert!(!budget.can_schedule(1, 3).expect("Failed to can schedule"));
@@ -3102,7 +3165,7 @@ mod tests {
                     .sequences
                     .iter()
                     .filter_map(|(_, s)| {
-                        if s.borrow().get_sequence_status() == SequenceStatus::Waiting {
+                        if s.read().unwrap().get_sequence_status() == SequenceStatus::Waiting {
                             Some(s)
                         } else {
                             None
@@ -3120,7 +3183,8 @@ mod tests {
 
                 if !enable_chunking {
                     // DON'T PANIC: by previous error check, we are guaranteed that `waiting_sequences` is non-empty
-                    let num_prompt_tokens = waiting_sequences.first().unwrap().borrow().length();
+                    let num_prompt_tokens =
+                        waiting_sequences.first().unwrap().read().unwrap().length();
                     if num_prompt_tokens != num_new_tokens {
                         error!("Invalid number of new tokens, got `{num_new_tokens}`, but it should be `{num_prompt_tokens}`");
                         return Err(SchedulerError::InvalidNumberOfNewTokens {
@@ -3138,7 +3202,8 @@ mod tests {
                     );
                     for (_, sequence) in sequence_group.sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored)
                     }
                     ignored_sequence_groups.push(sequence_group.clone());
@@ -3153,7 +3218,8 @@ mod tests {
                     warn!("Input prompt ({num_new_tokens} tokens) is too long and exceeds the capacity of `block_manager`");
                     for sequence in waiting_sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored);
                     }
                     ignored_sequence_groups.push(sequence_group.clone());
@@ -3340,7 +3406,7 @@ mod tests {
                 sequence_group.request_id
             );
             let running_sequences = sequence_group.sequences.iter().filter_map(|(_, s)| {
-                if s.borrow().get_sequence_status() == SequenceStatus::Running {
+                if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
                     Some(s)
                 } else {
                     None
@@ -3389,7 +3455,8 @@ mod tests {
                             sequence_group.request_id);
                     for (_, sequence) in sequence_group.sequences.iter_mut() {
                         sequence
-                            .borrow_mut()
+                            .write()
+                            .unwrap()
                             .set_sequence_status(SequenceStatus::FinishedIgnored);
                     }
                     infeasible_seq_groups.push(sequence_group.clone());

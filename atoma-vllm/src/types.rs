@@ -2,13 +2,13 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use serde::{Deserialize, Serialize};
 
-pub trait BlockReadLock {
+pub trait ReadLock {
     type Error;
     type Inner;
     fn read_lock(&self) -> Result<RwLockReadGuard<Self::Inner>, Self::Error>;
 }
 
-pub trait BlockWriteLock {
+pub trait WriteLock {
     type Error;
     type Inner;
     fn write_lock(&self) -> Result<RwLockWriteGuard<Self::Inner>, Self::Error>;
@@ -17,6 +17,8 @@ pub trait BlockWriteLock {
 /// `GenerateRequest` - LLM inference request
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenerateRequest {
+    /// The request id
+    pub request_id: String,
     /// Inputs in the form of a `String`
     pub inputs: String,
     /// Generation parameters
@@ -39,6 +41,10 @@ pub struct GenerateParameters {
     /// Penalize new tokens based on their existing frequency in the text so far,
     /// decreasing the model's likelihood to repeat the same line verbatim
     pub frequency_penalty: Option<f32>,
+    /// Controls the number of tokens in the history to consider for penalizing repetition.
+    /// A larger value will look further back in the generated text to prevent repetitions,
+    /// while a smaller value will only consider recent tokens.
+    pub repeat_last_n: Option<u64>,
     /// The number of highest probability vocabulary tokens to keep for top-k-filtering
     pub top_k: Option<u32>,
     /// Top-p value for nucleus sampling
@@ -62,6 +68,8 @@ pub struct GenerateParameters {
     pub random_seed: Option<u64>,
     /// The number of highest probability vocabulary tokens to keep for top-n-filtering.
     pub top_n_tokens: Option<u32>,
+    /// Top n sequences to generate
+    pub n: usize,
 }
 
 fn default_parameters() -> GenerateParameters {
@@ -78,8 +86,10 @@ fn default_parameters() -> GenerateParameters {
         return_full_text: None,
         stop: Vec::new(),
         truncate: None,
+        repeat_last_n: None,
         decoder_input_details: false,
         random_seed: None,
         top_n_tokens: None,
+        n: 1,
     }
 }

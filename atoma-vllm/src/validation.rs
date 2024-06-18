@@ -79,7 +79,7 @@ impl Validation {
         input: String,
         truncate: Option<usize>,
         max_new_tokens: Option<u32>,
-    ) -> Result<(String, usize, u32), ValidationError> {
+    ) -> Result<(String, Encoding, u32), ValidationError> {
         let (encoding, input) = self.tokenize(input.clone(), truncate).await?;
         let input_len = if let Some(truncate) = truncate {
             std::cmp::min(truncate, encoding.len())
@@ -116,7 +116,7 @@ impl Validation {
         let histogram = metrics::histogram!("atoma-vllm_input_length");
         histogram.record(input_len as f64);
 
-        Ok((input, input_len, max_new_tokens))
+        Ok((input, encoding, max_new_tokens))
     }
 
     /// Validates a payload and gets the number of tokens in the input
@@ -140,6 +140,8 @@ impl Validation {
             random_seed,
             decoder_input_details,
             top_n_tokens,
+            n,
+            return_full_text,
             ..
         } = request.parameters;
 
@@ -246,19 +248,21 @@ impl Validation {
             .unwrap_or(Ok(None))?;
 
         // Validate inputs
-        let (inputs, input_length, max_new_tokens) = self
+        let (inputs, encoding, max_new_tokens) = self
             .validate_input(request.inputs, truncate, max_new_tokens)
             .await?;
 
         let parameters = NextTokenChooserParameters {
             temperature,
             repetition_penalty,
+            best_of,
             frequency_penalty,
             top_k,
             top_p,
             typical_p,
             do_sample,
             random_seed,
+            n,
         };
         let stopping_parameters = StoppingCriteriaParameters {
             max_new_tokens,
@@ -269,14 +273,18 @@ impl Validation {
         let histogram = metrics::histogram!("tgi_request_max_new_tokens");
         histogram.record(max_new_tokens as f64);
 
+        let input_token_len = encoding.len();
         Ok(ValidGenerateRequest {
+            request_id: request.request_id,
             inputs,
             decoder_input_details,
-            input_length: input_length as u32,
+            encoding,
+            input_token_len,
             truncate: truncate.unwrap_or(self.max_input_length) as u32,
             parameters,
             stopping_parameters,
             top_n_tokens,
+            return_full_text: return_full_text.unwrap_or(false),
         })
     }
 }
@@ -286,10 +294,14 @@ impl Validation {
 /// `GenerateRequest`, after input validation has
 /// taken place
 pub(crate) struct ValidGenerateRequest {
+    /// The request id
+    pub request_id: String,
     /// Inputs, in the form of a `String`
     pub inputs: String,
-    /// The input length
-    pub input_length: u32,
+    /// Input tokenizer encoding
+    pub encoding: Encoding,
+    /// Inputs token length
+    pub input_token_len: usize,
     /// The truncation window of the input
     pub truncate: u32,
     /// Whether to return decoder input token logprobs and ids.
@@ -301,13 +313,19 @@ pub(crate) struct ValidGenerateRequest {
     pub stopping_parameters: StoppingCriteriaParameters,
     /// Top `n` tokens
     pub top_n_tokens: u32,
+    /// Whether to prepend the prompt to the generated text
+    pub return_full_text: bool,
 }
 
 /// `NextTokenChooseParameters` - Set of parameters which
 /// are necessary for choosing the next token, after a single
 /// forward pass of a LLM
-#[derive(Clone, Debug)]
-pub(crate) struct NextTokenChooserParameters {
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NextTokenChooserParameters {
+    /// Top n sequences
+    pub n: usize,
+    /// best of sequences
+    pub best_of: usize,
     /// exponential scaling output probability distribution
     pub temperature: f32,
     /// restricting to the k highest probability elements
@@ -328,8 +346,8 @@ pub(crate) struct NextTokenChooserParameters {
 
 /// `StoppingCriteriaParameters` - Criteria for stopping
 /// LLM next token generation
-#[derive(Clone, Debug)]
-pub(crate) struct StoppingCriteriaParameters {
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StoppingCriteriaParameters {
     /// Maximum number of generated tokens
     pub max_new_tokens: u32,
     /// Optional stopping sequences

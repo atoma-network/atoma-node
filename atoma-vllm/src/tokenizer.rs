@@ -11,10 +11,20 @@ use tracing::{error, Span};
 pub struct TokenizerRequest {
     /// Input string
     pub input: String,
-    /// oneshot::Sender responsible to deliver the result of tokenization,
+    /// `oneshot::Sender`` responsible to deliver the result of tokenization,
     /// which includes the actual `Encoding`, together with the original input
     /// in `String` format
     pub sender: oneshot::Sender<Result<(Encoding, String), TokenizerError>>,
+    /// The current tracing span
+    pub span: Span,
+}
+
+/// `DetokenizerRequest` - A request to decode a given token id into an actual text
+pub struct DetokenizerRequest {
+    /// The token id to be decoded
+    pub token_id: u32,
+    /// `oneshot::Sender` responsible to deliver the result of detokenization
+    pub sender: oneshot::Sender<Result<String, TokenizerError>>,
     /// The current tracing span
     pub span: Span,
 }
@@ -24,7 +34,7 @@ pub struct TokenizerRequest {
 pub struct TokenizerWorker {}
 
 impl TokenizerWorker {
-    /// Starts the tokenizer worker
+    /// Starts the tokenizer workers
     pub async fn start(
         tokenizer: Tokenizer,
         receiver: mpsc::UnboundedReceiver<TokenizerRequest>,

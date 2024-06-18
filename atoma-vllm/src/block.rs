@@ -6,7 +6,7 @@ use std::{
 use thiserror::Error;
 use tracing::{error, info_span, instrument, Span};
 
-use crate::types::{BlockReadLock, BlockWriteLock};
+use crate::types::{ReadLock, WriteLock};
 
 /// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
 /// records the corresponding physical blocks of a logical block and the number of filled positions.
@@ -212,7 +212,7 @@ impl PhysicalTokenBlock {
 /// Sync and Send shared access physical block
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
-impl BlockReadLock for SyncPhysicalTokenBlock {
+impl ReadLock for SyncPhysicalTokenBlock {
     type Error = BlockError;
     type Inner = PhysicalTokenBlock;
 
@@ -222,7 +222,7 @@ impl BlockReadLock for SyncPhysicalTokenBlock {
     }
 }
 
-impl BlockWriteLock for SyncPhysicalTokenBlock {
+impl WriteLock for SyncPhysicalTokenBlock {
     type Error = BlockError;
     type Inner = PhysicalTokenBlock;
 

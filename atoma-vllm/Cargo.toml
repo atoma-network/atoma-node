@@ -7,12 +7,14 @@ edition.workspace = true
 
 [dependencies]
 # TODO: this dependency should only work with features = "cuda"
+async-trait.workspace = true
 candle.workspace = true
+futures.workspace = true
 indexmap.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 serde.workspace = true
-tokio.workspace = true
 thiserror.workspace = true
 tokenizers.worksapce = true
+tokio = { workspace = true, features = ["macros"] }
 tracing.workspace = true

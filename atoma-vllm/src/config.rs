@@ -18,7 +18,7 @@ const GB: usize = 1 << 30;
 #[derive(Clone, Debug)]
 pub struct CacheConfig {
     /// Block size
-    block_size: usize,
+    pub(crate) block_size: usize,
     /// GPU memory utilization
     gpu_memory_utilization: f32,
     /// Swap space bytes

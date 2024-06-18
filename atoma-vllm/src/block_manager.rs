@@ -1,14 +1,14 @@
 use std::{
-    cell::Ref,
     collections::{hash_map::Entry, HashMap},
+    sync::RwLockReadGuard,
     time::Instant,
 };
 
 use crate::{
     block::{BlockDevice, BlockError, BlockTable, SyncPhysicalTokenBlock},
     block_allocator::{BlockAllocator, BlockAllocatorError},
-    sequence::{Sequence, SequenceGroup, SequenceStatus},
-    types::{BlockReadLock, BlockWriteLock},
+    sequence::{Sequence, SequenceError, SequenceGroup, SequenceStatus},
+    types::{ReadLock, WriteLock},
 };
 
 use candle::utils::{cuda_is_available, metal_is_available};
@@ -127,7 +127,7 @@ impl BlockSpaceManager {
     pub fn allocate(&mut self, seq_group: &SequenceGroup) -> Result<(), BlockSpaceManagerError> {
         if let Some(sequence) = seq_group.get_first_sequence(Some(SequenceStatus::Waiting)) {
             let num_logical_blocks_to_allocate =
-                sequence.borrow().get_num_total_logical_token_blocks();
+                { sequence.read_lock()?.get_num_total_logical_token_blocks() };
             let mut block_table: Vec<SyncPhysicalTokenBlock> =
                 Vec::with_capacity(num_logical_blocks_to_allocate);
 
@@ -200,7 +200,7 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn append_slots(
         &mut self,
-        sequence: Ref<Sequence>,
+        sequence: RwLockReadGuard<Sequence>,
     ) -> Result<Option<(u64, u64)>, BlockSpaceManagerError> {
         let num_total_logical_token_blocks = sequence.get_num_total_logical_token_blocks();
 
@@ -288,8 +288,8 @@ impl BlockSpaceManager {
     #[instrument]
     pub fn fork(
         &mut self,
-        parent_sequence: Ref<Sequence>,
-        child_sequence: Ref<Sequence>,
+        parent_sequence: RwLockReadGuard<Sequence>,
+        child_sequence: RwLockReadGuard<Sequence>,
     ) -> Result<(), BlockSpaceManagerError> {
         info!(
             "Forking current parent sequence with id = {}",
@@ -336,7 +336,8 @@ impl BlockSpaceManager {
         let mut output = Vec::new();
         let mut block_ids = Vec::new();
         for sequence in seq_group.get_unfinished_sequences() {
-            if let Some(blocks) = self.block_tables.get(&sequence.borrow().sequence_id()) {
+            let sequence_id = { sequence.read_lock()?.sequence_id() };
+            if let Some(blocks) = self.block_tables.get(&sequence_id) {
                 for block in blocks {
                     {
                         let block_id = block.read_lock()?.block_number();
@@ -420,10 +421,10 @@ impl BlockSpaceManager {
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
             for sequence in seq_group.sequences.values() {
-                let s_id = { sequence.borrow().sequence_id() };
+                let s_id = { sequence.read_lock()?.sequence_id() };
                 if s_id == *sequence_id {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .set_sequence_status(SequenceStatus::Running);
                 }
             }
@@ -490,13 +491,11 @@ impl BlockSpaceManager {
                 self.block_tables.insert(*sequence_id, new_block_table);
             }
             // NOTE: we update the status of the `Sequence` right after the previous check, and not on the scheduler logic
-            for sequence in seq_group.sequences.values() {
-                let s_id = { sequence.borrow().sequence_id() };
-                if s_id == *sequence_id {
-                    sequence
-                        .borrow_mut()
-                        .set_sequence_status(SequenceStatus::Swapped);
-                }
+            let sequence = seq_group.get_sequence_from_id(*sequence_id).unwrap(); // DON'T PANIC: we already checked that `SequenceGroup` contains `Sequence` with `sequence_id`
+            {
+                sequence
+                    .write_lock()?
+                    .set_sequence_status(SequenceStatus::Swapped);
             }
         }
 
@@ -581,7 +580,7 @@ impl BlockSpaceManager {
     }
 
     /// Gets `Sequence`'s `BlockTable`
-    pub fn get_block_table(&self, sequence: Ref<Sequence>) -> Option<BlockTable> {
+    pub fn get_block_table(&self, sequence: RwLockReadGuard<Sequence>) -> Option<BlockTable> {
         self.block_tables.get(&sequence.sequence_id()).cloned()
     }
 
@@ -709,16 +708,15 @@ pub enum BlockSpaceManagerError {
     MissingSequence,
     #[error("Unrecognized GPU")]
     UnrecognizedGpu,
+    #[error("Sequence error: `{0}`")]
+    SequenceError(#[from] SequenceError),
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::sync::{Arc, RwLock};
 
-    use crate::{
-        sampling_params::SamplingParams,
-        sequence::{tests::create_dummy_prompt, LogProb, SequenceGroupState},
-    };
+    use crate::sequence::{tests::create_dummy_prompt, LogProb};
 
     use super::*;
 
@@ -733,8 +731,7 @@ pub(crate) mod tests {
 
         // Allocate same `SequenceGroup` to all available GPU blocks
         for i in 0..NUM_GPU_BLOCKS {
-            let (_, seq_group) =
-                create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
             assert_eq!(block_manager.can_allocate(&seq_group), AllocationStatus::Ok);
             block_manager
                 .allocate(&seq_group)
@@ -742,13 +739,8 @@ pub(crate) mod tests {
         }
 
         // We can't allocate further blocks, as all available blocks have been already allocated
-        let (_, seq_group) = create_dummy_prompt(
-            NUM_GPU_BLOCKS as u64,
-            BLOCK_SIZE,
-            Some(BLOCK_SIZE),
-            false,
-            1,
-        );
+        let (_, seq_group) =
+            create_dummy_prompt(NUM_GPU_BLOCKS as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
         assert_eq!(
             block_manager.can_allocate(&seq_group),
             AllocationStatus::Later
@@ -766,13 +758,8 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocate single seq to gpu block.
-        let (prompt, seq_group) = create_dummy_prompt(
-            NUM_GPU_BLOCKS as u64,
-            BLOCK_SIZE,
-            Some(BLOCK_SIZE),
-            false,
-            1,
-        );
+        let (prompt, seq_group) =
+            create_dummy_prompt(NUM_GPU_BLOCKS as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
 
         block_manager
             .allocate(&seq_group)
@@ -782,7 +769,7 @@ pub(crate) mod tests {
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         assert!(block_manager
-            .append_slots(prompt.try_borrow().unwrap())
+            .append_slots(prompt.read().unwrap())
             .expect("Failed to append slot")
             .is_none());
         let after_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
@@ -791,7 +778,7 @@ pub(crate) mod tests {
         // Add `block_size` number of new tokens and append slot
         for i in 0..BLOCK_SIZE {
             let token_id = i + BLOCK_SIZE + 1;
-            let sequence_id = { prompt.try_borrow().unwrap().sequence_id() };
+            let sequence_id = { prompt.read().unwrap().sequence_id() };
             seq_group
                 .add_token_id_to_seq(
                     sequence_id,
@@ -804,13 +791,13 @@ pub(crate) mod tests {
         // We need to access the `Sequence` after being mutated above by adding the token_ids,
         // as `prompt` only contains tokens [0, 1, 2, 3] and not the remaining
         let sequence = seq_group
-            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
+            .get_sequence_from_id(prompt.read().unwrap().sequence_id())
             .unwrap();
 
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         assert!(block_manager
-            .append_slots(sequence.try_borrow().unwrap())
+            .append_slots(sequence.read().unwrap())
             .expect("Failed to append slot")
             .is_none());
         let after_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
@@ -828,7 +815,7 @@ pub(crate) mod tests {
                 .expect("Failed to create a `BlockSpaceManager`");
 
         // Allocates `prompt` to GPU block. There will be one single slot left in the block
-        let prompt = Sequence::new(0, None, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE)
+        let prompt = Sequence::new(0, "one two three".into(), vec![1, 2, 3], BLOCK_SIZE, false)
             .expect("Failed to build prompt sequence");
 
         // Fork the `Sequence` (increase `ref_count` by one) so that CoW will be required when we append a new `token_id`
@@ -839,14 +826,8 @@ pub(crate) mod tests {
             0.to_string(),
             vec![prompt.clone(), child.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                ..Default::default()
-            },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
+            Default::default(),
         )
         .expect("Failed to construct a new `SequenceGroup`");
 
@@ -872,15 +853,15 @@ pub(crate) mod tests {
         let child_sequence = seq_group.get_sequence_from_id(child.sequence_id()).unwrap();
         block_manager
             .fork(
-                parent_sequence.try_borrow().unwrap(),
-                child_sequence.try_borrow().unwrap(),
+                parent_sequence.read().unwrap(),
+                child_sequence.read().unwrap(),
             )
             .expect("Block manager failed to fork `Sequence`s");
 
         assert!(block_manager.can_append_slots(&seq_group));
         let before_num_free_blocks = block_manager.get_number_of_free_gpu_blocks();
         let cows = block_manager
-            .append_slots(child_sequence.try_borrow().unwrap())
+            .append_slots(child_sequence.read().unwrap())
             .expect("Failed to append slots to `child_sequence`");
         assert_eq!(cows, Some((3, 2)));
 
@@ -898,24 +879,23 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
 
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocated `SequenceGroup`");
 
         // Fork prompt and copy block tables
-        let child = { Rc::new(RefCell::new(prompt.try_borrow().unwrap().fork(2))) };
+        let child = { Arc::new(RwLock::new(prompt.read().unwrap().fork(2))) };
         // we can use both `prompt` and `child`, as we haven't mutated `SeqGroup` internally
         block_manager
-            .fork(prompt.try_borrow().unwrap(), child.try_borrow().unwrap())
+            .fork(prompt.read().unwrap(), child.read().unwrap())
             .expect("Failed to fork prompt `Sequence`");
         let prompt_block_table = block_manager
-            .get_block_table(prompt.try_borrow().unwrap())
+            .get_block_table(prompt.read().unwrap())
             .expect("Failed to get block table for `prompt`");
         let child_block_table = block_manager
-            .get_block_table(child.try_borrow().unwrap())
+            .get_block_table(child.read().unwrap())
             .expect("Failed to get block table for `child`");
         assert_eq!(prompt_block_table.len(), 1);
         assert!(prompt_block_table
@@ -936,7 +916,8 @@ pub(crate) mod tests {
         // Append token to `child` `Sequence`. Block is shared so Copy on Write occurs
         {
             child
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -945,14 +926,14 @@ pub(crate) mod tests {
         }
 
         block_manager
-            .append_slots(child.try_borrow().unwrap())
+            .append_slots(child.read().unwrap())
             .expect("Failed to append slots to `child` sequence");
 
         let new_prompt_block_table = block_manager
-            .get_block_table(prompt.try_borrow().unwrap())
+            .get_block_table(prompt.read().unwrap())
             .expect("Failed to get block table for `prompt`");
         let new_child_block_table = block_manager
-            .get_block_table(child.try_borrow().unwrap())
+            .get_block_table(child.read().unwrap())
             .expect("Failed to get block table for `child`");
 
         assert!(new_prompt_block_table
@@ -973,8 +954,7 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocate sequence group");
@@ -984,14 +964,18 @@ pub(crate) mod tests {
         // tokens will be written in the next forward pass
         let token_id = 0;
         let prompt = seq_group
-            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
+            .get_sequence_from_id(prompt.read().unwrap().sequence_id())
             .unwrap();
         {
             prompt
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .set_sequence_status(SequenceStatus::Running);
+        }
+        {
             prompt
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -1005,7 +989,7 @@ pub(crate) mod tests {
 
         // Swap `seq_group` from GPU -> CPU
         let gpu_blocks_ids = block_manager
-            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&prompt.read().unwrap().sequence_id())
             .expect("Failed to get block ids from block table for `prompt`");
         assert!(block_manager
             .can_swap_out(&seq_group)
@@ -1029,16 +1013,16 @@ pub(crate) mod tests {
         assert_eq!(before_gpu_blocks + gpu_blocks_ids.len(), after_gpu_blocks);
 
         let prompt = seq_group
-            .get_sequence_from_id(prompt.try_borrow().unwrap().sequence_id())
+            .get_sequence_from_id(prompt.read().unwrap().sequence_id())
             .unwrap();
         assert_eq!(
-            prompt.try_borrow().unwrap().get_sequence_status(),
+            prompt.read().unwrap().get_sequence_status(),
             SequenceStatus::Swapped
         );
 
         // Now swap sequence group from CPU -> GPU
         let cpu_blocks_ids = block_manager
-            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&prompt.read().unwrap().sequence_id())
             .expect("Failed to get block ids from block table for `prompt`");
         assert_eq!(
             block_manager
@@ -1075,26 +1059,25 @@ pub(crate) mod tests {
             BlockSpaceManager::new(BLOCK_SIZE, NUM_CPU_BLOCKS, NUM_GPU_BLOCKS, None)
                 .expect("Failed to create a `BlockSpaceManager`");
 
-        let (prompt, seq_group) =
-            create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), false, 1);
+        let (prompt, seq_group) = create_dummy_prompt(1, BLOCK_SIZE - 1, Some(BLOCK_SIZE), 1);
         block_manager
             .allocate(&seq_group)
             .expect("Failed to allocate sequence group");
 
         // Free allocated sequence
         let _prompt_blocks = block_manager
-            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&prompt.read().unwrap().sequence_id())
             .expect("Failed to get block table ides")
             .len();
         let _before_blocks = block_manager.get_number_of_free_gpu_blocks();
         block_manager
-            .free(prompt.try_borrow().unwrap().sequence_id())
+            .free(prompt.read().unwrap().sequence_id())
             .expect("Failed to free blocks for `prompt`");
         let _after_blocks = block_manager.get_number_of_free_gpu_blocks();
 
         // Assert that block table for freed sequence is deleted
         assert!(block_manager
-            .get_block_table_ids(&prompt.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&prompt.read().unwrap().sequence_id())
             .is_none())
     }
 
@@ -1111,8 +1094,7 @@ pub(crate) mod tests {
         // Allocate same seq group on all available gpu blocks
         let original_blocks = block_manager.get_number_of_free_gpu_blocks();
         for i in 0..NUM_GPU_BLOCKS {
-            let (_, seq_group) =
-                create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), false, 1);
+            let (_, seq_group) = create_dummy_prompt(i as u64, BLOCK_SIZE, Some(BLOCK_SIZE), 1);
             block_manager
                 .allocate(&seq_group)
                 .unwrap_or_else(|_| panic!("Failed to allocate sequence group, index = {i}"));
@@ -1151,24 +1133,18 @@ pub(crate) mod tests {
 
         let parent = Sequence::new(
             1,
-            None,
             "one two three".to_string(),
             vec![1, 2, 3],
             BLOCK_SIZE,
+            false,
         )
         .expect("Failed to build prompt sequence");
         let seq_group = SequenceGroup::new(
             "1".into(),
             vec![parent.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                ..Default::default()
-            },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
+            Default::default(),
         )
         .expect("Failed to get `SequenceGroup`");
         let parent = seq_group.sequences.values().next().unwrap().clone();
@@ -1185,9 +1161,9 @@ pub(crate) mod tests {
         );
 
         // Fork prompt and copy block tables.
-        let child = { Rc::new(RefCell::new(parent.borrow_mut().fork(2))) };
+        let child = { Arc::new(RwLock::new(parent.write().unwrap().fork(2))) };
         block_manager
-            .fork(parent.try_borrow().unwrap(), child.try_borrow().unwrap())
+            .fork(parent.read().unwrap(), child.read().unwrap())
             .expect("Failed to fork");
 
         // assert the number of blocks allocated is correct
@@ -1199,15 +1175,16 @@ pub(crate) mod tests {
 
         // assert both parent and child share all blocks
         assert_eq!(
-            block_manager.get_block_table_ids(&parent.try_borrow().unwrap().sequence_id()),
-            block_manager.get_block_table_ids(&child.try_borrow().unwrap().sequence_id())
+            block_manager.get_block_table_ids(&parent.read().unwrap().sequence_id()),
+            block_manager.get_block_table_ids(&child.read().unwrap().sequence_id())
         );
 
         let token_id = 4;
         // Append token to child. Block is shared so copy on write occurs.
         {
             child
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -1215,7 +1192,7 @@ pub(crate) mod tests {
                 .expect("Failed to add token id to sequence");
         }
         block_manager
-            .append_slots(child.try_borrow().unwrap())
+            .append_slots(child.read().unwrap())
             .expect("Failed to append slots");
 
         // assert the number of blocks allocated is correct
@@ -1229,7 +1206,8 @@ pub(crate) mod tests {
         let token_id = 5;
         {
             parent
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .add_token_id(
                     token_id,
                     HashMap::from_iter([(token_id, LogProb::new(0.0, None, None))]),
@@ -1237,7 +1215,7 @@ pub(crate) mod tests {
                 .expect("Failed to add token id to sequence");
         }
         block_manager
-            .append_slots(parent.try_borrow().unwrap())
+            .append_slots(parent.read().unwrap())
             .expect("Failed to append slots");
 
         // assert the number of blocks allocated is correct
@@ -1248,10 +1226,10 @@ pub(crate) mod tests {
         );
 
         let block_table_parent = block_manager
-            .get_block_table_ids(&parent.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&parent.read().unwrap().sequence_id())
             .expect("Failed to get parent block table");
         let block_table_child = block_manager
-            .get_block_table_ids(&child.try_borrow().unwrap().sequence_id())
+            .get_block_table_ids(&child.read().unwrap().sequence_id())
             .expect("Failed to get child block_table");
 
         assert!(block_table_parent
@@ -1267,7 +1245,7 @@ pub(crate) mod tests {
 
         // now let's clean up...
         block_manager
-            .free(parent.try_borrow().unwrap().sequence_id())
+            .free(parent.read().unwrap().sequence_id())
             .expect("Failed to free block manager");
 
         // assert the number of blocks allocated is correct
@@ -1281,7 +1259,7 @@ pub(crate) mod tests {
 
         // free all blocks
         block_manager
-            .free(child.try_borrow().unwrap().sequence_id())
+            .free(child.read().unwrap().sequence_id())
             .expect("Failed to free block manager");
 
         // assert all blocks are free now

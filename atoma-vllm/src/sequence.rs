@@ -1,9 +1,7 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
-    ops::{Index, IndexMut},
-    rc::Rc,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -13,7 +11,8 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
-    sampling_params::SamplingParams,
+    types::{ReadLock, WriteLock},
+    validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
 };
 
 /// `LogProb` - log probabilities and token ranks.
@@ -261,15 +260,12 @@ impl SequenceData {
 pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
-    /// End of sequence token
-    #[allow(dead_code)]
-    eos_token_id: Option<u32>,
     /// Prompt
     prompt: String,
     /// Prompt associated token ids
-    prompt_token_ids: Vec<u32>,
+    pub prompt_token_ids: Vec<u32>,
     /// Sequence data
-    sequence_data: SequenceData,
+    pub sequence_data: SequenceData,
     /// Block size
     block_size: usize,
     /// Logical token blocks
@@ -281,14 +277,15 @@ pub struct Sequence {
     #[allow(dead_code)]
     read_offset: usize,
     /// Output generated text
-    output_text: String,
+    pub output_text: String,
     /// List of all possible mappings from each generated output id to its `LogProb`
-    output_logprobs: Vec<HashMap<u32, LogProb>>,
+    pub output_logprobs: Vec<HashMap<u32, LogProb>>,
     /// Sequence status
     sequence_status: SequenceStatus,
+    /// Stop reason:
+    pub stop_reason: Option<u32>,
     /// Generated tokens
-    #[allow(dead_code)]
-    tokens: Vec<String>,
+    pub tokens: Vec<String>,
     /// Span
     #[allow(dead_code)]
     span: Span,
@@ -298,14 +295,19 @@ impl Sequence {
     /// Constructor
     pub fn new(
         sequence_id: u64,
-        eos_token_id: Option<u32>,
         prompt: String,
         prompt_token_ids: Vec<u32>,
         block_size: usize,
+        return_full_text: bool,
     ) -> Result<Self, SequenceError> {
+        let output_text = if return_full_text {
+            prompt.clone()
+        } else {
+            String::new()
+        };
+
         let mut am = Self {
             sequence_id,
-            eos_token_id,
             prompt,
             prompt_token_ids: prompt_token_ids.clone(),
             sequence_data: SequenceData::new(prompt_token_ids.clone(), vec![]),
@@ -314,8 +316,9 @@ impl Sequence {
             prefix_offset: 0,
             read_offset: 0,
             output_logprobs: vec![],
-            output_text: String::new(),
+            output_text,
             sequence_status: SequenceStatus::Waiting,
+            stop_reason: None,
             tokens: vec![],
             span: info_span!("sequence"),
         };
@@ -496,7 +499,8 @@ impl Sequence {
                 sequence_length = sequence_length.map(|l| l - 1);
             }
         }
-        self.cumulative_logprob() / (sequence_length.unwrap_or_default() as f32 * length_penalty)
+        self.cumulative_logprob() / (sequence_length.unwrap() as f32 * length_penalty)
+        // DON'T PANIC: sequence length already enforced to be non null
     }
 
     /// Fork a `Sequence`
@@ -534,6 +538,28 @@ impl Sequence {
     }
 }
 
+pub type SyncSequence = Arc<RwLock<Sequence>>;
+
+impl ReadLock for SyncSequence {
+    type Error = SequenceError;
+    type Inner = Sequence;
+
+    fn read_lock(&self) -> Result<std::sync::RwLockReadGuard<Self::Inner>, Self::Error> {
+        self.read()
+            .map_err(|e| SequenceError::ReadLockError(e.to_string()))
+    }
+}
+
+impl WriteLock for SyncSequence {
+    type Error = SequenceError;
+    type Inner = Sequence;
+
+    fn write_lock(&self) -> Result<std::sync::RwLockWriteGuard<Self::Inner>, Self::Error> {
+        self.write()
+            .map_err(|e| SequenceError::WriteLockError(e.to_string()))
+    }
+}
+
 /// `SequenceGroupState` - Mutable state tied to a specific sequence group
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SequenceGroupState {
@@ -565,11 +591,11 @@ pub struct MultiModalData {
     pub data: Tensor,
 }
 
-/// `Sequence` - A group of sequences that are generated from the same prompt.
+/// `SequenceGroup` - A group of sequences that are generated from the same prompt.
 ///
 /// Args:
 ///    `request_id`: The ID of the request.
-///    `seqs`: The list of sequences.
+///    `sequences`: The list of sequences.
 ///    `sampling_params`: The sampling parameters used to generate the outputs.
 ///    `arrival_time`: The arrival time of the request.
 ///    `multi_modal_data`: Multi modal data associated with the request.
@@ -582,16 +608,15 @@ pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
     /// Sequences
-    pub(crate) sequences: HashMap<u64, Rc<RefCell<Sequence>>>,
+    pub sequences: HashMap<u64, Arc<RwLock<Sequence>>>,
     /// Request metrics
-    metrics: RequestMetrics,
-    /// Multi modal data
-    multi_model_data: Option<MultiModalData>,
+    pub metrics: Arc<RwLock<RequestMetrics>>,
     /// Prompt log probabilities
-    #[allow(dead_code)]
-    prompt_logprobs: Option<LogProb>,
-    /// Sampling parameters
-    sampling_params: SamplingParams,
+    pub prompt_logprobs: Option<LogProb>,
+    /// Next token
+    next_token_chooser_params: NextTokenChooserParameters,
+    /// Stopping criteria
+    stopping_criteria: StoppingCriteriaParameters,
     /// State
     state: SequenceGroupState,
 }
@@ -602,10 +627,8 @@ impl SequenceGroup {
         request_id: String,
         sequences: Vec<Sequence>,
         arrival_time: Instant,
-        prompt_logprobs: Option<LogProb>,
-        sampling_params: SamplingParams,
-        multi_model_data: Option<MultiModalData>,
-        state: SequenceGroupState,
+        next_token_chooser_params: NextTokenChooserParameters,
+        stopping_criteria: StoppingCriteriaParameters,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
             return Err(SequenceError::ConstructorError(
@@ -616,20 +639,20 @@ impl SequenceGroup {
             request_id,
             sequences: sequences
                 .into_iter()
-                .map(|s| (s.sequence_id, Rc::new(RefCell::new(s))))
+                .map(|s| (s.sequence_id, Arc::new(RwLock::new(s))))
                 .collect(),
-            metrics: RequestMetrics {
+            metrics: Arc::new(RwLock::new(RequestMetrics {
                 arrival_time,
                 last_token_time: arrival_time,
                 finished_time: None,
                 first_scheduled_time: None,
                 first_token_time: None,
                 time_in_queue: None,
-            },
-            multi_model_data,
-            prompt_logprobs,
-            sampling_params,
-            state,
+            })),
+            prompt_logprobs: None,
+            next_token_chooser_params,
+            stopping_criteria,
+            state: SequenceGroupState { generator: None },
         })
     }
 
@@ -638,7 +661,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().prompt.clone())
+            .map(|(_, s)| s.read().unwrap().prompt.clone())
             .unwrap_or_default()
     }
 
@@ -651,7 +674,7 @@ impl SequenceGroup {
         logprobs: HashMap<u32, LogProb>,
     ) -> Result<(), SequenceError> {
         if let Some(sequence) = self.sequences.get(&sequence_id) {
-            sequence.borrow_mut().add_token_id(token_id, logprobs)?;
+            sequence.write_lock()?.add_token_id(token_id, logprobs)?;
             return Ok(());
         }
         error!("Missing sequence, with id = {sequence_id}");
@@ -663,7 +686,7 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().prompt_token_ids.clone())
+            .map(|(_, s)| s.read().unwrap().prompt_token_ids.clone())
             .unwrap_or_default()
     }
 
@@ -672,8 +695,10 @@ impl SequenceGroup {
         if self.is_prefill() {
             return Err(SequenceError::WhileInPrefix);
         }
-        let latency = now - self.metrics.last_token_time;
-        self.metrics.last_token_time = now;
+        let latency = { now - self.metrics.read().unwrap().last_token_time };
+        {
+            self.metrics.write().unwrap().last_token_time = now;
+        }
         Ok(latency)
     }
 
@@ -688,44 +713,45 @@ impl SequenceGroup {
             .sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().get_output_len())
+            .map(|(_, s)| s.read().unwrap().get_output_len())
             .unwrap_or_default();
-        if self.metrics.first_token_time.is_none() && initial_seq_len == 1 {
-            self.metrics.first_token_time = Some(time);
+        let mut metrics_guard = self.metrics.write().unwrap();
+        let first_token_time = metrics_guard.first_token_time;
+        if first_token_time.is_none() && initial_seq_len == 1 {
+            metrics_guard.first_token_time = Some(time);
         }
     }
 
     /// Sets the first scheduled time and time in queue for Request level timings.
-    pub fn maybe_set_first_scheduled_time(&mut self, time: Instant) {
-        if self.metrics.first_scheduled_time.is_none() {
-            self.metrics.first_scheduled_time = Some(time);
-            self.metrics.time_in_queue = Some(time - self.metrics.arrival_time);
+    pub fn maybe_set_first_scheduled_time(&self, time: Instant) {
+        let mut metrics_guard = self.metrics.write().unwrap();
+        let (arrival_time, first_scheduled_time) = (
+            metrics_guard.arrival_time,
+            metrics_guard.first_scheduled_time,
+        );
+        if first_scheduled_time.is_none() {
+            metrics_guard.first_scheduled_time = Some(time);
+            metrics_guard.time_in_queue = Some(time - arrival_time);
         }
     }
 
     /// Sets finished time
     #[allow(dead_code)]
     fn set_finished_time(&mut self, time: Instant) {
-        self.metrics.finished_time = Some(time);
+        self.metrics.write().unwrap().finished_time = Some(time);
     }
 
     /// Get `SequenceGroup`'s arrival time
     pub fn arrival_time(&self) -> Instant {
-        self.metrics.arrival_time
+        self.metrics.read().unwrap().arrival_time
     }
 
     /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
     pub fn get_max_num_running_seqs(&self) -> usize {
-        if self.sampling_params.use_beam_search {
+        if self.next_token_chooser_params.best_of > 1 {
             // For beam search, maximally there will always be `best_of` beam
             // candidates running in the future.
-            return self.sampling_params.best_of;
-        }
-        if self.sampling_params.best_of > self.get_num_sequences(None) {
-            // At prompt stage, the sequence group is not yet filled up
-            // and only have one sequence running. However, in the
-            // generation stage, we will have `best_of` sequences running.
-            return self.sampling_params.best_of;
+            return self.next_token_chooser_params.best_of;
         }
         // At sampling stages, return the number of actual sequences
         // that are not finished yet.
@@ -733,13 +759,13 @@ impl SequenceGroup {
     }
 
     /// Get sequences from `SequenceGroup`
-    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Arc<RwLock<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.borrow().sequence_status == status {
+                    if seq.read().unwrap().sequence_status == status {
                         Some(seq.clone())
                     } else {
                         None
@@ -757,8 +783,8 @@ impl SequenceGroup {
                 .sequences
                 .values()
                 .filter_map(|seq| {
-                    if seq.borrow().sequence_status == status {
-                        Some(seq.borrow().sequence_id)
+                    if seq.read().unwrap().sequence_status == status {
+                        Some(seq.read().unwrap().sequence_id)
                     } else {
                         None
                     }
@@ -767,7 +793,7 @@ impl SequenceGroup {
             None => self
                 .sequences
                 .values()
-                .map(|s| s.borrow().sequence_id)
+                .map(|s| s.read().unwrap().sequence_id)
                 .collect(),
         }
     }
@@ -776,21 +802,21 @@ impl SequenceGroup {
     pub fn get_first_sequence(
         &self,
         status: Option<SequenceStatus>,
-    ) -> Option<&Rc<RefCell<Sequence>>> {
+    ) -> Option<&Arc<RwLock<Sequence>>> {
         match status {
             Some(status) => self
                 .sequences
                 .values()
-                .find(|seq| seq.borrow().get_sequence_status() == status),
+                .find(|seq| seq.read().unwrap().get_sequence_status() == status),
             None => self.sequences.values().next(),
         }
     }
 
     /// Gets a shared reference to `Sequence` with `sequence_id`
-    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Rc<RefCell<Sequence>>> {
+    pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .find(|s| s.borrow().sequence_id() == sequence_id)
+            .find(|s| s.read().unwrap().sequence_id() == sequence_id)
     }
 
     // TODO: remove this code if not necessary anymore
@@ -803,19 +829,19 @@ impl SequenceGroup {
     // }
 
     /// Get a vector of unfinished sequences
-    pub fn get_unfinished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_unfinished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| !s.borrow().is_finished())
+            .filter(|s| !s.read().unwrap().is_finished())
             .cloned()
             .collect()
     }
 
     /// Get a vector of finished sequences
-    pub fn get_finished_sequences(&self) -> Vec<Rc<RefCell<Sequence>>> {
+    pub fn get_finished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
-            .filter(|s| s.borrow().is_finished())
+            .filter(|s| s.read().unwrap().is_finished())
             .cloned()
             .collect()
     }
@@ -826,11 +852,11 @@ impl SequenceGroup {
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
         for sequence in self.sequences.values() {
-            let is_finished = { sequence.borrow().is_finished() };
+            let is_finished = { sequence.read_lock()?.is_finished() };
             if !is_finished {
                 {
                     sequence
-                        .borrow_mut()
+                        .write_lock()?
                         .sequence_data
                         .update_num_computed_tokens(num_new_computed_tokens)?;
                 }
@@ -843,9 +869,12 @@ impl SequenceGroup {
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         let mut num_uncomputed_tokens = 0;
         for sequence in self.sequences.values() {
-            if !sequence.borrow().is_finished() {
-                num_uncomputed_tokens +=
-                    sequence.borrow().sequence_data.get_num_uncomputed_tokens();
+            if !sequence.read().unwrap().is_finished() {
+                num_uncomputed_tokens += sequence
+                    .read()
+                    .unwrap()
+                    .sequence_data
+                    .get_num_uncomputed_tokens();
             }
         }
         num_uncomputed_tokens
@@ -856,7 +885,7 @@ impl SequenceGroup {
         if let Some(status) = status {
             let mut len = 0;
             for sequence in self.sequences.values() {
-                if sequence.borrow().sequence_status == status {
+                if sequence.read().unwrap().sequence_status == status {
                     len += 1;
                 }
             }
@@ -871,8 +900,13 @@ impl SequenceGroup {
         // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
         // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
         for sequence in self.sequences.values() {
-            if sequence.borrow().sequence_status == status {
-                return Some(sequence.borrow().get_num_total_logical_token_blocks());
+            if sequence.read().unwrap().sequence_status == status {
+                return Some(
+                    sequence
+                        .read()
+                        .unwrap()
+                        .get_num_total_logical_token_blocks(),
+                );
             }
         }
         None
@@ -893,18 +927,18 @@ impl SequenceGroup {
         self.sequences
             .iter()
             .next()
-            .map(|(_, s)| s.borrow().is_prefill())
+            .map(|(_, s)| s.read().unwrap().is_prefill())
             .unwrap_or(false)
     }
 
     /// Finds a `Sequence` with a given `sequence_id`
-    pub fn find(&self, sequence_id: u64) -> Option<Rc<RefCell<Sequence>>> {
+    pub fn find(&self, sequence_id: u64) -> Option<Arc<RwLock<Sequence>>> {
         self.sequences.get(&sequence_id).cloned()
     }
 
     /// Adds a new `Sequence` to the `SequenceGroup`
-    pub fn add(&mut self, sequence: Rc<RefCell<Sequence>>) {
-        let sequence_id = { sequence.borrow().sequence_id };
+    pub fn add(&mut self, sequence: Arc<RwLock<Sequence>>) {
+        let sequence_id = { sequence.read().unwrap().sequence_id };
         if self.sequences.contains_key(&sequence_id) {
             return;
         }
@@ -918,7 +952,9 @@ impl SequenceGroup {
 
     /// Checks if generation is finished for all `Sequence`'s in `SequenceGroup`
     pub fn is_finished(&self) -> bool {
-        self.sequences.values().all(|s| s.borrow().is_finished())
+        self.sequences
+            .values()
+            .all(|s| s.read().unwrap().is_finished())
     }
 
     /// Getter for `state`
@@ -926,14 +962,14 @@ impl SequenceGroup {
         self.state.clone()
     }
 
-    /// Getter for `multi_modal_data`
-    pub fn multi_modal_data(&self) -> Option<MultiModalData> {
-        self.multi_model_data.clone()
+    /// Getter for sampling next token chooser params
+    pub fn next_token_chooser_params(&self) -> NextTokenChooserParameters {
+        self.next_token_chooser_params.clone()
     }
 
-    /// Getter for sampling parameters
-    pub fn sampling_params(&self) -> SamplingParams {
-        self.sampling_params.clone()
+    /// Getter for stopping parameters
+    pub fn stopping_params(&self) -> StoppingCriteriaParameters {
+        self.stopping_criteria.clone()
     }
 }
 
@@ -954,33 +990,26 @@ impl SequenceGroup {
 ///          used in prefix caching.
 ///     `state`: Internal state tied to this sequence group.
 ///     `multi_modal_data`: Multi modal data.
+#[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
-    #[allow(dead_code)]
     request_id: String,
     /// Is prompt (bool)
-    #[allow(dead_code)]
     is_prompt: bool,
-    /// Sampling parameters
-    #[allow(dead_code)]
-    sampling_params: SamplingParams,
+    /// Next token chooser parameters
+    next_token_chooser_params: NextTokenChooserParameters,
+    /// Stopping criteria parameters
+    stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    #[allow(dead_code)]
     block_tables: HashMap<u64, Vec<u64>>,
     /// Do sample (bool)
-    #[allow(dead_code)]
-    do_sample: bool,
+    pub do_sample: bool,
     /// Token chunk size
     pub token_chunk_size: usize,
     /// Sequence data
-    #[allow(dead_code)]
     sequence_data: HashMap<u64, SequenceData>,
     /// Internal state tied to this sequence group
-    #[allow(dead_code)]
     state: SequenceGroupState,
-    /// Optional multi model data
-    #[allow(dead_code)]
-    multi_modal_data: Option<MultiModalData>,
 }
 
 impl SequenceGroupMetadata {
@@ -990,12 +1019,12 @@ impl SequenceGroupMetadata {
         request_id: String,
         is_prompt: bool,
         sequence_data: HashMap<u64, SequenceData>,
-        sampling_params: SamplingParams,
+        next_token_chooser_params: NextTokenChooserParameters,
+        stopping_criteria_params: StoppingCriteriaParameters,
         block_tables: HashMap<u64, Vec<u64>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,
-        multi_modal_data: Option<MultiModalData>,
     ) -> Self {
         let token_chunk_size = if let Some(size) = token_chunk_size {
             size
@@ -1013,12 +1042,12 @@ impl SequenceGroupMetadata {
             request_id,
             is_prompt,
             sequence_data,
-            sampling_params,
+            next_token_chooser_params,
+            stopping_criteria_params,
             block_tables,
             do_sample,
             token_chunk_size,
             state,
-            multi_modal_data,
         }
     }
 
@@ -1043,25 +1072,18 @@ pub struct SequenceOutput {
     /// Output token
     pub output_token: u32,
     /// Log probabilities
-    pub logprob: HashMap<u64, LogProb>,
+    pub logprob: HashMap<u32, LogProb>,
 }
 
-/// `CompletionSequenceGroupOutput` - The model output associated with a completion sequence group.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompletionSequenceGroupOutput {
-    pub samples: Vec<SequenceOutput>,
-    pub prompt_logprobs: Vec<HashMap<u64, LogProb>>,
-}
-
-/// `SampledOutput` - For each sequence group, we generate a list of SequenceOutput object,
+/// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
 ///     each of which contains one possible candidate for the next token.
-
+///
 /// This data structure implements methods, so it can be used like a list, but
 ///     also has optional fields for device tensors.
-#[derive(Debug)]
-pub struct SamplerOutput {
-    /// Outputs
-    pub outputs: Vec<CompletionSequenceGroupOutput>,
+#[derive(Debug, Default)]
+pub struct SequenceGroupOutput {
+    /// Outputs, in the form of a mapping from `sequence_id` -> `CompletionSequenceGroupOutput`
+    pub outputs: HashMap<u64, SequenceOutput>,
     /// Sampled token probabilities
     pub sampled_token_probs: Option<Tensor>,
     /// Log probabilities
@@ -1072,27 +1094,21 @@ pub struct SamplerOutput {
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
 }
 
-impl Index<usize> for SamplerOutput {
-    type Output = CompletionSequenceGroupOutput;
-
-    fn index(&self, idx: usize) -> &Self::Output {
-        &self.outputs[idx]
-    }
-}
-
-impl IndexMut<usize> for SamplerOutput {
-    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        &mut self.outputs[idx]
-    }
-}
-
-impl SamplerOutput {
-    pub fn len(&self) -> usize {
-        self.outputs.len()
+impl SequenceGroupOutput {
+    // Creates an empty instance of `Self`
+    pub fn empty() -> Self {
+        Self {
+            ..Default::default()
+        }
     }
 
+    /// Checks if the current instance is empty
     pub fn is_empty(&self) -> bool {
         self.outputs.is_empty()
+            && self.sampled_token_ids.is_none()
+            && self.logprobs.is_none()
+            && self.sampled_token_ids.is_none()
+            && self.spec_decode_worker_metrics.is_none()
     }
 }
 
@@ -1124,56 +1140,59 @@ pub struct SpecDecodeWorkerMetrics {
 }
 
 /// `ExecuteModelRequest` - The model execution request
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExecuteModelRequest {
-    /// The sequence group metadata list
-    #[allow(dead_code)]
-    seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
+    /// The sequence groups metadata vector
+    sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
-    blocks_to_swap_in: Vec<(i32, i32)>,
+    blocks_to_swap_in: HashMap<u64, u64>,
     /// Blocks to swap out. List of GPU -> CPU block number
-    blocks_to_swap_out: Vec<(i32, i32)>,
+    blocks_to_swap_out: HashMap<u64, u64>,
     /// Blocks to copy. Source to dest block
-    blocks_to_copy: Vec<(i32, i32)>,
-    /// The number of slots for lookahead decoding
-    num_lookahead_slots: i32,
+    blocks_to_copy: HashMap<u64, u64>,
     /// The number of requests in the running queue
-    running_queue_size: i32,
+    running_queue_size: usize,
 }
 
 impl ExecuteModelRequest {
     /// Constructor
     pub fn new(
-        seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
-        blocks_to_swap_in: Vec<(i32, i32)>,
-        blocks_to_swap_out: Vec<(i32, i32)>,
-        blocks_to_copy: Vec<(i32, i32)>,
-        num_lookahead_slots: i32,
-        running_queue_size: i32,
+        sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
+        blocks_to_swap_in: HashMap<u64, u64>,
+        blocks_to_swap_out: HashMap<u64, u64>,
+        blocks_to_copy: HashMap<u64, u64>,
+        running_queue_size: usize,
     ) -> Self {
         Self {
-            seq_group_metadata_list,
+            sequence_groups_metadata,
             blocks_to_swap_in,
             blocks_to_swap_out,
             blocks_to_copy,
-            num_lookahead_slots,
             running_queue_size,
         }
     }
 
-    /// Clone the request with a new sequence group metadata list.
-    pub fn clone_with_seq_group_metadata_list(
-        &self,
-        seq_group_metadata_list: Vec<Rc<SequenceGroupMetadata>>,
-    ) -> Self {
+    /// Creates a new empty instance. This is useful
+    /// to communicate to the `ModelExecutor` service
+    /// when there is no scheduled running sequences,
+    /// and therefore we should just wait until
+    /// new requests arrive
+    pub fn empty() -> Self {
         Self {
-            seq_group_metadata_list,
-            blocks_to_swap_in: self.blocks_to_swap_in.clone(),
-            blocks_to_swap_out: self.blocks_to_swap_out.clone(),
-            blocks_to_copy: self.blocks_to_copy.clone(),
-            num_lookahead_slots: self.num_lookahead_slots,
-            running_queue_size: self.running_queue_size,
+            sequence_groups_metadata: vec![],
+            blocks_to_copy: HashMap::default(),
+            blocks_to_swap_in: HashMap::default(),
+            blocks_to_swap_out: HashMap::default(),
+            running_queue_size: 0,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sequence_groups_metadata.is_empty()
+            && self.blocks_to_copy.is_empty()
+            && self.blocks_to_swap_in.is_empty()
+            && self.blocks_to_swap_out.is_empty()
+            && self.running_queue_size == 0
     }
 }
 
@@ -1191,30 +1210,33 @@ pub enum SequenceError {
     BlockError(#[from] BlockError),
     #[error("Missing sequence with id = `{0}`")]
     MissingSequence(u64),
+    #[error("Failed to acquire read lock: `{0}`")]
+    ReadLockError(String),
+    #[error("Failed to acquire write lock: `{0}`")]
+    WriteLockError(String),
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
 
-    fn sample_outputs() -> Vec<CompletionSequenceGroupOutput> {
-        (0..5)
+    fn sample_outputs() -> HashMap<u64, SequenceOutput> {
+        (0..5_u64)
             .map(|i| {
-                let sequence_output = SequenceOutput {
-                    parent_sequence_id: 0,
-                    output_token: i,
-                    logprob: HashMap::new(),
-                };
-                CompletionSequenceGroupOutput {
-                    samples: vec![sequence_output],
-                    prompt_logprobs: vec![],
-                }
+                (
+                    i,
+                    SequenceOutput {
+                        parent_sequence_id: 0,
+                        output_token: i as u32,
+                        logprob: HashMap::new(),
+                    },
+                )
             })
             .collect()
     }
 
-    fn sampler_output(sample_outputs: Vec<CompletionSequenceGroupOutput>) -> SamplerOutput {
-        SamplerOutput {
+    fn sampler_output(sample_outputs: HashMap<u64, SequenceOutput>) -> SequenceGroupOutput {
+        SequenceGroupOutput {
             outputs: sample_outputs,
             sampled_token_ids: None,
             sampled_token_probs: None,
@@ -1228,9 +1250,8 @@ pub(crate) mod tests {
         request_id: u64,
         prompt_length: usize,
         block_size: Option<usize>,
-        use_beam_search: bool,
         best_of: usize,
-    ) -> (Rc<RefCell<Sequence>>, SequenceGroup) {
+    ) -> (Arc<RwLock<Sequence>>, SequenceGroup) {
         let block_size = block_size.unwrap_or(prompt_length);
 
         // Create dummy prompt sequence with tokens 0...block_size-1
@@ -1241,28 +1262,17 @@ pub(crate) mod tests {
             .map(|t| t.to_string())
             .collect::<Vec<String>>()
             .join(" ");
-        let prompt = Sequence::new(
-            request_id,
-            Some(1000),
-            prompt_str,
-            prompt_tokens,
-            block_size,
-        )
-        .expect("Failed to create prompt sequence");
+        let prompt = Sequence::new(request_id, prompt_str, prompt_tokens, block_size, false)
+            .expect("Failed to create prompt sequence");
         let seq_group = SequenceGroup::new(
             request_id.to_string(),
             vec![prompt.clone()],
             Instant::now(),
-            None,
-            SamplingParams {
-                use_beam_search,
+            NextTokenChooserParameters {
                 best_of,
                 ..Default::default()
             },
-            None,
-            SequenceGroupState {
-                generator: Some(42),
-            },
+            Default::default(),
         )
         .expect("Failed to construct a new sequence group");
 
@@ -1279,32 +1289,6 @@ pub(crate) mod tests {
         assert!(sampler_output.spec_decode_worker_metrics.is_none());
         assert!(sampler_output.sampled_token_ids.is_none());
         assert!(sampler_output.sampled_token_probs.is_none());
-    }
-
-    #[test]
-    fn test_sampler_output_item() {
-        let sample_outputs = sample_outputs();
-        let mut sampler_output = sampler_output(sample_outputs.clone());
-        assert_eq!(sampler_output[2], sample_outputs[2]);
-
-        let sequence_output = SequenceOutput {
-            parent_sequence_id: 0,
-            output_token: 99,
-            logprob: HashMap::new(),
-        };
-        let new_output = CompletionSequenceGroupOutput {
-            samples: vec![sequence_output],
-            prompt_logprobs: vec![],
-        };
-        sampler_output[2] = new_output.clone();
-        assert_eq!(sampler_output[2], new_output)
-    }
-
-    #[test]
-    fn test_sampler_output_len() {
-        let sample_outputs = sample_outputs();
-        let sampler_output = sampler_output(sample_outputs.clone());
-        assert_eq!(sampler_output.len(), sample_outputs.len())
     }
 
     // #[test]
@@ -1365,7 +1349,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_sequence_group_stage() {
-        let (_, mut seq_group) = create_dummy_prompt(1, 12, None, false, 5);
+        let (_, mut seq_group) = create_dummy_prompt(1, 12, None, 5);
         assert!(seq_group.is_prefill());
 
         seq_group
@@ -1392,13 +1376,13 @@ pub(crate) mod tests {
             .enumerate()
             .for_each(|(i, v)| {
                 if i == 0 {
-                    v.borrow_mut().sequence_data.add_token_id(1, 0.0);
+                    v.write().unwrap().sequence_data.add_token_id(1, 0.0);
                 }
             });
         seq_group
             .sequences
             .values_mut()
-            .for_each(|v| v.borrow_mut().reset_state_for_recompute());
+            .for_each(|v| v.write().unwrap().reset_state_for_recompute());
         assert!(seq_group.is_prefill());
 
         seq_group
