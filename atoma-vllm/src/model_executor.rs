@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -13,12 +13,9 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
-    sampling_params::SamplingParams,
     sequence::{ExecuteModelRequest, SequenceGroupOutput},
+    validation::NextTokenChooserParameters,
 };
-
-/// Duration to wait, if there are no scheduled requests to be processed
-const AWAIT_DURATION_EMPTY_REQUESTS: Duration = Duration::from_millis(500);
 
 #[async_trait]
 /// `ModelLoader` trait - interface for fetching
@@ -49,7 +46,7 @@ pub trait ModelExecutor: ModelLoader {
     async fn sample(
         &mut self,
         input: Self::Logits,
-        sampling_params: SamplingParams,
+        sampling_params: NextTokenChooserParameters,
     ) -> Result<Self::Output, Self::Error>;
 }
 

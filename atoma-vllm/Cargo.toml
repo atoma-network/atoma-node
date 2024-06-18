@@ -18,3 +18,6 @@ thiserror.workspace = true
 tokenizers.worksapce = true
 tokio = { workspace = true, features = ["macros"] }
 tracing.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
