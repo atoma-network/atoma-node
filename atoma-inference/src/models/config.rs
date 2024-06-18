@@ -206,7 +206,7 @@ pub mod tests {
                 "F16".to_string(),
                 "Llama2_7b".to_string(),
                 "".to_string(),
-                0,
+                vec![0],
                 true,
             )],
             18001,

@@ -81,7 +81,7 @@ pub enum ModelError {
     #[error("Tokio error: `{0}`")]
     RecvError(#[from] tokio::sync::broadcast::error::RecvError),
     #[error("Send error: `{0}`")]
-    SendErrorTextModelInput(#[from] tokio::sync::broadcast::error::SendError<TextModelInput>),
+    SendErrorTextModelInput(#[from] Box<tokio::sync::broadcast::error::SendError<TextModelInput>>),
     #[error("Send error: `{0}`")]
     SendErrorTextModelOutput(#[from] tokio::sync::mpsc::error::SendError<TextModelOutput>),
 }
