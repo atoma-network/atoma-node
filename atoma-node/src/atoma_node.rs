@@ -19,13 +19,15 @@ use tokio::{
     task::JoinError,
     try_join,
 };
-use tracing::{error, info};
+use tracing::{error, info, instrument, Span};
 
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {}
 
 impl AtomaNode {
+    /// Starts a new `AtomaNode` instance
+    #[instrument(skip(config_path, json_server_req_rx))]
     pub async fn start<P>(
         config_path: P,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
@@ -42,7 +44,10 @@ impl AtomaNode {
 
         let firebase = Firebase::new();
 
+        let span = Span::current();
+        let span1 = span.clone();
         let model_service_handle = tokio::spawn(async move {
+            let _enter = span1.enter();
             info!("Spawning Model service..");
             let mut model_service = ModelService::start(
                 model_config,
@@ -59,7 +64,9 @@ impl AtomaNode {
 
         let sui_subscriber_handle = {
             let config_path = config_path.clone();
+            let span2 = span.clone();
             tokio::spawn(async move {
+                let _enter = span2.enter();
                 info!("Starting Sui subscriber service..");
                 let sui_event_subscriber =
                     SuiSubscriber::new_from_config(config_path, subscriber_req_tx).await?;
@@ -72,7 +79,9 @@ impl AtomaNode {
 
         let atoma_sui_client_handle = {
             let config_path = config_path.clone();
+            let span3 = span.clone();
             tokio::spawn(async move {
+                let _enter = span3.enter();
                 info!("Starting Atoma Sui client service..");
                 let atoma_sui_client = AtomaSuiClient::new_from_config_file(
                     config_path.clone(),
@@ -89,7 +98,9 @@ impl AtomaNode {
         let atoma_output_manager_handle = {
             let config_path = config_path.clone();
             let firebase = firebase.clone();
+            let span4 = span.clone();
             tokio::spawn(async move {
+                let _enter = span4.enter();
                 info!("Starting Atoma output manager service..");
                 let atoma_output_manager =
                     AtomaOutputManager::new(config_path, output_manager_rx, firebase).await?;
@@ -101,6 +112,7 @@ impl AtomaNode {
         };
 
         let atoma_streamer_handle = tokio::spawn(async move {
+            let _enter = span.enter();
             info!("Starting Atoma streamer service..");
             let atoma_streamer =
                 AtomaStreamer::new_from_config(config_path, streamer_rx, firebase).await?;

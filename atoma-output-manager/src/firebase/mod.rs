@@ -4,7 +4,7 @@ use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::AtomaOutputMetadata;
 use reqwest::Client;
 use serde_json::json;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 use crate::AtomaOutputManagerError;
 
@@ -35,10 +35,11 @@ impl FirebaseOutputManager {
 
     /// Handles  a new post request. Encapsulates the logic necessary
     /// to post new requests, using `reqwest::Client`.
+    #[instrument(skip_all)]
     pub async fn handle_post_request(
         &mut self,
         output_metadata: &AtomaOutputMetadata,
-        output: String,
+        output: Value,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;

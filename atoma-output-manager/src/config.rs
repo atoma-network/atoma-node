@@ -29,9 +29,9 @@ impl AtomaOutputManagerConfig {
         ));
         let config = builder
             .build()
-            .expect("Failed to generate Atoma Sui client configuration file");
+            .expect("Failed to generate Atoma Sui output manager configuration file");
         config
             .get::<Self>("output_manager")
-            .expect("Failed to generated Atoma Sui client config file")
+            .expect("Failed to generated Atoma output manager config file")
     }
 }

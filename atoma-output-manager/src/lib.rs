@@ -5,9 +5,10 @@ use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
+use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 mod config;
 mod firebase;
@@ -26,14 +27,14 @@ pub struct AtomaOutputManager {
     gateway_output_manager: GatewayOutputManager,
     /// A mpsc receiver that receives tuples of `AtomaOutputMetadata` and
     /// the actual AI generated output, in JSON format.
-    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, String)>,
+    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
 }
 
 impl AtomaOutputManager {
     /// Constructor
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, String)>,
+        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Value)>,
         firebase: Firebase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
@@ -56,6 +57,7 @@ impl AtomaOutputManager {
 
     /// Main loop, responsible for continuously listening to incoming
     /// AI generated outputs, together with corresponding metadata
+    #[instrument(skip(self))]
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
         info!("Starting firebase service..");
         while let Some((ref output_metadata, output)) = self.output_manager_rx.recv().await {
