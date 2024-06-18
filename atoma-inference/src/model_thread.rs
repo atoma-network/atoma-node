@@ -77,7 +77,7 @@ where
     /// When a new request is received, it starts a new inference loop for the encapsulated
     /// AI model `M`. Once the AI generated output is ready, it sends it back using the corresponding
     /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 

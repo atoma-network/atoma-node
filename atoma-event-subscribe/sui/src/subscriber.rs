@@ -87,7 +87,7 @@ impl SuiSubscriber {
     }
 
     /// Subscribes to Sui blockchain for event listening
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
         let event_api = self.sui_client.event_api();
         let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;

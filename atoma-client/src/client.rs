@@ -231,7 +231,7 @@ impl AtomaSuiClient {
     /// It listens to new incoming `Response`'s from the `AtomaInference` service. Once it gets
     /// a new response in, it constructs a new commitment to the `Response` that is then submitted
     /// on the Atoma smart contract, on the Sui blockchain.
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_rx.recv().await {
             info!("Received new response: {:?}", response);

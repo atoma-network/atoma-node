@@ -56,7 +56,7 @@ impl AtomaOutputManager {
 
     /// Main loop, responsible for continuously listening to incoming
     /// AI generated outputs, together with corresponding metadata
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
         info!("Starting firebase service..");
         while let Some((ref output_metadata, output)) = self.output_manager_rx.recv().await {

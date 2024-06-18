@@ -65,7 +65,7 @@ impl AtomaStreamer {
     }
 
     /// Runs main loop for `AtomaStreamer`
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaStreamerError> {
         info!("Starting firebase service..");
         while let Some((tx_digest, data)) = self.streamer_rx.recv().await {
@@ -79,7 +79,7 @@ impl AtomaStreamer {
 
 impl AtomaStreamer {
     /// Handles new streaming request
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     async fn handle_streaming_request(
         &mut self,
         tx_digest: Digest,

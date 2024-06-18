@@ -75,7 +75,7 @@ impl ModelService {
     /// Listens to requests coming from either the node's JRPC service, or the
     /// node's blockchain event listener. It also processes newly processed responses
     /// containing the AI generated output (for a given request).
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
@@ -107,7 +107,7 @@ impl ModelService {
 
 impl ModelService {
     /// Stops the `ModelService`
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
