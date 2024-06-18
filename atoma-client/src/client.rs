@@ -217,7 +217,8 @@ impl AtomaSuiClient {
 
                     self.output_manager_tx
                         .send((output_metadata, output))
-                        .await?;
+                        .await
+                        .map_err(Box::new)?;
                     // we don't need to check other events, as at this point the node knows it has been selected for
                     break;
                 }
@@ -254,7 +255,7 @@ pub enum AtomaSuiClientError {
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(AtomaOutputMetadata, String)>),
+    SendError(#[from] Box<mpsc::error::SendError<(AtomaOutputMetadata, String)>>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]
