@@ -14,7 +14,7 @@ use tracing::{debug, error, info, instrument};
 
 mod config;
 
-/// `AtomaStreamer` instance 
+/// `AtomaStreamer` instance
 pub struct AtomaStreamer {
     /// Firebase uri
     firebase_uri: PathBuf,
