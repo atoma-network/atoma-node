@@ -8,7 +8,7 @@ use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::models::{
     config::ModelConfig,
@@ -32,26 +32,6 @@ pub struct LlamaNcclModel {
     model_type: ModelType,
     to_workers_sender: broadcast::Sender<TextModelInput>,
     output_receiver: mpsc::Receiver<TextModelOutput>,
-}
-
-#[derive(Error, Debug)]
-pub enum LlamaNcclError {
-    #[error("DriverError error: `{0}`")]
-    DriverError(#[from] DriverError),
-    #[error("Nccl error: `{}`", 0.0)]
-    NcclError(NcclError),
-    #[error("Candle error: `{0}`")]
-    CandleError(#[from] candle::Error),
-    #[error("SerdeJsonError error: `{0}`")]
-    SerdeJsonError(#[from] serde_json::Error),
-    #[error("IoError error: `{0}`")]
-    IoError(#[from] std::io::Error),
-    #[error("Error: `{0}`")]
-    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
-    #[error("Tokio error: `{0}`")]
-    RecvError(#[from] tokio::sync::broadcast::error::RecvError),
-    #[error("ModelError error: `{0}`")]
-    ModelError(#[from] ModelError),
 }
 
 struct LlamaNcclWorker {
@@ -78,9 +58,11 @@ impl LlamaNcclWorker {
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
         let device = CudaDevice::new(rank)?;
+        // Initialize the Communicator from Nvidia Collective Communication Library. This is for the inter gpu communication.
+        // For more information visit https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/overview.html
         let comm =
             Rc::new(Comm::from_rank(device, rank, num_shards, id).map_err(ModelError::NcclError)?);
-        println!("Rank {rank:?} spawned");
+        info!("Rank {rank:?} spawned");
         let device = Device::new_cuda(device_id)?;
         let config: model::Config = serde_json::from_slice(&std::fs::read(config_file_path)?)?;
         let vb = unsafe {
@@ -281,10 +263,10 @@ impl ModelTrait for LlamaNcclModel {
                     stream_tx,
                 );
                 if let Err(e) = &llama_worker {
-                    println!("Error: {:?}", e);
+                    error!("Error: {:?}", e);
                 }
                 let mut llama_worker = llama_worker?;
-                println!("Starting inference loop on rank {rank}");
+                info!("Starting inference loop on rank {rank}");
                 loop {
                     let input = to_workers_receiver.blocking_recv()?;
                     let output = llama_worker.run(input)?;
@@ -310,4 +292,24 @@ impl ModelTrait for LlamaNcclModel {
             .blocking_recv()
             .ok_or_else(|| ModelError::Msg("Something went wrong".to_string()))
     }
+}
+
+#[derive(Error, Debug)]
+pub enum LlamaNcclError {
+    #[error("DriverError error: `{0}`")]
+    DriverError(#[from] DriverError),
+    #[error("Nccl error: `{}`", 0.0)]
+    NcclError(NcclError),
+    #[error("Candle error: `{0}`")]
+    CandleError(#[from] candle::Error),
+    #[error("SerdeJsonError error: `{0}`")]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error("IoError error: `{0}`")]
+    IoError(#[from] std::io::Error),
+    #[error("Error: `{0}`")]
+    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Tokio error: `{0}`")]
+    RecvError(#[from] tokio::sync::broadcast::error::RecvError),
+    #[error("ModelError error: `{0}`")]
+    ModelError(#[from] ModelError),
 }

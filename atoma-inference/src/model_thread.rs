@@ -94,8 +94,7 @@ where
                 PromptParams::Text2TextPromptParams(_) => OutputType::Text,
             };
             let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
-            let model_output = self.model.run(model_input);
-            let model_output = model_output?;
+            let model_output = self.model.run(model_input)?;
             let output = serde_json::to_value(model_output)?;
             let output_destination = request.output_destination();
             let response = Response::new(

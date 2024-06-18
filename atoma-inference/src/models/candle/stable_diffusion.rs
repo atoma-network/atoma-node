@@ -85,7 +85,7 @@ impl ModelTrait for StableDiffusion {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
         let model_type = ModelType::from_str(&config.model_id())?;
         let which = match model_type {

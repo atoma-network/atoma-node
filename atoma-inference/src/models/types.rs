@@ -437,7 +437,7 @@ impl TryFrom<(Digest, PromptParams)> for TextModelInput {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Debug, Serialize)]
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
 /// request. It contains additional metadata about the generation that is relevant
 /// to keep track. To be used in the context of text to text models and not

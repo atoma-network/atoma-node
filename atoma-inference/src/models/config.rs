@@ -68,7 +68,7 @@ impl ModelConfig {
     }
 
     /// Getter for the first `device_id`
-    pub fn device_id(&self) -> usize {
+    pub fn device_first_id(&self) -> usize {
         self.device_ids[0]
     }
 

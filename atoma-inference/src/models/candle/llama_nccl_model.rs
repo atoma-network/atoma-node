@@ -139,7 +139,7 @@ impl TensorParallelRowLinear {
 #[derive(Clone)]
 pub struct Cache {
     #[allow(clippy::type_complexity)]
-    kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
+    kvs: Vec<Option<(Tensor, Tensor)>>,
     cos: Tensor,
     sin: Tensor,
 }
@@ -162,7 +162,7 @@ impl Cache {
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
         Ok(Self {
-            kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
+            kvs: vec![None; config.num_hidden_layers],
             cos,
             sin,
         })
@@ -170,8 +170,9 @@ impl Cache {
 
     // Clear the cache between different inputs
     pub fn clear(&mut self) {
-        let len = { self.kvs.lock().unwrap().len() };
-        *self.kvs.lock().unwrap() = vec![None; len];
+        // let len = { self.kvs.lock().unwrap().len() };
+        // *self.kvs.lock().unwrap() = vec![None; len];
+        self.kvs = vec![None; self.kvs.len()];
     }
 }
 
@@ -206,7 +207,7 @@ impl CausalSelfAttention {
         candle_nn::rotary_emb::rope(x, &cos, &sin)
     }
 
-    fn forward(&self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
+    fn forward(&mut self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
         let (b_sz, seq_len, _) = x.shape().dims3()?;
 
         let qkv = self.qkv_proj.forward(x)?;
@@ -225,7 +226,6 @@ impl CausalSelfAttention {
             ..,
             self.num_attention_heads * self.head_dim + self.num_key_value_heads * self.head_dim..,
         ))?;
-        // todo!("Q {:?} K {:?} V {:?} - x {:?}", q.shape(), k.shape(), v.shape(), x.shape());
 
         let q = q
             .reshape((b_sz, seq_len, self.num_attention_heads, self.head_dim))?
@@ -243,7 +243,7 @@ impl CausalSelfAttention {
         let q = self.apply_rotary_emb(&q, index_pos)?;
         let mut k = self.apply_rotary_emb(&k, index_pos)?;
 
-        let mut cache = self.cache.kvs.lock().unwrap();
+        let cache = &mut self.cache.kvs;
         if let Some((cache_k, cache_v)) = &cache[block_idx] {
             k = Tensor::cat(&[cache_k, &k], 2)?.contiguous()?;
             v = Tensor::cat(&[cache_v, &v], 2)?.contiguous()?;
@@ -343,7 +343,7 @@ impl Block {
         }
     }
 
-    fn forward(&self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
+    fn forward(&mut self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
         let residual = x;
         let x = self.rms_1.forward(x)?;
         let x = (self.attn.forward(&x, index_pos, block_idx)? + residual)?;
@@ -384,10 +384,10 @@ impl Llama {
         }
     }
 
-    pub fn forward(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
+    pub fn forward(&mut self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let (_b_sz, seq_len) = x.shape().dims2()?;
         let mut x = self.wte.forward(x)?;
-        for (block_idx, block) in self.blocks.iter().enumerate() {
+        for (block_idx, block) in self.blocks.iter_mut().enumerate() {
             x = block.forward(&x, index_pos, block_idx)?;
         }
         let x = self.ln_f.forward(&x)?;
