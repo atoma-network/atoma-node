@@ -1,3 +1,4 @@
+use crate::models::types::LlmOutput;
 use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait};
 use std::{path::PathBuf, time::Duration};
 
@@ -30,6 +31,20 @@ struct TestModel {
 #[derive(Debug, Serialize)]
 struct MockInputOutput {
     id: u64,
+}
+
+impl LlmOutput for MockInputOutput {
+    fn num_input_tokens(&self) -> usize {
+        0
+    }
+
+    fn num_output_tokens(&self) -> Option<usize> {
+        None
+    }
+
+    fn time_to_generate(&self) -> f64 {
+        0.0
+    }
 }
 
 impl TryFrom<(Digest, PromptParams)> for MockInputOutput {
@@ -92,8 +107,13 @@ impl ModelThreadDispatcher {
 
             let duration = format!("{i}");
             let cache_dir = "./".parse().unwrap();
-            let model_config =
-                ModelConfig::new(model_name.clone(), "".to_string(), "".to_string(), 0, false);
+            let model_config = ModelConfig::new(
+                model_name.clone(),
+                "".to_string(),
+                "".to_string(),
+                vec![0],
+                false,
+            );
 
             let _join_handle = spawn_model_thread::<TestModel>(
                 model_name,
@@ -138,7 +158,7 @@ async fn test_mock_model_thread() {
                 vec![],
                 false,
             ));
-            let request = Request::new(vec![], 0, 1, prompt_params);
+            let request = Request::new(vec![], 0, 1, prompt_params, vec![]);
             let command = ModelThreadCommand {
                 request: request.clone(),
                 sender: response_sender,
@@ -177,21 +197,21 @@ async fn test_inference_service() {
             "mamba_130m".to_string(),
             "f32".to_string(),
             "refs/pr/1".to_string(),
-            0,
+            vec![0],
             false,
         ),
         ModelConfig::new(
             "mamba_370m".to_string(),
             "f32".to_string(),
             "refs/pr/1".to_string(),
-            0,
+            vec![0],
             false,
         ),
         ModelConfig::new(
             "llama_tiny_llama_1_1b_chat".to_string(),
             "f32".to_string(),
             "main".to_string(),
-            0,
+            vec![0],
             false,
         ),
     ];
@@ -200,7 +220,6 @@ async fn test_inference_service() {
         "./cache_dir".parse().unwrap(),
         true,
         model_configs,
-        true,
         JRPC_PORT,
     );
 

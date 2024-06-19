@@ -12,6 +12,11 @@ use super::ModelError;
 
 pub mod falcon;
 pub mod llama;
+#[cfg(feature = "nccl")]
+pub mod llama_nccl;
+#[cfg(feature = "nccl")]
+mod llama_nccl_model;
+
 pub mod mamba;
 pub mod mistral;
 pub mod mixtral;
@@ -20,6 +25,12 @@ pub mod quantized;
 pub mod qwen;
 pub mod stable_diffusion;
 
+/// Helper function that returns the available `Device` on the
+/// host's machine. If the host machine has a NVIDIA GPU, it
+/// returns a `Device::Cuda`, otherwise if a Metal device is
+/// present, it returns a `Device::Metal`, whereas if none of the
+/// above are available, it return `Device::Cpu`, for running inference
+/// on the host's available CPU
 pub fn device(device_id: usize) -> Result<Device, candle::Error> {
     if cuda_is_available() {
         info!("Using CUDA");
@@ -33,6 +44,7 @@ pub fn device(device_id: usize) -> Result<Device, candle::Error> {
     }
 }
 
+/// Helper function to download safetensors from the HF API
 pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
@@ -58,6 +70,7 @@ pub fn hub_load_safetensors(
     Ok(safetensors_files)
 }
 
+/// Helper function that converts a `Tensor` to an actual image in byte format
 pub fn convert_to_image(img: &Tensor) -> Result<(Vec<u8>, usize, usize), ModelError> {
     let (channel, height, width) = img.dims3()?;
     if channel != 3 {
@@ -68,6 +81,7 @@ pub fn convert_to_image(img: &Tensor) -> Result<(Vec<u8>, usize, usize), ModelEr
     Ok((pixels, width, height))
 }
 
+/// Saves a image, from a `Tensor`
 pub fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> Result<(), ModelError> {
     let p = p.as_ref();
     let (pixels, width, height) = convert_to_image(img)?;
@@ -80,6 +94,7 @@ pub fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> Result<(), M
     Ok(())
 }
 
+/// Saves a given `Tensor` to a file, with `filename`
 pub fn save_tensor_to_file(tensor: &Tensor, filename: &str) -> Result<(), candle::Error> {
     let json_output = serde_json::to_string(
         &tensor

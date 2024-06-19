@@ -2,11 +2,16 @@ use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{Digest, PromptParams};
-use serde::Serialize;
+#[cfg(feature = "nccl")]
+use cudarc::{driver::DriverError, nccl::result::NcclError};
 use thiserror::Error;
 use tokio::sync::mpsc;
+use types::{TextModelInput, TextModelOutput};
 
-use self::{config::ModelConfig, types::ModelType};
+use self::{
+    config::ModelConfig,
+    types::{LlmOutput, ModelType},
+};
 
 pub mod candle;
 pub mod config;
@@ -15,38 +20,32 @@ pub mod types;
 
 pub type ModelId = String;
 
+/// `ModelTrait` - An interface to host and run inference on any large language model
+///
+/// Such interface abstracts the fetching, loading and running of an LLM. Moreover, it
+/// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
     type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
-    type Output: Serialize;
+    type Output: LlmOutput;
     type LoadData;
 
+    /// Fetching the model, from an external API.
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError>;
+    /// Loading the model from a `LoadData`
     fn load(
         load_data: Self::LoadData,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized;
+    /// Specifies which model is being encapsulated within this type
     fn model_type(&self) -> ModelType;
+    /// Responsible for running inference on a prompt request
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
-}
-
-pub trait Request: Send + 'static {
-    type ModelInput;
-
-    fn into_model_input(self) -> Self::ModelInput;
-    fn requested_model(&self) -> ModelId;
-    fn request_id(&self) -> usize; // TODO: replace with Uuid
-}
-
-pub trait Response: Send + 'static {
-    type ModelOutput;
-
-    fn from_model_output(model_output: Self::ModelOutput) -> Self;
 }
 
 #[derive(Debug, Error)]
@@ -75,6 +74,18 @@ pub enum ModelError {
     InvalidModelInput,
     #[error("Send error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    #[cfg(feature = "nccl")]
+    #[error("Nccl error: `{}`", 0.0)]
+    NcclError(NcclError),
+    #[cfg(feature = "nccl")]
+    #[error("DriverError error: `{0}`")]
+    DriverError(#[from] DriverError),
+    #[error("Tokio error: `{0}`")]
+    RecvError(#[from] tokio::sync::broadcast::error::RecvError),
+    #[error("Send error: `{0}`")]
+    SendErrorTextModelInput(#[from] Box<tokio::sync::broadcast::error::SendError<TextModelInput>>),
+    #[error("Send error: `{0}`")]
+    SendErrorTextModelOutput(#[from] tokio::sync::mpsc::error::SendError<TextModelOutput>),
 }
 
 #[macro_export]

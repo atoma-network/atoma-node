@@ -9,7 +9,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     bail,
@@ -21,10 +21,18 @@ use crate::{
     },
 };
 
+/// `Phi3Model` - encapsulates a Phi-3 model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct Phi3Model {
+    /// The actual Phi-3 model
     model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 
@@ -33,6 +41,7 @@ impl ModelTrait for Phi3Model {
     type LoadData = LlmLoadData;
     type Output = TextModelOutput;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -63,7 +72,7 @@ impl ModelTrait for Phi3Model {
         file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
 
         Ok(Self::LoadData {
             model_type,
@@ -74,6 +83,7 @@ impl ModelTrait for Phi3Model {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -109,6 +119,7 @@ impl ModelTrait for Phi3Model {
         ModelType::Phi3Mini
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!(
             "Running inference on prompt: {}, with inputs = {:?}",
@@ -123,7 +134,8 @@ impl ModelTrait for Phi3Model {
         }
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
-        let mut tokens = tokens.get_ids().to_vec();
+        let tokens = tokens.get_ids().to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
         let mut generated_tokens = 0usize;
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
@@ -151,11 +163,11 @@ impl ModelTrait for Phi3Model {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token {
                 break;
             }
+            tokens.push(next_token);
             if let Some(token) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&token)
             }
@@ -182,7 +194,7 @@ impl ModelTrait for Phi3Model {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }

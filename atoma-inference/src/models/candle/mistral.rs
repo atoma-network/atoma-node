@@ -11,7 +11,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     bail,
@@ -23,11 +23,20 @@ use crate::{
     },
 };
 
+/// `MistralModel` - encapsulates a Mistral model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct MistralModel {
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The actual Mistral model
     model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 
@@ -54,6 +63,7 @@ impl ModelTrait for MistralModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -82,7 +92,7 @@ impl ModelTrait for MistralModel {
         file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
 
         Ok(Self::LoadData {
             model_type,
@@ -93,6 +103,7 @@ impl ModelTrait for MistralModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -126,18 +137,20 @@ impl ModelTrait for MistralModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running inference on prompt: {}", input.prompt);
         self.tokenizer.clear();
 
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
 
         let input_tokens = tokens.len();
 
@@ -165,11 +178,11 @@ impl ModelTrait for MistralModel {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token {
                 break;
             }
+            tokens.push(next_token);
             if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&word);
             }
@@ -195,7 +208,7 @@ impl ModelTrait for MistralModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }

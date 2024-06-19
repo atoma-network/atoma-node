@@ -5,28 +5,45 @@ use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use thiserror::Error;
 
 use crate::{
-    apis::ApiError,
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
     models::config::ModelsConfig,
 };
 
+/// `ModelService` - Responsible for listening to new AI inference requests, potentially
+/// to different hosted AI large language models.
 pub struct ModelService {
+    /// Vector containing each model's thread join handle.
     model_thread_handle: Vec<ModelThreadHandle>,
+    /// A model thread dispatcher.
     dispatcher: ModelThreadDispatcher,
+    /// Start time of the `ModelService`.
     start_time: Instant,
+    /// Boolean parameter that specifies if the service should flush all
+    /// stored AI models, on shutdown.
     flush_storage: bool,
+    /// The model weights, tokenizer and configuration data storage path.
     cache_dir: PathBuf,
+    /// A `mpsc` end `Receiver`, listening to new requests, from the node's
+    /// JRPC service.
     json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
+    /// A `mpsc` end `Receiver`, listening to new requests, from the node's
+    /// event listener service (requests coming from the Atoma's smart contract).
     subscriber_req_rx: Receiver<Request>,
+    /// Atoma's node response sender. Responsible for sending the generated output to
+    /// different the Atoma's client service (for on-chain submission of the
+    /// cryptographic commitment to the output).
     atoma_node_resp_tx: Sender<Response>,
 }
 
 impl ModelService {
+    /// Starts a new instance of a `ModelService`.
+    ///
+    /// It includes starting a new `ModelThread` for the `Model` being hold.
     pub fn start(
         model_config: ModelsConfig,
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
@@ -53,14 +70,23 @@ impl ModelService {
         })
     }
 
+    /// Main loop for `ModelService`.
+    ///
+    /// Listens to requests coming from either the node's JRPC service, or the
+    /// node's blockchain event listener. It also processes newly processed responses
+    /// containing the AI generated output (for a given request).
+    #[instrument(skip_all)]
     pub async fn run(&mut self) -> Result<(), ModelServiceError> {
         loop {
             tokio::select! {
                 Some(request) = self.json_server_req_rx.recv() => {
+                    info!("Received a new request, with id = {:?}", request.0.id());
                     self.dispatcher.run_json_inference(request);
                 },
                 Some(request) = self.subscriber_req_rx.recv() => {
                     self.dispatcher.run_subscriber_inference(request);
+                    let counter = metrics::counter!("atoma-inference-service-request");
+                    counter.increment(1);
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
@@ -80,6 +106,8 @@ impl ModelService {
 }
 
 impl ModelService {
+    /// Stops the `ModelService`
+    #[instrument(skip_all)]
     pub async fn stop(mut self) {
         info!(
             "Stopping Inference Service, running time: {:?}",
@@ -111,8 +139,6 @@ pub enum ModelServiceError {
     PrivateKeyError(io::Error),
     #[error("Core error: `{0}`")]
     ModelThreadError(#[from] ModelThreadError),
-    #[error("Api error: `{0}`")]
-    ApiError(#[from] ApiError),
     #[error("Candle error: `{0}`")]
     CandleError(#[from] CandleError),
     #[error("Sender error: `{0}`")]
@@ -122,37 +148,35 @@ pub enum ModelServiceError {
 #[cfg(test)]
 mod tests {
     use atoma_types::PromptParams;
+    use serde::Serialize;
     use std::io::Write;
     use toml::{toml, Value};
 
-    use crate::models::{config::ModelConfig, ModelError, ModelTrait, Request, Response};
+    use crate::models::{config::ModelConfig, types::LlmOutput, ModelError, ModelTrait};
 
     use super::*;
-
-    impl Request for () {
-        type ModelInput = ();
-
-        fn into_model_input(self) -> Self::ModelInput {}
-
-        fn request_id(&self) -> usize {
-            0
-        }
-
-        fn requested_model(&self) -> crate::models::ModelId {
-            String::from("")
-        }
-    }
-
-    impl Response for () {
-        type ModelOutput = ();
-
-        fn from_model_output(_: Self::ModelOutput) -> Self {}
-    }
 
     #[derive(Clone)]
     struct TestModelInstance {}
 
     struct MockInput {}
+
+    #[derive(Serialize)]
+    struct MockOutput {}
+
+    impl LlmOutput for MockOutput {
+        fn num_input_tokens(&self) -> usize {
+            0
+        }
+
+        fn num_output_tokens(&self) -> Option<usize> {
+            None
+        }
+
+        fn time_to_generate(&self) -> f64 {
+            0.0
+        }
+    }
 
     impl TryFrom<(Digest, PromptParams)> for MockInput {
         type Error = ModelError;
@@ -164,7 +188,7 @@ mod tests {
 
     impl ModelTrait for TestModelInstance {
         type Input = MockInput;
-        type Output = ();
+        type Output = MockOutput;
         type LoadData = ();
 
         fn fetch(_: String, _: PathBuf, _: ModelConfig) -> Result<(), crate::models::ModelError> {
@@ -183,7 +207,7 @@ mod tests {
         }
 
         fn run(&mut self, _: Self::Input) -> Result<Self::Output, crate::models::ModelError> {
-            Ok(())
+            Ok(MockOutput {})
         }
     }
 

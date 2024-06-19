@@ -11,7 +11,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::models::{
     candle::hub_load_safetensors,
@@ -23,15 +23,25 @@ use crate::models::{
 
 use super::device;
 
+/// `FalconModel` - encapsulates a Falcon model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct FalconModel {
+    /// The actual Falcon model
     model: Falcon,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The decimal precisions of the model's weights
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 
 impl FalconModel {
+    /// Constructor
     pub fn new(
         model: Falcon,
         device: Device,
@@ -55,12 +65,13 @@ impl ModelTrait for FalconModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let api = ApiBuilder::new()
@@ -98,6 +109,7 @@ impl ModelTrait for FalconModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -145,6 +157,7 @@ impl ModelTrait for FalconModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running inference on prompt: {:?}", input.prompt);
         self.tokenizer.clear();
@@ -163,12 +176,14 @@ impl ModelTrait for FalconModel {
 
         let mut logits_processor = LogitsProcessor::new(random_seed, Some(temperature), top_p);
         info!("Running inference on prompt: {:?}", prompt);
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
+
         let input_tokens = tokens.len();
 
         let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
@@ -226,7 +241,7 @@ impl ModelTrait for FalconModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }

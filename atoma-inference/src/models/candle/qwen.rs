@@ -4,13 +4,13 @@ use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::generation::LogitsProcessor;
-use candle_transformers::models::qwen2::{Config as ConfigBase, Model as ModelBase};
+use candle_transformers::models::qwen2::{Config as ConfigBase, ModelForCausalLM as ModelBase};
 use candle_transformers::models::qwen2_moe::{Config as ConfigMoe, Model as ModelMoe};
 use hf_hub::api::sync::ApiBuilder;
 use hf_hub::{Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::bail;
 use crate::models::candle::{device, hub_load_safetensors};
@@ -18,12 +18,15 @@ use crate::models::token_output_stream::TokenOutputStream;
 use crate::models::types::{LlmLoadData, ModelType, TextModelInput, TextModelOutput};
 use crate::models::{ModelError, ModelTrait};
 
+/// Helper enum to differentiate between Qwen's
+/// MoE model and the base model
 pub enum Model {
     Base(ModelBase),
     MoE(ModelMoe),
 }
 
 impl Model {
+    /// Performs a forward pass, based on the type of Qwen model available
     fn forward(&mut self, input: &Tensor, start_pos: usize) -> Result<Tensor, ModelError> {
         match self {
             Model::Base(ref mut base) => base
@@ -35,6 +38,7 @@ impl Model {
         }
     }
 
+    /// Clears the key-value cache
     fn clear_kv_cache(&mut self) {
         match self {
             Model::Base(m) => m.clear_kv_cache(),
@@ -43,11 +47,20 @@ impl Model {
     }
 }
 
+/// `QwenModel` - encapsulates a Qwen model
+/// together with additional metadata, necessary
+/// to run inference
 pub struct QwenModel {
-    model: Model,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The actual Qwen model
+    model: Model,
+    /// The device holding the model
+    /// weights, while running inference
     device: Device,
+    /// The model weights decimal precision
     dtype: DType,
+    /// Tokenizer, with streaming functionality
     tokenizer: TokenOutputStream,
 }
 
@@ -75,6 +88,7 @@ impl ModelTrait for QwenModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -112,7 +126,7 @@ impl ModelTrait for QwenModel {
         };
         let config_filename = repo.get("config.json")?;
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let mut file_paths = Vec::with_capacity(2 + filenames.len());
@@ -129,6 +143,7 @@ impl ModelTrait for QwenModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -180,13 +195,15 @@ impl ModelTrait for QwenModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        let mut tokens = self
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt, true)?
             .get_ids()
             .to_vec();
+        let mut tokens = [input.pre_prompt_tokens, tokens].concat();
         let input_tokens = tokens.len();
 
         let mut logits_processor =
@@ -221,20 +238,17 @@ impl ModelTrait for QwenModel {
             };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
             generated_tokens += 1;
             if next_token == eos_token {
                 break;
             }
+            tokens.push(next_token);
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&t);
             }
         }
-        let dt = start_gen.elapsed();
-        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
-            output.push_str(&rest);
-        }
 
+        let dt = start_gen.elapsed();
         info!(
             "\n{generated_tokens} tokens generated ({:.2} token/s)",
             generated_tokens as f64 / dt.as_secs_f64(),
@@ -251,7 +265,7 @@ impl ModelTrait for QwenModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: vec![],
+            tokens: if input.chat { tokens } else { vec![] },
         })
     }
 }

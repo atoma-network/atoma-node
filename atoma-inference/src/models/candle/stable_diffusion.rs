@@ -6,90 +6,117 @@ use candle_transformers::models::stable_diffusion::{
     StableDiffusionConfig,
 };
 
-use async_trait::async_trait;
 use candle::{DType, Device, IndexOp, Module, Tensor, D};
 use hf_hub::api::sync::ApiBuilder;
-use serde::Deserialize;
+use serde::Serialize;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 use crate::{
     bail,
     models::{
-        candle::save_image, config::ModelConfig, types::ModelType, ModelError, ModelId, ModelTrait,
+        candle::save_image,
+        config::ModelConfig,
+        types::{LlmOutput, ModelType, StableDiffusionInput},
+        ModelError, ModelTrait,
     },
 };
 
 use super::{convert_to_image, device, save_tensor_to_file};
 
-#[derive(Debug, Deserialize)]
-pub struct StableDiffusionInput {
-    pub request_id: Digest,
-    pub prompt: String,
-    pub uncond_prompt: String,
-
-    pub height: Option<usize>,
-    pub width: Option<usize>,
-
-    /// The number of steps to run the diffusion for.
-    pub n_steps: Option<usize>,
-
-    /// The number of samples to generate.
-    pub num_samples: i64,
-
-    pub model: ModelId,
-
-    pub guidance_scale: Option<f64>,
-
-    pub img2img: Option<String>,
-
-    /// The strength, indicates how much to transform the initial image. The
-    /// value must be between 0 and 1, a value of 1 discards the initial image
-    /// information.
-    pub img2img_strength: f64,
-
-    /// The seed to use when generating random samples.
-    pub random_seed: Option<u32>,
-}
-
+/// Stable diffusion load data
 pub struct StableDiffusionLoadData {
+    /// Device
     device: Device,
+    /// DType, for the decimal precision which the
+    /// model should run on
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// Size of sliced attention, if applicable
     sliced_attention_size: Option<usize>,
+    /// The image clip file weights paths
     clip_weights_file_paths: Vec<PathBuf>,
+    /// Tokenizer file paths
     tokenizer_file_paths: Vec<PathBuf>,
+    /// Variational auto encoder file weights paths
     vae_weights_file_path: PathBuf,
+    /// Unet file weights paths
     unet_weights_file_path: PathBuf,
+    /// To use or not flash attention
     use_flash_attention: bool,
 }
 
+/// `StableDiffusion` - encapsulates a
+/// Stable diffusion model, together with further metadata
+/// necessary to run inference
 pub struct StableDiffusion {
+    /// Stable diffusion configuration
     config: StableDiffusionConfig,
+    /// Device hosting the model
     device: Device,
+    /// DType, to control model prevision
+    /// while running inference
     dtype: DType,
+    /// The model's unique identifier
     model_type: ModelType,
+    /// The text model, to parse the initial text
     text_model: ClipTextTransformer,
+    /// Optional second text model, for more detailed
+    /// expressivity
     text_model_2: Option<ClipTextTransformer>,
+    /// Tokenizer
     tokenizer: Tokenizer,
+    /// Optional tokenizer
     tokenizer_2: Option<Tokenizer>,
+    /// Unet 2-dimensional model
     unet: UNet2DConditionModel,
+    /// Variational auto-encoder model
     vae: AutoEncoderKL,
 }
 
-#[async_trait]
+/// Stable diffusion output
+#[derive(Serialize)]
+pub struct StableDiffusionOutput {
+    /// Data buffer of the image encoding
+    pub image_data: Vec<u8>,
+    /// Height of the image
+    pub height: usize,
+    /// Width of the image
+    pub width: usize,
+    /// Number of input tokens
+    input_tokens: usize,
+    /// Time to generate output
+    time_to_generate: f64,
+}
+
+impl LlmOutput for StableDiffusionOutput {
+    fn num_input_tokens(&self) -> usize {
+        self.input_tokens
+    }
+
+    fn num_output_tokens(&self) -> Option<usize> {
+        None
+    }
+
+    fn time_to_generate(&self) -> f64 {
+        self.time_to_generate
+    }
+}
+
 impl ModelTrait for StableDiffusion {
     type Input = StableDiffusionInput;
-    type Output = (Vec<u8>, usize, usize);
+    type Output = StableDiffusionOutput;
     type LoadData = StableDiffusionLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
         let model_type = ModelType::from_str(&config.model_id())?;
         let which = match model_type {
@@ -152,6 +179,7 @@ impl ModelTrait for StableDiffusion {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         _: mpsc::Sender<(Digest, String)>,
@@ -243,6 +271,7 @@ impl ModelTrait for StableDiffusion {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         if !(0. ..=1.).contains(&input.img2img_strength) {
             Err(ModelError::Config(format!(
@@ -289,7 +318,7 @@ impl ModelTrait for StableDiffusion {
         };
 
         debug!("Computing text embeddings...");
-        let text_embeddings = which
+        let text_embeddings_data = which
             .iter()
             .map(|first| {
                 Self::text_embeddings(
@@ -308,6 +337,16 @@ impl ModelTrait for StableDiffusion {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        // We sum all input tokens from each tokenizer run
+        let num_input_tokens = text_embeddings_data
+            .iter()
+            .map(|(_, input_tokens)| input_tokens)
+            .sum();
+        let text_embeddings = text_embeddings_data
+            .iter()
+            .map(|(t, _)| t)
+            .collect::<Vec<_>>();
+
         let text_embeddings = Tensor::cat(&text_embeddings, D::Minus1)?;
 
         let init_latent_dist = match &input.img2img {
@@ -325,7 +364,7 @@ impl ModelTrait for StableDiffusion {
         };
         let bsize = 1;
 
-        let model_type = ModelType::from_str(&input.model)?;
+        let model_type = input.model;
         let vae_scale = match model_type {
             ModelType::StableDiffusionV1_5
             | ModelType::StableDiffusionV2_1
@@ -412,11 +451,20 @@ impl ModelTrait for StableDiffusion {
             res = convert_to_image(&image)?;
         }
 
-        Ok(res)
+        let time_to_generate = start_gen.elapsed().as_secs_f64();
+
+        Ok(StableDiffusionOutput {
+            image_data: res.0,
+            height: res.1,
+            width: res.2,
+            input_tokens: num_input_tokens,
+            time_to_generate,
+        })
     }
 }
 
 impl ModelType {
+    /// The unet file specifier
     fn unet_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -433,6 +481,7 @@ impl ModelType {
         }
     }
 
+    /// The actual vae file specifier
     fn vae_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -449,6 +498,7 @@ impl ModelType {
         }
     }
 
+    /// The actual clip model file specifier
     fn clip_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -465,6 +515,7 @@ impl ModelType {
         }
     }
 
+    /// The actual clip2 model file specifier
     fn clip2_file(&self, use_f16: bool) -> &'static str {
         match self {
             Self::StableDiffusionV1_5
@@ -483,6 +534,7 @@ impl ModelType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Model's file
 enum ModelFile {
     Tokenizer,
     Tokenizer2,
@@ -493,6 +545,8 @@ enum ModelFile {
 }
 
 impl ModelFile {
+    /// Get the actual file path, after downloading
+    /// the required model weights/tokenizer
     fn get(
         &self,
         api_key: String,
@@ -549,6 +603,7 @@ impl ModelFile {
 
 impl StableDiffusion {
     #[allow(clippy::too_many_arguments)]
+    /// Performs text embeddings
     fn text_embeddings(
         prompt: &str,
         uncond_prompt: &str,
@@ -561,7 +616,7 @@ impl StableDiffusion {
         dtype: DType,
         use_guide_scale: bool,
         first: bool,
-    ) -> Result<Tensor, ModelError> {
+    ) -> Result<(Tensor, usize), ModelError> {
         let (tokenizer, text_model) = if first {
             (tokenizer, text_model)
         } else {
@@ -582,6 +637,7 @@ impl StableDiffusion {
                 .ok_or(ModelError::Msg("".to_string()))?,
         };
         let mut tokens = tokenizer.encode(prompt, true)?.get_ids().to_vec();
+        let num_input_tokens = tokens.len();
         while tokens.len() < sd_config.clip.max_position_embeddings {
             tokens.push(pad_id)
         }
@@ -602,9 +658,10 @@ impl StableDiffusion {
         } else {
             text_embeddings.to_dtype(dtype)?
         };
-        Ok(text_embeddings)
+        Ok((text_embeddings, num_input_tokens))
     }
 
+    /// Pre-processes image
     fn image_preprocess<T: AsRef<std::path::Path>>(path: T) -> Result<Tensor, ModelError> {
         let img = image::io::Reader::open(path)?.decode()?;
         let (height, width) = (img.height() as usize, img.width() as usize);
@@ -645,7 +702,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = StableDiffusion::fetch(api_key, cache_dir.clone(), config)
@@ -690,7 +747,6 @@ mod tests {
         let random_seed = 42;
 
         let input = StableDiffusionInput {
-            request_id: String::new(),
             prompt: prompt.clone(),
             uncond_prompt,
             height: None,
@@ -698,17 +754,17 @@ mod tests {
             random_seed: Some(random_seed),
             n_steps: None,
             num_samples: 1,
-            model: ModelType::StableDiffusionV1_5.to_string(),
+            model: ModelType::StableDiffusionV1_5,
             guidance_scale: None,
             img2img: None,
             img2img_strength: 1.0,
         };
         println!("Running inference on input: {:?}", input);
         let output = model.run(input).expect("Failed to run inference");
-        println!("{:?}", output);
+        println!("{:?}", output.image_data);
 
-        assert_eq!(output.1, 512);
-        assert_eq!(output.2, 512);
+        assert_eq!(output.height, 512);
+        assert_eq!(output.width, 512);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
         std::fs::remove_file("tensor1").unwrap();

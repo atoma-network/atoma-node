@@ -7,6 +7,7 @@ edition.workspace = true
 
 [dependencies]
 atoma-client.workspace = true
+atoma-helpers.workspace = true
 atoma-inference.workspace = true
 atoma-output-manager.workspace = true
 atoma-sui.workspace = true
@@ -20,9 +21,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [features]
-accelerate = [
-  "atoma-inference/accelerate",
-]
+accelerate = ["atoma-inference/accelerate"]
 cuda = ["atoma-inference/cuda"]
 cudnn = ["atoma-inference/cudnn"]
 flash-attn = ["cuda", "atoma-inference/flash-attn"]

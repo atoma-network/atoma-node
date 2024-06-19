@@ -1,5 +1,7 @@
 # Atoma Node infrastructure
 
+![Atoma Logo](https://github.com/atoma-network/atoma-node/blob/atoma-image/atoma-assets/atoma-symbol.jpg)
+
 ## Introduction
 
 The present repository contains the logic to run an Atoma node. Atoma nodes empower the Atoma Network, a decentralized network

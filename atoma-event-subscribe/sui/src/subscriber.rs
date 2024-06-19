@@ -8,29 +8,47 @@ use sui_sdk::types::event::EventID;
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
+/// The size of a request id, expressed in hex format
 const REQUEST_ID_HEX_SIZE: usize = 64;
 
+/// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
+///     on the Sui blockchain.
+///
+/// Once it listens to a new event to handle a new inference requests, it checks if the current
+/// node has been sampled to execute it. If so, it transmits the request to the `AtomaInference`
+/// service.
 pub struct SuiSubscriber {
-    event_sender: mpsc::Sender<Request>,
-    filter: EventFilter,
-    http_url: String,
+    /// Node's unique identifier small id (generated once when the
+    /// node registers on Atoma's smart contract, on the Sui blockchain).
     id: SmallId,
+    /// Used to filter Sui's events, by those emitted by
+    /// Atoma's smart contract
+    filter: EventFilter,
+    /// A mpsc sender, responsible for sending a new `Request` to the `AtomaInference`
+    /// service, if the node has been sampled to run inference
+    event_sender: mpsc::Sender<Request>,
+    /// The http address of a Sui RPC node
+    http_addr: String,
+    /// Last received event's id
     last_event_id: Option<EventID>,
+    /// Request timeout
     request_timeout: Option<Duration>,
-    ws_url: Option<String>,
+    /// The websocket address of a Sui RPC node
+    ws_addr: Option<String>,
 }
 
 impl SuiSubscriber {
+    /// Constructor
     pub async fn new(
         id: SmallId,
-        http_url: &str,
-        ws_url: Option<&str>,
+        http_addr: &str,
+        ws_addr: Option<&str>,
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
@@ -38,8 +56,8 @@ impl SuiSubscriber {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
             id,
-            http_url: http_url.to_string(),
-            ws_url: ws_url.map(|s| s.to_string()),
+            http_addr: http_addr.to_string(),
+            ws_addr: ws_addr.map(|s| s.to_string()),
             filter,
             event_sender,
             request_timeout,
@@ -47,21 +65,23 @@ impl SuiSubscriber {
         })
     }
 
+    /// Builds a new `SuiClient` instance from the `SuiSubscriber` metadata
     async fn build_client(&self) -> Result<SuiClient, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
         if let Some(duration) = self.request_timeout {
             sui_client_builder = sui_client_builder.request_timeout(duration);
         }
-        if let Some(url) = self.ws_url.as_ref() {
+        if let Some(url) = self.ws_addr.as_ref() {
             sui_client_builder = sui_client_builder.ws_url(url);
         }
         info!("Starting sui client..");
         sui_client_builder
-            .build(self.http_url.as_str())
+            .build(self.http_addr.as_str())
             .await
             .map_err(SuiSubscriberError::SuiBuilderError)
     }
 
+    /// Generates a new instance of `SuiSubscriber`, from a configuration file
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
@@ -83,6 +103,8 @@ impl SuiSubscriber {
         .await
     }
 
+    /// Subscribes to Sui blockchain for event listening
+    #[instrument(skip_all)]
     pub async fn subscribe(mut self) -> Result<(), SuiSubscriberError> {
         loop {
             let sui_client = self.build_client().await?;
@@ -99,11 +121,14 @@ impl SuiSubscriber {
                         error!("Failed to get event with error: {e}");
                     }
                 }
+                error!("WebSocket connection closed unexpectedly..");
             }
-            error!("WebSocket connection closed unexpectedly..");
         }
     }
 
+    /// Handles pagination events, that were not catch
+    /// while the event subscriber was down
+    #[instrument(skip_all)]
     async fn handle_pagination_events(
         &mut self,
         event_id: EventID,
@@ -124,12 +149,17 @@ impl SuiSubscriber {
 }
 
 impl SuiSubscriber {
+    /// Implements logic to handle a new listen event, by the Atoma smart contract on the Sui blockchain.
+    ///
+    /// If the event contains a new AI inference request, to which the current node has been sampled to executed
+    /// it will parse the content of the (JSON) event into a `Request` and send it to the `AtomaInference`
+    /// service.
+    #[instrument(skip_all)]
     async fn handle_event(
-        &mut self,
+        &self,
         event: SuiEvent,
         sui_client: &SuiClient,
     ) -> Result<(), SuiSubscriberError> {
-        self.last_event_id = Some(event.id);
         let event_type = event.type_.name.as_str();
 
         match AtomaEvent::from_str(event_type)? {
@@ -172,6 +202,8 @@ impl SuiSubscriber {
         Ok(())
     }
 
+    /// Handles a new prompt event (which contains a request for a new AI inference job).
+    #[instrument(skip(self, event_data))]
     async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let request = Request::try_from((self.id, event_data))?;
@@ -193,6 +225,8 @@ impl SuiSubscriber {
         Ok(())
     }
 
+    /// Handles a newly sampled node event (which contains a request for a new AI inference job).
+    #[instrument(skip_all)]
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,
@@ -234,6 +268,8 @@ impl SuiSubscriber {
     }
 }
 
+/// Helper function, used to extract which nodes have been sampled by the Atoma smart contract
+/// to run the current AI inference request.
 fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, SuiSubscriberError> {
     let new_nodes = value
         .get("new_nodes")
@@ -252,6 +288,8 @@ fn extract_sampled_node_index(id: u64, value: &Value) -> Result<Option<u64>, Sui
     }))
 }
 
+/// Helper function that is responsible for extracting the ticket id from the
+/// event's JSON body.
 fn extract_ticket_id(value: &Value) -> Result<&str, SuiSubscriberError> {
     value
         .get("ticket_id")
