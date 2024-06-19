@@ -10,7 +10,7 @@ use hf_hub::api::sync::ApiBuilder;
 use hf_hub::{Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::bail;
 use crate::models::candle::{device, hub_load_safetensors};
@@ -88,6 +88,7 @@ impl ModelTrait for QwenModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -125,7 +126,7 @@ impl ModelTrait for QwenModel {
         };
         let config_filename = repo.get("config.json")?;
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
         let mut file_paths = Vec::with_capacity(2 + filenames.len());
@@ -142,6 +143,7 @@ impl ModelTrait for QwenModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -193,6 +195,7 @@ impl ModelTrait for QwenModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         let tokens = self
             .tokenizer

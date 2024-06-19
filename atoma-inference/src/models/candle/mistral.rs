@@ -11,7 +11,7 @@ use candle_transformers::{
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     bail,
@@ -63,6 +63,7 @@ impl ModelTrait for MistralModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: std::path::PathBuf,
@@ -91,7 +92,7 @@ impl ModelTrait for MistralModel {
         file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
-        let device = device(config.device_id())?;
+        let device = device(config.device_first_id())?;
 
         Ok(Self::LoadData {
             model_type,
@@ -102,6 +103,7 @@ impl ModelTrait for MistralModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: mpsc::Sender<(Digest, String)>,
@@ -135,6 +137,7 @@ impl ModelTrait for MistralModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running inference on prompt: {}", input.prompt);
         self.tokenizer.clear();

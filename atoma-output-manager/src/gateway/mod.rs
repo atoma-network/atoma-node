@@ -2,14 +2,12 @@ use std::collections::HashMap;
 
 use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use gql_client::Client;
-use serde_json::Value;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::AtomaOutputManagerError;
 
 const GATEWAY_GRAPHQL_ENDPOINT: &str = "https://protocol.mygateway.xyz/graphql";
-
-/// Gateway
+const ATOMA_DATA_MODEL_ID: &str = "2a27c67f-64bc-4b23-8121-72c57e5dbb2f";
 
 /// `GatewayOutputManager` - Wrapper around a GraphQL client to interact with the
 ///   Gateway protocol API.
@@ -35,10 +33,11 @@ impl GatewayOutputManager {
 
     /// Handles a new request by submitting the inference output to the user
     /// specified PDA, on behalf of the Atoma organization on the Gateway protocol
+    #[instrument(skip_all)]
     pub async fn handle_request(
         &self,
         output_metadata: &AtomaOutputMetadata,
-        output: Value,
+        output: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let AtomaOutputMetadata {
             node_public_key,
@@ -52,6 +51,7 @@ impl GatewayOutputManager {
             leaf_hash,
             transaction_base_58,
             output_destination,
+            output_type,
         } = output_metadata;
 
         let gateway_user_id =
@@ -69,21 +69,22 @@ impl GatewayOutputManager {
                 title: "Atoma's output for ticket id: {ticket_id}",
                 description: "Atoma Node output for ticket id {ticket_id}",
                 owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
-                dataModelId: "d5011a1f-d6df-41ec-970f-36477e554dc2",
+                dataModelId: "{ATOMA_DATA_MODEL_ID}",
                 expirationDate: null,
                 organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
                 claim: {{
                   nodePublicKey: "{node_public_key}",
                   ticketId: "{ticket_id}",
                   output: "{output}",
-                  inputTokens: "{num_input_tokens}",
-                  outputTokens: "{num_output_tokens}",
-                  timeToGenerate: "{time_to_generate}",
+                  inputTokens: {num_input_tokens},
+                  outputTokens: {num_output_tokens},
+                  timeToGenerate: {time_to_generate},
                   commitmentRootHash: "{commitment_root_hash:?}",
-                  numSampledNodes: "{num_sampled_nodes}",
-                  indexSubmissionNode: "{index_of_node}",
+                  numSampledNodes: {num_sampled_nodes},
+                  indexSubmissionNode: {index_of_node},
                   leafHash: "{leaf_hash:?}",
-                  transactionBase58: "{transaction_base_58}"
+                  transactionBase58: "{transaction_base_58}",
+                  outputType: "{output_type}"
                 }}
               }}
             ) {{

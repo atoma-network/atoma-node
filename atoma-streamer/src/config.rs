@@ -21,7 +21,7 @@ impl AtomaFirebaseStreamerConfig {
             .expect("Failed to generate Atoma Sui client configuration file");
         config
             .get::<Self>("streamer")
-            .expect("Failed to generated Atoma Sui client config file")
+            .expect("Failed to generated Atoma Firebase streamer config file")
     }
 
     /// Get the firebase_uri from the config

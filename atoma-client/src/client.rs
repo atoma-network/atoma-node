@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{AtomaOutputMetadata, Digest, Response};
-use bincode::ErrorKind;
+use atoma_types::{AtomaOutputMetadata, Digest, OutputType, Response};
+use rmp_serde::Deserializer;
+use serde::Deserialize;
 use serde_json::Value;
 use sui_sdk::{
     json::SuiJsonValue,
@@ -11,7 +12,7 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::config::AtomaSuiClientConfig;
 
@@ -33,7 +34,7 @@ pub struct AtomaSuiClient {
     response_rx: mpsc::Receiver<Response>,
     /// A mpsc sender, responsible to send the actual output to the `OutputManager` service (for being shared with an end user or protocol)
     /// It sends a tuple, containing the output's metadata and the actual output (in JSON format).
-    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, serde_json::Value)>,
+    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
 }
 
 impl AtomaSuiClient {
@@ -47,7 +48,7 @@ impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
@@ -71,12 +72,12 @@ impl AtomaSuiClient {
     /// Inputs:
     ///     `config_path` - Path for the configuration file, which is deserialized into an `AtomaSuiClientConfig`.
     ///     `response_rx` - A mpsc receiver, associated to a `Response`.
-    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`Digest`, `Response`), responsible for
+    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`AtomaOutputMetadata`, `String`), responsible for
     ///         sharing the actual output with the `OutputManager` service.
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Value)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
         Self::new_from_config(config, response_rx, output_manager_tx)
@@ -92,20 +93,12 @@ impl AtomaSuiClient {
     ///   - The third element as the image width.
     ///
     ///   These are then combined into a single byte vector where the image data is followed by the height and width.
+    #[instrument(skip(self, data))]
     fn get_data(&self, data: Value) -> Result<Vec<u8>, AtomaSuiClientError> {
         // TODO: rework this when responses get same structure
         if let Some(text) = data["text"].as_str() {
             Ok(text.as_bytes().to_owned())
-        } else if let Some(array) = data.as_array() {
-            if array.len() < 3 {
-                error!("Incomplete image data");
-                return Err(AtomaSuiClientError::MissingOutputData);
-            }
-
-            let img_data = array
-                .first()
-                .and_then(|img| img.as_array())
-                .ok_or(AtomaSuiClientError::MissingOutputData)?;
+        } else if let Some(img_data) = data["image_data"].as_array() {
             let img = img_data
                 .iter()
                 .map(|b| b.as_u64().ok_or(AtomaSuiClientError::MissingOutputData))
@@ -113,14 +106,12 @@ impl AtomaSuiClient {
                 .into_iter()
                 .map(|b| b as u8)
                 .collect::<Vec<_>>();
-            let height = array
-                .get(1)
-                .and_then(|h| h.as_u64())
+            let height = data["height"]
+                .as_u64()
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
-            let width = array
-                .get(2)
-                .and_then(|w| w.as_u64())
+            let width = data["width"]
+                .as_u64()
                 .ok_or(AtomaSuiClientError::MissingOutputData)?
                 .to_le_bytes();
 
@@ -146,6 +137,7 @@ impl AtomaSuiClient {
     ///
     /// This data is then submitted to the Sui blockchain
     /// as a cryptographic commitment to the node's work on inference.
+    #[instrument(skip_all)]
     pub async fn submit_response_commitment(
         &self,
         response: Response,
@@ -195,7 +187,19 @@ impl AtomaSuiClient {
                 debug!("Got a transaction event: {:?}", event.type_.name.as_str());
                 if event.type_.name.as_str() == "FirstSubmissionEvent" {
                     let output = response.response();
-                    let output_destination = bincode::deserialize(&response.output_destination())?;
+                    let output_destination = Deserialize::deserialize(&mut Deserializer::new(
+                        response.output_destination(),
+                    ))?;
+                    let output_type = response.output_type();
+                    let output = match output_type {
+                        OutputType::Text => output["text"]
+                            .as_str()
+                            .ok_or(AtomaSuiClientError::MissingOutputData)?
+                            .to_string(),
+                        OutputType::Image => {
+                            todo!()
+                        }
+                    };
                     let output_metadata = AtomaOutputMetadata {
                         transaction_base_58: tx_digest.clone(),
                         node_public_key: self.address.to_string(),
@@ -208,11 +212,13 @@ impl AtomaSuiClient {
                         commitment_root_hash: root.to_vec(),
                         leaf_hash: pre_image.to_vec(),
                         output_destination,
+                        output_type,
                     };
 
                     self.output_manager_tx
                         .send((output_metadata, output))
-                        .await?;
+                        .await
+                        .map_err(Box::new)?;
                     // we don't need to check other events, as at this point the node knows it has been selected for
                     break;
                 }
@@ -226,6 +232,7 @@ impl AtomaSuiClient {
     /// It listens to new incoming `Response`'s from the `AtomaInference` service. Once it gets
     /// a new response in, it constructs a new commitment to the `Response` that is then submitted
     /// on the Atoma smart contract, on the Sui blockchain.
+    #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_rx.recv().await {
             info!("Received new response: {:?}", response);
@@ -248,7 +255,7 @@ pub enum AtomaSuiClientError {
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(AtomaOutputMetadata, Value)>),
+    SendError(#[from] Box<mpsc::error::SendError<(AtomaOutputMetadata, String)>>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]
@@ -259,6 +266,6 @@ pub enum AtomaSuiClientError {
     InvalidRequestId,
     #[error("Missing output data")]
     MissingOutputData,
-    #[error("Bincode error: `{0}`")]
-    BincodeError(#[from] Box<ErrorKind>),
+    #[error("Rmp deserialize error: `{0}`")]
+    RmpDeseriliazeError(#[from] rmp_serde::decode::Error),
 }
