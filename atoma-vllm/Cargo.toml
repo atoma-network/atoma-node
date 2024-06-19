@@ -15,10 +15,11 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokenizers = { worksapce = true, features = ["http"] }
+tokenizers.workspace = true
 tokio = { workspace = true, features = ["macros"] }
 tracing.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
 tracing-subscriber.workspace = true
+tokenizers = { worksapce = true, features = ["http"] }
