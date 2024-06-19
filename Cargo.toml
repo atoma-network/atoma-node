@@ -17,6 +17,7 @@ members = [
     "atoma-output-manager",
     "atoma-streamer",
     "atoma-helpers",
+    "atoma-vllm"
 ]
 
 [workspace.package]
@@ -69,7 +70,9 @@ image = { version = "0.25.0", default-features = false, features = [
     "jpeg",
     "png",
 ] }
+indexmap = "2.2.6"
 metrics = "0.23"
+metrics-exporter-prometheus = "0.14.0"
 rand = "0.8.5"
 rayon = "1.10.0"
 reqwest = "0.12.1"
