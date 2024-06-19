@@ -26,7 +26,6 @@ const MAX_INPUT_LENGTH: usize = 16;
 const MAX_TOTAL_TOKENS: u32 = 32;
 const NUM_CPU_BLOCKS: usize = 4096;
 const NUM_GPU_BLOCKS: usize = 4096;
-const TOTAL_NUM_TOKENS: usize = 512;
 const EOS_TOKEN_ID: u32 = 2048;
 
 struct MockModel {}
@@ -74,7 +73,7 @@ impl ModelExecutor for MockModel {
 
     fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
         let mut rng = rand::thread_rng();
-        std::thread::sleep(Duration::from_secs(5)); // mimic forward pass
+        std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
         Ok(input
             .into_iter()
             .map(|u| (u, rng.gen_range(0.0..1.0)))
@@ -108,7 +107,8 @@ impl ModelExecutor for MockModel {
 async fn test_llm_engine() {
     init_tracing();
 
-    const NUM_REQUESTS: usize = 32;
+    const NUM_REQUESTS: usize = 128;
+    const MAX_NUM_SEQUENCES: usize = 64;
 
     let (atoma_client_sender, mut atoma_client_receiver) = mpsc::unbounded_channel();
     let (atoma_event_subscriber_sender, atoma_event_subscriber_receiver) =
@@ -126,7 +126,7 @@ async fn test_llm_engine() {
     )
     .expect("Failed to create cache config");
 
-    let scheduler_config = SchedulerConfig::new(512, 4, 512, 0.0, false, 0)
+    let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");
 
     let current_dir = std::env::current_dir().unwrap();
@@ -176,7 +176,7 @@ async fn test_llm_engine() {
     info!("Sending request through atoma_event_subscriber_sender");
 
     let requests = (0..NUM_REQUESTS).map(|i| GenerateRequest {
-        request_id: format!("{i}"),
+        request_id: format!("{}", i),
         inputs: "Hello world, from the Caribbean".to_string(),
         parameters: GenerateParameters {
             best_of: None,
@@ -209,13 +209,15 @@ async fn test_llm_engine() {
 
     let start = Instant::now();
     let mut elapsed_times = Vec::with_capacity(100);
-    for _ in 0..NUM_REQUESTS {
-        let responses = atoma_client_receiver.recv().await;
+    
+    for _ in 0..(NUM_REQUESTS / MAX_NUM_SEQUENCES) {
+        let responses = atoma_client_receiver.recv().await.unwrap();
         elapsed_times.push(start.elapsed());
         for response in responses.iter() {
             number_of_responses += 1;
             info!("Got new response: {response:?}");
         }
+        info!("Number of responses {number_of_responses}")
     }
 
     assert_eq!(number_of_responses, NUM_REQUESTS);
