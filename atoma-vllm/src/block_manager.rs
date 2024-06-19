@@ -72,7 +72,7 @@ impl BlockSpaceManager {
                     BlockAllocator::new(block_size, BlockDevice::Gpu, num_gpu_blocks),
                 )
             } else {
-                error!("Unrecognized GPU");
+                warn!("Unrecognized GPU");
                 // TODO: we maintain this for test purposes, but we should error
                 (
                     BlockAllocator::new(block_size, BlockDevice::Cpu, num_cpu_blocks),
@@ -94,7 +94,7 @@ impl BlockSpaceManager {
 
     /// Checks if it is possible to allocate enough blocks for current
     /// `seq_group`, with output an `AllocationStatus`
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn can_allocate(&self, seq_group: &SequenceGroup) -> AllocationStatus {
         let num_required_blocks =
             seq_group.get_num_total_logical_token_blocks(SequenceStatus::Waiting);
@@ -123,7 +123,7 @@ impl BlockSpaceManager {
     ///
     /// WARN: The way the implementation works will FAIL if we try to `allocate` for the `SequenceGroup`
     /// as we are creating a new empty `block_table`, every time.
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn allocate(&mut self, seq_group: &SequenceGroup) -> Result<(), BlockSpaceManagerError> {
         if let Some(sequence) = seq_group.get_first_sequence(Some(SequenceStatus::Waiting)) {
             let num_logical_blocks_to_allocate =
@@ -197,7 +197,7 @@ impl BlockSpaceManager {
     }
 
     /// Allocates a new physical slot for a new token
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn append_slots(
         &mut self,
         sequence: RwLockReadGuard<Sequence>,
@@ -285,7 +285,7 @@ impl BlockSpaceManager {
 
     /// Fork a `Sequence`. It never allocates new physical blocks, therefore this method is safe from OOM
     /// NOTE: we are cloning shared references to `PhysicalBlocks` from the parent to child sequence
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn fork(
         &mut self,
         parent_sequence: RwLockReadGuard<Sequence>,
@@ -353,7 +353,7 @@ impl BlockSpaceManager {
     }
 
     /// Checks if can swap in logical with physical token blocks
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn can_swap_in(
         &self,
         seq_group: &SequenceGroup,
@@ -379,7 +379,7 @@ impl BlockSpaceManager {
     }
 
     /// Swaps in CPU with GPU blocks
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn swap_in(
         &mut self,
         seq_group: &mut SequenceGroup,
@@ -439,7 +439,7 @@ impl BlockSpaceManager {
     }
 
     /// Can swap out from GPU to CPU blocks
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> Result<bool, BlockSpaceManagerError> {
         info!(
             "Can swap out, for sequence group with id = {}",
@@ -450,7 +450,7 @@ impl BlockSpaceManager {
     }
 
     /// Swaps out GPU to CPU blocks
-    #[instrument]
+
     pub fn swap_out(
         &mut self,
         seq_group: &mut SequenceGroup,
@@ -544,7 +544,7 @@ impl BlockSpaceManager {
     }
 
     /// Frees blocks for `Sequence`
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn free(&mut self, sequence_id: u64) -> Result<(), BlockSpaceManagerError> {
         info!("Freeing blocks for sequence with id = {}", sequence_id);
 
@@ -568,7 +568,7 @@ impl BlockSpaceManager {
     }
 
     /// Reset's all block tables
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn reset(&mut self) -> Result<(), BlockSpaceManagerError> {
         info!("Resetting all block tables..");
         let block_tables = self.block_tables.clone();
@@ -622,7 +622,7 @@ impl BlockSpaceManager {
     }
 
     /// Computes full blocks in `Sequence`
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn compute_full_blocks_in_sequence(
         &self,
         sequence: Sequence,
@@ -654,7 +654,7 @@ impl BlockSpaceManager {
     }
 
     /// Gets all computed blocks
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn gets_all_computed_blocks(
         &self,
         sequence: Sequence,

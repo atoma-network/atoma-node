@@ -73,7 +73,7 @@ impl LogicalTokenBlock {
     }
 
     /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn append_tokens(&mut self, token_ids: &[u32]) -> Result<(), BlockError> {
         if token_ids.len() <= self.get_num_empty_slots() {
             self.token_ids.extend(token_ids);
