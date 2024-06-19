@@ -103,6 +103,8 @@ where
             };
 
             let mut responses = Vec::with_capacity(next_token_chooser_params.len());
+
+            // TODO: should we parallelize this loop, with rayon or within the async runtime ? 
             for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
                 .iter()
                 .zip(stopping_params.iter().zip(sequence_groups_metadata))
@@ -132,12 +134,13 @@ where
                             logprob: HashMap::from_iter([(
                                 output_token,
                                 LogProb::new(0.8, None, None),
-                            )]), // TODO:
+                            )]), // TODO: replace hardcoded values with logic
                         },
                     );
                 }
 
-                // TODO:
+                // TODO: Check this is the correct logic, once we integrate
+                // with model executor
                 let response = SequenceGroupOutput {
                     outputs,
                     sampled_token_ids: None,
