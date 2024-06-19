@@ -356,7 +356,7 @@ async fn test_llm_engine_with_enable_chunking() {
         // Give enough variability time for different machines
         if i % 2 == 0 {
             assert!(right_run_time - left_run_time <= Duration::from_secs(5));
-        } else { 
+        } else {
             assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5));
             assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
         }

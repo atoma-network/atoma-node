@@ -921,8 +921,8 @@ impl<P: Policy> Scheduler<P> {
             // If any sequence group is preempted, do not swap in any sequence
             // group, because it means there's no slot for new running requests
             if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
-                (remaining_swapped, swapped_in) = self
-                    .schedule_swapped(remaining_swapped, &mut budget, false)?
+                (remaining_swapped, swapped_in) =
+                    self.schedule_swapped(remaining_swapped, &mut budget, false)?
             }
         }
 
