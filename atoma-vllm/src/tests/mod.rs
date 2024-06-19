@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use rand::Rng;
-use tokenizers::{FromPretrainedParameters, Tokenizer};
+use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -130,13 +130,7 @@ async fn test_llm_engine() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");
 
-    let current_dir = std::env::current_dir().unwrap();
-
-    let tokenizer = Tokenizer::from_pretrained(
-        "anthony/tokenizers-test",
-        None,
-    )
-    .unwrap();
+    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
@@ -263,11 +257,7 @@ async fn test_llm_engine_with_enable_chunking() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, true, 0)
         .expect("Failed to create scheduler config");
 
-    let tokenizer = Tokenizer::from_pretrained(
-        "anthony/tokenizers-test",
-        None,
-    )
-    .unwrap();
+    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
@@ -364,8 +354,12 @@ async fn test_llm_engine_with_enable_chunking() {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
         // Give enough variability time for different machines
-        assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5));
-        assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
+        if i % 2 == 0 {
+            assert!(right_run_time - left_run_time <= Duration::from_secs(5));
+        } else { 
+            assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5));
+            assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
+        }
     }
 }
 
