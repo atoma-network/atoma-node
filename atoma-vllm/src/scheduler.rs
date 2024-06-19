@@ -502,7 +502,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining running queue (should be always 0) after
     ///         scheduling and SchedulerRunningOutputs.
-    #[instrument(skip(self, budget, enable_chunking))]
+    #[instrument(skip_all)]
     fn schedule_running(
         &mut self,
         running_queue: VecDeque<SequenceGroup>,
@@ -646,7 +646,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining `swapped_queue` after scheduling and
     ///     SchedulerSwappedInOutputs.
-    #[instrument(skip(self, budget))]
+    #[instrument(skip_all)]
     fn schedule_swapped(
         &mut self,
         swapped_queue: VecDeque<SequenceGroup>,
@@ -751,7 +751,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining waiting_queue after scheduling and
     ///         SchedulerSwappedInOutputs,
-    #[instrument(skip(self, budget))]
+    #[instrument(skip_all)]
     fn schedule_prefills(
         &mut self,
         mut waiting_queue: VecDeque<SequenceGroup>,
