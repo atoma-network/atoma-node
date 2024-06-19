@@ -15,7 +15,7 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokenizers.worksapce = true
+tokenizers = { worksapce = true, features = ["http"] }
 tokio = { workspace = true, features = ["macros"] }
 tracing.workspace = true
 

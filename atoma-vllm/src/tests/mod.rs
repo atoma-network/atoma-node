@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use rand::Rng;
-use tokenizers::Tokenizer;
+use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -84,7 +84,7 @@ impl ModelExecutor for MockModel {
         &mut self,
         mut logits: Self::Logits,
         next_token_params: NextTokenChooserParameters,
-        stopping_params: StoppingCriteriaParameters,
+        _stopping_params: StoppingCriteriaParameters,
     ) -> Result<Self::Output, ModelExecutorError> {
         let top_k = next_token_params.top_k;
 
@@ -132,9 +132,11 @@ async fn test_llm_engine() {
 
     let current_dir = std::env::current_dir().unwrap();
 
-    let tokenizer_path = current_dir.join("src/tests/tokenizer.json");
-    let tokenizer =
-        Tokenizer::from_file(tokenizer_path).expect("Failed to read tokenizer from file");
+    let tokenizer = Tokenizer::from_pretrained(
+        "anthony/tokenizers-test",
+        None,
+    )
+    .unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
@@ -230,7 +232,7 @@ async fn test_llm_engine() {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
         assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5)); // Give enough variability time for different machines
-        assert!(right_run_time - left_run_time <= elapsed_times[0] - Duration::from_secs(5));
+        assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
     }
 }
 
@@ -261,11 +263,11 @@ async fn test_llm_engine_with_enable_chunking() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, true, 0)
         .expect("Failed to create scheduler config");
 
-    let current_dir = std::env::current_dir().unwrap();
-
-    let tokenizer_path = current_dir.join("src/tests/tokenizer.json");
-    let tokenizer =
-        Tokenizer::from_file(tokenizer_path).expect("Failed to read tokenizer from file");
+    let tokenizer = Tokenizer::from_pretrained(
+        "anthony/tokenizers-test",
+        None,
+    )
+    .unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
@@ -342,8 +344,9 @@ async fn test_llm_engine_with_enable_chunking() {
     let start = Instant::now();
     let mut elapsed_times = Vec::with_capacity(100);
 
-    for _ in 0..(NUM_RUNS) {
-        let responses = atoma_client_receiver.recv().await.unwrap();
+    for _ in 0..(2 * NUM_RUNS) {
+        let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
+            atoma_client_receiver.recv().await.unwrap();
         elapsed_times.push(start.elapsed());
         for response in responses.iter() {
             number_of_responses += 1;
@@ -355,13 +358,14 @@ async fn test_llm_engine_with_enable_chunking() {
     info!("Elapsed times: {elapsed_times:?}");
 
     assert_eq!(number_of_responses, NUM_REQUESTS);
-    assert_eq!(elapsed_times.len(), NUM_RUNS);
+    assert_eq!(elapsed_times.len(), 2 * NUM_RUNS);
 
-    for i in 0..(NUM_RUNS - 1) {
+    for i in 0..(2 * NUM_RUNS - 1) {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
-        assert!(left_run_time - right_run_time - elapsed_times[0] <= Duration::from_secs(5));
         // Give enough variability time for different machines
+        assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5));
+        assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
     }
 }
 

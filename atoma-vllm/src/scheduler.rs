@@ -502,6 +502,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining running queue (should be always 0) after
     ///         scheduling and SchedulerRunningOutputs.
+    #[instrument(skip(self, budget, enable_chunking))]
     fn schedule_running(
         &mut self,
         running_queue: VecDeque<SequenceGroup>,
@@ -535,6 +536,8 @@ impl<P: Policy> Scheduler<P> {
 
             // if no tokens are being processed, we break the loop
             if num_running_tokens == 0 {
+                // Need to push the popped sequence group back to the front
+                running_queue.push_front(sequence_group);
                 break;
             }
 
@@ -748,7 +751,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining waiting_queue after scheduling and
     ///         SchedulerSwappedInOutputs,
-    #[instrument(skip_all)]
+    #[instrument(skip(self, budget))]
     fn schedule_prefills(
         &mut self,
         mut waiting_queue: VecDeque<SequenceGroup>,
@@ -1062,7 +1065,7 @@ impl<P: Policy> Scheduler<P> {
             self.scheduler_config.max_num_sequences(),
         );
 
-        let mut remaining_swapped = self.waiting.clone();
+        let mut remaining_swapped = self.swapped.clone();
         let mut swapped_in = SchedulerSwappedInOutputs::create_empty();
 
         // Decoding should be always scheduled first by fcfs
@@ -1301,6 +1304,7 @@ impl<P: Debug> Scheduler<P> {
     /// phase, so chunking doesn't happen.
     ///
     /// Returns 0 if the new token cannot be computed due to token budget.
+    #[instrument(skip(self, sequence_group, budget))]
     fn get_num_tokens(
         &self,
         sequence_group: &SequenceGroup,
