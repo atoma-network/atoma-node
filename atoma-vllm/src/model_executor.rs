@@ -104,7 +104,7 @@ where
 
             let mut responses = Vec::with_capacity(next_token_chooser_params.len());
 
-            // TODO: should we parallelize this loop, with rayon or within the async runtime ? 
+            // TODO: should we parallelize this loop, with rayon or within the async runtime ?
             for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
                 .iter()
                 .zip(stopping_params.iter().zip(sequence_groups_metadata))
