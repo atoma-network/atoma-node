@@ -53,7 +53,7 @@ impl BlockAllocator {
 }
 
 impl BlockAllocator {
-    #[instrument]
+    #[instrument(skip(self))]
     /// Allocates a new physical block
     pub fn allocate(&mut self) -> Result<SyncPhysicalTokenBlock, BlockAllocatorError> {
         if let Some(block) = self.free_blocks.pop() {
@@ -66,7 +66,7 @@ impl BlockAllocator {
     }
 
     /// Frees a given (already allocated) block
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn free(&mut self, block: SyncPhysicalTokenBlock) -> Result<(), BlockAllocatorError> {
         {
             let block_guard = block.read_lock()?;

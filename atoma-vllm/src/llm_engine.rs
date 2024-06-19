@@ -105,6 +105,9 @@ impl LlmEngine {
                 Some(outputs) = self.model_thread_dispatcher.responses.next() => {
                     self.handle_outputs(outputs.map_err(EngineError::RecvError)).await?;
                 }
+                else => {
+                    continue;
+                }
             }
         }
     }
@@ -126,6 +129,9 @@ impl LlmEngine {
                 // 3. After scheduling new requests to the `ModelExecutor`
                 //    we can send the finished outputs to the atoma client
                 //    service.
+                // NOTE: This is after scheduling new sequences above,
+                //    we do so to optimize GPU utilization. This is
+                //    supposed to be safe
                 if !request_outputs.is_empty() {
                     self.atoma_client_sender.send(request_outputs)?;
                 }
@@ -355,6 +361,7 @@ impl LlmEngine {
 }
 
 /// `RequestOutput` - Output of running AI inference over a `SequenceGroup`
+#[derive(Debug)]
 pub struct GenerateRequestOutput {
     /// Request id
     pub request_id: String,
@@ -419,6 +426,7 @@ impl GenerateRequestOutput {
 }
 
 /// `InferenceOutput` - Output of running a
+#[derive(Debug)]
 pub struct InferenceOutput {
     /// The index of the output in the request
     pub index: usize,

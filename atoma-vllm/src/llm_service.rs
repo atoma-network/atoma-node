@@ -105,6 +105,7 @@ impl LlmService {
     /// event subscriber channel. It then validates the request
     /// and once the request is validated, it sends it to the
     /// `LlmEngine` background task
+    #[instrument(skip_all)]
     pub async fn run(&mut self) -> Result<(), LlmServiceError> {
         while let Some(request) = self.atoma_event_subscriber_receiver.recv().await {
             let sequence_group = self.handle_request(request).await?;
@@ -121,9 +122,17 @@ impl LlmService {
         &mut self,
         request: GenerateRequest,
     ) -> Result<SequenceGroup, LlmServiceError> {
+        info!("Received new request, with id = {}", request.request_id);
+
         let arrival_time = Instant::now();
         let request_id = request.request_id.clone();
-        let valid_request = self.process_received_request(request).await?;
+        let valid_request = match self.process_received_request(request).await {
+            Ok(valid_request) => valid_request,
+            Err(e) => {
+                error!("Failed to validate request with id = {request_id}, due to error: {e}");
+                return Err(e);
+            }
+        };
 
         let sequence_id = self.request_counter;
         self.request_counter += 1;

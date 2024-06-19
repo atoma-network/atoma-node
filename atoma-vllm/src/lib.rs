@@ -14,6 +14,8 @@ pub mod policy;
 pub mod sampling_params;
 pub mod scheduler;
 pub mod sequence;
+#[cfg(test)]
+pub mod tests;
 pub mod tokenizer;
 pub mod types;
 pub mod validation;

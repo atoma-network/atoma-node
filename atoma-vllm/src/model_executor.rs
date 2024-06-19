@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{collections::HashMap, path::PathBuf};
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -13,12 +13,9 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
-    sampling_params::SamplingParams,
-    sequence::{ExecuteModelRequest, SequenceGroupOutput},
+    sequence::{ExecuteModelRequest, LogProb, SequenceGroupOutput, SequenceOutput},
+    validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
 };
-
-/// Duration to wait, if there are no scheduled requests to be processed
-const AWAIT_DURATION_EMPTY_REQUESTS: Duration = Duration::from_millis(500);
 
 #[async_trait]
 /// `ModelLoader` trait - interface for fetching
@@ -27,30 +24,29 @@ const AWAIT_DURATION_EMPTY_REQUESTS: Duration = Duration::from_millis(500);
 /// tokenizer.
 pub trait ModelLoader {
     type FilePaths;
-    type Error;
 
-    async fn fetch() -> Result<Self::FilePaths, Self::Error>;
-    async fn load() -> Result<Self, Self::Error>
+    async fn fetch() -> Result<Self::FilePaths, ModelLoaderError>;
+    async fn load() -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
     fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
 }
 
-#[async_trait]
 /// `ModelExecutor` trait - interface for running AI inference
 /// from a LLM
 pub trait ModelExecutor: ModelLoader {
-    type Input;
-    type Logits;
-    type Output;
+    type Input: From<ExecuteModelRequest>;
+    type Logits: Clone;
+    type Output: Into<u32>;
 
-    async fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, Self::Error>;
-    async fn sample(
+    fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError>;
+    fn sample(
         &mut self,
         input: Self::Logits,
-        sampling_params: SamplingParams,
-    ) -> Result<Self::Output, Self::Error>;
+        next_token_params: NextTokenChooserParameters,
+        stopping_params: StoppingCriteriaParameters,
+    ) -> Result<Self::Output, ModelExecutorError>;
 }
 
 /// `ModelThreadCommand` - encapsulates a `ValidGenerateRequest`
@@ -85,7 +81,77 @@ where
 
         while let Some(command) = self.receiver.blocking_recv() {
             let ModelThreadCommand { request, sender } = command;
-            // sender.send(response).ok();
+
+            let sequence_groups_metadata = request.sequence_groups_metadata.clone();
+            let next_token_chooser_params: Vec<NextTokenChooserParameters> = request
+                .sequence_groups_metadata
+                .iter()
+                .map(|s| s.next_token_chooser_params.clone())
+                .collect();
+            let stopping_params: Vec<StoppingCriteriaParameters> = request
+                .sequence_groups_metadata
+                .iter()
+                .map(|s| s.stopping_criteria_params.clone())
+                .collect();
+
+            let logits = match self.model.forward(request.into()) {
+                Ok(logits) => logits,
+                Err(e) => {
+                    error!("Failed to run forward pass on model, with error: {e}");
+                    return Err(ModelThreadError::ModelExecutorError(e));
+                }
+            };
+
+            let mut responses = Vec::with_capacity(next_token_chooser_params.len());
+
+            // TODO: should we parallelize this loop, with rayon or within the async runtime ?
+            for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
+                .iter()
+                .zip(stopping_params.iter().zip(sequence_groups_metadata))
+            {
+                let mut outputs = HashMap::with_capacity(metadata.sequence_data.len());
+
+                for sequence_id in metadata.sequence_data.keys() {
+                    let decode_token = match self.model.sample(
+                        logits.clone(),
+                        next_token_params.clone(),
+                        stopping_params.clone(),
+                    ) {
+                        Ok(token) => token,
+                        Err(e) => {
+                            error!("Failed to sample next decoding token, with error: {e}");
+                            return Err(ModelThreadError::ModelExecutorError(e));
+                        }
+                    };
+
+                    let output_token = decode_token.into();
+
+                    outputs.insert(
+                        *sequence_id,
+                        SequenceOutput {
+                            parent_sequence_id: *sequence_id,
+                            output_token,
+                            logprob: HashMap::from_iter([(
+                                output_token,
+                                LogProb::new(0.8, None, None),
+                            )]), // TODO: replace hardcoded values with logic
+                        },
+                    );
+                }
+
+                // TODO: Check this is the correct logic, once we integrate
+                // with model executor
+                let response = SequenceGroupOutput {
+                    outputs,
+                    sampled_token_ids: None,
+                    sampled_token_probs: None,
+                    logprobs: None,
+                    spec_decode_worker_metrics: None,
+                };
+                responses.push(response);
+            }
+
+            sender.send(responses).ok();
         }
 
         Ok(())
@@ -158,4 +224,14 @@ pub enum ModelThreadError {
     Shutdown(RecvError),
     #[error("Send error")]
     SendError,
+    #[error("Model loader error: `{0}`")]
+    ModelLoaderError(#[from] ModelLoaderError),
+    #[error("Model executor error: `{0}`")]
+    ModelExecutorError(#[from] ModelExecutorError),
 }
+
+#[derive(Debug, Error)]
+pub enum ModelLoaderError {}
+
+#[derive(Debug, Error)]
+pub enum ModelExecutorError {}

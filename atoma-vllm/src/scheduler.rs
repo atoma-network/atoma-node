@@ -71,7 +71,7 @@ impl SchedulingBudget {
     }
 
     /// Checks if it is possible to schedule number of tokens
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn can_schedule(
         &self,
         num_new_tokens: usize,
@@ -94,7 +94,7 @@ impl SchedulingBudget {
     }
 
     /// Adds number of batched tokens
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn add_num_batched_tokens(&mut self, request_id: String, num_batched_tokens: usize) {
         info!("Adding number of batched tokens");
         // If request has already been batched, simply return
@@ -107,7 +107,7 @@ impl SchedulingBudget {
     }
 
     /// Subtracts number of batched tokens
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn subtract_num_batched_tokens(&mut self, request_id: &str, num_batched_tokens: usize) {
         info!("Subtracting number of batched tokens..");
         // Only performs an action, if request with `request_id` has been already batched
@@ -118,7 +118,7 @@ impl SchedulingBudget {
     }
 
     /// Adds number sequences
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn add_number_sequences(&mut self, request_id: String, num_current_sequences: usize) {
         info!("Adding number of sequences..");
         // If request has already been added, simply return
@@ -131,7 +131,7 @@ impl SchedulingBudget {
     }
 
     /// Subtracts number sequences
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn subtracts_number_sequences(&mut self, request_id: &str, num_current_sequences: usize) {
         info!("Subtracting number of sequences..");
         // Only performs an action, if request with `request_id` has been already added
@@ -268,7 +268,7 @@ pub struct SchedulerOutputs {
 
 impl SchedulerOutputs {
     /// Validate that `SchedulerOutputs` is well formed
-    #[instrument]
+    #[instrument(skip_all)]
     fn validate(&self) -> Result<(), SchedulerError> {
         if !self.blocks_to_swap_in.is_empty() && !self.blocks_to_swap_out.is_empty() {
             error!("Swap in and swap out should never happen at the same time.");
@@ -502,6 +502,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining running queue (should be always 0) after
     ///         scheduling and SchedulerRunningOutputs.
+    #[instrument(skip_all)]
     fn schedule_running(
         &mut self,
         running_queue: VecDeque<SequenceGroup>,
@@ -535,6 +536,8 @@ impl<P: Policy> Scheduler<P> {
 
             // if no tokens are being processed, we break the loop
             if num_running_tokens == 0 {
+                // Need to push the popped sequence group back to the front
+                running_queue.push_front(sequence_group);
                 break;
             }
 
@@ -643,7 +646,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining `swapped_queue` after scheduling and
     ///     SchedulerSwappedInOutputs.
-    #[instrument]
+    #[instrument(skip_all)]
     fn schedule_swapped(
         &mut self,
         swapped_queue: VecDeque<SequenceGroup>,
@@ -748,7 +751,7 @@ impl<P: Policy> Scheduler<P> {
     /// Returns:
     ///     A tuple of remaining waiting_queue after scheduling and
     ///         SchedulerSwappedInOutputs,
-    #[instrument]
+    #[instrument(skip_all)]
     fn schedule_prefills(
         &mut self,
         mut waiting_queue: VecDeque<SequenceGroup>,
@@ -875,7 +878,7 @@ impl<P: Policy> Scheduler<P> {
     /// it batches as many prefill requests as possible. And it schedules
     /// decodes. If there's a pressure on GPU memory, decode requests can
     /// be swapped or preempted.
-    #[instrument]
+    #[instrument(skip_all)]
     fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
         info!("Scheduling default..");
         // Include running requests to the budget.
@@ -1051,14 +1054,14 @@ impl<P: Policy> Scheduler<P> {
     /// prefill and decodes requests to the same batch, while it improves
     /// inter token latency because decodes requests don't need to blocked
     /// by prefill requests.
-    #[instrument]
+    #[instrument(skip_all)]
     fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
             self.scheduler_config.max_num_sequences(),
         );
 
-        let mut remaining_swapped = self.waiting.clone();
+        let mut remaining_swapped = self.swapped.clone();
         let mut swapped_in = SchedulerSwappedInOutputs::create_empty();
 
         // Decoding should be always scheduled first by fcfs
@@ -1177,7 +1180,7 @@ impl<P: Policy> Scheduler<P> {
     }
 
     /// Schedule queued requests.
-    #[instrument]
+    #[instrument(skip_all)]
     fn schedule_(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
         if self.scheduler_config.enable_chunked_prefill() {
             self.schedule_chunked_prefill()
@@ -1188,7 +1191,7 @@ impl<P: Policy> Scheduler<P> {
 
     /// Schedule queued requests, in the form of `SequenceGroup`'s.
     /// This function calls the internal state of the `Scheduler`
-    #[instrument]
+    #[instrument(skip_all)]
     pub fn schedule(
         &mut self,
     ) -> Result<(Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs), SchedulerError> {
@@ -1197,6 +1200,7 @@ impl<P: Policy> Scheduler<P> {
 
         // Create input data structures
         let mut sequence_groups_metadata = Vec::new();
+
         for scheduled_sequence_group in scheduler_outputs.scheduled_sequence_groups.iter() {
             let sequence_group = scheduled_sequence_group.scheduled_group.clone();
             let token_chunk_size = scheduled_sequence_group.token_chunk_size;
@@ -1296,6 +1300,7 @@ impl<P: Debug> Scheduler<P> {
     /// phase, so chunking doesn't happen.
     ///
     /// Returns 0 if the new token cannot be computed due to token budget.
+    #[instrument(skip(self, sequence_group, budget))]
     fn get_num_tokens(
         &self,
         sequence_group: &SequenceGroup,
@@ -1343,7 +1348,7 @@ impl<P: Debug> Scheduler<P> {
     /// `blocks_to_copy`: Mapping of source block index to destination block index.
     ///     It is updated with the new source and destination block indices for the appended
     ///     slots.
-    #[instrument]
+    #[instrument(skip_all)]
     fn append_slots(
         &mut self,
         sequence_group: &SequenceGroup,
@@ -1378,7 +1383,7 @@ impl<P: Debug> Scheduler<P> {
     }
 
     /// Allows for preemption of `SequenceGroup`
-    #[instrument]
+    #[instrument(skip_all)]
     fn preempt(
         &mut self,
         sequence_group: &mut SequenceGroup,
@@ -1426,7 +1431,7 @@ impl<P: Debug> Scheduler<P> {
     }
 
     /// Preempts a `SequenceGroup` by `Recomputation` mode
-    #[instrument]
+    #[instrument(skip_all)]
     fn preempt_by_recompute(
         &mut self,
         sequence_group: &mut SequenceGroup,
@@ -1466,7 +1471,7 @@ impl<P: Debug> Scheduler<P> {
     }
 
     /// Preempts a `SequenceGroup` by `Swap` mode
-    #[instrument]
+    #[instrument(skip_all)]
     fn preempt_by_swap(
         &mut self,
         sequence_group: &mut SequenceGroup,
@@ -1483,7 +1488,7 @@ impl<P: Debug> Scheduler<P> {
     }
 
     /// Swaps out GPU blocks to CPU blocks
-    #[instrument]
+    #[instrument(skip_all)]
     fn swap_out(
         &mut self,
         sequence_group: &mut SequenceGroup,
@@ -1513,7 +1518,7 @@ impl<P: Debug> Scheduler<P> {
     }
 
     /// Swaps in CPU blocks to GPU blocks
-    #[instrument]
+    #[instrument(skip_all)]
     fn swap_in(
         &mut self,
         sequence_group: &mut SequenceGroup,

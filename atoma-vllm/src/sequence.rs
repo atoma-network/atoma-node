@@ -7,7 +7,7 @@ use std::{
 
 use candle::Tensor;
 use thiserror::Error;
-use tracing::{error, info_span, instrument, Span};
+use tracing::{error, info, info_span, instrument, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
@@ -144,7 +144,9 @@ impl SequenceData {
     }
 
     /// Adds a new generated output token id
+    #[instrument(skip(self))]
     pub fn add_token_id(&mut self, token_id: u32, logprob: f32) {
+        info!("Adding token id to `SequenceData`..");
         self.output_token_ids.push(token_id);
         self.cumulative_logprob += logprob;
     }
@@ -199,10 +201,24 @@ impl SequenceData {
     }
 
     /// Updates the number of computed tokens, so far
+    #[instrument(skip(self))]
     pub fn update_num_computed_tokens(
         &mut self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
+        info!(
+            "Update number of computed tokens {} by {}",
+            self.num_computed_tokens, num_new_computed_tokens
+        );
+
+        info!(
+            "Parameters: self.num_computed_tokens = {}, self.length() = {}, num_new_computed_tokens = {}, self.get_num_uncomputed_tokens() = {}", 
+            self.num_computed_tokens,
+            self.length(),
+            num_new_computed_tokens,
+            self.get_num_uncomputed_tokens()
+        );
+
         self.num_computed_tokens += num_new_computed_tokens;
         if self.num_computed_tokens <= self.length() {
             if self.get_num_uncomputed_tokens() == 0 {
@@ -211,7 +227,7 @@ impl SequenceData {
             }
             return Ok(());
         }
-        error!("Failed to update number of computed tokens");
+        error!("Failed to update number of computed tokens: self.num_computed_tokens = {}, self.length() = {}", self.num_computed_tokens, self.length());
         Err(SequenceError::InvalidNumberGeneratedTokens)
     }
 
@@ -666,7 +682,7 @@ impl SequenceGroup {
     }
 
     /// Adds a `token_id` to a `Sequence` in `SequenceGroup` in place
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn add_token_id_to_seq(
         &self,
         sequence_id: u64,
@@ -847,6 +863,7 @@ impl SequenceGroup {
     }
 
     /// Updates the number of computed tokens
+    #[instrument(skip(self))]
     pub fn update_num_computed_tokens(
         &self,
         num_new_computed_tokens: usize,
@@ -997,9 +1014,9 @@ pub struct SequenceGroupMetadata {
     /// Is prompt (bool)
     is_prompt: bool,
     /// Next token chooser parameters
-    next_token_chooser_params: NextTokenChooserParameters,
+    pub next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria parameters
-    stopping_criteria_params: StoppingCriteriaParameters,
+    pub stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
     block_tables: HashMap<u64, Vec<u64>>,
     /// Do sample (bool)
@@ -1007,7 +1024,7 @@ pub struct SequenceGroupMetadata {
     /// Token chunk size
     pub token_chunk_size: usize,
     /// Sequence data
-    sequence_data: HashMap<u64, SequenceData>,
+    pub sequence_data: HashMap<u64, SequenceData>,
     /// Internal state tied to this sequence group
     state: SequenceGroupState,
 }
@@ -1143,15 +1160,15 @@ pub struct SpecDecodeWorkerMetrics {
 #[derive(Clone, Debug)]
 pub struct ExecuteModelRequest {
     /// The sequence groups metadata vector
-    sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
+    pub sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
-    blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<u64, u64>,
     /// Blocks to swap out. List of GPU -> CPU block number
-    blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<u64, u64>,
     /// Blocks to copy. Source to dest block
-    blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<u64, u64>,
     /// The number of requests in the running queue
-    running_queue_size: usize,
+    pub running_queue_size: usize,
 }
 
 impl ExecuteModelRequest {
