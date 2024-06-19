@@ -922,11 +922,7 @@ impl<P: Policy> Scheduler<P> {
             // group, because it means there's no slot for new running requests
             if running_scheduled.preempted.len() + running_scheduled.swapped_out.len() == 0 {
                 (remaining_swapped, swapped_in) = self
-                    .schedule_swapped(remaining_swapped, &mut budget, false)
-                    .map_err(|e| {
-                        error!("Failed to schedule swapped requests, with error: {e}");
-                        e
-                    })?
+                    .schedule_swapped(remaining_swapped, &mut budget, false)?
             }
         }
 

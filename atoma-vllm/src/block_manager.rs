@@ -450,7 +450,7 @@ impl BlockSpaceManager {
     }
 
     /// Swaps out GPU to CPU blocks
-
+    #[instrument(skip_all)]
     pub fn swap_out(
         &mut self,
         seq_group: &mut SequenceGroup,
