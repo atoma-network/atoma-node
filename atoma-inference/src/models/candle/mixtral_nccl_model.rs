@@ -240,7 +240,7 @@ impl Cache {
             .collect();
         let theta = Tensor::new(theta.as_slice(), device)?;
         let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
-            .to_dtype(DType::F32)?
+            .to_dtype(DType::F64)?
             .reshape((MAX_SEQ_LEN, 1))?
             .matmul(&theta.reshape((1, theta.elem_count()))?)?;
         // This is different from the paper, see:
@@ -299,11 +299,9 @@ impl Attention {
         })
     }
 
-    fn apply_rotary_emb(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
-        let (_b_sz, _, seq_len, _hidden_size) = x.shape().dims4()?;
-        let cos = self.cache.cos.narrow(0, index_pos, seq_len)?;
-        let sin = self.cache.sin.narrow(0, index_pos, seq_len)?;
-        candle_nn::rotary_emb::rope(x, &cos, &sin)
+    fn repeat_kv(&self, x: Tensor) -> Result<Tensor> {
+        let n_rep = self.num_heads / self.num_kv_heads;
+        candle_transformers::utils::repeat_kv(x, n_rep)
     }
 
     fn forward(
@@ -315,7 +313,7 @@ impl Attention {
         let (b_sz, q_len, _) = xs.dims3()?;
 
         let qkv = self.qkv_proj.forward(xs)?;
-        // let hidden_size = self.num_heads * self.head_dim;
+        let hidden_size = self.num_heads * self.head_dim;
 
         let query_states = qkv.i((.., .., ..self.num_heads * self.head_dim))?;
         let key_states = qkv.i((
@@ -331,7 +329,7 @@ impl Attention {
         ))?;
 
         let query_states = query_states
-            .reshape((b_sz, q_len, self.num_kv_heads, self.head_dim))?
+            .reshape((b_sz, q_len, self.num_heads, self.head_dim))?
             .transpose(1, 2)?
             .contiguous()?;
         let key_states = key_states
@@ -357,8 +355,8 @@ impl Attention {
         };
         self.kv_cache = Some((key_states.clone(), value_states.clone()));
 
-        let key_states = candle_transformers::utils::repeat_kv(key_states, self.num_kv_groups)?;
-        let value_states = candle_transformers::utils::repeat_kv(value_states, self.num_kv_groups)?;
+        let key_states = self.repeat_kv(key_states)?;
+        let value_states = self.repeat_kv(value_states)?;
 
         // flash-attn expects (b_sz, seq_len, nheads, head_dim)
         let q = query_states.transpose(1, 2)?;
@@ -367,8 +365,7 @@ impl Attention {
         let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
         let attn_output = candle_flash_attn::flash_attn(&q, &k, &v, softmax_scale, q_len > 1)?
             .transpose(1, 2)?
-            .transpose(1, 2)?
-            .reshape((b_sz, q_len, self.hidden_size))?;
+            .reshape((b_sz, q_len, hidden_size))?;
         let attn_output = self.o_proj.forward(&attn_output)?;
         Ok(attn_output)
     }
@@ -376,8 +373,8 @@ impl Attention {
 
 struct BlockSparseTop2MLP {
     w1: TensorParallelColumnLinear,
-    w2: TensorParallelColumnLinear,
-    w3: TensorParallelRowLinear,
+    w2: TensorParallelRowLinear,
+    w3: TensorParallelColumnLinear,
     act_fn: Activation,
 }
 
@@ -385,8 +382,8 @@ impl BlockSparseTop2MLP {
     fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
         let intermediate_sz = cfg.intermediate_size;
         let w1 = TensorParallelColumnLinear::load(vb.pp("w1"), comm.clone())?;
-        let w2 = TensorParallelColumnLinear::load(vb.pp("w2"), comm.clone())?;
-        let w3 = TensorParallelRowLinear::load(vb.pp("w3"), comm.clone())?;
+        let w2 = TensorParallelRowLinear::load(vb.pp("w2"), comm.clone())?;
+        let w3 = TensorParallelColumnLinear::load(vb.pp("w3"), comm.clone())?;
         Ok(Self {
             w1,
             w2,
@@ -398,10 +395,14 @@ impl BlockSparseTop2MLP {
 
 impl Module for BlockSparseTop2MLP {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let lhs = self.act_fn.forward(&self.w1.forward(xs)?)?;
+        let lhs = silu(&self.w1.forward(xs)?)?;
         let rhs = self.w3.forward(xs)?;
         self.w2.forward(&(lhs * rhs)?)
     }
+}
+
+fn silu(xs: &Tensor) -> Result<Tensor> {
+    xs / (xs.neg()?.exp()? + 1.0)?
 }
 
 struct SparseMoeBlock {
@@ -477,6 +478,7 @@ impl Module for SparseMoeBlock {
             let current_state = xs.index_select(&top_x, 0)?.reshape(((), hidden_dim))?;
             // current_hidden_states = expert_layer(current_state, routing_weights[top_x_list, idx_list, None])
             let current_hidden_states = expert_layer.forward(&current_state)?;
+            let selected_rws = selected_rws.to_dtype(current_hidden_states.dtype())?;
             let current_hidden_states = current_hidden_states.broadcast_mul(&selected_rws)?;
             ys = ys.index_add(&top_x, &current_hidden_states, 0)?;
         }
