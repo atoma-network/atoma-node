@@ -144,7 +144,7 @@ async fn test_llm_engine() {
 
     let tokenizer_clone = tokenizer.clone();
     let _tokenizer_handle = tokio::spawn(async move {
-        let _tokenizer_worker = TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
+        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
             .await
             .expect("Failed to start tokenizer");
     });
@@ -271,7 +271,7 @@ async fn test_llm_engine_with_enable_chunking() {
 
     let tokenizer_clone = tokenizer.clone();
     let _tokenizer_handle = tokio::spawn(async move {
-        let _tokenizer_worker = TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
+        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
             .await
             .expect("Failed to start tokenizer");
     });

@@ -1,10 +1,10 @@
-use std::str::FromStr;
-use std::{fmt::Write, path::Path, time::Duration};
+use std::{fmt::Write, path::Path, str::FromStr, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
 use sui_sdk::rpc_types::{EventFilter, SuiEvent};
 use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
+use sui_sdk::types::event::EventID;
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -27,41 +27,59 @@ pub struct SuiSubscriber {
     /// Node's unique identifier small id (generated once when the
     /// node registers on Atoma's smart contract, on the Sui blockchain).
     id: SmallId,
-    /// A `SuiClient` instance
-    sui_client: SuiClient,
-    /// An `EventFilter` instance
+    /// Used to filter Sui's events, by those emitted by
+    /// Atoma's smart contract
     filter: EventFilter,
     /// A mpsc sender, responsible for sending a new `Request` to the `AtomaInference`
     /// service, if the node has been sampled to run inference
     event_sender: mpsc::Sender<Request>,
+    /// The http address of a Sui RPC node
+    http_addr: String,
+    /// Last received event's id
+    last_event_id: Option<EventID>,
+    /// Request timeout
+    request_timeout: Option<Duration>,
+    /// The websocket address of a Sui RPC node
+    ws_addr: Option<String>,
 }
 
 impl SuiSubscriber {
     /// Constructor
     pub async fn new(
         id: SmallId,
-        http_url: &str,
-        ws_url: Option<&str>,
+        http_addr: &str,
+        ws_addr: Option<&str>,
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
     ) -> Result<Self, SuiSubscriberError> {
-        let mut sui_client_builder = SuiClientBuilder::default();
-        if let Some(duration) = request_timeout {
-            sui_client_builder = sui_client_builder.request_timeout(duration);
-        }
-        if let Some(url) = ws_url {
-            sui_client_builder = sui_client_builder.ws_url(url);
-        }
-        info!("Starting sui client..");
-        let sui_client = sui_client_builder.build(http_url).await?;
         let filter = EventFilter::Package(package_id);
         Ok(Self {
             id,
-            sui_client,
+            http_addr: http_addr.to_string(),
+            ws_addr: ws_addr.map(|s| s.to_string()),
             filter,
             event_sender,
+            request_timeout,
+            last_event_id: None,
         })
+    }
+
+    /// Builds a new `SuiClient` instance from the `SuiSubscriber` metadata
+    #[instrument(skip_all)]
+    async fn build_client(&self) -> Result<SuiClient, SuiSubscriberError> {
+        let mut sui_client_builder = SuiClientBuilder::default();
+        if let Some(duration) = self.request_timeout {
+            sui_client_builder = sui_client_builder.request_timeout(duration);
+        }
+        if let Some(url) = self.ws_addr.as_ref() {
+            sui_client_builder = sui_client_builder.ws_url(url);
+        }
+        info!("Starting sui client..");
+        sui_client_builder
+            .build(self.http_addr.as_str())
+            .await
+            .map_err(SuiSubscriberError::SuiBuilderError)
     }
 
     /// Generates a new instance of `SuiSubscriber`, from a configuration file
@@ -88,17 +106,50 @@ impl SuiSubscriber {
 
     /// Subscribes to Sui blockchain for event listening
     #[instrument(skip_all)]
-    pub async fn subscribe(self) -> Result<(), SuiSubscriberError> {
-        let event_api = self.sui_client.event_api();
-        let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
-        info!("Starting event while loop");
-        while let Some(event) = subscribe_event.next().await {
-            match event {
-                Ok(event) => self.handle_event(event).await?,
+    pub async fn subscribe(mut self) -> Result<(), SuiSubscriberError> {
+        loop {
+            let sui_client = match self.build_client().await {
+                Ok(client) => client,
                 Err(e) => {
-                    error!("Failed to get event with error: {e}");
+                    error!("Failed to build Sui client, with error: {e}");
+                    continue;
                 }
+            };
+            let event_api = sui_client.event_api();
+            let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
+            if let Some(event_id) = self.last_event_id {
+                self.handle_pagination_events(event_id, &sui_client).await?;
             }
+            info!("Starting event while loop");
+            while let Some(event) = subscribe_event.next().await {
+                match event {
+                    Ok(event) => self.handle_event(event, &sui_client).await?,
+                    Err(e) => {
+                        error!("Failed to get event with error: {e}");
+                    }
+                }
+                error!("WebSocket connection closed unexpectedly..");
+            }
+        }
+    }
+
+    /// Handles pagination events, that were not catch
+    /// while the event subscriber was down
+    #[instrument(skip_all)]
+    async fn handle_pagination_events(
+        &mut self,
+        event_id: EventID,
+        sui_client: &SuiClient,
+    ) -> Result<(), SuiSubscriberError> {
+        info!("Starting pagination, from last event_id = {:?}..", event_id);
+        let filter = self.filter.clone();
+        let paged_events = sui_client
+            .event_api()
+            .query_events(filter, Some(event_id), None, false)
+            .await?;
+        for event in paged_events.data.into_iter() {
+            self.last_event_id = Some(event.id);
+            self.handle_event(event, sui_client).await?;
         }
         Ok(())
     }
@@ -110,9 +161,14 @@ impl SuiSubscriber {
     /// If the event contains a new AI inference request, to which the current node has been sampled to executed
     /// it will parse the content of the (JSON) event into a `Request` and send it to the `AtomaInference`
     /// service.
-    #[instrument(skip(self, event))]
-    async fn handle_event(&self, event: SuiEvent) -> Result<(), SuiSubscriberError> {
+    #[instrument(skip_all)]
+    async fn handle_event(
+        &self,
+        event: SuiEvent,
+        sui_client: &SuiClient,
+    ) -> Result<(), SuiSubscriberError> {
         let event_type = event.type_.name.as_str();
+
         match AtomaEvent::from_str(event_type)? {
             AtomaEvent::DisputeEvent => todo!(),
             AtomaEvent::FirstSubmissionEvent
@@ -123,7 +179,10 @@ impl SuiSubscriber {
             }
             AtomaEvent::NewlySampledNodesEvent => {
                 let event_data = event.parsed_json;
-                match self.handle_newly_sampled_nodes_event(event_data).await {
+                match self
+                    .handle_newly_sampled_nodes_event(event_data, sui_client)
+                    .await
+                {
                     Ok(()) => {}
                     Err(err) => {
                         error!("Failed to process request, with error: {err}")
@@ -174,10 +233,11 @@ impl SuiSubscriber {
     }
 
     /// Handles a newly sampled node event (which contains a request for a new AI inference job).
-    #[instrument(skip(self, event_data))]
+    #[instrument(skip_all)]
     async fn handle_newly_sampled_nodes_event(
         &self,
         event_data: Value,
+        sui_client: &SuiClient,
     ) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let newly_sampled_nodes = extract_sampled_node_index(self.id, &event_data)?;
@@ -187,8 +247,7 @@ impl SuiSubscriber {
                 path: "ticket_id".to_string(),
                 value: serde_json::from_str(ticket_id)?,
             };
-            let data = self
-                .sui_client
+            let data = sui_client
                 .event_api()
                 .query_events(event_filter, None, Some(1), false)
                 .await?;
