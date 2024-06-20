@@ -66,6 +66,7 @@ impl SuiSubscriber {
     }
 
     /// Builds a new `SuiClient` instance from the `SuiSubscriber` metadata
+    #[instrument(skip_all)]
     async fn build_client(&self) -> Result<SuiClient, SuiSubscriberError> {
         let mut sui_client_builder = SuiClientBuilder::default();
         if let Some(duration) = self.request_timeout {
@@ -107,7 +108,13 @@ impl SuiSubscriber {
     #[instrument(skip_all)]
     pub async fn subscribe(mut self) -> Result<(), SuiSubscriberError> {
         loop {
-            let sui_client = self.build_client().await?;
+            let sui_client = match self.build_client().await {
+                Ok(client) => client,
+                Err(e) => {
+                    error!("Failed to build Sui client, with error: {e}");
+                    continue;
+                }
+            };
             let event_api = sui_client.event_api();
             let mut subscribe_event = event_api.subscribe_event(self.filter.clone()).await?;
             if let Some(event_id) = self.last_event_id {

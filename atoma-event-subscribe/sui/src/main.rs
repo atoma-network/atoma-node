@@ -11,10 +11,16 @@ struct Args {
     #[arg(long)]
     pub package_id: String,
     /// HTTP node's address for Sui client
-    #[arg(long, default_value = "https://fullnode.devnet.sui.io:443")]
+    #[arg(
+        long,
+        default_value = "https://fullnode.testnet.sui.io:443"
+    )]
     pub http_addr: String,
     /// RPC node's web socket address for Sui client
-    #[arg(long, default_value = "wss://fullnode.devnet.sui.io:443")]
+    #[arg(
+        long,
+        default_value = "wss://fullnode.testnet.sui.io:443"
+    )]
     pub ws_addr: String,
 }
 
