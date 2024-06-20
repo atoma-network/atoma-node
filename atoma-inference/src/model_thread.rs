@@ -257,6 +257,14 @@ pub(crate) fn dispatch_model_thread(
                 model_receiver,
                 stream_tx,
             ),
+            ModelType::Mixtral8x7b => spawn_model_thread::<MixtralNcclModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
             _ => panic!("This model is not supported"),
         }
     } else {

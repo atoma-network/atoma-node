@@ -1,6 +1,6 @@
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
-use candle_transformers::generation::LogitsProcessor;
+use candle_transformers::{generation::LogitsProcessor, utils::apply_repeat_penalty};
 use cudarc::{driver::safe::CudaDevice, nccl::result::NcclError};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
@@ -8,13 +8,17 @@ use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
+use tracing::{error, info};
 
-use crate::models::{
-    config::ModelConfig,
-    token_output_stream::TokenOutputStream,
-    types::{ModelType, TextModelInput, TextModelOutput},
-    ModelError, ModelTrait,
+use crate::{
+    bail,
+    models::{
+        candle::mixtral_nccl_model::Config,
+        config::ModelConfig,
+        token_output_stream::TokenOutputStream,
+        types::{ModelType, TextModelInput, TextModelOutput},
+        ModelError, ModelTrait,
+    },
 };
 use cudarc::driver::DriverError;
 use cudarc::nccl::safe::{Comm, Id};
@@ -54,11 +58,10 @@ pub enum MixtralNcclError {
 struct MixtralNcclWorker {
     rank: usize,
     device: Device,
-    config: model::Config,
     tokenizer: TokenOutputStream,
-    model: model::Mixtral,
+    model: model::Model,
     model_type: ModelType,
-    cache: model::Cache,
+    dtype: DType,
 }
 
 impl MixtralNcclWorker {
@@ -67,7 +70,6 @@ impl MixtralNcclWorker {
         num_shards: usize,
         id: Id,
         dtype: DType,
-        config_file_path: &PathBuf,
         model_weights_file_paths: &[PathBuf],
         tokenizer_file_path: &PathBuf,
         model_type: ModelType,
@@ -77,9 +79,9 @@ impl MixtralNcclWorker {
         let device = CudaDevice::new(rank)?;
         let comm =
             Rc::new(Comm::from_rank(device, rank, num_shards, id).map_err(ModelError::NcclError)?);
-        println!("Rank {rank:?} spawned");
+        info!("Rank {rank:?} spawned");
         let device = Device::new_cuda(device_id)?;
-        let config: model::Config = serde_json::from_slice(&std::fs::read(config_file_path)?)?;
+        let config = Config::v0_1_8x7b(true);
         let vb = unsafe {
             candle_nn::var_builder::ShardedSafeTensors::var_builder(
                 model_weights_file_paths,
@@ -88,79 +90,75 @@ impl MixtralNcclWorker {
             )?
         };
         let cache = model::Cache::new(dtype, &config, &device)?;
-        let model = model::Mixtral::load(vb, &cache, &config, &comm)?;
+        let model = model::Model::new(&config, vb, &comm, &cache)?;
         let tokenizer = Tokenizer::from_file(tokenizer_file_path)?;
 
         Ok(Self {
             rank,
             device,
-            config,
             model,
             model_type,
             tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
-            cache,
+            dtype,
         })
     }
 
     pub fn run(&mut self, input: TextModelInput) -> Result<TextModelOutput, ModelError> {
         self.tokenizer.clear();
-        self.cache.clear();
 
-        let bos_token_id = self
-            .config
-            .bos_token_id
-            .or_else(|| self.tokenizer.tokenizer().token_to_id(BOS_TOKEN))
-            .unwrap();
-        let eos_token_id = self
-            .config
-            .eos_token_id
-            .or_else(|| self.tokenizer.tokenizer().token_to_id(EOS_TOKEN));
-        let prompt_ids = self
+        let mut logits_processor =
+            LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
+        let tokens = self
             .tokenizer
             .tokenizer()
             .encode(input.prompt.clone(), true)?
             .get_ids()
             .to_vec();
-        let tokens = if self.model_type == ModelType::Llama3_8b {
-            vec![bos_token_id].into_iter().chain(prompt_ids).collect()
-        } else {
-            prompt_ids
-        };
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
+
         let input_tokens = tokens.len();
 
-        let mut logits_processor =
-            LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
-        let mut index_pos = 0;
-        let mut res = String::new();
+        let mut generated_tokens = 0_usize;
+        let eos_token = match self.tokenizer.get_token("</s>") {
+            Some(token) => token,
+            None => bail!("cannot find the </s> token"),
+        };
 
         let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
-        let start_gen = Instant::now();
+        let mut output = String::new();
+        let start_gen = std::time::Instant::now();
         for index in 0..input.max_tokens {
             let context_size = if index > 0 { 1 } else { tokens.len() };
-            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input, index_pos)?;
-            let logits = logits.squeeze(0)?;
-            index_pos += ctxt.len();
+            let start_pos = tokens.len().saturating_sub(context_size);
+            let ctxt = &tokens[start_pos..];
+            let input_ids = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
+            let logits = self.model.forward(&input_ids, start_pos)?;
+            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(self.dtype)?;
+            let logits = if input.repeat_penalty == 1. {
+                logits
+            } else {
+                let start_at = tokens.len().saturating_sub(input.repeat_last_n);
+                apply_repeat_penalty(&logits, input.repeat_penalty, &tokens[start_at..])?
+            };
 
             let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
-            if Some(next_token) == eos_token_id {
+            generated_tokens += 1;
+            if next_token == eos_token {
                 break;
             }
-            if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
-                res += &t;
+            tokens.push(next_token);
+            if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
+                output.push_str(&word);
             }
         }
-        if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
-            res += &rest;
-        }
-        let generated_tokens = self.tokenizer.get_num_generated_tokens();
         let dt = start_gen.elapsed();
         if self.rank == 0 {
+            if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
+                output.push_str(&rest);
+            }
+
             info!(
-                "{generated_tokens} tokens generated ({} token/s)\n",
+                "\n{generated_tokens} tokens generated ({:.2} token/s)",
                 generated_tokens as f64 / dt.as_secs_f64(),
             );
 
@@ -171,7 +169,7 @@ impl MixtralNcclWorker {
         }
 
         Ok(TextModelOutput {
-            text: res,
+            text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
@@ -224,10 +222,8 @@ impl ModelTrait for MixtralNcclModel {
         file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
-        let device = device(config.device_first_id())?;
-
         Ok(Self::LoadData {
-            dtype,
+            dtype: DType::from_str(&config.dtype())?,
             file_paths,
             model_type: ModelType::from_str(&config.model_id())?,
             device_ids: config.device_ids(),
@@ -264,18 +260,17 @@ impl ModelTrait for MixtralNcclModel {
                     num_shards,
                     id,
                     dtype,
+                    &file_paths[1..],
                     &file_paths[0],
-                    &file_paths[2..],
-                    &file_paths[1],
                     model_type,
                     device_id,
                     stream_tx,
                 );
                 if let Err(e) = &mixtral_worker {
-                    println!("Error: {:?}", e);
+                    error!("Error: {:?}", e);
                 }
                 let mut mixtral_worker = mixtral_worker?;
-                println!("Starting inference loop on rank {rank}");
+                info!("Starting inference loop on rank {rank}");
                 loop {
                     let input = to_workers_receiver.blocking_recv()?;
                     let output = mixtral_worker.run(input)?;
@@ -296,7 +291,7 @@ impl ModelTrait for MixtralNcclModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        self.to_workers_sender.send(input)?;
+        self.to_workers_sender.send(input).map_err(Box::new)?;
         self.output_receiver
             .blocking_recv()
             .ok_or_else(|| ModelError::Msg("Something went wrong".to_string()))

@@ -288,7 +288,7 @@ impl ModelTrait for LlamaNcclModel {
     }
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
-        self.to_workers_sender.send(input)?;
+        self.to_workers_sender.send(input).map_err(Box::new)?;
         self.output_receiver
             .blocking_recv()
             .ok_or_else(|| ModelError::Msg("Something went wrong".to_string()))
