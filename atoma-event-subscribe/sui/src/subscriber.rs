@@ -128,8 +128,8 @@ impl SuiSubscriber {
                         error!("Failed to get event with error: {e}");
                     }
                 }
-                error!("WebSocket connection closed unexpectedly..");
             }
+            error!("WebSocket connection closed unexpectedly..");
         }
     }
 
