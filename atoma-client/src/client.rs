@@ -7,7 +7,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use sui_sdk::{
     json::SuiJsonValue,
-    types::base_types::{ObjectIDParseError, SuiAddress},
+    types::{
+        base_types::{ObjectIDParseError, SuiAddress},
+        SUI_RANDOMNESS_STATE_OBJECT_ID,
+    },
     wallet_context::WalletContext,
 };
 use thiserror::Error;
@@ -167,6 +170,7 @@ impl AtomaSuiClient {
                     SuiJsonValue::new(num_output_tokens.to_string().into())?,
                     SuiJsonValue::new(root.as_ref().into())?,
                     SuiJsonValue::new(pre_image.as_ref().into())?,
+                    SuiJsonValue::from_object_id(SUI_RANDOMNESS_STATE_OBJECT_ID),
                 ],
                 None,
                 GAS_BUDGET,
