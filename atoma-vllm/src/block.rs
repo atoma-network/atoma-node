@@ -103,7 +103,7 @@ impl Eq for LogicalTokenBlock {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicalTokenBlock {
     /// Block number
-    block_number: u64,
+    block_number: i64,
     /// Block size (representing number of KV vectors for contiguous input tokens)
     block_size: usize,
     /// Block has been computed
@@ -120,7 +120,7 @@ pub struct PhysicalTokenBlock {
 
 impl PhysicalTokenBlock {
     /// Constructor
-    pub fn new(block_number: u64, block_size: usize, device: BlockDevice) -> Self {
+    pub fn new(block_number: i64, block_size: usize, device: BlockDevice) -> Self {
         Self {
             block_number,
             block_size,
@@ -133,7 +133,7 @@ impl PhysicalTokenBlock {
     }
 
     /// Getter for `block_number`
-    pub fn block_number(&self) -> u64 {
+    pub fn block_number(&self) -> i64 {
         self.block_number
     }
 

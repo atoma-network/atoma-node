@@ -1018,7 +1018,7 @@ pub struct SequenceGroupMetadata {
     /// Stopping criteria parameters
     pub stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    block_tables: HashMap<u64, Vec<u64>>,
+    block_tables: HashMap<u64, Vec<i64>>,
     /// Do sample (bool)
     pub do_sample: bool,
     /// Token chunk size
@@ -1038,7 +1038,7 @@ impl SequenceGroupMetadata {
         sequence_data: HashMap<u64, SequenceData>,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria_params: StoppingCriteriaParameters,
-        block_tables: HashMap<u64, Vec<u64>>,
+        block_tables: HashMap<u64, Vec<i64>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,
@@ -1162,11 +1162,11 @@ pub struct ExecuteModelRequest {
     /// The sequence groups metadata vector
     pub sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
-    pub blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<i64, i64>,
     /// Blocks to swap out. List of GPU -> CPU block number
-    pub blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<i64, i64>,
     /// Blocks to copy. Source to dest block
-    pub blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<i64, i64>,
     /// The number of requests in the running queue
     pub running_queue_size: usize,
 }
@@ -1175,9 +1175,9 @@ impl ExecuteModelRequest {
     /// Constructor
     pub fn new(
         sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
-        blocks_to_swap_in: HashMap<u64, u64>,
-        blocks_to_swap_out: HashMap<u64, u64>,
-        blocks_to_copy: HashMap<u64, u64>,
+        blocks_to_swap_in: HashMap<i64, i64>,
+        blocks_to_swap_out: HashMap<i64, i64>,
+        blocks_to_copy: HashMap<i64, i64>,
         running_queue_size: usize,
     ) -> Self {
         Self {

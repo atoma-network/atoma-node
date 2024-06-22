@@ -25,12 +25,17 @@ use crate::{
 pub trait ModelLoader {
     type FilePaths;
 
-    async fn fetch() -> Result<Self::FilePaths, ModelLoaderError>;
-    async fn load() -> Result<Self, ModelLoaderError>
+    async fn fetch(api_key: String, model_name: String, revision: String) -> Result<Self::FilePaths, ModelLoaderError>;
+    async fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
     fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
+    fn head_size(&self) -> usize;
+    fn num_attention_heads(&self) -> usize;
+    fn num_layers(&self) -> usize;
+    fn num_kv_heads(&self) -> usize;
+    fn sliding_window(&self) -> Option<usize>;
 }
 
 /// `ModelExecutor` trait - interface for running AI inference

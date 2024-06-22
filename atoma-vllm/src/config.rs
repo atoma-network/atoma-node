@@ -1,3 +1,4 @@
+use candle::DType;
 use thiserror::Error;
 
 const GB: usize = 1 << 30;
@@ -24,7 +25,6 @@ pub struct CacheConfig {
     /// Swap space bytes
     swap_space_bytes: usize,
     /// Cache dtype
-    #[allow(dead_code)]
     cache_dtype: String,
     /// Number of GPU blocks to override (optional)
     num_gpu_blocks_override: Option<usize>,
@@ -108,6 +108,11 @@ impl CacheConfig {
     /// Getter for `num_gpu_blocks`
     pub fn num_gpu_blocks(&self) -> usize {
         self.num_gpu_blocks
+    }
+
+    /// Getter for `cache_dtype`
+    pub fn cache_dtype(&self) -> &'static str {
+        &self.cache_dtype
     }
 }
 
@@ -223,3 +228,25 @@ pub enum SchedulerConfigError {
     #[error("Failed verify scheduler config: `{0}")]
     FailedVerifySchedulerConfig(String),
 }
+
+/// Configuration for LLM model
+#[derive(Clone, Debug)]
+pub struct ModelConfig {
+    /// HuggingFace model identifier
+    model_id: String,
+    /// Dtype
+    dtype: String,
+    /// The model revision identifier
+    revision: String,
+    /// Maximum length of a sequence (including prompt and
+    /// output). If None, will be derived from the model.
+    max_model_len: usize,
+    /// Whether to disable sliding window. If True,
+    /// we will disable the sliding window functionality of the model.
+    /// If the model does not support sliding window, this argument is
+    /// ignored.
+    disable_sliding_window: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum ModelConfigError {}
