@@ -1010,15 +1010,18 @@ impl SequenceGroup {
 #[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
-    request_id: String,
+    pub request_id: String,
+    /// The block numbers that are already computed,
+    /// used in prefix caching
+    pub computed_block_numbers: Vec<i64>,
     /// Is prompt (bool)
-    is_prompt: bool,
+    pub is_prompt: bool,
     /// Next token chooser parameters
     pub next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria parameters
     pub stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    block_tables: HashMap<u64, Vec<i64>>,
+    pub block_tables: HashMap<u64, Vec<i64>>,
     /// Do sample (bool)
     pub do_sample: bool,
     /// Token chunk size
@@ -1057,6 +1060,7 @@ impl SequenceGroupMetadata {
 
         Self {
             request_id,
+            computed_block_numbers: vec![],
             is_prompt,
             sequence_data,
             next_token_chooser_params,

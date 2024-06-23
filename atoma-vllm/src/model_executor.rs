@@ -25,7 +25,11 @@ use crate::{
 pub trait ModelLoader {
     type FilePaths;
 
-    async fn fetch(api_key: String, model_name: String, revision: String) -> Result<Self::FilePaths, ModelLoaderError>;
+    async fn fetch(
+        api_key: String,
+        model_name: String,
+        revision: String,
+    ) -> Result<Self::FilePaths, ModelLoaderError>;
     async fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;

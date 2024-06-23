@@ -34,11 +34,11 @@ struct MockModel {}
 impl ModelLoader for MockModel {
     type FilePaths = ();
 
-    async fn fetch() -> Result<Self::FilePaths, ModelLoaderError> {
+    async fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
         Ok(())
     }
 
-    async fn load() -> Result<Self, ModelLoaderError> {
+    async fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 
@@ -48,6 +48,26 @@ impl ModelLoader for MockModel {
 
     fn eos_token_id(&self) -> Option<u32> {
         Some(EOS_TOKEN_ID)
+    }
+
+    fn head_size(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_attention_heads(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_layers(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_kv_heads(&self) -> usize {
+        unreachable!()
+    }
+
+    fn sliding_window(&self) -> Option<usize> {
+        unreachable!()
     }
 }
 
@@ -149,7 +169,7 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
+    let model = MockModel::load(())
         .await
         .expect("Failed to create mock model");
 
@@ -276,7 +296,7 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
+    let model = MockModel::load(())
         .await
         .expect("Failed to create mock model");
 

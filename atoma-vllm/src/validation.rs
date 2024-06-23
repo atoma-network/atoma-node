@@ -87,6 +87,10 @@ impl Validation {
             encoding.len()
         };
 
+        if input_len == 0 {
+            // TODO: handle the case in which input length == 0
+        }
+
         // Get total number of tokens
         // NOTE: we assume `input_len < 2^32`
         let max_new_tokens = if let Some(max_new_tokens) = max_new_tokens {
