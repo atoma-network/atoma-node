@@ -51,7 +51,7 @@ impl Config {
 }
 
 struct TensorParallelColumnLinear {
-    linear: Linear,
+    pub linear: Linear,
 }
 
 impl TensorParallelColumnLinear {
@@ -88,6 +88,72 @@ impl TensorParallelColumnLinear {
             .collect::<Result<Vec<_>>>()?;
         let weight = Tensor::cat(&weights, 0)?;
         Ok(Self::new(Linear::new(weight, None)))
+    }
+}
+
+struct AllGather {
+    comm: Rc<Comm>,
+}
+
+unsafe impl Sync for AllGather {}
+unsafe impl Send for AllGather {}
+
+impl CustomOp1 for AllGather {
+    fn name(&self) -> &'static str {
+        "all_gather"
+    }
+
+    fn cpu_fwd(&self, _s: &CpuStorage, _l: &Layout) -> Result<(CpuStorage, Shape)> {
+        candle::bail!("AllGather is never used on cpu")
+    }
+
+    #[cfg(feature = "cuda")]
+    fn cuda_fwd(
+        &self,
+        s: &candle::CudaStorage,
+        l: &Layout,
+    ) -> Result<(candle::CudaStorage, Shape)> {
+        use candle::{backend::BackendStorage, cuda_backend::WrapErr};
+        use cudarc::driver::DeviceSlice;
+        use half::{bf16, f16};
+
+        let elem_count = l.shape().elem_count();
+        let num_devices = self.comm.world_size();
+        let dev = s.device().clone();
+        let mut new_shape: Vec<usize> = l.shape().dims().to_vec();
+        new_shape.last_mut().map(|last| {
+            *last *= num_devices;
+        });
+        // new_shape[new_shape.len() - 1] *= num_devices;
+        let new_shape = Shape::from(new_shape);
+        let dst = match s.dtype() {
+            DType::BF16 => {
+                let s = s.as_cuda_slice::<bf16>()?;
+                let s = match l.contiguous_offsets() {
+                    Some((0, l)) if l == s.len() => s,
+                    Some(_) | None => candle::bail!("input has to be contiguous"),
+                };
+                let mut dst = unsafe { dev.alloc::<bf16>(elem_count * num_devices) }.w()?;
+                self.comm
+                    .all_gather(s, &mut dst)
+                    .map_err(candle::Error::debug)?;
+                candle::CudaStorage::wrap_cuda_slice(dst, dev)
+            }
+            DType::F16 => {
+                let s = s.as_cuda_slice::<f16>()?;
+                let s = match l.contiguous_offsets() {
+                    Some((0, l)) if l == s.len() => s,
+                    Some(_) | None => candle::bail!("input has to be contiguous"),
+                };
+                let mut dst = unsafe { dev.alloc::<f16>(elem_count * num_devices) }.w()?;
+                self.comm
+                    .all_gather(s, &mut dst)
+                    .map_err(candle::Error::debug)?;
+                candle::CudaStorage::wrap_cuda_slice(dst, dev)
+            }
+            dtype => candle::bail!("unsupported dtype {dtype:?}"),
+        };
+        Ok((dst, new_shape))
     }
 }
 
@@ -406,13 +472,15 @@ fn silu(xs: &Tensor) -> Result<Tensor> {
 }
 
 struct SparseMoeBlock {
+    rank: usize,
     gate: TensorParallelColumnLinear,
     experts: Vec<BlockSparseTop2MLP>,
     num_experts_per_tok: usize,
+    all_gather: AllGather,
 }
 
 impl SparseMoeBlock {
-    fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
+    fn new(rank: usize, cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
         let gate = TensorParallelColumnLinear::load(vb.pp("gate"), comm.clone())?;
         let mut experts = Vec::with_capacity(cfg.num_local_experts);
         let vb = vb.pp("experts");
@@ -420,7 +488,10 @@ impl SparseMoeBlock {
             let expert = BlockSparseTop2MLP::new(cfg, vb.pp(idx), &comm.clone())?;
             experts.push(expert)
         }
+        let all_gather = AllGather { comm: comm.clone() };
         Ok(SparseMoeBlock {
+            rank,
+            all_gather,
             gate,
             experts,
             num_experts_per_tok: cfg.num_experts_per_tok,
@@ -430,9 +501,10 @@ impl SparseMoeBlock {
 
 impl Module for SparseMoeBlock {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let (b_size, seq_len, hidden_dim) = xs.dims3()?;
-        let xs = xs.reshape(((), hidden_dim))?;
-        let router_logits = self.gate.forward(&xs)?;
+        let (b_size, seq_len, hidden_dim) = xs.dims3()?; // 1,1,4096
+        let xs = xs.reshape(((), hidden_dim))?; // 1x4096
+        let router_logits = self.gate.forward(&xs)?; // (1x4096)x(4096x1) = 1x1
+        let router_logits = router_logits.apply_op1_no_bwd(&self.all_gather)?; // 1x8
         let routing_weights = candle_nn::ops::softmax_last_dim(&router_logits)?;
 
         // In order to extract topk, we extract the data from the tensor and manipulate it
@@ -502,6 +574,7 @@ fn rms_norm(size: usize, eps: f64, vb: VarBuilder) -> Result<RmsNorm> {
 
 impl DecoderLayer {
     fn new(
+        rank: usize,
         rotary_emb: Arc<RotaryEmbedding>,
         cfg: &Config,
         vb: VarBuilder,
@@ -509,7 +582,7 @@ impl DecoderLayer {
         cache: Cache,
     ) -> Result<Self> {
         let self_attn = Attention::new(rotary_emb, cfg, vb.pp("self_attn"), &comm.clone(), cache)?;
-        let block_sparse_moe = SparseMoeBlock::new(cfg, vb.pp("block_sparse_moe"), comm)?;
+        let block_sparse_moe = SparseMoeBlock::new(rank, cfg, vb.pp("block_sparse_moe"), comm)?;
         let input_layernorm =
             rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("input_layernorm"))?;
         let post_attention_layernorm = rms_norm(
@@ -551,6 +624,7 @@ pub struct Model {
     sliding_window: usize,
     device: Device,
     dtype: DType,
+    all_gather: AllGather,
 }
 fn embedding(cfg: &Config, vb: VarBuilder) -> Result<Embedding> {
     let embeddings = vb.get((cfg.vocab_size, cfg.hidden_size), "weight")?;
@@ -558,7 +632,13 @@ fn embedding(cfg: &Config, vb: VarBuilder) -> Result<Embedding> {
 }
 
 impl Model {
-    pub fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>, cache: &Cache) -> Result<Self> {
+    pub fn new(
+        rank: usize,
+        cfg: &Config,
+        vb: VarBuilder,
+        comm: &Rc<Comm>,
+        cache: &Cache,
+    ) -> Result<Self> {
         let vb_m = vb.pp("model");
         let embed_tokens = embedding(cfg, vb_m.pp("embed_tokens"))?;
         let rotary_emb = Arc::new(RotaryEmbedding::new(vb.dtype(), cfg, vb_m.device())?);
@@ -566,6 +646,7 @@ impl Model {
         let vb_l = vb_m.pp("layers");
         for layer_idx in 0..cfg.num_hidden_layers {
             let layer = DecoderLayer::new(
+                rank,
                 rotary_emb.clone(),
                 cfg,
                 vb_l.pp(layer_idx),
@@ -576,6 +657,7 @@ impl Model {
         }
         let norm = rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb_m.pp("norm"))?;
         let lm_head = TensorParallelColumnLinear::load(vb.pp("lm_head"), comm.clone())?;
+        let all_gather = AllGather { comm: comm.clone() };
         Ok(Self {
             embed_tokens,
             layers,
@@ -584,6 +666,7 @@ impl Model {
             sliding_window: cfg.sliding_window,
             device: vb.device().clone(),
             dtype: vb.dtype(),
+            all_gather,
         })
     }
 
@@ -629,6 +712,7 @@ impl Model {
             xs = layer.forward(&xs, attention_mask.as_ref(), seqlen_offset)?
         }
         self.lm_head
-            .forward(&self.norm.forward(&xs.narrow(1, seq_len - 1, 1)?)?)
+            .forward(&self.norm.forward(&xs.narrow(1, seq_len - 1, 1)?)?)?
+            .apply_op1_no_bwd(&self.all_gather)
     }
 }

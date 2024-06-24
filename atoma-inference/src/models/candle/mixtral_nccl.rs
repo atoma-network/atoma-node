@@ -90,7 +90,7 @@ impl MixtralNcclWorker {
             )?
         };
         let cache = model::Cache::new(dtype, &config, &device)?;
-        let model = model::Model::new(&config, vb, &comm, &cache)?;
+        let model = model::Model::new(rank, &config, vb, &comm, &cache)?;
         let tokenizer = Tokenizer::from_file(tokenizer_file_path)?;
 
         Ok(Self {
@@ -148,9 +148,11 @@ impl MixtralNcclWorker {
             }
             tokens.push(next_token);
             if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
+                print!("{word}");
                 output.push_str(&word);
             }
         }
+        println!();
         let dt = start_gen.elapsed();
         if self.rank == 0 {
             if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
