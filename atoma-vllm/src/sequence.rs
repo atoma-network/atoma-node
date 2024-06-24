@@ -1011,9 +1011,6 @@ impl SequenceGroup {
 pub struct SequenceGroupMetadata {
     /// Request id
     pub request_id: String,
-    /// The block numbers that are already computed,
-    /// used in prefix caching
-    pub computed_block_numbers: Vec<i64>,
     /// Is prompt (bool)
     pub is_prompt: bool,
     /// Next token chooser parameters
@@ -1060,7 +1057,6 @@ impl SequenceGroupMetadata {
 
         Self {
             request_id,
-            computed_block_numbers: vec![],
             is_prompt,
             sequence_data,
             next_token_chooser_params,

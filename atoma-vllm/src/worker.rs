@@ -7,6 +7,7 @@ use crate::{
 };
 use candle::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
+use tokenizers::decoders::sequence;
 use tracing::{error, info_span, instrument, warn, Span};
 
 const PAD_SLOT_ID: i64 = -1;
@@ -152,7 +153,33 @@ where
             return Ok(());
         }
 
-        let model_input_tensors = self.prepare_input_tensors(sequence_groups_metadata)?;
+        let next_tokens_params: Vec<_> = sequence_groups_metadata
+            .iter()
+            .map(|metadata| metadata.next_token_chooser_params.clone())
+            .collect();
+        let stopping_params: Vec<_> = sequence_groups_metadata
+            .iter()
+            .map(|metadata| metadata.stopping_criteria_params.clone())
+            .collect();
+
+        let ModelInput {
+            input_tokens_tensor,
+            input_positions,
+            attention_metadata,
+            sequence_lengths,
+            query_lengths,
+            slot_mapping_tensor,
+            num_prefill_tokens,
+            num_decode_tokens,
+            num_prefills,
+        } = self.prepare_input_tensors(sequence_groups_metadata)?;
+
+        self.model.forward(
+            input_tokens_tensor,
+            input_positions,
+            &mut self.cache_engine.gpu_cache,
+            attention_metadata,
+        )?;
 
         Ok(())
     }
@@ -212,23 +239,11 @@ where
             .model
             .sliding_window()
             .map(|sw| (sw + self.cache_engine.block_size - 1) / self.cache_engine.block_size);
-        let mut block_aligned_sliding_window =
-            sliding_window_blocks.map(|bs| bs * self.cache_engine.block_size);
 
         for sequence_group_metadata in sequence_groups_metadata.iter() {
             let is_prompt = sequence_group_metadata.is_prompt;
 
             for (sequence_id, sequence_data) in sequence_group_metadata.sequence_data.iter() {
-                let computed_block_nums = sequence_group_metadata.computed_block_numbers;
-
-                if self.scheduler_config.enable_chunked_prefill()
-                    && !sequence_group_metadata.computed_block_numbers.is_empty()
-                {
-                    return Err(ModelWorkerError::InvalidChunkedPrefill(
-                        "chunked prefill cannot be used with prefix caching.".to_string(),
-                    ));
-                }
-
                 let context_length = if is_prompt {
                     sequence_data.get_num_computed_tokens()
                 } else {
@@ -246,13 +261,13 @@ where
                 let tokens = if is_prompt {
                     &sequence_data.get_token_ids()[context_length..sequence_length]
                 } else {
-                    // DON'T PANIC: we should not receive empty prompts
                     if sequence_data.get_last_token_id().is_none() {
                         error!("Empty prompts should not be received in `ModelWorker`");
                         return Err(ModelWorkerError::EmptyPrompt(
                             "Empty prompts should not be received in `ModelWorker`".into(),
                         ));
                     }
+                    // DON'T PANIC: we should not receive empty prompts
                     let last_token_id = sequence_data.get_last_token_id().unwrap();
                     &[last_token_id]
                 };
@@ -268,28 +283,29 @@ where
                 // Paged Attention. We can remove it if we make paged attn kernel
                 // to properly handle sliding window attention.
                 if self.model.sliding_window().is_some() && !is_prompt {
-                    sliding_sequence_length = self
-                        .model
-                        .sliding_window()
-                        .map(|sw| sequence_length.min(sw))
-                        .unwrap(); // DON'T PANIC: by the branch check
+                    // DON'T PANIC: by the branch check
+                    sliding_sequence_length =
+                        self.model.sliding_window().unwrap().min(sequence_length);
                     sliding_context_length = sliding_sequence_length - 1;
                 }
 
-                let block_table = if self.scheduler_config.enable_chunked_prefill() {
+                let block_table = if self.scheduler_config.enable_chunked_prefill() || !is_prompt {
+                    // DON'T PANIC: Unwrap is safe here because block_tables
+                    // should have allocated a block table for this sequence
                     let mut block_table = sequence_group_metadata
                         .block_tables
                         .get(sequence_id)
-                        .cloned()
-                        .unwrap(); // DON'T PANIC: At this point, `block_tables` has allocated a block table for the given sequence
-                    sliding_window_blocks.map(|current_sw_blocks| {
-                        block_table =
-                            block_table[(block_table.len() - current_sw_blocks - 1)..].to_vec();
-                    });
+                        .expect("Block table should be allocated for sequence on decoding phase")
+                        .clone();
 
-                    block_table.clone()
+                    if let Some(current_sw_blocks) = self.model.sliding_window() {
+                        let start = block_table.len().saturating_sub(current_sw_blocks);
+                        block_table = block_table[start..].to_vec();
+                    }
+
+                    block_table
                 } else {
-                    // Prefill without chunked prefill or memory profiling
+                    // Prefill without chunked prefill
                     vec![]
                 };
 
@@ -303,18 +319,21 @@ where
                 input_positions.extend((context_length as i64)..(sequence_length as i64));
 
                 if is_prompt {
-                    if sequence_group_metadata.sequence_data.keys().len() != 1 {
-                        error!("Prompt requests should only generate one sequence");
-                        return Err(ModelWorkerError::InvalidNumberSequences(
-                            "Prompt requests should only generate one sequence".into(),
-                        ));
-                    }
-
+                    debug_assert_eq!(
+                        sequence_group_metadata.sequence_data.keys().len(),
+                        1,
+                        "Prompt should have only one sequence ID"
+                    );
                     num_prefills += 1;
                     num_prefill_tokens += tokens.len();
                     decode_only = false;
                     prefill_sequence_lengths.push(sequence_length);
                 } else {
+                    debug_assert_eq!(
+                        query_length, 1,
+                        "Invalid query length: seq_len: {}, context_len: {}, query_len: {}",
+                        sequence_length, context_length, query_length
+                    );
                     num_decode_tokens += query_length;
                     decode_sequence_lengths.push(sliding_sequence_length);
                 }
@@ -332,7 +351,7 @@ where
                 let block_table = sequence_group_metadata
                     .block_tables
                     .get(sequence_id)
-                    .unwrap();
+                    .expect("Block table should exist for a sequence on decoding phase");
 
                 // Mask the [0, start_idx) tokens of the prompt with
                 // _PAD_SLOT_ID, where start_idx is max(0, seq_len -
@@ -346,44 +365,27 @@ where
                     .map(|sw| query_length.checked_sub(sw).unwrap_or(0))
                     .unwrap_or(0);
 
-                let mut block_number = 0;
-                let mut block_offset = 0;
-                let mut slot = 0;
-                for i in context_length..sequence_length {
+                slot_mapping.extend((context_length..sequence_length).map(|i| {
                     if i < start_index {
-                        slot_mapping.push(PAD_SLOT_ID);
-                        continue;
+                        PAD_SLOT_ID
+                    } else {
+                        let block_number = block_table[i / self.cache_engine.block_size];
+                        let block_offset = i % self.cache_engine.block_size;
+                        ((block_number as usize) * self.cache_engine.block_size + block_offset)
+                            as i64
                     }
-                    let block_table_index = i / self.cache_config.block_size;
-                    block_number = *block_table.get(block_table_index).unwrap(); // DON'T PANIC: there should be enough block numbers in block table
-                    block_offset = i % self.cache_engine.block_size;
-                    slot = (block_number as usize) * self.cache_config.block_size + block_offset;
-                    slot_mapping.push(slot as i64);
-                }
+                }));
             }
         }
 
         let batch_size = input_tokens.len();
-        // DON'T PANIC: query lengths should not be empty at this point,
-        // as `ModelWorker` does not expect empty requests
-        let max_query_len = *query_lengths.iter().max().unwrap();
+        let max_query_len = *query_lengths.iter().max().unwrap_or(&0);
         let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
-        // DON'T PANIC: block tables should not be empty at this point,
-        // as `ModelWorker` does not expect empty requests
-        let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
-        let mut block_tables_tensor = Tensor::zeros(
-            (block_tables.len(), max_block_table_len),
-            self.cache_engine.dtype,
-            &self.device,
-        )?;
 
-        for (i, block_table) in block_tables.into_iter().enumerate() {
-            let tmp_bt_tensor =
-                Tensor::from_iter(block_table, &self.device)?.reshape((1, block_table.len()))?;
-            block_tables_tensor = block_tables_tensor
-                .slice_assign(&[i..(i + 1), 0..block_table.len()], &tmp_bt_tensor)?;
-        }
+        let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
+        let block_tables_tensor =
+            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0, &self.device)?;
 
         let sequence_lengths: Vec<_> = sequence_lengths.into_iter().map(|s| s as i64).collect();
         let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
@@ -393,7 +395,8 @@ where
         let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?;
         seq_start_loc = seq_start_loc.slice_assign(&[1..], &cumsum_seq_lens)?;
 
-        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?.unsqueeze(0)?;
+        let input_tokens_tensor =
+            Tensor::new(input_tokens, &self.device)?.reshape((input_tokens.len(),))?;
         let input_positions_tensor = Tensor::new(input_positions, &self.device)?;
         let slot_mapping_tensor = Tensor::new(slot_mapping, &self.device)?;
 
@@ -512,7 +515,6 @@ impl CacheEngine {
         num_kv_heads: usize,
         sliding_window: Option<usize>,
     ) -> Result<Self, CacheEngineError> {
-        let dtype = DType::from_str(dtype)?;
         let mut this = Self {
             block_size: cache_config.block_size(),
             device,
@@ -608,4 +610,25 @@ pub enum CacheEngineError {
     CandleError(#[from] CandleError),
     #[error("DType parse error: `{0}`")]
     DTypeParseError(#[from] DTypeParseError),
+}
+
+pub(crate) mod utils {
+    use candle::{Device, Tensor, WithDType};
+
+    use super::ModelWorkerError;
+
+    pub(crate) fn make_tensor_with_pad<D: WithDType>(
+        x: Vec<Vec<D>>,
+        max_length: usize,
+        pad: D,
+        device: &Device,
+    ) -> Result<Tensor, ModelWorkerError> {
+        let mut padded_output = Vec::new();
+        for mut x_i in x {
+            x_i.extend([pad].repeat(max_length - x_i.len()));
+            let shape = (x_i.len(),);
+            padded_output.push(Tensor::from_vec(x_i, shape, device)?);
+        }
+        Ok(Tensor::cat(&padded_output[..], 0)?)
+    }
 }
