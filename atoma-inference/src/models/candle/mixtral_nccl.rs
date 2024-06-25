@@ -110,6 +110,7 @@ impl MixtralNcclWorker {
 
     pub fn run(&mut self, input: TextModelInput) -> Result<TextModelOutput, ModelError> {
         self.tokenizer.clear();
+        self.model.clear_cache();
 
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);

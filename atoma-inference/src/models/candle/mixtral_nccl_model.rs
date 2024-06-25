@@ -422,6 +422,10 @@ impl Attention {
         let attn_output = self.o_proj.forward(&attn_output)?;
         Ok(attn_output)
     }
+
+    pub fn clear_cache(&mut self) {
+        self.kv_cache = None;
+    }
 }
 
 struct BlockSparseTop2MLP {
@@ -596,6 +600,10 @@ impl DecoderLayer {
             .apply(&self.block_sparse_moe)?;
         residual + xs
     }
+
+    pub fn clear_cache(&mut self) {
+        self.self_attn.clear_cache();
+    }
 }
 
 pub struct Model {
@@ -684,5 +692,11 @@ impl Model {
         self.lm_head
             .forward(&self.norm.forward(&xs.narrow(1, seq_len - 1, 1)?)?)?
             .apply_op1_no_bwd(&self.all_gather)
+    }
+
+    pub fn clear_cache(&mut self) {
+        for layer in self.layers.iter_mut() {
+            layer.clear_cache();
+        }
     }
 }
