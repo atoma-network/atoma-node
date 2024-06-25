@@ -9,8 +9,6 @@ use candle_nn::{Activation, Embedding, Linear, RmsNorm};
 use cudarc::nccl::Comm;
 use serde::Deserialize;
 
-const MAX_SEQ_LEN: usize = 2048;
-
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Config {
     pub(crate) vocab_size: usize,
@@ -43,6 +41,25 @@ impl Config {
             rms_norm_eps: 1e-5,
             rope_theta: 1e6,
             sliding_window: 4096,
+            num_experts_per_tok: 2,
+            num_local_experts: 8,
+            use_flash_attn,
+        }
+    }
+
+    pub fn v0_1_8x22b(use_flash_attn: bool) -> Self {
+        Self {
+            vocab_size: 32000,
+            hidden_size: 6144,
+            intermediate_size: 16384,
+            num_hidden_layers: 56,
+            num_attention_heads: 48,
+            num_key_value_heads: 8,
+            hidden_act: Activation::Silu,
+            max_position_embeddings: 65536,
+            rms_norm_eps: 1e-5,
+            rope_theta: 1e6,
+            sliding_window: 6144, // I'm assuming that the sliding window is the same as the hidden size
             num_experts_per_tok: 2,
             num_local_experts: 8,
             use_flash_attn,
@@ -290,33 +307,6 @@ impl RotaryEmbedding {
     }
 }
 
-#[derive(Clone)]
-pub struct Cache {
-    cos: Tensor,
-    sin: Tensor,
-}
-
-impl Cache {
-    pub fn new(dtype: DType, config: &Config, device: &Device) -> Result<Self> {
-        // precompute freqs_cis
-        let n_elem = config.hidden_size / config.num_attention_heads;
-        let theta: Vec<_> = (0..n_elem)
-            .step_by(2)
-            .map(|i| 1f64 / config.rope_theta.powf(i as f64 / n_elem as f64))
-            .collect();
-        let theta = Tensor::new(theta.as_slice(), device)?;
-        let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
-            .to_dtype(DType::F64)?
-            .reshape((MAX_SEQ_LEN, 1))?
-            .matmul(&theta.reshape((1, theta.elem_count()))?)?;
-        // This is different from the paper, see:
-        // https://github.com/huggingface/transformers/blob/6112b1c6442aaf7affd2b0676a1cd4eee30c45cf/src/transformers/models/llama/modeling_llama.py#L112
-        let cos = idx_theta.cos()?.to_dtype(dtype)?;
-        let sin = idx_theta.sin()?.to_dtype(dtype)?;
-        Ok(Self { cos, sin })
-    }
-}
-
 struct Attention {
     qkv_proj: TensorParallelColumnLinear,
     o_proj: TensorParallelRowLinear,
@@ -328,7 +318,6 @@ struct Attention {
     rotary_emb: Arc<RotaryEmbedding>,
     kv_cache: Option<(Tensor, Tensor)>,
     use_flash_attn: bool,
-    cache: Cache,
 }
 
 impl Attention {
@@ -337,7 +326,6 @@ impl Attention {
         cfg: &Config,
         vb: VarBuilder,
         comm: &Rc<Comm>,
-        cache: Cache,
     ) -> Result<Self> {
         let hidden_sz = cfg.hidden_size;
         let num_heads = cfg.num_attention_heads;
@@ -361,7 +349,6 @@ impl Attention {
             rotary_emb,
             kv_cache: None,
             use_flash_attn: cfg.use_flash_attn,
-            cache,
         })
     }
 
@@ -446,7 +433,6 @@ struct BlockSparseTop2MLP {
 
 impl BlockSparseTop2MLP {
     fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
-        let intermediate_sz = cfg.intermediate_size;
         let w1 = TensorParallelColumnLinear::load(vb.pp("w1"), comm.clone())?;
         let w2 = TensorParallelRowLinear::load(vb.pp("w2"), comm.clone())?;
         let w3 = TensorParallelColumnLinear::load(vb.pp("w3"), comm.clone())?;
@@ -472,7 +458,6 @@ fn silu(xs: &Tensor) -> Result<Tensor> {
 }
 
 struct SparseMoeBlock {
-    rank: usize,
     gate: TensorParallelColumnLinear,
     experts: Vec<BlockSparseTop2MLP>,
     num_experts_per_tok: usize,
@@ -480,7 +465,7 @@ struct SparseMoeBlock {
 }
 
 impl SparseMoeBlock {
-    fn new(rank: usize, cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
+    fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
         let gate = TensorParallelColumnLinear::load(vb.pp("gate"), comm.clone())?;
         let mut experts = Vec::with_capacity(cfg.num_local_experts);
         let vb = vb.pp("experts");
@@ -490,7 +475,6 @@ impl SparseMoeBlock {
         }
         let all_gather = AllGather { comm: comm.clone() };
         Ok(SparseMoeBlock {
-            rank,
             all_gather,
             gate,
             experts,
@@ -574,15 +558,13 @@ fn rms_norm(size: usize, eps: f64, vb: VarBuilder) -> Result<RmsNorm> {
 
 impl DecoderLayer {
     fn new(
-        rank: usize,
         rotary_emb: Arc<RotaryEmbedding>,
         cfg: &Config,
         vb: VarBuilder,
         comm: &Rc<Comm>,
-        cache: Cache,
     ) -> Result<Self> {
-        let self_attn = Attention::new(rotary_emb, cfg, vb.pp("self_attn"), &comm.clone(), cache)?;
-        let block_sparse_moe = SparseMoeBlock::new(rank, cfg, vb.pp("block_sparse_moe"), comm)?;
+        let self_attn = Attention::new(rotary_emb, cfg, vb.pp("self_attn"), &comm.clone())?;
+        let block_sparse_moe = SparseMoeBlock::new(cfg, vb.pp("block_sparse_moe"), comm)?;
         let input_layernorm =
             rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("input_layernorm"))?;
         let post_attention_layernorm = rms_norm(
@@ -632,27 +614,15 @@ fn embedding(cfg: &Config, vb: VarBuilder) -> Result<Embedding> {
 }
 
 impl Model {
-    pub fn new(
-        rank: usize,
-        cfg: &Config,
-        vb: VarBuilder,
-        comm: &Rc<Comm>,
-        cache: &Cache,
-    ) -> Result<Self> {
+    pub fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
         let vb_m = vb.pp("model");
         let embed_tokens = embedding(cfg, vb_m.pp("embed_tokens"))?;
         let rotary_emb = Arc::new(RotaryEmbedding::new(vb.dtype(), cfg, vb_m.device())?);
         let mut layers = Vec::with_capacity(cfg.num_hidden_layers);
         let vb_l = vb_m.pp("layers");
         for layer_idx in 0..cfg.num_hidden_layers {
-            let layer = DecoderLayer::new(
-                rank,
-                rotary_emb.clone(),
-                cfg,
-                vb_l.pp(layer_idx),
-                &comm.clone(),
-                cache.clone(),
-            )?;
+            let layer =
+                DecoderLayer::new(rotary_emb.clone(), cfg, vb_l.pp(layer_idx), &comm.clone())?;
             layers.push(layer)
         }
         let norm = rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb_m.pp("norm"))?;

@@ -8,7 +8,7 @@ use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use crate::{
     bail,
@@ -25,7 +25,7 @@ use cudarc::nccl::safe::{Comm, Id};
 
 use super::{hub_load_safetensors, mixtral_nccl_model as model};
 
-/// `MixtralModel` - encapsulates a Mixtral model
+/// `MixtralNcclModel` - encapsulates a Mixtral model
 /// together with additional metadata, necessary
 /// to run inference
 pub struct MixtralNcclModel {
@@ -60,7 +60,6 @@ struct MixtralNcclWorker {
     device: Device,
     tokenizer: TokenOutputStream,
     model: model::Model,
-    model_type: ModelType,
     dtype: DType,
 }
 
@@ -81,7 +80,15 @@ impl MixtralNcclWorker {
             Rc::new(Comm::from_rank(device, rank, num_shards, id).map_err(ModelError::NcclError)?);
         info!("Rank {rank:?} spawned");
         let device = Device::new_cuda(device_id)?;
-        let config = Config::v0_1_8x7b(true);
+        let config = match model_type {
+            ModelType::Mixtral8x7bV01 | ModelType::Mixtral8x7bInstructV01 => {
+                Config::v0_1_8x7b(true)
+            }
+            ModelType::Mixtral8x22bV01 | ModelType::Mixtral8x22bInstructV01 => {
+                Config::v0_1_8x22b(true)
+            }
+            _ => bail!("Unsupported model type: {model_type}"),
+        };
         let vb = unsafe {
             candle_nn::var_builder::ShardedSafeTensors::var_builder(
                 model_weights_file_paths,
@@ -89,15 +96,13 @@ impl MixtralNcclWorker {
                 &device,
             )?
         };
-        let cache = model::Cache::new(dtype, &config, &device)?;
-        let model = model::Model::new(rank, &config, vb, &comm, &cache)?;
+        let model = model::Model::new(&config, vb, &comm)?;
         let tokenizer = Tokenizer::from_file(tokenizer_file_path)?;
 
         Ok(Self {
             rank,
             device,
             model,
-            model_type,
             tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
             dtype,
         })
@@ -187,6 +192,7 @@ pub struct LlmLoadData {
     pub dtype: DType,
     /// Vector of all the downloaded model weights file paths
     pub file_paths: Vec<PathBuf>,
+    pub tokenizer_filename: PathBuf,
     /// The model type, to identify the model (e.g. Mixtral8x7)
     pub model_type: ModelType,
     pub device_ids: Vec<usize>,
@@ -197,6 +203,7 @@ impl ModelTrait for MixtralNcclModel {
     type Output = TextModelOutput;
     type LoadData = LlmLoadData;
 
+    #[instrument(skip_all)]
     fn fetch(
         api_key: String,
         cache_dir: PathBuf,
@@ -214,19 +221,19 @@ impl ModelTrait for MixtralNcclModel {
             .with_token(Some(api_key))
             .with_cache_dir(cache_dir)
             .build()?;
-        let repo_id = ModelType::Mixtral8x7b.repo().to_string();
-        let revision = ModelType::Mixtral8x7b.default_revision().to_string();
+        let repo_id = ModelType::Mixtral8x7bV01.repo().to_string();
+        let revision = ModelType::Mixtral8x7bV01.default_revision().to_string();
         let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
 
         let tokenizer_filename = repo.get("tokenizer.json")?;
         let weight_filenames = hub_load_safetensors(&repo, "model.safetensors.index.json")?;
         let mut file_paths = Vec::with_capacity(1 + weight_filenames.len());
-        file_paths.push(tokenizer_filename);
         file_paths.extend(weight_filenames);
 
         Ok(Self::LoadData {
             dtype: DType::from_str(&config.dtype())?,
             file_paths,
+            tokenizer_filename,
             model_type: ModelType::from_str(&config.model_id())?,
             device_ids: config.device_ids(),
         })
@@ -236,6 +243,7 @@ impl ModelTrait for MixtralNcclModel {
         self.model_type.clone()
     }
 
+    #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
@@ -256,22 +264,19 @@ impl ModelTrait for MixtralNcclModel {
             let model_type = load_data.model_type.clone();
             let stream_tx = stream_tx.clone();
             let device_id = load_data.device_ids[rank];
+            let tokenizer_filename = load_data.tokenizer_filename.clone();
             thread::spawn(move || -> Result<(), ModelError> {
-                let mixtral_worker = MixtralNcclWorker::new(
+                let mut mixtral_worker = MixtralNcclWorker::new(
                     rank,
                     num_shards,
                     id,
                     dtype,
-                    &file_paths[1..],
-                    &file_paths[0],
+                    &file_paths,
+                    &tokenizer_filename,
                     model_type,
                     device_id,
                     stream_tx,
-                );
-                if let Err(e) = &mixtral_worker {
-                    error!("Error: {:?}", e);
-                }
-                let mut mixtral_worker = mixtral_worker?;
+                )?;
                 info!("Starting inference loop on rank {rank}");
                 loop {
                     let input = to_workers_receiver.blocking_recv()?;
@@ -292,6 +297,7 @@ impl ModelTrait for MixtralNcclModel {
         })
     }
 
+    #[instrument(skip_all)]
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         self.to_workers_sender.send(input).map_err(Box::new)?;
         self.output_receiver

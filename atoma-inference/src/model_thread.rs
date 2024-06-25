@@ -257,7 +257,10 @@ pub(crate) fn dispatch_model_thread(
                 model_receiver,
                 stream_tx,
             ),
-            ModelType::Mixtral8x7b => spawn_model_thread::<MixtralNcclModel>(
+            ModelType::Mixtral8x7bV01
+            | ModelType::Mixtral8x7bInstructV01
+            | ModelType::Mixtral8x22bV01
+            | ModelType::Mixtral8x22bInstructV01 => spawn_model_thread::<MixtralNcclModel>(
                 model_name,
                 api_key,
                 cache_dir,
@@ -316,7 +319,10 @@ pub(crate) fn dispatch_model_thread(
                 model_receiver,
                 stream_tx,
             ),
-            ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+            ModelType::Mixtral8x7bV01
+            | ModelType::Mixtral8x7bInstructV01
+            | ModelType::Mixtral8x22bV01
+            | ModelType::Mixtral8x22bInstructV01 => spawn_model_thread::<MixtralModel>(
                 model_name,
                 api_key,
                 cache_dir,

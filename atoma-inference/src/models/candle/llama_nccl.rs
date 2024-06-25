@@ -40,7 +40,6 @@ struct LlamaNcclWorker {
     config: model::Config,
     tokenizer: TokenOutputStream,
     model: model::Llama,
-    model_type: ModelType,
     cache: model::Cache,
 }
 
@@ -53,7 +52,6 @@ impl LlamaNcclWorker {
         config_file_path: &PathBuf,
         model_weights_file_paths: &[PathBuf],
         tokenizer_file_path: &PathBuf,
-        model_type: ModelType,
         device_id: usize,
         stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
@@ -81,7 +79,6 @@ impl LlamaNcclWorker {
             device,
             config,
             model,
-            model_type,
             tokenizer: TokenOutputStream::new(tokenizer, stream_tx),
             cache,
         })
@@ -245,7 +242,6 @@ impl ModelTrait for LlamaNcclModel {
             let file_paths = load_data.file_paths.clone();
             let mut to_workers_receiver = to_workers_sender.subscribe();
             let output_sender = output_sender.clone();
-            let model_type = load_data.model_type.clone();
             let stream_tx = stream_tx.clone();
             let device_id = load_data.device_ids[rank];
             let span = Span::current();
@@ -259,7 +255,6 @@ impl ModelTrait for LlamaNcclModel {
                     &file_paths[0],
                     &file_paths[2..],
                     &file_paths[1],
-                    model_type,
                     device_id,
                     stream_tx,
                 );

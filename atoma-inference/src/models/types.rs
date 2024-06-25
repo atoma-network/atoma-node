@@ -49,7 +49,10 @@ pub enum ModelType {
     Mistral7bV02,
     Mistral7bInstructV01,
     Mistral7bInstructV02,
-    Mixtral8x7b,
+    Mixtral8x7bV01,
+    Mixtral8x7bInstructV01,
+    Mixtral8x22bInstructV01,
+    Mixtral8x22bV01,
     Phi3Mini,
     StableDiffusionV1_5,
     StableDiffusionV2_1,
@@ -110,7 +113,10 @@ impl FromStr for ModelType {
             "mistral_7bv02" => Ok(Self::Mistral7bV02),
             "mistral_7b-instruct-v01" => Ok(Self::Mistral7bInstructV01),
             "mistral_7b-instruct-v02" => Ok(Self::Mistral7bInstructV02),
-            "mixtral_8x7b" => Ok(Self::Mixtral8x7b),
+            "mixtral_8x7b-v01" => Ok(Self::Mixtral8x7bV01),
+            "mixtral_8x7b-instruct-v01" => Ok(Self::Mixtral8x7bInstructV01),
+            "mixtral_8x22b-v01" => Ok(Self::Mixtral8x22bV01),
+            "mixtral_8x22b-instruct-v01" => Ok(Self::Mixtral8x22bInstructV01),
             "phi_3-mini" => Ok(Self::Phi3Mini),
             "stable_diffusion_v1-5" => Ok(Self::StableDiffusionV1_5),
             "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
@@ -175,7 +181,10 @@ impl ModelType {
             Self::Mistral7bV02 => "mistralai/Mistral-7B-v0.2",
             Self::Mistral7bInstructV01 => "mistralai/Mistral-7B-Instruct-v0.1",
             Self::Mistral7bInstructV02 => "mistralai/Mistral-7B-Instruct-v0.2",
-            Self::Mixtral8x7b => "mistralai/Mixtral-8x7B-v0.1",
+            Self::Mixtral8x7bV01 => "mistralai/Mixtral-8x7B-v0.1",
+            Self::Mixtral8x7bInstructV01 => "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            Self::Mixtral8x22bV01 => "mistralai/Mixtral-8x22B-v0.1",
+            Self::Mixtral8x22bInstructV01 => "mistralai/Mixtral-8x22B-Instruct-v0.1",
             Self::Phi3Mini => "microsoft/Phi-3-mini-4k-instruct",
             Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
             Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
@@ -229,7 +238,10 @@ impl ModelType {
             | Self::Mistral7bV02
             | Self::Mistral7bInstructV01
             | Self::Mistral7bInstructV02
-            | Self::Mixtral8x7b
+            | Self::Mixtral8x7bV01
+            | Self::Mixtral8x7bInstructV01
+            | Self::Mixtral8x22bV01
+            | Self::Mixtral8x22bInstructV01
             | Self::Phi3Mini
             | Self::QwenW0_5b
             | Self::QwenW1_8b
@@ -294,7 +306,10 @@ impl Display for ModelType {
             Self::Mistral7bV02 => write!(f, "mistral_7bv02"),
             Self::Mistral7bInstructV01 => write!(f, "mistral_7b-instruct-v01"),
             Self::Mistral7bInstructV02 => write!(f, "mistral_7b-instruct-v02"),
-            Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
+            Self::Mixtral8x7bV01 => write!(f, "mixtral_8x7b-v01"),
+            Self::Mixtral8x7bInstructV01 => write!(f, "mixtral_8x7b-instruct-v01"),
+            Self::Mixtral8x22bV01 => write!(f, "mixtral_8x22b-v01"),
+            Self::Mixtral8x22bInstructV01 => write!(f, "mixtral_8x22b-instruct-v01"),
             Self::Phi3Mini => write!(f, "phi_3-mini"),
             Self::QwenW0_5b => write!(f, "qwen_w0.5b"),
             Self::QwenW1_8b => write!(f, "qwen_w1.8b"),
