@@ -45,9 +45,9 @@ impl FirebaseOutputManager {
         let local_id = self.auth.get_local_id()?;
         let mut url = self.firebase_url.clone();
         {
-            let mut path_segment = url.path_segments_mut().map_err(|_| {
-                AtomaOutputManagerError::UrlError("URL is cannot-be-a-base".to_string())
-            })?;
+            let mut path_segment = url
+                .path_segments_mut()
+                .map_err(|_| AtomaOutputManagerError::UrlError("URL is not valid".to_string()))?;
             path_segment.push("data/");
             path_segment.push(&format!("{}.json", output_metadata.ticket_id));
         }
