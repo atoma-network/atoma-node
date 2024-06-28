@@ -38,7 +38,7 @@ impl AtomaOutputManager {
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
         let firebase_output_manager = FirebaseOutputManager::new(
-            config.firebase_uri,
+            config.firebase_url,
             config.firebase_email,
             config.firebase_password,
             config.firebase_api_key,
@@ -94,4 +94,8 @@ pub enum AtomaOutputManagerError {
     InvalidOutputDestiny(String),
     #[error("Firebase authentication error: `{0}`")]
     FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
+    #[error("Url error: `{0}`")]
+    UrlError(String),
+    #[error("Url parse error: `{0}`")]
+    UrlParseError(#[from] url::ParseError),
 }
