@@ -16,10 +16,6 @@ pub mod llama;
 pub mod llama_nccl;
 #[cfg(feature = "nccl")]
 mod llama_nccl_model;
-#[cfg(feature = "nccl")]
-pub mod mixtral_nccl;
-#[cfg(feature = "nccl")]
-mod mixtral_nccl_model;
 
 pub mod mamba;
 pub mod mistral;

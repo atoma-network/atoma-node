@@ -72,8 +72,8 @@ impl ModelTrait for MixtralModel {
             .with_token(Some(api_key))
             .with_cache_dir(cache_dir)
             .build()?;
-        let repo_id = ModelType::Mixtral8x7bV01.repo().to_string();
-        let revision = ModelType::Mixtral8x7bV01.default_revision().to_string();
+        let repo_id = ModelType::Mixtral8x7b.repo().to_string();
+        let revision = ModelType::Mixtral8x7b.default_revision().to_string();
         let repo = api.repo(Repo::with_revision(repo_id, RepoType::Model, revision));
 
         let tokenizer_filename = repo.get("tokenizer.json")?;
@@ -85,7 +85,7 @@ impl ModelTrait for MixtralModel {
         let device = device(config.device_first_id())?;
 
         Ok(Self::LoadData {
-            model_type: ModelType::Mixtral8x7bV01,
+            model_type: ModelType::Mixtral8x7b,
             file_paths,
             device,
             dtype: DType::from_str(&config.dtype())?,
@@ -123,7 +123,7 @@ impl ModelTrait for MixtralModel {
     }
 
     fn model_type(&self) -> ModelType {
-        ModelType::Mixtral8x7bV01
+        ModelType::Mixtral8x7b
     }
 
     #[instrument(skip_all)]

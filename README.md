@@ -115,10 +115,7 @@ The supported models currently are:
 | mistral_7bv02                      | mistralai/Mistral-7B-v0.2                |
 | mistral_7b-instruct-v01            | mistralai/Mistral-7B-Instruct-v0.1       |
 | mistral_7b-instruct-v02            | mistralai/Mistral-7B-Instruct-v0.2       |
-| mixtral_8x7b-v01                   | mistralai/Mixtral-8x7B-v0.1              |
-| mixtral_8x7b-instruct-v01          | mistralai/Mixtral-8x7B-Instruct-v0.1     |
-| mixtral_8x22b-v01                  | mistralai/Mixtral-8x22B-v0.1             |
-| mixtral_8x22b-instruct-v01         | mistralai/Mixtral-8x22B-Instruct-v0.1    |
+| mixtral_8x7b                       | mistralai/Mixtral-8x7B-v0.1              |
 | phi_3-mini                         | microsoft/Phi-3-mini-4k-instruct         |
 | stable_diffusion_v1-5              | runwayml/stable-diffusion-v1-5           |
 | stable_diffusion_v2-1              | stabilityai/stable-diffusion-2-1         |
