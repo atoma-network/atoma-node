@@ -10,6 +10,8 @@ use tracing::{debug, error, info, instrument, warn, Span};
 
 #[cfg(feature = "nccl")]
 use crate::models::candle::llama_nccl::LlamaNcclModel;
+#[cfg(feature = "nccl")]
+use crate::models::candle::mixtral_nccl::MixtralNcclModel;
 
 use crate::models::{
     candle::{
@@ -255,6 +257,17 @@ pub(crate) fn dispatch_model_thread(
                 model_receiver,
                 stream_tx,
             ),
+            ModelType::Mixtral8x7bV01
+            | ModelType::Mixtral8x7bInstructV01
+            | ModelType::Mixtral8x22bV01
+            | ModelType::Mixtral8x22bInstructV01 => spawn_model_thread::<MixtralNcclModel>(
+                model_name,
+                api_key,
+                cache_dir,
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
             _ => panic!("This model is not supported"),
         }
     } else {
@@ -306,7 +319,10 @@ pub(crate) fn dispatch_model_thread(
                 model_receiver,
                 stream_tx,
             ),
-            ModelType::Mixtral8x7b => spawn_model_thread::<MixtralModel>(
+            ModelType::Mixtral8x7bV01
+            | ModelType::Mixtral8x7bInstructV01
+            | ModelType::Mixtral8x22bV01
+            | ModelType::Mixtral8x22bInstructV01 => spawn_model_thread::<MixtralModel>(
                 model_name,
                 api_key,
                 cache_dir,
