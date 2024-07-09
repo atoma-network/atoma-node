@@ -90,7 +90,7 @@ impl AtomaStreamer {
             let mut path_segment = url
                 .path_segments_mut()
                 .map_err(|_| AtomaStreamerError::UrlError("URL is cannot-be-a-base".to_string()))?;
-            path_segment.push("data/");
+            path_segment.push("data");
             path_segment.push(&format!("{tx_digest}.json"));
         }
         url.set_query(Some(&format!("auth={token}")));
