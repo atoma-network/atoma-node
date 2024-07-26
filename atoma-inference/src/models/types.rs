@@ -40,6 +40,12 @@ pub enum ModelType {
     Llama3_8b,
     Llama3Instruct8b,
     Llama3_70b,
+    Llama31_8b,
+    Llama31Instruct8b,
+    Llama31_70b,
+    Llama31Instruct70b,
+    Llama31_405b,
+    Llama31Instruct405b,
     Mamba130m,
     Mamba370m,
     Mamba790m,
@@ -104,6 +110,12 @@ impl FromStr for ModelType {
             "llama3_8b" => Ok(Self::Llama3_8b),
             "llama3_instruct_8b" => Ok(Self::Llama3Instruct8b),
             "llama3_70b" => Ok(Self::Llama3_70b),
+            "llama31_8b" => Ok(Self::Llama31_8b),
+            "llama31_instruct8b" => Ok(Self::Llama31Instruct8b),
+            "llama31_70b" => Ok(Self::Llama31_70b),
+            "llama31_instruct70b" => Ok(Self::Llama31Instruct70b),
+            "llama31_405b" => Ok(Self::Llama31_405b),
+            "llama31_instruct405b" => Ok(Self::Llama31Instruct405b),
             "mamba_130m" => Ok(Self::Mamba130m),
             "mamba_370m" => Ok(Self::Mamba370m),
             "mamba_790m" => Ok(Self::Mamba790m),
@@ -172,6 +184,12 @@ impl ModelType {
             Self::Llama3_8b => "meta-llama/Meta-Llama-3-8B",
             Self::Llama3Instruct8b => "meta-llama/Meta-Llama-3-8B-Instruct",
             Self::Llama3_70b => "meta-llama/Meta-Llama-3-70B",
+            Self::Llama31_8b => "meta-llama/Meta-Llama-3.1-8B",
+            Self::Llama31Instruct8b => "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            Self::Llama31_70b => "meta-llama/Meta-Llama-3.1-70B",
+            Self::Llama31Instruct70b => "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            Self::Llama31_405b => "meta-llama/Meta-Llama-3.1-405B",
+            Self::Llama31Instruct405b => "meta-llama/Meta-Llama-3.1-405B-Instruct",
             Self::Mamba130m => "state-spaces/mamba-130m",
             Self::Mamba370m => "state-spaces/mamba-370m",
             Self::Mamba790m => "state-spaces/mamba-790m",
@@ -234,6 +252,12 @@ impl ModelType {
             | Self::Llama3_8b
             | Self::Llama3Instruct8b
             | Self::Llama3_70b
+            | Self::Llama31_8b
+            | Self::Llama31Instruct8b
+            | Self::Llama31_70b
+            | Self::Llama31Instruct70b
+            | Self::Llama31_405b
+            | Self::Llama31Instruct405b
             | Self::Mistral7bV01
             | Self::Mistral7bV02
             | Self::Mistral7bInstructV01
@@ -297,6 +321,12 @@ impl Display for ModelType {
             Self::Llama3_8b => write!(f, "llama3_8b"),
             Self::Llama3Instruct8b => write!(f, "llama3_instruct_8b"),
             Self::Llama3_70b => write!(f, "llama3_70b"),
+            Self::Llama31_8b => write!(f, "llama31_8b"),
+            Self::Llama31Instruct8b => write!(f, "llama31_instruct8b"),
+            Self::Llama31_70b => write!(f, "llama31_70b"),
+            Self::Llama31Instruct70b => write!(f, "llama31_instruct70b"),
+            Self::Llama31_405b => write!(f, "llama31_405b"),
+            Self::Llama31Instruct405b => write!(f, "llama31_instruct405b"),
             Self::Mamba130m => write!(f, "mamba_130m"),
             Self::Mamba370m => write!(f, "mamba_370m"),
             Self::Mamba790m => write!(f, "mamba_790m"),
