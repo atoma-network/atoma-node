@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use async_trait::async_trait;
+use candle::Tensor;
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::{
@@ -15,9 +16,9 @@ use tracing::{error, info, instrument, trace};
 use crate::{
     sequence::{ExecuteModelRequest, LogProb, SequenceGroupOutput, SequenceOutput},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
+    worker::{ModelWorker, ModelWorkerError},
 };
 
-#[async_trait]
 /// `ModelLoader` trait - interface for fetching
 /// and loading a LLM model weights. Also has a method
 /// providing the `eos_token_id` for the current model's
@@ -25,12 +26,12 @@ use crate::{
 pub trait ModelLoader {
     type FilePaths;
 
-    async fn fetch(
+    fn fetch(
         api_key: String,
         model_name: String,
         revision: String,
     ) -> Result<Self::FilePaths, ModelLoaderError>;
-    async fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
+    fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
     fn cache_dir(&self) -> PathBuf;
@@ -45,16 +46,22 @@ pub trait ModelLoader {
 /// `ModelExecutor` trait - interface for running AI inference
 /// from a LLM
 pub trait ModelExecutor: ModelLoader {
-    type Input: From<ExecuteModelRequest>;
-    type Logits: Clone;
+    type AttentionMetadata;
     type Output: Into<u32>;
 
-    fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError>;
+    fn forward(
+        &mut self,
+        input_tensor: &Tensor,
+        input_positions: &Tensor,
+        selected_token_positions: &Tensor,
+        attention_metadata: Self::AttentionMetadata,
+    ) -> Result<Tensor, ModelExecutorError>;
+    fn compute_logits(&mut self, hidden_states: &Tensor) -> Result<Tensor, ModelExecutorError>;
     fn sample(
         &mut self,
-        input: Self::Logits,
-        next_token_params: NextTokenChooserParameters,
-        stopping_params: StoppingCriteriaParameters,
+        input: &Tensor,
+        next_token_params: Vec<NextTokenChooserParameters>,
+        stopping_params: Vec<StoppingCriteriaParameters>,
     ) -> Result<Self::Output, ModelExecutorError>;
 }
 
@@ -72,7 +79,7 @@ pub struct ModelThreadCommand {
 /// It receives new coming requests and start processing
 /// AI inference on it.
 pub struct ModelThread<M: ModelExecutor> {
-    model: M,
+    worker: ModelWorker<M>,
     receiver: mpsc::UnboundedReceiver<ModelThreadCommand>,
 }
 
@@ -103,8 +110,8 @@ where
                 .map(|s| s.stopping_criteria_params.clone())
                 .collect();
 
-            let logits = match self.model.forward(request.into()) {
-                Ok(logits) => logits,
+            let output = match self.worker.execute_model(request) {
+                Ok(output) => hidden_states,
                 Err(e) => {
                     error!("Failed to run forward pass on model, with error: {e}");
                     return Err(ModelThreadError::ModelExecutorError(e));
@@ -113,52 +120,52 @@ where
 
             let mut responses = Vec::with_capacity(next_token_chooser_params.len());
 
-            // TODO: should we parallelize this loop, with rayon or within the async runtime ?
-            for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
-                .iter()
-                .zip(stopping_params.iter().zip(sequence_groups_metadata))
-            {
-                let mut outputs = HashMap::with_capacity(metadata.sequence_data.len());
+            // // TODO: should we parallelize this loop, with rayon or within the async runtime ?
+            // for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
+            //     .iter()
+            //     .zip(stopping_params.iter().zip(sequence_groups_metadata))
+            // {
+            //     let mut outputs = HashMap::with_capacity(metadata.sequence_data.len());
 
-                for sequence_id in metadata.sequence_data.keys() {
-                    let decode_token = match self.model.sample(
-                        logits.clone(),
-                        next_token_params.clone(),
-                        stopping_params.clone(),
-                    ) {
-                        Ok(token) => token,
-                        Err(e) => {
-                            error!("Failed to sample next decoding token, with error: {e}");
-                            return Err(ModelThreadError::ModelExecutorError(e));
-                        }
-                    };
+            //     for sequence_id in metadata.sequence_data.keys() {
+            //         let decode_token = match self.model.sample(
+            //             logits.clone(),
+            //             next_token_params.clone(),
+            //             stopping_params.clone(),
+            //         ) {
+            //             Ok(token) => token,
+            //             Err(e) => {
+            //                 error!("Failed to sample next decoding token, with error: {e}");
+            //                 return Err(ModelThreadError::ModelExecutorError(e));
+            //             }
+            //         };
 
-                    let output_token = decode_token.into();
+            //         let output_token = decode_token.into();
 
-                    outputs.insert(
-                        *sequence_id,
-                        SequenceOutput {
-                            parent_sequence_id: *sequence_id,
-                            output_token,
-                            logprob: HashMap::from_iter([(
-                                output_token,
-                                LogProb::new(0.8, None, None),
-                            )]), // TODO: replace hardcoded values with logic
-                        },
-                    );
-                }
+            //         outputs.insert(
+            //             *sequence_id,
+            //             SequenceOutput {
+            //                 parent_sequence_id: *sequence_id,
+            //                 output_token,
+            //                 logprob: HashMap::from_iter([(
+            //                     output_token,
+            //                     LogProb::new(0.8, None, None),
+            //                 )]), // TODO: replace hardcoded values with logic
+            //             },
+            //         );
+            //     }
 
-                // TODO: Check this is the correct logic, once we integrate
-                // with model executor
-                let response = SequenceGroupOutput {
-                    outputs,
-                    sampled_token_ids: None,
-                    sampled_token_probs: None,
-                    logprobs: None,
-                    spec_decode_worker_metrics: None,
-                };
-                responses.push(response);
-            }
+            //     // TODO: Check this is the correct logic, once we integrate
+            //     // with model executor
+            //     let response = SequenceGroupOutput {
+            //         outputs,
+            //         sampled_token_ids: None,
+            //         sampled_token_probs: None,
+            //         logprobs: None,
+            //         spec_decode_worker_metrics: None,
+            //     };
+            //     responses.push(response);
+            // }
 
             sender.send(responses).ok();
         }
@@ -182,15 +189,35 @@ pub struct ModelThreadDispatcher {
 impl ModelThreadDispatcher {
     /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
     /// that continuously listens to incoming AI inference requests, and processes these.
-    #[instrument(skip(model))]
-    pub(crate) fn start<M>(model: M) -> Result<Self, ModelThreadError>
+    #[instrument(skip_all)]
+    pub(crate) fn start<M>(
+        api_key: String,
+        cache_config: CacheConfig,
+        device: Device,
+        dtype: DType,
+        model_name: String,
+        revision: String,
+        scheduler_config: SchedulerConfig,
+    ) -> Result<Self, ModelThreadError>
     where
         M: ModelExecutor + Send + Sync + 'static,
     {
         let (sender, receiver) = mpsc::unbounded_channel();
 
         let join_handle = tokio::task::spawn_blocking(|| {
-            let model_thread = ModelThread { model, receiver };
+            let model_worker = ModelWorker::new(
+                api_key,
+                cache_config,
+                device,
+                dtype,
+                model_name,
+                revision,
+                scheduler_config,
+            )?;
+            let model_thread = ModelThread {
+                worker: model_worker,
+                receiver,
+            };
             if let Err(e) = model_thread.run() {
                 error!("Model thread error: {e}");
                 if !matches!(e, ModelThreadError::Shutdown(_)) {
@@ -237,6 +264,8 @@ pub enum ModelThreadError {
     ModelLoaderError(#[from] ModelLoaderError),
     #[error("Model executor error: `{0}`")]
     ModelExecutorError(#[from] ModelExecutorError),
+    #[error("Model worker error: `{0}`")]
+    ModelWorkerError(#[from] ModelWorkerError),
 }
 
 #[derive(Debug, Error)]

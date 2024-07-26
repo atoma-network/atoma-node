@@ -1,13 +1,16 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     model_executor::{ModelExecutor, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata},
 };
+use atoma_paged_attention::flash_attention::{
+    FlashAttention, FlashAttentionDecodingMetadata, FlashAttentionMetadata,
+    FlashAttentionPrefillMetadata,
+};
 use candle::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
-use tokenizers::decoders::sequence;
 use tracing::{error, info_span, instrument, warn, Span};
 
 const PAD_SLOT_ID: i64 = -1;
@@ -20,15 +23,7 @@ pub struct ModelInput {
     /// Input positions tensor
     input_positions: Tensor,
     /// Attention Metadata
-    attention_metadata: AttentionMetadata,
-    /// Sequence lengths
-    sequence_lengths: Vec<i64>,
-    /// Query lengths
-    query_lengths: Vec<u32>,
-    /// Slot mapping tensor
-    slot_mapping_tensor: Tensor,
-    /// Number prefill tokens
-    num_prefill_tokens: usize,
+    attention_metadata: FlashAttentionMetadata,
     /// Number of decoded tokens
     num_decode_tokens: usize,
     /// Number of prefills
@@ -63,7 +58,7 @@ where
     M: ModelExecutor,
 {
     /// Constructor
-    pub async fn new(
+    pub fn new(
         api_key: String,
         cache_config: CacheConfig,
         device: Device,
@@ -72,8 +67,9 @@ where
         revision: String,
         scheduler_config: SchedulerConfig,
     ) -> Result<Self, ModelWorkerError> {
-        let file_paths = M::fetch(api_key, model_name, revision).await?;
-        let model = M::load(file_paths).await?;
+        // NOTE: for now we use a synchronous model loader
+        let file_paths = M::fetch(api_key, model_name, revision)?;
+        let model = M::load(file_paths)?;
         let cache_engine = CacheEngine::new(
             &cache_config,
             device.clone(),
@@ -106,7 +102,10 @@ where
 
     /// Executes model's forward pass
     #[instrument(skip_all)]
-    pub fn execute_model(&self, request: ExecuteModelRequest) -> Result<(), ModelWorkerError> {
+    pub fn execute_model(
+        &self,
+        request: ExecuteModelRequest,
+    ) -> Result<M::Output, ModelWorkerError> {
         let _enter = self.span.enter();
 
         let ExecuteModelRequest {
@@ -119,6 +118,7 @@ where
 
         let num_sequence_groups = sequence_groups_metadata.len();
 
+        // TODO: pass these simply as `HashMap<i64, i64>` swap blocks
         let blocks_to_swap_in = blocks_to_swap_in
             .into_iter()
             .flat_map(|(i, j)| [i, j])
@@ -134,7 +134,7 @@ where
         let blocks_to_swap_out =
             Tensor::new(blocks_to_swap_out, &candle::Device::Cpu)?.reshape(((), 2))?;
 
-        // `blocks_to_copy` is a gpu tensor. The src and tgt of
+        // `blocks_to_copy` is a gpu tensor. The source and target of
         // blocks to copy are in the same device, and `blocks_to_copy`
         // can be used directly within cuda kernels.
         let blocks_to_copy = blocks_to_copy
@@ -166,22 +166,24 @@ where
             input_tokens_tensor,
             input_positions,
             attention_metadata,
-            sequence_lengths,
-            query_lengths,
-            slot_mapping_tensor,
-            num_prefill_tokens,
             num_decode_tokens,
             num_prefills,
         } = self.prepare_input_tensors(sequence_groups_metadata)?;
 
-        self.model.forward(
-            input_tokens_tensor,
-            input_positions,
-            &mut self.cache_engine.gpu_cache,
-            attention_metadata,
+        let hidden_states = self.model.forward(
+            &input_tokens_tensor,
+            &input_positions,
+            &self.cache_engine.gpu_cache,
+            &attention_metadata,
         )?;
 
-        Ok(())
+        let logits = self.model.compute_logits(&hidden_states)?;
+
+        let sampled_outputs = self
+            .model
+            .sample(&logits, next_tokens_params, stopping_params)?;
+
+        Ok(sampled_outputs)
     }
 
     /// Swaps cached blocks
@@ -408,51 +410,44 @@ where
         let cumsum_query_lens = query_lens_tensor.cumsum(0)?;
         query_start_loc = query_start_loc.slice_assign(&[1..], &cumsum_query_lens)?;
 
-        let attention_metadata = AttentionMetadata {
-            block_tables: block_tables_tensor,
-            context_lens_tensor,
-            num_decode_tokens,
-            num_prefills,
-            num_prefill_tokens,
-            query_start_loc,
+        let attention_prefill_metadata = if num_prefills > 0 {
+            Some(FlashAttentionPrefillMetadata {
+                max_query_length: Some(max_query_len),
+                max_prefill_sequence_length: max_prefill_seq_len,
+                query_start_locations: Some(query_start_loc),
+                sequence_start_locations: seq_start_loc,
+                sequence_lengths: Some(seq_lens_tensor),
+                block_tables: None, // TODO: this is valid only for non-cached KV cache for prefill, add logic for it
+            })
+        } else {
+            None
+        };
+        let attention_decoding_metadata = if num_decode_tokens > 0 {
+            Some(FlashAttentionDecodingMetadata {
+                block_tables: Some(block_tables_tensor),
+                max_decoding_sequence_length: max_decode_seq_len,
+                sequence_lengths: Some(seq_lens_tensor),
+            })
+        } else {
+            None
+        };
+        let attention_metadata = FlashAttentionMetadata {
+            prefill_metadata: attention_prefill_metadata,
+            decoding_metadata: attention_decoding_metadata,
+            context_lengths: Some(context_lens_tensor),
             slot_mapping: slot_mapping_tensor,
-            sequence_lengths,
-            seq_lens_tensor,
-            seq_start_loc,
-            max_decode_seq_len,
-            max_prefill_seq_len,
-            max_query_len: max_query_len as usize,
+            num_prefill_tokens,
+            num_decoding_tokens: num_decode_tokens,
         };
 
         Ok(ModelInput {
             input_tokens_tensor,
             input_positions: input_positions_tensor,
-            attention_metadata,
-            sequence_lengths,
-            query_lengths,
-            slot_mapping_tensor,
             num_decode_tokens,
-            num_prefill_tokens,
             num_prefills,
+            attention_metadata,
         })
     }
-}
-
-// TODO: move this to Atoma's paged attention repo
-pub struct AttentionMetadata {
-    num_prefills: usize,
-    num_prefill_tokens: usize,
-    num_decode_tokens: usize,
-    block_tables: Tensor,
-    sequence_lengths: Vec<i64>,
-    seq_lens_tensor: Tensor,
-    slot_mapping: Tensor,
-    context_lens_tensor: Tensor,
-    seq_start_loc: Tensor,
-    query_start_loc: Tensor,
-    max_decode_seq_len: usize,
-    max_prefill_seq_len: usize,
-    max_query_len: usize,
 }
 
 #[derive(Debug, Error)]
@@ -469,6 +464,8 @@ pub enum ModelWorkerError {
     EmptyPrompt(String),
     #[error("Invalid number sequences error: `{0}`")]
     InvalidNumberSequences(String),
+    #[error("Model executor error: `{0}`")]
+    ModelExecutorError(#[from] ModelExecutorError),
 }
 
 /// `CacheEngine` - Manages the KV cache.

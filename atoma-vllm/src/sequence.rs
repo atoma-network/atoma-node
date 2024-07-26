@@ -1018,7 +1018,7 @@ pub struct SequenceGroupMetadata {
     /// Stopping criteria parameters
     pub stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    pub block_tables: HashMap<u64, Vec<i64>>,
+    pub block_tables: HashMap<u64, Vec<i32>>,
     /// Do sample (bool)
     pub do_sample: bool,
     /// Token chunk size
@@ -1038,7 +1038,7 @@ impl SequenceGroupMetadata {
         sequence_data: HashMap<u64, SequenceData>,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria_params: StoppingCriteriaParameters,
-        block_tables: HashMap<u64, Vec<i64>>,
+        block_tables: HashMap<u64, Vec<i32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,

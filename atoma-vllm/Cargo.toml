@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 # TODO: this dependency should only work with features = "cuda"
 async-trait.workspace = true
+atoma-paged-attention.workspace = true
 candle.workspace = true
 futures.workspace = true
 indexmap.workspace = true
