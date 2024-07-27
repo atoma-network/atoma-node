@@ -106,12 +106,6 @@ The supported models currently are:
 | llama3_8b                          | meta-llama/Meta-Llama-3-8B               |
 | llama3_instruct_8b                 | meta-llama/Meta-Llama-3-8B-Instruct      |
 | llama3_70b                         | meta-llama/Meta-Llama-3-70B              |
-| llama31_8b                         | meta-llama/Meta-Llama-3.1-8B             |
-| llama31_instruct8b                 | meta-llama/Meta-Llama-3.1-8B-Instruct    |
-| llama31_70b                        | meta-llama/Meta-Llama-3.1-70B            |
-| llama31_instruct70b                | meta-llama/Meta-Llama-3.1-70B-Instruct   |
-| llama31_405b                       | meta-llama/Meta-Llama-3.1-405B           |
-| llama31_instruct405b               | meta-llama/Meta-Llama-3.1-405B-Instruct  |
 | mamba_130m                         | state-spaces/mamba-130m                  |
 | mamba_370m                         | state-spaces/mamba-370m                  |
 | mamba_790m                         | state-spaces/mamba-790m                  |
