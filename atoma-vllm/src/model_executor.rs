@@ -5,6 +5,7 @@ use candle::{IndexOp, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::{io::repeat, stream::FuturesUnordered};
 use thiserror::Error;
+use tokenizers::decoders::sequence;
 use tokio::{
     sync::{
         mpsc,
@@ -78,7 +79,7 @@ pub trait ModelExecutor: ModelLoader {
             ));
         }
 
-        let mut output = Vec::with_capacity(total_num_sequences);
+        let mut sequence_group_outputs = Vec::with_capacity(sequence_groups_metadata.len());
         let mut logits_idx = 0;
         for sequence_group_metadata in sequence_groups_metadata.iter() {
             // 2. Retrieve the next token chooser and stopping criteria parameters,
@@ -129,6 +130,10 @@ pub trait ModelExecutor: ModelLoader {
             // 3. Create a `LogitsProcessor` instance, with the sampling strategy
             let mut logits_processor = LogitsProcessor::from_sampling(random_seed, sampling);
 
+            // 4. Allocate a `HashMap` to store each of the sequence group's outputs
+            let mut sequence_outputs =
+                HashMap::with_capacity(sequence_group_metadata.sequence_data.len());
+
             // 4. Iterate over each `SequenceData` in the `SequenceGroupMetadata`,
             //    to sample next tokens for each sequence
             for (sequence_id, sequence_data) in sequence_group_metadata.sequence_data.iter() {
@@ -152,19 +157,27 @@ pub trait ModelExecutor: ModelLoader {
 
                 // 6. Sample the next token
                 // TODO: we should be able to sample `best_of` sequences
-                // simultaneously, so we can later generate multiple
-                // sequqnces at once, in parallel.
+                //      simultaneously, so we can later generate multiple
+                //      sequences at once, in parallel.
                 let next_token = logits_processor.sample(&sequence_logits)?;
 
                 // 7. Update the logits index
                 logits_idx += 1;
 
                 // 8. Update the `output`
-                output.push(SequenceOutput {
-                    parent_sequence_id: *sequence_id,
-                    output_token: next_token,
-                    logprob: HashMap::from_iter([(next_token, LogProb::new(0.8, None, None))]), // TODO: replace hardcoded values with logic
-                });
+                // TODO: we are not forking a parent sequence into a new
+                //       sequence group, so we should not have to update
+                sequence_outputs.insert(
+                    *sequence_id,
+                    SequenceOutput {
+                        parent_sequence_id: *sequence_id,
+                        output_token: next_token,
+                        logprob: HashMap::from_iter([(
+                            next_token,
+                            LogProb::new(0.8, Some(1), Some(next_token)),
+                        )]),
+                    },
+                );
             }
         }
     }

@@ -28,8 +28,8 @@ pub struct ModelInput {
     num_decode_tokens: usize,
     /// Number of prefills
     num_prefills: usize,
-    /// Cumulative sequence lengths, of size `batch_size + 1`
-    cu_sequence_lengths: Tensor,
+    /// Cumulative query lengths, of size `batch_size + 1`
+    cu_query_lengths: Tensor,
 }
 
 /// `ModelWorker` - Responsible for running a LLM model
@@ -161,10 +161,10 @@ where
             attention_metadata,
             num_decode_tokens,
             num_prefills,
-            cu_sequence_lengths,
+            cu_query_lengths,
         } = self.prepare_input_tensors(&sequence_groups_metadata)?;
 
-        let selected_token_indices = utils::compute_selected_token_indices(&cu_sequence_lengths)?;
+        let selected_token_indices = utils::compute_selected_token_indices(&cu_query_lengths)?;
 
         let kv_cache = self.cache_engine.gpu_cache.iter_mut().collect();
         let hidden_states = self.model.forward(
@@ -424,7 +424,7 @@ where
         let attention_metadata = FlashAttentionMetadata::new(
             context_lens_tensor,
             slot_mapping_tensor,
-            query_start_loc,
+            query_start_loc.clone(),
             num_prefill_tokens,
             num_decode_tokens,
             max_query_len,
@@ -440,7 +440,7 @@ where
             input_positions: input_positions_tensor,
             num_decode_tokens,
             num_prefills,
-            cu_sequence_lengths: sequence_start_locations,
+            cu_query_lengths: query_start_loc,
             attention_metadata,
         })
     }
@@ -629,13 +629,13 @@ pub(crate) mod utils {
     /// For a given sequence, the associated selected token index should
     /// correspond to the right end of the sequence, in the output tensor
     pub(crate) fn compute_selected_token_indices(
-        cumulative_sequence_lengths: &Tensor,
+        cumulative_query_lengths: &Tensor,
     ) -> Result<Tensor, ModelWorkerError> {
         let ones = Tensor::ones(
-            cumulative_sequence_lengths.shape(),
-            cumulative_sequence_lengths.dtype(),
-            cumulative_sequence_lengths.device(),
+            cumulative_query_lengths.shape(),
+            cumulative_query_lengths.dtype(),
+            cumulative_query_lengths.device(),
         )?;
-        Ok(cumulative_sequence_lengths.i(1..)?.sub(&ones)?)
+        Ok(cumulative_query_lengths.i(1..)?.sub(&ones)?)
     }
 }
