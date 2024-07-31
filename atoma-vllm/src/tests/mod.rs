@@ -87,17 +87,20 @@ impl From<ExecuteModelRequest> for Vec<u32> {
 
 #[async_trait]
 impl ModelExecutor for MockModel {
-    type Input = Vec<u32>;
-    type Logits = Vec<(u32, f32)>;
+    type AttentionMetadata = ();
     type Output = u32;
 
-    fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
+    fn forward(&mut self, input_tensor: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
         Ok(input
             .into_iter()
             .map(|u| (u, rng.gen_range(0.0..1.0)))
             .collect())
+    }
+
+    fn compute_logits(&mut self, hidden_states: &Tensor) -> Result<Tensor, ModelExecutorError> {
+        Ok(hidden_states.clone())
     }
 
     fn sample(

@@ -146,7 +146,7 @@ impl Validation {
             top_n_tokens,
             n,
             return_full_text,
-            ..
+            repeat_last_n,
         } = request.parameters;
 
         // sampling must be true when best_of > 1
@@ -236,6 +236,8 @@ impl Validation {
             })
             .unwrap_or(Ok(0))?;
 
+        let repeat_last_n = repeat_last_n.unwrap_or(0);
+
         // Check if inputs is empty
         if request.inputs.is_empty() {
             return Err(ValidationError::EmptyInput);
@@ -266,6 +268,7 @@ impl Validation {
             typical_p,
             do_sample,
             random_seed,
+            repeat_last_n,
             n,
         };
         let stopping_parameters = StoppingCriteriaParameters {
@@ -344,6 +347,8 @@ pub struct NextTokenChooserParameters {
     pub random_seed: u64,
     /// repetition penalty
     pub repetition_penalty: f32,
+    /// repeat last n tokens
+    pub repeat_last_n: u32,
     /// frequency penalty
     pub frequency_penalty: f32,
 }

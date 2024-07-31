@@ -29,21 +29,23 @@ use crate::{
 /// in case the `LlmEngine` was on halt.
 const SCHEDULE_WAIT_PERIOD: u64 = 100;
 
-/// `LlmEngine` - An asynchronous worker
-/// to handle scheduling new requests. It is also responsible
+/// `LlmEngine` - An asynchronous worker which is responsible for
+/// scheduling new requests. It is also responsible
 /// to communicate with the `ModelExecutor` service to send new requests
-/// for batched AI inference
+/// for continously batched AI inference
 pub struct LlmEngine {
     /// Atoma's client sender channel, to share newly AI
     /// generated outputs
     atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
     /// End of sentence token, for the current model's tokenizer
     eos_token_id: u32,
-    /// Model executor, responsible for running
-    /// decoding steps to produce AI generated outputs
+    /// Dispatcher responsible to communicate with a
+    /// model executor's  running thread, responsible
+    /// for running prefill and decoding Inference
+    /// to produce AI generated outputs
     model_thread_dispatcher: ModelThreadDispatcher,
-    /// Receiver responsible for receiving new
-    /// requests from the `LllmEngine` service
+    /// Receiver's channel responsible for receiving new
+    /// requests from the running main `LlmService` instance
     request_receiver: UnboundedReceiver<SequenceGroup>,
     /// Current scheduled `SequenceGroup`'s metadata
     sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
@@ -425,7 +427,8 @@ impl GenerateRequestOutput {
     }
 }
 
-/// `InferenceOutput` - Output of running a
+/// `InferenceOutput` - Output of running AI inference
+/// on a given sequence group
 #[derive(Debug)]
 pub struct InferenceOutput {
     /// The index of the output in the request

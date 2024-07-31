@@ -168,7 +168,7 @@ impl SequenceData {
 
     /// Get all token ids
     pub fn get_token_ids(&self) -> Vec<u32> {
-        let mut output = Vec::with_capacity(self.get_prompt_len() + self.get_output_len());
+        let mut output = Vec::with_capacity(self.length());
         output.extend(self.prompt_token_ids.iter());
         output.extend(self.output_token_ids.iter());
         output

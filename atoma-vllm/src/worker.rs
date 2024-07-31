@@ -28,6 +28,8 @@ pub struct ModelInput {
     num_decode_tokens: usize,
     /// Number of prefills
     num_prefills: usize,
+    /// Cumulative sequence lengths, of size `batch_size + 1`
+    cu_sequence_lengths: Tensor,
 }
 
 /// `ModelWorker` - Responsible for running a LLM model
@@ -103,7 +105,7 @@ where
     /// Executes model's forward pass
     #[instrument(skip_all)]
     pub fn execute_model(
-        &self,
+        &mut self,
         request: ExecuteModelRequest,
     ) -> Result<M::Output, ModelWorkerError> {
         let _enter = self.span.enter();
@@ -153,35 +155,27 @@ where
             return Ok(());
         }
 
-        let next_tokens_params: Vec<_> = sequence_groups_metadata
-            .iter()
-            .map(|metadata| metadata.next_token_chooser_params.clone())
-            .collect();
-        let stopping_params: Vec<_> = sequence_groups_metadata
-            .iter()
-            .map(|metadata| metadata.stopping_criteria_params.clone())
-            .collect();
-
         let ModelInput {
             input_tokens_tensor,
             input_positions,
             attention_metadata,
             num_decode_tokens,
             num_prefills,
-        } = self.prepare_input_tensors(sequence_groups_metadata)?;
+            cu_sequence_lengths,
+        } = self.prepare_input_tensors(&sequence_groups_metadata)?;
 
+        let selected_token_indices = utils::compute_selected_token_indices(&cu_sequence_lengths)?;
+
+        let kv_cache = self.cache_engine.gpu_cache.iter_mut().collect();
         let hidden_states = self.model.forward(
             &input_tokens_tensor,
             &input_positions,
-            &self.cache_engine.gpu_cache,
+            &selected_token_indices,
+            kv_cache,
             &attention_metadata,
         )?;
 
-        let logits = self.model.compute_logits(&hidden_states)?;
-
-        let sampled_outputs = self
-            .model
-            .sample(&logits, next_tokens_params, stopping_params)?;
+        let sampled_outputs = self.model.sample(&logits, &sequence_groups_metadata)?;
 
         Ok(sampled_outputs)
     }
@@ -220,7 +214,7 @@ where
     #[instrument(skip_all)]
     pub fn prepare_input_tensors(
         &self,
-        sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<ModelInput, ModelWorkerError> {
         let mut input_tokens = Vec::new();
         let mut input_positions = Vec::new();
@@ -246,6 +240,7 @@ where
             let is_prompt = sequence_group_metadata.is_prompt;
 
             for (sequence_id, sequence_data) in sequence_group_metadata.sequence_data.iter() {
+                // 1. Context length
                 let context_length = if is_prompt {
                     sequence_data.get_num_computed_tokens()
                 } else {
@@ -256,10 +251,12 @@ where
                     sequence_data.length() - 1
                 };
 
+                // 2. Sequence length
                 let sequence_length = sequence_data
                     .length()
                     .min(context_length + sequence_group_metadata.token_chunk_size);
 
+                // 3. Tokens
                 let tokens = if is_prompt {
                     &sequence_data.get_token_ids()[context_length..sequence_length]
                 } else {
@@ -274,11 +271,20 @@ where
                     &[last_token_id]
                 };
 
+                // 4. Query length
+                let query_length = if is_prompt {
+                    sequence_length - context_length
+                } else {
+                    1
+                };
+
+                // 5. Update previous values if sliding window is used
+
                 // These are seq_len/context_len capped to the sliding window.
                 // They are passed to decode kernel.
                 // We still need original seq_len/context_len to compute slot
                 // mapping (and input position) below.
-                let mut sliding_sequence_length = sequence_data.length();
+                let mut sliding_sequence_length = sequence_length;
                 let mut sliding_context_length = context_length;
 
                 // This is a hack to make sliding window work with
@@ -288,9 +294,9 @@ where
                     // DON'T PANIC: by the branch check
                     sliding_sequence_length =
                         self.model.sliding_window().unwrap().min(sequence_length);
-                    sliding_context_length = sliding_sequence_length - 1;
                 }
 
+                // 6. Get block table for the current sequence
                 let block_table = if self.scheduler_config.enable_chunked_prefill() || !is_prompt {
                     // DON'T PANIC: Unwrap is safe here because block_tables
                     // should have allocated a block table for this sequence
@@ -300,8 +306,11 @@ where
                         .expect("Block table should be allocated for sequence on decoding phase")
                         .clone();
 
-                    if let Some(current_sw_blocks) = self.model.sliding_window() {
-                        let start = block_table.len().saturating_sub(current_sw_blocks);
+                    // 7. If sliding window is used, we need to trim the block table
+                    if let Some(sliding_window) = self.model.sliding_window() {
+                        let sw_block_num = (sliding_window + self.cache_engine.block_size - 1)
+                            / self.cache_engine.block_size;
+                        let start = block_table.len().saturating_sub(sw_block_num);
                         block_table = block_table[start..].to_vec();
                     }
 
@@ -311,15 +320,17 @@ where
                     vec![]
                 };
 
+                // 8. Update intermediate states
                 block_tables.push(block_table);
                 sequence_lengths.push(sliding_sequence_length);
                 context_lengths.push(sliding_context_length as u32);
 
-                let query_length = sliding_sequence_length - sliding_context_length;
                 query_lengths.push(query_length as u32);
                 input_tokens.extend(tokens);
                 input_positions.extend((context_length as i64)..(sequence_length as i64));
 
+                // 9. Update intermediate states depending on the type of the sequence
+                //    (prompt or decode)
                 if is_prompt {
                     debug_assert_eq!(
                         sequence_group_metadata.sequence_data.keys().len(),
@@ -349,7 +360,7 @@ where
                     continue;
                 }
 
-                // Compute the slot mapping.
+                // 10. Compute the slot mapping.
                 let block_table = sequence_group_metadata
                     .block_tables
                     .get(sequence_id)
@@ -380,7 +391,7 @@ where
             }
         }
 
-        let batch_size = input_tokens.len();
+        // 11. Build the required tensors for attention metadata
         let max_query_len = *query_lengths.iter().max().unwrap_or(&0);
         let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
@@ -410,41 +421,26 @@ where
         let cumsum_query_lens = query_lens_tensor.cumsum(0)?;
         query_start_loc = query_start_loc.slice_assign(&[1..], &cumsum_query_lens)?;
 
-        let attention_prefill_metadata = if num_prefills > 0 {
-            Some(FlashAttentionPrefillMetadata {
-                max_query_length: Some(max_query_len),
-                max_prefill_sequence_length: max_prefill_seq_len,
-                query_start_locations: Some(query_start_loc),
-                sequence_start_locations: seq_start_loc,
-                sequence_lengths: Some(seq_lens_tensor),
-                block_tables: None, // TODO: this is valid only for non-cached KV cache for prefill, add logic for it
-            })
-        } else {
-            None
-        };
-        let attention_decoding_metadata = if num_decode_tokens > 0 {
-            Some(FlashAttentionDecodingMetadata {
-                block_tables: Some(block_tables_tensor),
-                max_decoding_sequence_length: max_decode_seq_len,
-                sequence_lengths: Some(seq_lens_tensor),
-            })
-        } else {
-            None
-        };
-        let attention_metadata = FlashAttentionMetadata {
-            prefill_metadata: attention_prefill_metadata,
-            decoding_metadata: attention_decoding_metadata,
-            context_lengths: Some(context_lens_tensor),
-            slot_mapping: slot_mapping_tensor,
+        let attention_metadata = FlashAttentionMetadata::new(
+            context_lens_tensor,
+            slot_mapping_tensor,
+            query_start_loc,
             num_prefill_tokens,
-            num_decoding_tokens: num_decode_tokens,
-        };
+            num_decode_tokens,
+            max_query_len,
+            max_decode_seq_len,
+            max_prefill_seq_len,
+            seq_start_loc,
+            seq_lens_tensor,
+            block_tables_tensor,
+        )?;
 
         Ok(ModelInput {
             input_tokens_tensor,
             input_positions: input_positions_tensor,
             num_decode_tokens,
             num_prefills,
+            cu_sequence_lengths: sequence_start_locations,
             attention_metadata,
         })
     }
@@ -610,7 +606,7 @@ pub enum CacheEngineError {
 }
 
 pub(crate) mod utils {
-    use candle::{Device, Tensor, WithDType};
+    use candle::{Device, IndexOp, Tensor, WithDType};
 
     use super::ModelWorkerError;
 
@@ -627,5 +623,19 @@ pub(crate) mod utils {
             padded_output.push(Tensor::from_vec(x_i, shape, device)?);
         }
         Ok(Tensor::cat(&padded_output[..], 0)?)
+    }
+
+    /// Computes selected token indices, for each sequence in the batch.
+    /// For a given sequence, the associated selected token index should
+    /// correspond to the right end of the sequence, in the output tensor
+    pub(crate) fn compute_selected_token_indices(
+        cumulative_sequence_lengths: &Tensor,
+    ) -> Result<Tensor, ModelWorkerError> {
+        let ones = Tensor::ones(
+            cumulative_sequence_lengths.shape(),
+            cumulative_sequence_lengths.dtype(),
+            cumulative_sequence_lengths.device(),
+        )?;
+        Ok(cumulative_sequence_lengths.i(1..)?.sub(&ones)?)
     }
 }

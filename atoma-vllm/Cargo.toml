@@ -10,6 +10,7 @@ edition.workspace = true
 async-trait.workspace = true
 atoma-paged-attention.workspace = true
 candle.workspace = true
+candle-transformers.workspace = true
 futures.workspace = true
 indexmap.workspace = true
 metrics.workspace = true
