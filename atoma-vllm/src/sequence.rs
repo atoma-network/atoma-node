@@ -1092,6 +1092,15 @@ pub struct SequenceOutput {
     pub logprob: HashMap<u32, LogProb>,
 }
 
+/// `SequenceGroupMetrics` - Metrics for a sequence group token generation
+#[derive(Clone, Debug)]
+pub struct SequenceGroupMetrics {
+    /// Time taken to generate the batched output
+    pub time_to_generate: Option<f32>,
+    /// Number of batched tokens generated
+    pub num_tokens_generated: usize,
+}
+
 /// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
 ///     each of which contains one possible candidate for the next token.
 ///
@@ -1109,6 +1118,8 @@ pub struct SequenceGroupOutput {
     pub sampled_token_ids: Option<Tensor>,
     /// Spec decoder worker metrics
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
+    /// Sequence group metrics
+    pub sequence_group_metrics: SequenceGroupMetrics,
 }
 
 impl SequenceGroupOutput {
@@ -1259,6 +1270,10 @@ pub(crate) mod tests {
             sampled_token_probs: None,
             logprobs: None,
             spec_decode_worker_metrics: None,
+            sequence_group_metrics: SequenceGroupMetrics {
+                time_to_generate: None,
+                num_tokens_generated: 0,
+            },
         }
     }
 

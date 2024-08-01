@@ -8,12 +8,13 @@ use rand::Rng;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::info;
+use candle::{DType, Device, Tensor};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError},
-    sequence::ExecuteModelRequest,
+    sequence::{ExecuteModelRequest, SequenceGroup},
     tokenizer::TokenizerWorker,
     types::{GenerateParameters, GenerateRequest},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
@@ -88,7 +89,6 @@ impl From<ExecuteModelRequest> for Vec<u32> {
 #[async_trait]
 impl ModelExecutor for MockModel {
     type AttentionMetadata = ();
-    type Output = u32;
 
     fn forward(&mut self, input_tensor: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
         let mut rng = rand::thread_rng();
@@ -99,15 +99,10 @@ impl ModelExecutor for MockModel {
             .collect())
     }
 
-    fn compute_logits(&mut self, hidden_states: &Tensor) -> Result<Tensor, ModelExecutorError> {
-        Ok(hidden_states.clone())
-    }
-
     fn sample(
-        &mut self,
-        mut logits: Self::Logits,
-        next_token_params: NextTokenChooserParameters,
-        _stopping_params: StoppingCriteriaParameters,
+        &self,
+        logits: &Tensor,
+        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<Self::Output, ModelExecutorError> {
         let top_k = next_token_params.top_k;
 
@@ -177,12 +172,16 @@ async fn test_llm_engine() {
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        Device::Cpu,
+        DType::F16,
         true,
         scheduler_config,
-        model,
+        "test_model".to_string(),
+        "".to_string(),
         tokenizer,
         validation,
     )
@@ -304,12 +303,16 @@ async fn test_llm_engine_with_enable_chunking() {
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        Device::Cpu,
+        DType::F16,
         true,
         scheduler_config,
-        model,
+        "test_model".to_string(),
+        "".to_string(),
         tokenizer,
         validation,
     )

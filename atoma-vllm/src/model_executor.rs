@@ -17,7 +17,8 @@ use tracing::{error, info, instrument, trace};
 
 use crate::{
     sequence::{
-        ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupOutput, SequenceOutput,
+        ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
+        SequenceGroupOutput, SequenceOutput,
     },
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
     worker::{ModelWorker, ModelWorkerError},
@@ -51,7 +52,6 @@ pub trait ModelLoader {
 /// from a LLM
 pub trait ModelExecutor: ModelLoader {
     type AttentionMetadata;
-    type Output: Into<u32>;
 
     fn forward(
         &mut self,
@@ -62,20 +62,20 @@ pub trait ModelExecutor: ModelLoader {
         attention_metadata: Self::AttentionMetadata,
     ) -> Result<Tensor, ModelExecutorError>;
     fn sample(
-        &mut self,
+        &self,
         logits: &Tensor,
         sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
-    ) -> Result<Self::Output, ModelExecutorError> {
-        let total_num_sequences = sequence_groups_metadata
+    ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
+        let total_num_tokens = sequence_groups_metadata
             .iter()
             .map(|metadata| metadata.sequence_data.keys().len())
             .sum::<usize>();
 
         // 1. Check if the logits zeroth dimension matches the total number of sequences
-        if logits.dims()[0] != total_num_sequences {
+        if logits.dims()[0] != total_num_tokens {
             return Err(ModelExecutorError::InvalidLogits(
                 logits.dims()[0],
-                total_num_sequences,
+                total_num_tokens,
             ));
         }
 
@@ -97,11 +97,6 @@ pub trait ModelExecutor: ModelLoader {
                 do_sample,
                 random_seed,
             } = sequence_group_metadata.next_token_chooser_params;
-            let StoppingCriteriaParameters {
-                max_new_tokens,
-                stop_sequences,
-                ignore_eos_token,
-            } = sequence_group_metadata.stopping_criteria_params;
 
             let sampling = if !do_sample || temperature == 1.0 {
                 Sampling::ArgMax
@@ -167,6 +162,11 @@ pub trait ModelExecutor: ModelLoader {
                 // 8. Update the `output`
                 // TODO: we are not forking a parent sequence into a new
                 //       sequence group, so we should not have to update
+                let logprob = sequence_logits
+                    .i(next_token)?
+                    .to_vec1::<f32>()?
+                    .first()
+                    .unwrap();
                 sequence_outputs.insert(
                     *sequence_id,
                     SequenceOutput {
@@ -174,12 +174,26 @@ pub trait ModelExecutor: ModelLoader {
                         output_token: next_token,
                         logprob: HashMap::from_iter([(
                             next_token,
-                            LogProb::new(0.8, Some(1), Some(next_token)),
+                            LogProb::new(*logprob, Some(1), Some(next_token)),
                         )]),
                     },
                 );
             }
+
+            sequence_group_outputs.push(SequenceGroupOutput {
+                outputs: sequence_outputs,
+                sampled_token_ids: None,
+                sampled_token_probs: None,
+                logprobs: None,
+                spec_decode_worker_metrics: None,
+                sequence_group_metrics: SequenceGroupMetrics {
+                    time_to_generate: None,
+                    num_tokens_generated: total_num_tokens,
+                },
+            });
         }
+
+        Ok(sequence_group_outputs)
     }
 }
 
@@ -228,6 +242,7 @@ where
                 .map(|s| s.stopping_criteria_params.clone())
                 .collect();
 
+            let execution_start_time = std::time::Instant::now();
             let output = match self.worker.execute_model(request) {
                 Ok(output) => hidden_states,
                 Err(e) => {
@@ -235,56 +250,11 @@ where
                     return Err(ModelThreadError::ModelExecutorError(e));
                 }
             };
+            let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
 
             let mut responses = Vec::with_capacity(next_token_chooser_params.len());
 
-            // // TODO: should we parallelize this loop, with rayon or within the async runtime ?
-            // for (next_token_params, (stopping_params, metadata)) in next_token_chooser_params
-            //     .iter()
-            //     .zip(stopping_params.iter().zip(sequence_groups_metadata))
-            // {
-            //     let mut outputs = HashMap::with_capacity(metadata.sequence_data.len());
-
-            //     for sequence_id in metadata.sequence_data.keys() {
-            //         let decode_token = match self.model.sample(
-            //             logits.clone(),
-            //             next_token_params.clone(),
-            //             stopping_params.clone(),
-            //         ) {
-            //             Ok(token) => token,
-            //             Err(e) => {
-            //                 error!("Failed to sample next decoding token, with error: {e}");
-            //                 return Err(ModelThreadError::ModelExecutorError(e));
-            //             }
-            //         };
-
-            //         let output_token = decode_token.into();
-
-            //         outputs.insert(
-            //             *sequence_id,
-            //             SequenceOutput {
-            //                 parent_sequence_id: *sequence_id,
-            //                 output_token,
-            //                 logprob: HashMap::from_iter([(
-            //                     output_token,
-            //                     LogProb::new(0.8, None, None),
-            //                 )]), // TODO: replace hardcoded values with logic
-            //             },
-            //         );
-            //     }
-
-            //     // TODO: Check this is the correct logic, once we integrate
-            //     // with model executor
-            //     let response = SequenceGroupOutput {
-            //         outputs,
-            //         sampled_token_ids: None,
-            //         sampled_token_probs: None,
-            //         logprobs: None,
-            //         spec_decode_worker_metrics: None,
-            //     };
-            //     responses.push(response);
-            // }
-
+            // Send responses back to the engine
             sender.send(responses).ok();
         }
 

@@ -208,8 +208,8 @@ impl LlmEngine {
             // after the new LLM inference iteration has been performed
             for (sequence_id, sequence) in scheduled_sequence_group.scheduled_group.sequences.iter()
             {
-                let sequence_output = if let Some(output) = output.outputs.get(sequence_id) {
-                    output
+                let sequence_output = if let Some(o) = output.outputs.get(sequence_id) {
+                    o
                 } else {
                     error!(
                         "Missing generated sequence output token for sequence with id = {}",
