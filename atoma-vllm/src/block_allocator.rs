@@ -8,7 +8,7 @@ use crate::{
     types::{ReadLock, WriteLock},
 };
 
-/// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.
+/// `BlockAllocator` Manages free physical token blocks for a device, without cache.
 ///
 /// The allocator maintains a list of free blocks and allocates a block when
 /// requested. When a block is freed, its reference count is decremented. If
