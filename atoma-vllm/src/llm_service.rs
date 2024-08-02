@@ -9,7 +9,7 @@ use crate::{
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
-use candle::Device;
+use candle::{DType, Device};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
@@ -56,12 +56,13 @@ impl LlmService {
         atoma_event_subscriber_receiver: UnboundedReceiver<GenerateRequest>,
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
         cache_config: CacheConfig,
+        cache_dir: PathBuf,
         device: Device,
         dtype: DType,
         flush_storage: bool,
-        scheduler_config: SchedulerConfig,
         model_name: String,
         revision: String,
+        scheduler_config: SchedulerConfig,
         tokenizer: Tokenizer,
         validation_service: Validation,
     ) -> Result<Self, LlmServiceError>
@@ -69,11 +70,8 @@ impl LlmService {
         M: ModelExecutor + Send + Sync + 'static,
     {
         let block_size = cache_config.block_size;
-        let cache_dir = model.cache_dir();
         let scheduler = Scheduler::new(cache_config.clone(), scheduler_config.clone())?;
 
-        // TODO: it might be better to initialize the model `M` inside this method
-        let eos_token_id = model.eos_token_id().unwrap();
         let model_thread_dispatcher = ModelThreadDispatcher::start(
             api_key,
             cache_config,
@@ -88,7 +86,6 @@ impl LlmService {
         let llm_engine_handle = tokio::spawn(async move {
             let llm_engine = LlmEngine::new(
                 atoma_client_sender,
-                eos_token_id,
                 model_thread_dispatcher,
                 request_receiver,
                 scheduler,

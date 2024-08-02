@@ -37,8 +37,6 @@ pub struct LlmEngine {
     /// Atoma's client sender channel, to share newly AI
     /// generated outputs
     atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
-    /// End of sentence token, for the current model's tokenizer
-    eos_token_id: u32,
     /// Dispatcher responsible to communicate with a
     /// model executor's  running thread, responsible
     /// for running prefill and decoding Inference
@@ -61,7 +59,6 @@ impl LlmEngine {
     /// Constructor
     pub fn new(
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
-        eos_token_id: u32,
         model_thread_dispatcher: ModelThreadDispatcher,
         request_receiver: UnboundedReceiver<SequenceGroup>,
         scheduler: Scheduler<FcfsPolicy>,
@@ -69,7 +66,6 @@ impl LlmEngine {
     ) -> Self {
         Self {
             atoma_client_sender,
-            eos_token_id,
             model_thread_dispatcher,
             sequence_groups_metadata: vec![],
             scheduler_outputs: SchedulerOutputs::create_empty(),
@@ -276,6 +272,7 @@ impl LlmEngine {
         let sequence_id = { sequence.read_lock()?.sequence_id() };
         // 1. Get the AI generated next output token id.
         let generated_token_id = sequence_output.output_token;
+        let is_stop_token = sequence_output.is_stop_token;
 
         if sequence_group_metadata.do_sample {
             let mut sequence_guard_lock = sequence.write_lock()?;
@@ -322,8 +319,7 @@ impl LlmEngine {
             // 8. Check if the current `Sequence` last generated token
             //    id equals to the `eos_token_id`, in which case the
             //    the `Sequence`'s status should become `FinishedStopped`.
-            if self.eos_token_id == generated_token_id && !stopping_criteria_params.ignore_eos_token
-            {
+            if is_stop_token && !stopping_criteria_params.ignore_eos_token {
                 sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedStopped)
             }
 

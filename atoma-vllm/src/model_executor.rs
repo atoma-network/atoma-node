@@ -162,6 +162,8 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 //      sequences at once, in parallel.
                 let next_token = logits_processor.sample(&sequence_logits)?;
 
+                let is_stop_token = next_token == self.eos_token_id();
+
                 // 7. Update the logits index
                 logits_idx += 1;
 
@@ -178,6 +180,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                     SequenceOutput {
                         parent_sequence_id: *sequence_id,
                         output_token: next_token,
+                        is_stop_token,
                         logprob: HashMap::from_iter([(
                             next_token,
                             LogProb::new(*logprob, Some(1), Some(next_token)),

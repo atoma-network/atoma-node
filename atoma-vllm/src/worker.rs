@@ -593,7 +593,10 @@ impl CacheEngine {
     #[instrument(skip_all)]
     pub fn copy_blocks(&self, blocks_to_copy: Tensor) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
-        Ok(FlashAttention::copy_blocks(&mut self.gpu_cache, blocks_to_copy)?)
+        Ok(FlashAttention::copy_blocks(
+            &mut self.gpu_cache,
+            blocks_to_copy,
+        )?)
     }
 }
 

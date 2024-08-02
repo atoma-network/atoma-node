@@ -1025,7 +1025,7 @@ pub struct SequenceGroupMetadata {
     pub token_chunk_size: usize,
     /// Sequence data
     pub sequence_data: HashMap<u64, SequenceData>,
-    /// Internal state tied to this sequence group
+    /// Internal state tied to this sequence grou1p
     state: SequenceGroupState,
 }
 
@@ -1090,6 +1090,8 @@ pub struct SequenceOutput {
     pub output_token: u32,
     /// Log probabilities
     pub logprob: HashMap<u32, LogProb>,
+    /// Is stop token
+    pub is_stop_token: bool,
 }
 
 /// `SequenceGroupMetrics` - Metrics for a sequence group token generation
@@ -1257,6 +1259,7 @@ pub(crate) mod tests {
                         parent_sequence_id: 0,
                         output_token: i as u32,
                         logprob: HashMap::new(),
+                        is_stop_token: false,
                     },
                 )
             })
