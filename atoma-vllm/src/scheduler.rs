@@ -244,6 +244,7 @@ pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
     pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
     /// Number of prefill groups scheduled.
+    #[allow(dead_code)]
     number_prefill_groups: usize,
     /// Total number of batched tokens.
     #[allow(dead_code)]

@@ -1,7 +1,9 @@
-use std::sync::Arc;
+use core::num;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    config::{CacheConfig, SchedulerConfig},
+    block_allocator,
+    config::CacheConfig,
     model_executor::{ModelExecutor, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata},
 };
@@ -45,8 +47,8 @@ pub struct ModelWorker<M: ModelExecutor> {
     device: Device,
     /// Cache configuration
     cache_config: CacheConfig,
-    /// Scheduler configuration
-    scheduler_config: SchedulerConfig,
+    /// Enable chunked prefill (boolen)
+    enable_chunked_prefill: bool,
     /// Model runner instance
     model: M,
     /// Initial GPU available memory
@@ -62,24 +64,29 @@ where
     /// Constructor
     pub fn new(
         api_key: String,
-        cache_config: CacheConfig,
+        block_size: usize,
         device: Device,
         dtype: DType,
         model_name: String,
         revision: String,
-        scheduler_config: SchedulerConfig,
+        num_cpu_blocks: usize,
+        num_gpu_blocks: usize,
+        enable_chunked_prefill: bool,
     ) -> Result<Self, ModelWorkerError> {
         // NOTE: for now we use a synchronous model loader
         let file_paths = M::fetch(api_key, model_name, revision)?;
         let model = M::load(file_paths)?;
         let cache_engine = CacheEngine::new(
-            &cache_config,
-            device.clone(),
+            block_size,
+            device,
             dtype,
-            model.head_size(),
+            model.head_size() / model.num_attention_heads(),
             model.num_attention_heads(),
             model.num_layers(),
             model.num_kv_heads(),
+            num_cpu_blocks,
+            num_gpu_blocks,
+            model.softmax_scale(),
             model.sliding_window(),
         )?;
 
@@ -90,7 +97,7 @@ where
             cache_engine,
             device,
             cache_config,
-            scheduler_config,
+            enable_chunked_prefill,
             model,
             initial_gpu_memory: 0, // TODO 2.
             span: info_span!("model-worker"),
@@ -120,23 +127,7 @@ where
 
         let num_sequence_groups = sequence_groups_metadata.len();
 
-        // TODO: pass these simply as `HashMap<i64, i64>` swap blocks
-        let blocks_to_swap_in = blocks_to_swap_in
-            .into_iter()
-            .flat_map(|(i, j)| [i, j])
-            .collect::<Vec<_>>();
-        // `blocks_to_swap_in` and `blocks_to_swap_out` are CPU tensors
-        let blocks_to_swap_in =
-            Tensor::new(blocks_to_swap_in, &candle::Device::Cpu)?.reshape(((), 2))?;
-
-        let blocks_to_swap_out = blocks_to_swap_out
-            .into_iter()
-            .flat_map(|(i, j)| [i, j])
-            .collect::<Vec<_>>();
-        let blocks_to_swap_out =
-            Tensor::new(blocks_to_swap_out, &candle::Device::Cpu)?.reshape(((), 2))?;
-
-        // `blocks_to_copy` is a gpu tensor. The source and target of
+        // `blocks_to_copy` is a GPU tensor. The source and target of
         // blocks to copy are in the same device, and `blocks_to_copy`
         // can be used directly within cuda kernels.
         let blocks_to_copy = blocks_to_copy
@@ -146,7 +137,7 @@ where
         let blocks_to_copy = Tensor::new(blocks_to_copy, &self.device)?.reshape(((), 2))?;
 
         // At this point we need to perform cache swap operations
-        self.cache_swap(blocks_to_swap_in, blocks_to_swap_out, blocks_to_copy)?;
+        self.cache_swap(&blocks_to_swap_in, &blocks_to_swap_out, blocks_to_copy)?;
 
         // NOTE: Number of sequence groups should not be zero,
         // as we don't schedule empty sequences, for now.
@@ -184,8 +175,8 @@ where
     #[instrument(skip_all)]
     pub fn cache_swap(
         &self,
-        blocks_to_swap_in: Tensor,
-        blocks_to_swap_out: Tensor,
+        blocks_to_swap_in: &HashMap<i64, i64>,
+        blocks_to_swap_out: &HashMap<i64, i64>,
         blocks_to_copy: Tensor,
     ) -> Result<(), ModelWorkerError> {
         if blocks_to_swap_in.elem_count() > 0 {
@@ -297,7 +288,7 @@ where
                 }
 
                 // 6. Get block table for the current sequence
-                let block_table = if self.scheduler_config.enable_chunked_prefill() || !is_prompt {
+                let block_table = if self.enable_chunked_prefill || !is_prompt {
                     // DON'T PANIC: Unwrap is safe here because block_tables
                     // should have allocated a block table for this sequence
                     let mut block_table = sequence_group_metadata
@@ -486,8 +477,9 @@ pub struct CacheEngine {
     num_cpu_blocks: usize,
     /// Number of GPU blocks
     num_gpu_blocks: usize,
-    /// Paged attention backend
-    paged_attention: PagedAttention,
+    /// Flash attention backend,
+    /// compatible with paged attention
+    attention: FlashAttention,
     /// The CPU cache
     cpu_cache: Vec<Tensor>,
     /// The GPU cache
@@ -499,28 +491,32 @@ pub struct CacheEngine {
 impl CacheEngine {
     /// Constructor
     pub fn new(
-        cache_config: &CacheConfig,
+        block_size: usize,
         device: Device,
         dtype: DType,
-        head_size: usize,
+        head_dim: usize,
         num_attention_heads: usize,
         num_layers: usize,
         num_kv_heads: usize,
+        num_cpu_blocks: usize,
+        num_gpu_blocks: usize,
+        softmax_scale: f32,
         sliding_window: Option<usize>,
     ) -> Result<Self, CacheEngineError> {
         let mut this = Self {
-            block_size: cache_config.block_size(),
+            block_size,
             device,
             dtype,
             head_size: head_size,
             num_layers,
             num_kv_heads,
-            num_cpu_blocks: cache_config.num_cpu_blocks(),
-            num_gpu_blocks: cache_config.num_gpu_blocks(),
-            paged_attention: PagedAttention::new(
+            num_cpu_blocks,
+            num_gpu_blocks,
+            attention: FlashAttention::new(
                 num_attention_heads,
-                head_size,
                 num_kv_heads,
+                head_dim,
+                softmax_scale,
                 sliding_window,
                 dtype,
                 cache_config.cache_dtype(),
@@ -545,7 +541,7 @@ impl CacheEngine {
         device: &Device,
     ) -> Result<Vec<Tensor>, CacheEngineError> {
         let _enter = self.span.enter();
-        let kv_cache_shape = self.paged_attention.get_kv_cache_shape(
+        let kv_cache_shape = self.attention.get_kv_cache_shape(
             num_blocks,
             self.block_size,
             self.num_kv_heads,
@@ -561,12 +557,15 @@ impl CacheEngine {
 
     /// Swaps CPU blocks into GPU physical blocks
     #[instrument(skip_all)]
-    pub fn swap_in(&mut self, blocks_to_swap_in: Tensor) -> Result<(), CacheEngineError> {
+    pub fn swap_in(
+        &mut self,
+        blocks_to_swap_in: &HashMap<i64, i64>,
+    ) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
-            self.paged_attention.swap_blocks(
-                self.cpu_cache[i],
-                self.gpu_cache[i],
+            self.attention.swap_blocks(
+                &mut self.cpu_cache[i],
+                &mut self.gpu_cache[i],
                 blocks_to_swap_in,
             )?
         }
@@ -575,12 +574,15 @@ impl CacheEngine {
 
     /// Swaps GPU blocks out to CPU
     #[instrument(skip_all)]
-    pub fn swap_out(&mut self, blocks_to_swap_out: Tensor) -> Result<(), CacheEngineError> {
+    pub fn swap_out(
+        &mut self,
+        blocks_to_swap_out: &HashMap<i64, i64>,
+    ) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
-            self.paged_attention.swap_blocks(
-                self.gpu_cache[i],
-                self.cpu_cache[i],
+            self.attention.swap_blocks(
+                &mut self.gpu_cache[i],
+                &mut self.cpu_cache[i],
                 blocks_to_swap_out,
             )?
         }
@@ -589,10 +591,10 @@ impl CacheEngine {
 
     /// Copy blocks
     #[instrument(skip_all)]
-    pub fn copy_blocks(&mut self, blocks_to_copy: Tensor) -> Result<(), CacheEngineError> {
+    pub fn copy_blocks(&self, blocks_to_copy: Tensor) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         Ok(self
-            .paged_attention
+            .attention
             .copy_blocks(&mut self.gpu_cache, blocks_to_copy)?)
     }
 }

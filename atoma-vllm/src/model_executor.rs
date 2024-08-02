@@ -16,6 +16,7 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
+    config::CacheConfig,
     sequence::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
@@ -39,18 +40,23 @@ pub trait ModelLoader {
     fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
+}
+
+/// `ModelMetadata` - Metadata for a LLM model
+pub trait ModelMetadata {
     fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
     fn head_size(&self) -> usize;
     fn num_attention_heads(&self) -> usize;
     fn num_layers(&self) -> usize;
     fn num_kv_heads(&self) -> usize;
+    fn softmax_scale(&self) -> f32;
     fn sliding_window(&self) -> Option<usize>;
 }
 
 /// `ModelExecutor` trait - interface for running AI inference
 /// from a LLM
-pub trait ModelExecutor: ModelLoader {
+pub trait ModelExecutor: ModelLoader + ModelMetadata {
     type AttentionMetadata;
 
     fn forward(
@@ -295,12 +301,14 @@ impl ModelThreadDispatcher {
         let join_handle = tokio::task::spawn_blocking(|| {
             let model_worker = ModelWorker::new(
                 api_key,
-                cache_config,
+                cache_config.block_size(),
                 device,
                 dtype,
                 model_name,
                 revision,
-                scheduler_config,
+                cache_config.num_cpu_blocks(),
+                cache_config.num_gpu_blocks(),
+                scheduler_config.enable_chunked_prefill(),
             )?;
             let model_thread = ModelThread {
                 worker: model_worker,

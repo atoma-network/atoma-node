@@ -4,11 +4,11 @@ use std::{
 };
 
 use async_trait::async_trait;
+use candle::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::info;
-use candle::{DType, Device, Tensor};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
@@ -42,7 +42,9 @@ impl ModelLoader for MockModel {
     async fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
+}
 
+impl ModelMetadata for MockModel {
     fn cache_dir(&self) -> PathBuf {
         "./cache/".into()
     }
@@ -68,6 +70,10 @@ impl ModelLoader for MockModel {
     }
 
     fn sliding_window(&self) -> Option<usize> {
+        unreachable!()
+    }
+
+    fn softmax_scale(&self) -> f32 {
         unreachable!()
     }
 }
