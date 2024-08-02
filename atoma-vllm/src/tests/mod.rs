@@ -4,6 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
@@ -13,7 +14,7 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError},
-    sequence::ExecuteModelRequest,
+    sequence::{ExecuteModelRequest, SequenceGroup},
     tokenizer::TokenizerWorker,
     types::{GenerateParameters, GenerateRequest},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
@@ -34,20 +35,46 @@ struct MockModel {}
 impl ModelLoader for MockModel {
     type FilePaths = ();
 
-    async fn fetch() -> Result<Self::FilePaths, ModelLoaderError> {
+    async fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
         Ok(())
     }
 
-    async fn load() -> Result<Self, ModelLoaderError> {
+    async fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
+}
 
+impl ModelMetadata for MockModel {
     fn cache_dir(&self) -> PathBuf {
         "./cache/".into()
     }
 
     fn eos_token_id(&self) -> Option<u32> {
         Some(EOS_TOKEN_ID)
+    }
+
+    fn head_size(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_attention_heads(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_layers(&self) -> usize {
+        unreachable!()
+    }
+
+    fn num_kv_heads(&self) -> usize {
+        unreachable!()
+    }
+
+    fn sliding_window(&self) -> Option<usize> {
+        unreachable!()
+    }
+
+    fn softmax_scale(&self) -> f32 {
+        unreachable!()
     }
 }
 
@@ -67,11 +94,9 @@ impl From<ExecuteModelRequest> for Vec<u32> {
 
 #[async_trait]
 impl ModelExecutor for MockModel {
-    type Input = Vec<u32>;
-    type Logits = Vec<(u32, f32)>;
-    type Output = u32;
+    type AttentionMetadata = ();
 
-    fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
+    fn forward(&mut self, input_tensor: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
         Ok(input
@@ -81,10 +106,9 @@ impl ModelExecutor for MockModel {
     }
 
     fn sample(
-        &mut self,
-        mut logits: Self::Logits,
-        next_token_params: NextTokenChooserParameters,
-        _stopping_params: StoppingCriteriaParameters,
+        &self,
+        logits: &Tensor,
+        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<Self::Output, ModelExecutorError> {
         let top_k = next_token_params.top_k;
 
@@ -149,17 +173,22 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
+    let model = MockModel::load(())
         .await
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        "./cache/".into(),
+        Device::Cpu,
+        DType::F16,
         true,
         scheduler_config,
-        model,
+        "test_model".to_string(),
+        "".to_string(),
         tokenizer,
         validation,
     )
@@ -276,17 +305,22 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
+    let model = MockModel::load(())
         .await
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        "./cache/".into(),
+        Device::Cpu,
+        DType::F16,
         true,
         scheduler_config,
-        model,
+        "test_model".to_string(),
+        "".to_string(),
         tokenizer,
         validation,
     )

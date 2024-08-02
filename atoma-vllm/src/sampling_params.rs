@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use candle::Tensor;
+use candle_core::Tensor;
 use thiserror::Error;
 
 /// Sampling epsilon
