@@ -9,7 +9,7 @@ use crate::{
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
-use candle::{DType, Device};
+use candle_core::{DType, Device};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{

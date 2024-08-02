@@ -1,7 +1,8 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use candle::{IndexOp, Tensor};
+use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
+use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::{io::repeat, stream::FuturesUnordered};
 use thiserror::Error;
@@ -16,7 +17,7 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
-    config::CacheConfig,
+    config::SchedulerConfig,
     sequence::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
@@ -44,6 +45,7 @@ pub trait ModelLoader {
 
 /// `ModelMetadata` - Metadata for a LLM model
 pub trait ModelMetadata {
+    fn alibi_slopes(&self) -> Option<&Tensor>;
     fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
     fn head_size(&self) -> usize;
@@ -57,15 +59,13 @@ pub trait ModelMetadata {
 /// `ModelExecutor` trait - interface for running AI inference
 /// from a LLM
 pub trait ModelExecutor: ModelLoader + ModelMetadata {
-    type AttentionMetadata;
-
     fn forward(
         &mut self,
         input_tensor: &Tensor,
         input_positions: &Tensor,
         selected_token_positions: &Tensor,
         kv_cache: Vec<&mut Tensor>,
-        attention_metadata: Self::AttentionMetadata,
+        attention_metadata: FlashAttentionMetadata,
     ) -> Result<Tensor, ModelExecutorError>;
     fn sample(
         &self,
@@ -162,7 +162,10 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 //      sequences at once, in parallel.
                 let next_token = logits_processor.sample(&sequence_logits)?;
 
-                let is_stop_token = next_token == self.eos_token_id();
+                let is_stop_token = self
+                    .eos_token_id()
+                    .map(|eid| next_token == eid)
+                    .unwrap_or_default();
 
                 // 7. Update the logits index
                 logits_idx += 1;
@@ -171,7 +174,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // TODO: we are not forking a parent sequence into a new
                 //       sequence group, so we should not have to update
                 let logprob = sequence_logits
-                    .i(next_token)?
+                    .i(next_token as usize)?
                     .to_vec1::<f32>()?
                     .first()
                     .unwrap();
@@ -183,7 +186,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                         is_stop_token,
                         logprob: HashMap::from_iter([(
                             next_token,
-                            LogProb::new(*logprob, Some(1), Some(next_token)),
+                            LogProb::new(*logprob, Some(1), None), // NOTE: we don't compute the decoded token at this point
                         )]),
                     },
                 );
@@ -253,7 +256,7 @@ where
 
             let execution_start_time = std::time::Instant::now();
             let output = match self.worker.execute_model(request) {
-                Ok(output) => hidden_states,
+                Ok(output) => output,
                 Err(e) => {
                     error!("Failed to run forward pass on model, with error: {e}");
                     return Err(ModelThreadError::ModelExecutorError(e));
@@ -373,7 +376,7 @@ pub enum ModelLoaderError {}
 #[derive(Debug, Error)]
 pub enum ModelExecutorError {
     #[error("Candle error: `{0}`")]
-    CandleError(#[from] candle::Error),
+    CandleError(#[from] candle_core::Error),
     #[error(
         "Invalid logits or next token parameters (logits dims: {0}, next token params dims: {1})"
     )]

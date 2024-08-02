@@ -44,7 +44,7 @@ pub struct GenerateParameters {
     /// Controls the number of tokens in the history to consider for penalizing repetition.
     /// A larger value will look further back in the generated text to prevent repetitions,
     /// while a smaller value will only consider recent tokens.
-    pub repeat_last_n: Option<u64>,
+    pub repeat_last_n: Option<u32>,
     /// The number of highest probability vocabulary tokens to keep for top-k-filtering
     pub top_k: Option<u32>,
     /// Top-p value for nucleus sampling

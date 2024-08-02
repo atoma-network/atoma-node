@@ -11,7 +11,7 @@ use crate::{
     types::{ReadLock, WriteLock},
 };
 
-use candle::utils::{cuda_is_available, metal_is_available};
+use candle_core::utils::{cuda_is_available, metal_is_available};
 
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -687,7 +687,7 @@ pub enum BlockSpaceManagerError {
     #[error("Sliding window is not allowed with prefix caching enabled")]
     SlidingWindowDisabledWithCaching,
     #[error("Candle error: `{0}`")]
-    CandleError(#[from] candle::Error),
+    CandleError(#[from] candle_core::Error),
     #[error("Block allocator error: `{0}`")]
     BlockAllocatorError(#[from] BlockAllocatorError),
     #[error("Poison write error: `{0}`")]

@@ -4,14 +4,14 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{
     block_allocator,
     config::CacheConfig,
-    model_executor::{ModelExecutor, ModelLoaderError},
-    sequence::{ExecuteModelRequest, SequenceGroupMetadata},
+    model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
+    sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
 };
 use atoma_paged_attention::flash_attention::{
     FlashAttention, FlashAttentionDecodingMetadata, FlashAttentionMetadata,
     FlashAttentionPrefillMetadata,
 };
-use candle::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
+use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
 use tracing::{error, info_span, instrument, warn, Span};
 
@@ -80,6 +80,7 @@ where
             block_size,
             device,
             dtype,
+            model.alibi_slopes(),
             model.head_size() / model.num_attention_heads(),
             model.num_attention_heads(),
             model.num_layers(),
@@ -114,7 +115,7 @@ where
     pub fn execute_model(
         &mut self,
         request: ExecuteModelRequest,
-    ) -> Result<M::Output, ModelWorkerError> {
+    ) -> Result<Vec<SequenceGroupOutput>, ModelWorkerError> {
         let _enter = self.span.enter();
 
         let ExecuteModelRequest {
@@ -158,7 +159,7 @@ where
         let selected_token_indices = utils::compute_selected_token_indices(&cu_query_lengths)?;
 
         let kv_cache = self.cache_engine.gpu_cache.iter_mut().collect();
-        let hidden_states = self.model.forward(
+        let logits = self.model.forward(
             &input_tokens_tensor,
             &input_positions,
             &selected_token_indices,
@@ -179,10 +180,10 @@ where
         blocks_to_swap_out: &HashMap<i64, i64>,
         blocks_to_copy: Tensor,
     ) -> Result<(), ModelWorkerError> {
-        if blocks_to_swap_in.elem_count() > 0 {
+        if blocks_to_swap_in.len() > 0 {
             self.cache_engine.swap_in(blocks_to_swap_in)?
         }
-        if blocks_to_swap_out.elem_count() > 0 {
+        if blocks_to_swap_out.len() > 0 {
             self.cache_engine.swap_out(blocks_to_swap_out)?
         }
         if blocks_to_copy.elem_count() > 0 {
@@ -389,7 +390,7 @@ where
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
         let block_tables_tensor =
-            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0, &self.device)?;
+            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0i64, &self.device)?;
 
         let sequence_lengths: Vec<_> = sequence_lengths.into_iter().map(|s| s as i64).collect();
         let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
@@ -467,12 +468,8 @@ pub struct CacheEngine {
     device: Device,
     /// Model's Cache dtype
     dtype: DType,
-    /// The LLM head size
-    head_size: usize,
     /// Number of layers
     num_layers: usize,
-    /// Number of KV heads
-    num_kv_heads: usize,
     /// Number of CPU blocks
     num_cpu_blocks: usize,
     /// Number of GPU blocks
@@ -494,6 +491,7 @@ impl CacheEngine {
         block_size: usize,
         device: Device,
         dtype: DType,
+        alibi_slopes: Option<&Tensor>,
         head_dim: usize,
         num_attention_heads: usize,
         num_layers: usize,
@@ -507,9 +505,7 @@ impl CacheEngine {
             block_size,
             device,
             dtype,
-            head_size: head_size,
             num_layers,
-            num_kv_heads,
             num_cpu_blocks,
             num_gpu_blocks,
             attention: FlashAttention::new(
@@ -517,10 +513,10 @@ impl CacheEngine {
                 num_kv_heads,
                 head_dim,
                 softmax_scale,
+                alibi_slopes.cloned(),
                 sliding_window,
                 dtype,
-                cache_config.cache_dtype(),
-                cache_config.block_size,
+                device,
             ),
             cpu_cache: vec![],
             gpu_cache: vec![],
@@ -541,11 +537,11 @@ impl CacheEngine {
         device: &Device,
     ) -> Result<Vec<Tensor>, CacheEngineError> {
         let _enter = self.span.enter();
-        let kv_cache_shape = self.attention.get_kv_cache_shape(
+        let kv_cache_shape = FlashAttention::get_kv_cache_shape(
             num_blocks,
             self.block_size,
-            self.num_kv_heads,
-            self.head_size,
+            self.attention.num_kv_heads,
+            self.attention.head_dim,
         );
         let mut kv_caches = Vec::with_capacity(self.num_layers);
         for _ in 0..self.num_layers {
@@ -564,7 +560,7 @@ impl CacheEngine {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
             self.attention.swap_blocks(
-                &mut self.cpu_cache[i],
+                &self.cpu_cache[i],
                 &mut self.gpu_cache[i],
                 blocks_to_swap_in,
             )?
@@ -581,7 +577,7 @@ impl CacheEngine {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
             self.attention.swap_blocks(
-                &mut self.gpu_cache[i],
+                &self.gpu_cache[i],
                 &mut self.cpu_cache[i],
                 blocks_to_swap_out,
             )?
@@ -609,7 +605,7 @@ pub enum CacheEngineError {
 }
 
 pub(crate) mod utils {
-    use candle::{Device, IndexOp, Tensor, WithDType};
+    use candle_core::{Device, IndexOp, Tensor, WithDType};
 
     use super::ModelWorkerError;
 

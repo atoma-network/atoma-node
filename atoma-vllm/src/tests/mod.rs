@@ -4,7 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use candle::{DType, Device, Tensor};
+use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;

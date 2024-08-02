@@ -1,4 +1,4 @@
-use candle::DType;
+use candle_core::DType;
 use thiserror::Error;
 
 const GB: usize = 1 << 30;
