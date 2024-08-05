@@ -47,7 +47,7 @@ pub struct ModelWorker<M: ModelExecutor> {
     device: Device,
     /// Cache configuration
     cache_config: CacheConfig,
-    /// Enable chunked prefill (boolen)
+    /// Enable chunked prefill (boolean)
     enable_chunked_prefill: bool,
     /// Model runner instance
     model: M,
