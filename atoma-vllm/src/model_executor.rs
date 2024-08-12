@@ -17,7 +17,7 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
-    config::SchedulerConfig,
+    config::{SchedulerConfig, CacheConfig},
     sequence::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
@@ -112,7 +112,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 }
             } else if top_k == 0 && top_p < 1.0 {
                 Sampling::TopP {
-                    p: top_p,
+                    p: top_p as f64,
                     temperature: temperature as f64,
                 }
             } else if top_k != 0 && top_p == 1.0 {

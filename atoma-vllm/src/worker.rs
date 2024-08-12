@@ -164,7 +164,7 @@ where
             &input_positions,
             &selected_token_indices,
             kv_cache,
-            &attention_metadata,
+            attention_metadata,
         )?;
 
         let sampled_outputs = self.model.sample(&logits, &sequence_groups_metadata)?;
@@ -175,7 +175,7 @@ where
     /// Swaps cached blocks
     #[instrument(skip_all)]
     pub fn cache_swap(
-        &self,
+        &mut self,
         blocks_to_swap_in: &HashMap<i64, i64>,
         blocks_to_swap_out: &HashMap<i64, i64>,
         blocks_to_copy: Tensor,
@@ -384,7 +384,7 @@ where
         }
 
         // 11. Build the required tensors for attention metadata
-        let max_query_len = *query_lengths.iter().max().unwrap_or(&0);
+        let max_query_len = *query_lengths.iter().max().unwrap_or(&0) as usize;
         let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
@@ -517,7 +517,7 @@ impl CacheEngine {
                 sliding_window,
                 dtype,
                 device,
-            ),
+            )?,
             cpu_cache: vec![],
             gpu_cache: vec![],
             span: info_span!("cache-engine"),
@@ -545,7 +545,7 @@ impl CacheEngine {
         );
         let mut kv_caches = Vec::with_capacity(self.num_layers);
         for _ in 0..self.num_layers {
-            kv_caches.push(Tensor::zeros(kv_cache_shape, self.dtype, &device)?);
+            kv_caches.push(Tensor::zeros(kv_cache_shape.clone(), self.dtype, &device)?);
         }
 
         Ok(kv_caches)
@@ -587,7 +587,7 @@ impl CacheEngine {
 
     /// Copy blocks
     #[instrument(skip_all)]
-    pub fn copy_blocks(&self, blocks_to_copy: Tensor) -> Result<(), CacheEngineError> {
+    pub fn copy_blocks(&mut self, blocks_to_copy: Tensor) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         Ok(FlashAttention::copy_blocks(
             &mut self.gpu_cache,
@@ -636,5 +636,50 @@ pub(crate) mod utils {
             cumulative_query_lengths.device(),
         )?;
         Ok(cumulative_query_lengths.i(1..)?.sub(&ones)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use candle::{DType, Device};
+
+    use super::*;
+
+    struct MockModelExecuter {}
+
+    fn create_model_worker() -> ModelWorker<MockModelExecuter> {
+        ModelWorker {
+            cache_engine: CacheEngine::new(
+                16,
+                Device::Cpu,
+                DType::BF16,
+                None,
+                64,
+                32,
+                16,
+                4,
+                128,
+                128,
+                1.,
+                None,
+            )
+            .unwrap(),
+            device: Device::Cpu,
+            cache_config: CacheConfig::new(
+                16,
+                0.8,
+                1_024,
+                String::from("bf16"),
+                None,
+                None,
+                128,
+                128,
+            )
+            .unwrap(),
+            enable_chunked_prefill: false,
+            model: MockModelExecuter {},
+            initial_gpu_memory: 1_024,
+            span: info_span!("mock-model-worker"),
+        }
     }
 }

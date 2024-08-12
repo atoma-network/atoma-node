@@ -112,7 +112,7 @@ impl CacheConfig {
 
     /// Getter for `cache_dtype`
     pub fn cache_dtype(&self) -> &'static str {
-        &self.cache_dtype
+        self.cache_dtype.as_str()
     }
 }
 
