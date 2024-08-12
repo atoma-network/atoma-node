@@ -195,8 +195,7 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(())
-        .expect("Failed to create mock model");
+    let model = MockModel::load(()).expect("Failed to create mock model");
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),
@@ -326,8 +325,7 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(())
-        .expect("Failed to create mock model");
+    let model = MockModel::load(()).expect("Failed to create mock model");
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),

@@ -65,7 +65,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
         kv_cache: Vec<&mut Tensor>,
         attention_metadata: FlashAttentionMetadata,
     ) -> Result<Tensor, ModelExecutorError>;
-    
+
     fn sample(
         &self,
         logits: &Tensor,
