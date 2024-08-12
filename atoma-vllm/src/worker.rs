@@ -1,15 +1,12 @@
-use core::num;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    block_allocator,
     config::CacheConfig,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
 };
 use atoma_paged_attention::flash_attention::{
-    FlashAttention, FlashAttentionDecodingMetadata, FlashAttentionMetadata,
-    FlashAttentionPrefillMetadata,
+    FlashAttention, FlashAttentionMetadata,
 };
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
@@ -125,7 +122,7 @@ where
             blocks_to_swap_in,
             blocks_to_swap_out,
             blocks_to_copy,
-            running_queue_size,
+            ..
         } = request;
 
         let num_sequence_groups = sequence_groups_metadata.len();
@@ -153,9 +150,8 @@ where
             input_tokens_tensor,
             input_positions,
             attention_metadata,
-            num_decode_tokens,
-            num_prefills,
             cu_query_lengths,
+            ..
         } = self.prepare_input_tensors(&sequence_groups_metadata)?;
 
         let selected_token_indices = utils::compute_selected_token_indices(&cu_query_lengths)?;
@@ -220,15 +216,9 @@ where
         let mut query_lengths = Vec::new();
         let mut block_tables = Vec::new();
 
-        let mut decode_only = true;
         let mut num_prefills = 0;
         let mut num_prefill_tokens = 0;
         let mut num_decode_tokens = 0;
-
-        let mut sliding_window_blocks = self
-            .model
-            .sliding_window()
-            .map(|sw| (sw + self.cache_engine.block_size - 1) / self.cache_engine.block_size);
 
         for sequence_group_metadata in sequence_groups_metadata.iter() {
             let is_prompt = sequence_group_metadata.is_prompt;
@@ -279,7 +269,7 @@ where
                 // We still need original seq_len/context_len to compute slot
                 // mapping (and input position) below.
                 let mut sliding_sequence_length = sequence_length;
-                let mut sliding_context_length = context_length;
+                let sliding_context_length = context_length;
 
                 // This is a hack to make sliding window work with
                 // Paged Attention. We can remove it if we make paged attn kernel

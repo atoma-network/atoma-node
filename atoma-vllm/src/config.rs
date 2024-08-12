@@ -1,4 +1,3 @@
-use candle_core::DType;
 use thiserror::Error;
 
 const GB: usize = 1 << 30;
@@ -24,8 +23,6 @@ pub struct CacheConfig {
     gpu_memory_utilization: f32,
     /// Swap space bytes
     swap_space_bytes: usize,
-    /// Cache dtype
-    cache_dtype: String,
     /// Number of GPU blocks to override (optional)
     num_gpu_blocks_override: Option<usize>,
     /// Sliding window (optional)
@@ -53,7 +50,6 @@ impl CacheConfig {
             block_size,
             gpu_memory_utilization,
             swap_space_bytes: swap_space * GB,
-            cache_dtype,
             num_gpu_blocks_override,
             sliding_window,
             num_gpu_blocks,

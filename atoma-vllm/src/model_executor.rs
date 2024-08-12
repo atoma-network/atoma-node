@@ -1,13 +1,10 @@
-use core::num;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use async_trait::async_trait;
 use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
-use futures::{io::repeat, stream::FuturesUnordered};
+use futures::stream::FuturesUnordered;
 use thiserror::Error;
-use tokenizers::decoders::sequence;
 use tokio::{
     sync::{
         mpsc,
@@ -92,17 +89,14 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
             // 2. Retrieve the next token chooser and stopping criteria parameters,
             //    from the `SequenceGroupMetadata`, to be used for sampling
             let NextTokenChooserParameters {
-                n,
-                best_of,
                 temperature,
                 repetition_penalty,
                 repeat_last_n,
-                frequency_penalty,
                 top_k,
                 top_p,
-                typical_p,
                 do_sample,
                 random_seed,
+                ..
             } = sequence_group_metadata.next_token_chooser_params;
 
             let sampling = if !do_sample || temperature == 1.0 {
@@ -240,18 +234,6 @@ where
         while let Some(command) = self.receiver.blocking_recv() {
             let ModelThreadCommand { request, sender } = command;
 
-            let sequence_groups_metadata = request.sequence_groups_metadata.clone();
-            let next_token_chooser_params: Vec<NextTokenChooserParameters> = request
-                .sequence_groups_metadata
-                .iter()
-                .map(|s| s.next_token_chooser_params.clone())
-                .collect();
-            let stopping_params: Vec<StoppingCriteriaParameters> = request
-                .sequence_groups_metadata
-                .iter()
-                .map(|s| s.stopping_criteria_params.clone())
-                .collect();
-
             let execution_start_time = std::time::Instant::now();
             let output = match self.worker.execute_model(request) {
                 Ok(output) => output,
@@ -262,10 +244,8 @@ where
             };
             let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
 
-            let mut responses = Vec::with_capacity(next_token_chooser_params.len());
-
             // Send responses back to the engine
-            sender.send(responses).ok();
+            sender.send(output).ok();
         }
 
         Ok(())
