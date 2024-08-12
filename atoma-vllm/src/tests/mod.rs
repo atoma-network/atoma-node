@@ -17,7 +17,10 @@ use crate::{
     model_executor::{
         ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError, ModelMetadata,
     },
-    sequence::{ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata},
+    sequence::{
+        ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
+        SequenceOutput,
+    },
     tokenizer::TokenizerWorker,
     types::{GenerateParameters, GenerateRequest},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
@@ -118,28 +121,33 @@ impl ModelExecutor for MockModel {
         Ok(Tensor::new(logits, &Device::Cpu)?)
     }
 
-    fn sample(
-        &self,
-        logits: &Tensor,
-        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
-    ) -> Result<Self::Output, ModelExecutorError> {
-        let metadata = sequence_groups_metadata.first().unwrap();
-        let next_token_chooser_params = metadata.next_token_chooser_params;
-        let top_k = next_token_chooser_params.top_k;
+    // fn sample(
+    //     &self,
+    //     logits: &Tensor,
+    //     sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
+    // ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
+    //     let metadata = sequence_groups_metadata.first().unwrap();
+    //     let next_token_chooser_params = metadata.next_token_chooser_params;
+    //     let top_k = next_token_chooser_params.top_k;
 
-        logits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        let top_k_values: Vec<_> = logits.into_iter().take(top_k as usize).collect();
+    //     let logits = logits.to_vec1::<f32>()?;
+    //     let logits = logits.into_iter().enumerate().collect::<Vec<_>>();
+    //     logits.sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
+    //     let top_k_values: Vec<_> = logits.into_iter().take(top_k as usize).collect();
 
-        if top_k_values.is_empty() {
-            panic!("Empty top k tokens array")
-        }
+    //     if top_k_values.is_empty() {
+    //         panic!("Empty top k tokens array")
+    //     }
 
-        // Randomly sample one token from the top_k selected values
-        let mut rng = rand::thread_rng();
-        let sampled_index = rng.gen_range(0..top_k_values.len());
+    //     // Randomly sample one token from the top_k selected values
+    //     let mut rng = rand::thread_rng();
+    //     let sampled_index = rng.gen_range(0..top_k_values.len());
 
-        Ok(top_k_values[sampled_index].0)
-    }
+    //     let output = vec![SequenceGroupOutput {
+    //         outputs: HashMap::from_iter([(0, SequenceOutput {})]),
+    //     }];
+    //     Ok(top_k_values[sampled_index].0)
+    // }
 }
 
 #[tokio::test]
