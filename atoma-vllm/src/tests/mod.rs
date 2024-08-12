@@ -109,15 +109,16 @@ impl ModelExecutor for MockModel {
         _: &Tensor,
         _: &Tensor,
         _: Vec<&mut Tensor>,
-        _: FlashAttentionMetadata,
+        attention_metadata: FlashAttentionMetadata,
     ) -> Result<Tensor, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
-        let logits = (0..VOCAB_SIZE)
+        let batch_size = attention_metadata.context_lengths.dims()[0];
+        let logits = (0..(batch_size * VOCAB_SIZE))
             .map(|_| rng.gen_range(0.0..1.0) as f32)
             .collect::<Vec<_>>();
 
-        Ok(Tensor::new(logits, &Device::Cpu)?)
+        Ok(Tensor::new(logits, &Device::Cpu)?.reshape((batch_size, VOCAB_SIZE))?)
     }
 }
 

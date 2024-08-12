@@ -71,16 +71,16 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
         logits: &Tensor,
         sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
-        let total_num_tokens = sequence_groups_metadata
+        let total_num_sequences = sequence_groups_metadata
             .iter()
             .map(|metadata| metadata.sequence_data.keys().len())
             .sum::<usize>();
 
         // 1. Check if the logits zeroth dimension matches the total number of sequences
-        if logits.dims()[0] != total_num_tokens {
+        if logits.dims()[0] != total_num_sequences {
             return Err(ModelExecutorError::InvalidLogits(
                 logits.dims()[0],
-                total_num_tokens,
+                total_num_sequences,
             ));
         }
 
@@ -193,7 +193,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 spec_decode_worker_metrics: None,
                 sequence_group_metrics: SequenceGroupMetrics {
                     time_to_generate: None,
-                    num_tokens_generated: total_num_tokens,
+                    num_tokens_generated: total_num_sequences,
                 },
             });
         }

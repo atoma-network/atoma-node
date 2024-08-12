@@ -425,9 +425,11 @@ where
             max_query_len,
             max_decode_seq_len,
             max_prefill_seq_len,
+            num_prefills,
             seq_start_loc,
             seq_lens_tensor,
             block_tables_tensor,
+            false,
         )?;
 
         Ok(ModelInput {
