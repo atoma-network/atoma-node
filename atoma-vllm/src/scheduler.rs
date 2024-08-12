@@ -1057,6 +1057,7 @@ impl<P: Policy> Scheduler<P> {
     /// by prefill requests.
     #[instrument(skip_all)]
     fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        info!("Scheduling chunked prefill..");
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
             self.scheduler_config.max_num_sequences(),

@@ -8,7 +8,7 @@ use crate::{
 use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
-use tracing::{error, info_span, instrument, warn, Span};
+use tracing::{error, info, info_span, instrument, warn, Span};
 
 const PAD_SLOT_ID: i64 = -1;
 
@@ -57,6 +57,7 @@ where
     M: ModelExecutor,
 {
     /// Constructor
+    #[instrument(skip_all)]
     pub fn new(
         api_key: String,
         block_size: usize,
@@ -69,6 +70,7 @@ where
         num_gpu_blocks: usize,
         enable_chunked_prefill: bool,
     ) -> Result<Self, ModelWorkerError> {
+        info!("Starting a new `ModelWorker` instance");
         // NOTE: for now we use a synchronous model loader
         let file_paths = M::fetch(api_key, model_name, revision)?;
         let model = M::load(file_paths)?;
@@ -112,6 +114,8 @@ where
         &mut self,
         request: ExecuteModelRequest,
     ) -> Result<Vec<SequenceGroupOutput>, ModelWorkerError> {
+        info!("Executing model on new request..");
+
         let span = self.span.clone();
         let _enter = span.enter();
 
@@ -132,7 +136,16 @@ where
             .into_iter()
             .flat_map(|(i, j)| [i, j])
             .collect::<Vec<_>>();
-        let blocks_to_copy = Tensor::new(blocks_to_copy, &self.device)?.reshape(((), 2))?;
+        let blocks_to_copy = if blocks_to_copy.is_empty() {
+            None
+        } else {
+            let num_block_pairs_to_copy = blocks_to_copy.len() / 2;
+            Some(Tensor::from_vec(
+                blocks_to_copy,
+                (num_block_pairs_to_copy, 2),
+                &self.device,
+            )?)
+        };
 
         // At this point we need to perform cache swap operations
         self.cache_swap(&blocks_to_swap_in, &blocks_to_swap_out, blocks_to_copy)?;
@@ -174,7 +187,7 @@ where
         &mut self,
         blocks_to_swap_in: &HashMap<i64, i64>,
         blocks_to_swap_out: &HashMap<i64, i64>,
-        blocks_to_copy: Tensor,
+        blocks_to_copy: Option<Tensor>,
     ) -> Result<(), ModelWorkerError> {
         if blocks_to_swap_in.len() > 0 {
             self.cache_engine.swap_in(blocks_to_swap_in)?
@@ -182,8 +195,8 @@ where
         if blocks_to_swap_out.len() > 0 {
             self.cache_engine.swap_out(blocks_to_swap_out)?
         }
-        if blocks_to_copy.elem_count() > 0 {
-            self.cache_engine.copy_blocks(blocks_to_copy)?
+        if let Some(bs) = blocks_to_copy {
+            self.cache_engine.copy_blocks(bs)?
         }
         Ok(())
     }
@@ -204,6 +217,9 @@ where
         &self,
         sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<ModelInput, ModelWorkerError> {
+        let _enter = self.span.enter();
+        info!("Preparing input tensors for new inference request..");
+
         let mut input_tokens = Vec::<u32>::new();
         let mut input_positions = Vec::new();
         let mut slot_mapping = Vec::new();
@@ -304,10 +320,10 @@ where
 
                 // 8. Update intermediate states
                 block_tables.push(block_table);
-                sequence_lengths.push(sliding_sequence_length);
+                sequence_lengths.push(sliding_sequence_length as f32);
                 context_lengths.push(sliding_context_length as u32);
 
-                query_lengths.push(query_length as u32);
+                query_lengths.push(query_length as f32);
                 input_tokens.extend(tokens);
                 input_positions.extend((context_length as i64)..(sequence_length as i64));
 
@@ -373,20 +389,19 @@ where
         }
 
         // 11. Build the required tensors for attention metadata
-        let max_query_len = *query_lengths.iter().max().unwrap_or(&0) as usize;
-        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
+        let max_query_len = *query_lengths.iter().max().unwrap_or(&0.) as usize;
+        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0.) as usize;
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
         let block_tables_tensor =
             utils::make_tensor_with_pad(block_tables, max_block_table_len, 0i64, &self.device)?;
 
-        let sequence_lengths: Vec<_> = sequence_lengths.into_iter().map(|s| s as i64).collect();
         let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
         let mut seq_start_loc =
             Tensor::zeros(seq_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
-        let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?;
+        let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?.to_dtype(DType::U32)?;
         seq_start_loc = seq_start_loc.slice_assign(&[1..], &cumsum_seq_lens)?;
 
         let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?;
@@ -398,7 +413,7 @@ where
         let mut query_start_loc =
             Tensor::zeros(query_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
-        let cumsum_query_lens = query_lens_tensor.cumsum(0)?;
+        let cumsum_query_lens = query_lens_tensor.cumsum(0)?.to_dtype(DType::U32)?;
         query_start_loc = query_start_loc.slice_assign(&[1..], &cumsum_query_lens)?;
 
         let attention_metadata = FlashAttentionMetadata::new(
@@ -473,6 +488,7 @@ pub struct CacheEngine {
 
 impl CacheEngine {
     /// Constructor
+    #[instrument(skip_all)]
     pub fn new(
         block_size: usize,
         device: Device,
@@ -487,6 +503,7 @@ impl CacheEngine {
         softmax_scale: f32,
         sliding_window: Option<usize>,
     ) -> Result<Self, CacheEngineError> {
+        info!("Starting a new `CacheEngine` instance");
         let mut this = Self {
             block_size,
             dtype,

@@ -64,27 +64,27 @@ impl ModelMetadata for MockModel {
     }
 
     fn head_size(&self) -> usize {
-        unreachable!()
+        512
     }
 
     fn num_attention_heads(&self) -> usize {
-        unreachable!()
+        8
     }
 
     fn num_layers(&self) -> usize {
-        unreachable!()
+        8
     }
 
     fn num_kv_heads(&self) -> usize {
-        unreachable!()
+        8
     }
 
     fn sliding_window(&self) -> Option<usize> {
-        unreachable!()
+        None
     }
 
     fn softmax_scale(&self) -> f32 {
-        unreachable!()
+        1.0
     }
 }
 
@@ -119,34 +119,6 @@ impl ModelExecutor for MockModel {
 
         Ok(Tensor::new(logits, &Device::Cpu)?)
     }
-
-    // fn sample(
-    //     &self,
-    //     logits: &Tensor,
-    //     sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
-    // ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
-    //     let metadata = sequence_groups_metadata.first().unwrap();
-    //     let next_token_chooser_params = metadata.next_token_chooser_params;
-    //     let top_k = next_token_chooser_params.top_k;
-
-    //     let logits = logits.to_vec1::<f32>()?;
-    //     let logits = logits.into_iter().enumerate().collect::<Vec<_>>();
-    //     logits.sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
-    //     let top_k_values: Vec<_> = logits.into_iter().take(top_k as usize).collect();
-
-    //     if top_k_values.is_empty() {
-    //         panic!("Empty top k tokens array")
-    //     }
-
-    //     // Randomly sample one token from the top_k selected values
-    //     let mut rng = rand::thread_rng();
-    //     let sampled_index = rng.gen_range(0..top_k_values.len());
-
-    //     let output = vec![SequenceGroupOutput {
-    //         outputs: HashMap::from_iter([(0, SequenceOutput {})]),
-    //     }];
-    //     Ok(top_k_values[sampled_index].0)
-    // }
 }
 
 #[tokio::test]
