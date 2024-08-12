@@ -79,7 +79,7 @@ where
         let model = M::load(file_paths)?;
         let cache_engine = CacheEngine::new(
             block_size,
-            device,
+            device.clone(),
             dtype,
             model.alibi_slopes(),
             model.head_size() / model.num_attention_heads(),
@@ -117,7 +117,8 @@ where
         &mut self,
         request: ExecuteModelRequest,
     ) -> Result<Vec<SequenceGroupOutput>, ModelWorkerError> {
-        let _enter = self.span.clone().enter();
+        let span = self.span.clone();
+        let _enter = span.enter();
 
         let ExecuteModelRequest {
             sequence_groups_metadata,
