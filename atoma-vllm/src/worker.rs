@@ -626,7 +626,7 @@ pub(crate) mod utils {
 
 #[cfg(test)]
 mod tests {
-    use candle::{DType, Device};
+    use candle_core::{DType, Device};
 
     use super::*;
 

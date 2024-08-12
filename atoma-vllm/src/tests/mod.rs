@@ -5,7 +5,6 @@ use std::{
 };
 
 use atoma_paged_attention::FlashAttentionMetadata;
-use candle_core::Tensor;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
@@ -32,6 +31,7 @@ const MAX_TOTAL_TOKENS: u32 = 32;
 const NUM_CPU_BLOCKS: usize = 4096;
 const NUM_GPU_BLOCKS: usize = 4096;
 const EOS_TOKEN_ID: u32 = 2048;
+const VOCAB_SIZE: usize = 128;
 
 struct MockModel {}
 
@@ -99,22 +99,23 @@ impl From<ExecuteModelRequest> for Vec<u32> {
     }
 }
 
-#[async_trait]
 impl ModelExecutor for MockModel {
     fn forward(
         &mut self,
-        input_tensor: &Tensor,
-        input_positions: &Tensor,
-        selected_token_positions: &Tensor,
-        kv_cache: Vec<&mut Tensor>,
-        attention_metadata: FlashAttentionMetadata,
-    ) -> Result<Self::Logits, ModelExecutorError> {
+        _: &Tensor,
+        _: &Tensor,
+        _: &Tensor,
+        _: Vec<&mut Tensor>,
+        _: FlashAttentionMetadata,
+    ) -> Result<Tensor, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
-        Ok(input
-            .into_iter()
-            .map(|u| (u, rng.gen_range(0.0..1.0)))
-            .collect())
+        let mut probs = Vec::with_capacity(input_tensor.dims1()?);
+        let logits = (0..VOCAB_SIZE)
+            .map(|_| rng.gen_range(0.0..1.0) as f32)
+            .collect::<Vec<_>>();
+
+        Ok(Tensor::new(logits, &Device::Cpu)?)
     }
 
     fn sample(
@@ -122,7 +123,9 @@ impl ModelExecutor for MockModel {
         logits: &Tensor,
         sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<Self::Output, ModelExecutorError> {
-        let top_k = next_token_params.top_k;
+        let metadata = sequence_groups_metadata.first().unwrap();
+        let next_token_chooser_params = metadata.next_token_chooser_params;
+        let top_k = next_token_chooser_params.top_k;
 
         logits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         let top_k_values: Vec<_> = logits.into_iter().take(top_k as usize).collect();
