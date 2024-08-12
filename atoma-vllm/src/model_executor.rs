@@ -1,3 +1,4 @@
+use core::num;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
@@ -173,11 +174,8 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // 8. Update the `output`
                 // TODO: we are not forking a parent sequence into a new
                 //       sequence group, so we should not have to update
-                let logprob = sequence_logits
-                    .i(next_token as usize)?
-                    .to_vec1::<f32>()?
-                    .first()
-                    .unwrap();
+                let logits = sequence_logits.i(next_token as usize)?.to_vec1::<f32>()?;
+                let logprobs = logits.first().unwrap();
                 sequence_outputs.insert(
                     *sequence_id,
                     SequenceOutput {
@@ -304,17 +302,20 @@ impl ModelThreadDispatcher {
     {
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let join_handle = tokio::task::spawn_blocking(|| {
+        let join_handle = tokio::task::spawn_blocking(move || {
+            let block_size = cache_config.block_size();
+            let num_cpu_blocks = cache_config.num_cpu_blocks();
+            let num_gpu_blocks = cache_config.num_gpu_blocks();
             let model_worker = ModelWorker::<M>::new(
                 api_key,
-                cache_config.block_size(),
+                block_size,
                 cache_config,
                 device,
                 dtype,
                 model_name,
                 revision,
-                cache_config.num_cpu_blocks(),
-                cache_config.num_gpu_blocks(),
+                num_cpu_blocks,
+                num_gpu_blocks,
                 scheduler_config.enable_chunked_prefill(),
             )?;
             let model_thread = ModelThread {

@@ -117,7 +117,7 @@ where
         &mut self,
         request: ExecuteModelRequest,
     ) -> Result<Vec<SequenceGroupOutput>, ModelWorkerError> {
-        let _enter = self.span.enter();
+        let _enter = self.span.clone().enter();
 
         let ExecuteModelRequest {
             sequence_groups_metadata,
@@ -401,8 +401,7 @@ where
         let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?;
         seq_start_loc = seq_start_loc.slice_assign(&[1..], &cumsum_seq_lens)?;
 
-        let input_tokens_tensor =
-            Tensor::new(input_tokens, &self.device)?.reshape((input_tokens.len(),))?;
+        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?;
         let input_positions_tensor = Tensor::new(input_positions, &self.device)?;
         let slot_mapping_tensor = Tensor::new(slot_mapping, &self.device)?;
 
