@@ -145,7 +145,7 @@ where
         // as we don't schedule empty sequences, for now.
         if num_sequence_groups == 0 {
             warn!("Number of sequence groups to run model on should not be empty");
-            return Ok(SequenceGroupOutput::empty());
+            return Ok(vec![]);
         }
 
         let ModelInput {

@@ -109,11 +109,6 @@ impl CacheConfig {
     pub fn num_gpu_blocks(&self) -> usize {
         self.num_gpu_blocks
     }
-
-    /// Getter for `cache_dtype`
-    pub fn cache_dtype(&self) -> &'static str {
-        self.cache_dtype.as_str()
-    }
 }
 
 #[derive(Debug, Error)]
