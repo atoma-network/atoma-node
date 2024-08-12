@@ -65,6 +65,7 @@ where
     pub fn new(
         api_key: String,
         block_size: usize,
+        cache_config: CacheConfig,
         device: Device,
         dtype: DType,
         model_name: String,
@@ -144,7 +145,7 @@ where
         // as we don't schedule empty sequences, for now.
         if num_sequence_groups == 0 {
             warn!("Number of sequence groups to run model on should not be empty");
-            return Ok(());
+            return Ok(SequenceGroupOutput::empty());
         }
 
         let ModelInput {
@@ -208,7 +209,7 @@ where
         &self,
         sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
     ) -> Result<ModelInput, ModelWorkerError> {
-        let mut input_tokens = Vec::new();
+        let mut input_tokens = Vec::<u32>::new();
         let mut input_positions = Vec::new();
         let mut slot_mapping = Vec::new();
         let mut sequence_lengths = Vec::new();
@@ -464,8 +465,6 @@ pub enum ModelWorkerError {
 pub struct CacheEngine {
     /// Block size
     block_size: usize,
-    /// GPU device
-    device: Device,
     /// Model's Cache dtype
     dtype: DType,
     /// Number of layers
@@ -503,7 +502,6 @@ impl CacheEngine {
     ) -> Result<Self, CacheEngineError> {
         let mut this = Self {
             block_size,
-            device,
             dtype,
             num_layers,
             num_cpu_blocks,
@@ -516,7 +514,7 @@ impl CacheEngine {
                 alibi_slopes.cloned(),
                 sliding_window,
                 dtype,
-                device,
+                device.clone(),
             )?,
             cpu_cache: vec![],
             gpu_cache: vec![],

@@ -72,7 +72,7 @@ impl LlmService {
         let block_size = cache_config.block_size;
         let scheduler = Scheduler::new(cache_config.clone(), scheduler_config.clone())?;
 
-        let model_thread_dispatcher = ModelThreadDispatcher::start(
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
             api_key,
             cache_config,
             device,

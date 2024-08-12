@@ -17,7 +17,7 @@ use tokio::{
 use tracing::{error, info, instrument, trace};
 
 use crate::{
-    config::{SchedulerConfig, CacheConfig},
+    config::{CacheConfig, SchedulerConfig},
     sequence::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
@@ -146,7 +146,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                     debug_assert!(repeat_last_n > 0, "repeat_last_n should be > 0");
                     let num_sequence_tokens = sequence_data.length();
                     let start_at = num_sequence_tokens
-                        .checked_sub(repeat_last_n)
+                        .checked_sub(repeat_last_n as usize)
                         .unwrap_or_default();
                     let context = sequence_data.get_token_ids();
                     candle_transformers::utils::apply_repeat_penalty(
@@ -259,7 +259,7 @@ where
                 Ok(output) => output,
                 Err(e) => {
                     error!("Failed to run forward pass on model, with error: {e}");
-                    return Err(ModelThreadError::ModelExecutorError(e));
+                    return Err(ModelThreadError::ModelWorkerError(e));
                 }
             };
             let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
@@ -305,9 +305,10 @@ impl ModelThreadDispatcher {
         let (sender, receiver) = mpsc::unbounded_channel();
 
         let join_handle = tokio::task::spawn_blocking(|| {
-            let model_worker = ModelWorker::new(
+            let model_worker = ModelWorker::<M>::new(
                 api_key,
                 cache_config.block_size(),
+                cache_config,
                 device,
                 dtype,
                 model_name,
