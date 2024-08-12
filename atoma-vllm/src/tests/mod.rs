@@ -113,7 +113,6 @@ impl ModelExecutor for MockModel {
     ) -> Result<Tensor, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
-        let mut probs = Vec::with_capacity(VOCAB_SIZE);
         let logits = (0..VOCAB_SIZE)
             .map(|_| rng.gen_range(0.0..1.0) as f32)
             .collect::<Vec<_>>();
@@ -197,7 +196,6 @@ async fn test_llm_engine() {
     });
 
     let model = MockModel::load(())
-        .await
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
@@ -209,9 +207,9 @@ async fn test_llm_engine() {
         Device::Cpu,
         DType::F16,
         true,
-        scheduler_config,
         "test_model".to_string(),
         "".to_string(),
+        scheduler_config,
         tokenizer,
         validation,
     )
@@ -329,7 +327,6 @@ async fn test_llm_engine_with_enable_chunking() {
     });
 
     let model = MockModel::load(())
-        .await
         .expect("Failed to create mock model");
 
     let mut service = LlmService::start(
@@ -341,9 +338,9 @@ async fn test_llm_engine_with_enable_chunking() {
         Device::Cpu,
         DType::F16,
         true,
-        scheduler_config,
         "test_model".to_string(),
         "".to_string(),
+        scheduler_config,
         tokenizer,
         validation,
     )
