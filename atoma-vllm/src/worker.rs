@@ -632,39 +632,39 @@ mod tests {
 
     struct MockModelExecuter {}
 
-    fn create_model_worker() -> ModelWorker<MockModelExecuter> {
-        ModelWorker {
-            cache_engine: CacheEngine::new(
-                16,
-                Device::Cpu,
-                DType::BF16,
-                None,
-                64,
-                32,
-                16,
-                4,
-                128,
-                128,
-                1.,
-                None,
-            )
-            .unwrap(),
-            device: Device::Cpu,
-            cache_config: CacheConfig::new(
-                16,
-                0.8,
-                1_024,
-                String::from("bf16"),
-                None,
-                None,
-                128,
-                128,
-            )
-            .unwrap(),
-            enable_chunked_prefill: false,
-            model: MockModelExecuter {},
-            initial_gpu_memory: 1_024,
-            span: info_span!("mock-model-worker"),
-        }
-    }
+    // fn create_model_worker() -> ModelWorker<MockModelExecuter> {
+    //     ModelWorker {
+    //         cache_engine: CacheEngine::new(
+    //             16,
+    //             Device::Cpu,
+    //             DType::BF16,
+    //             None,
+    //             64,
+    //             32,
+    //             16,
+    //             4,
+    //             128,
+    //             128,
+    //             1.,
+    //             None,
+    //         )
+    //         .unwrap(),
+    //         device: Device::Cpu,
+    //         cache_config: CacheConfig::new(
+    //             16,
+    //             0.8,
+    //             1_024,
+    //             String::from("bf16"),
+    //             None,
+    //             None,
+    //             128,
+    //             128,
+    //         )
+    //         .unwrap(),
+    //         enable_chunked_prefill: false,
+    //         model: MockModelExecuter {},
+    //         initial_gpu_memory: 1_024,
+    //         span: info_span!("mock-model-worker"),
+    //     }
+    // }
 }
