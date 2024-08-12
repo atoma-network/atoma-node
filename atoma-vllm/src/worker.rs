@@ -5,9 +5,7 @@ use crate::{
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
 };
-use atoma_paged_attention::flash_attention::{
-    FlashAttention, FlashAttentionMetadata,
-};
+use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
 use tracing::{error, info_span, instrument, warn, Span};
@@ -323,7 +321,6 @@ where
                     );
                     num_prefills += 1;
                     num_prefill_tokens += tokens.len();
-                    decode_only = false;
                     prefill_sequence_lengths.push(sequence_length);
                 } else {
                     debug_assert_eq!(

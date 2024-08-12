@@ -1,9 +1,11 @@
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
+    sync::Arc,
 };
 
-use async_trait::async_trait;
+use atoma_paged_attention::FlashAttentionMetadata;
+use candle::Tensor;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
@@ -13,8 +15,10 @@ use tracing::info;
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
-    model_executor::{ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError},
-    sequence::{ExecuteModelRequest, SequenceGroup},
+    model_executor::{
+        ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError, ModelMetadata,
+    },
+    sequence::{ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata},
     tokenizer::TokenizerWorker,
     types::{GenerateParameters, GenerateRequest},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
@@ -45,6 +49,10 @@ impl ModelLoader for MockModel {
 }
 
 impl ModelMetadata for MockModel {
+    fn alibi_slopes(&self) -> Option<&Tensor> {
+        None
+    }
+
     fn cache_dir(&self) -> PathBuf {
         "./cache/".into()
     }
@@ -94,9 +102,14 @@ impl From<ExecuteModelRequest> for Vec<u32> {
 
 #[async_trait]
 impl ModelExecutor for MockModel {
-    type AttentionMetadata = ();
-
-    fn forward(&mut self, input_tensor: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
+    fn forward(
+        &mut self,
+        input_tensor: &Tensor,
+        input_positions: &Tensor,
+        selected_token_positions: &Tensor,
+        kv_cache: Vec<&mut Tensor>,
+        attention_metadata: FlashAttentionMetadata,
+    ) -> Result<Self::Logits, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
         Ok(input
