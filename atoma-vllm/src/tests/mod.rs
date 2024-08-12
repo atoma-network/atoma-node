@@ -1,11 +1,11 @@
 use std::{
     path::PathBuf,
-    time::{Duration, Instant},
     sync::Arc,
+    time::{Duration, Instant},
 };
 
 use atoma_paged_attention::FlashAttentionMetadata;
-use candle::Tensor;
+use candle_core::Tensor;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
@@ -35,15 +35,14 @@ const EOS_TOKEN_ID: u32 = 2048;
 
 struct MockModel {}
 
-#[async_trait]
 impl ModelLoader for MockModel {
     type FilePaths = ();
 
-    async fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
+    fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
         Ok(())
     }
 
-    async fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
+    fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 }
