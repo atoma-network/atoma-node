@@ -192,6 +192,8 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
 
             info!("FLAG3");
 
+            std::thread::sleep(Duration::from_secs(100));
+
             sequence_group_outputs.push(SequenceGroupOutput {
                 outputs: sequence_outputs,
                 sampled_token_ids: None,
