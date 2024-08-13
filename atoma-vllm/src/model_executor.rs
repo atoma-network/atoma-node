@@ -169,8 +169,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // 8. Update the `output`
                 // TODO: we are not forking a parent sequence into a new
                 //       sequence group, so we should not have to update
-                let logits = sequence_logits.i(next_token as usize)?.to_vec1::<f32>()?;
-                let logprob = logits.first().unwrap();
+                let logprob = sequence_logits.to_vec1::<f32>()?[next_token as usize];
                 sequence_outputs.insert(
                     *sequence_id,
                     SequenceOutput {

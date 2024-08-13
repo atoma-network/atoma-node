@@ -150,8 +150,9 @@ impl LlmEngine {
     ///     requests, via the associated `Scheduler`. Once scheduling is complete,
     ///
     /// 2. It sends a new `ExecuteModelRequest` to the `ModelExecutor`'s thread.
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub fn step(&mut self) -> Result<(), EngineError> {
+        info!("`LlmEngine` new step..");
         // 1. Schedule new requests
         let (sequence_groups_metadata, scheduler_outputs) = self.scheduler.schedule()?;
 
