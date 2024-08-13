@@ -634,8 +634,9 @@ pub(crate) mod utils {
     pub(crate) fn compute_selected_token_indices(
         cumulative_query_lengths: &Tensor,
     ) -> Result<Tensor, ModelWorkerError> {
+        let length = cumulative_query_lengths.dims()[0] - 1;
         let ones = Tensor::ones(
-            cumulative_query_lengths.shape(),
+            (length,),
             cumulative_query_lengths.dtype(),
             cumulative_query_lengths.device(),
         )?;

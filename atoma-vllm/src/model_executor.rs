@@ -152,15 +152,12 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                     )?
                 };
 
-                info!("FLAG1");
-
                 // 6. Sample the next token
                 // TODO: we should be able to sample `best_of` sequences
                 //      simultaneously, so we can later generate multiple
                 //      sequences at once, in parallel.
                 let next_token = logits_processor.sample(&sequence_logits)?;
 
-                info!("FLAG2");
                 let is_stop_token = self
                     .eos_token_id()
                     .map(|eid| next_token == eid)
@@ -186,13 +183,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                         )]),
                     },
                 );
-
-                info!("FLAG2");
             }
-
-            info!("FLAG3");
-
-            std::thread::sleep(Duration::from_secs(100));
 
             sequence_group_outputs.push(SequenceGroupOutput {
                 outputs: sequence_outputs,
