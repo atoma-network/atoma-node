@@ -323,7 +323,7 @@ where
                 sequence_lengths.push(sliding_sequence_length as f32);
                 context_lengths.push(sliding_context_length as u32);
 
-                query_lengths.push(query_length);
+                query_lengths.push(query_length as u32);
                 input_tokens.extend(tokens);
                 input_positions.extend((context_length as i64)..(sequence_length as i64));
 
@@ -390,7 +390,7 @@ where
 
         // 11. Build the required tensors for attention metadata
         let max_query_len = *query_lengths.iter().max().unwrap_or(&0);
-        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0.) as usize;
+        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0) as usize;
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
