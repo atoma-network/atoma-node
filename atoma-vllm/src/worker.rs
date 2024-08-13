@@ -389,7 +389,7 @@ where
         }
 
         // 11. Build the required tensors for attention metadata
-        let max_query_len = *query_lengths.iter().max().unwrap_or(&0);
+        let max_query_len = *query_lengths.iter().max().unwrap_or(&0) as usize;
         let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0) as usize;
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
