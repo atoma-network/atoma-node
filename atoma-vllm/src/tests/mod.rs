@@ -113,7 +113,7 @@ impl ModelExecutor for MockModel {
     ) -> Result<Tensor, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
-        let batch_size = attention_metadata.context_lengths.dims()[0];
+        let batch_size = attention_metadata.context_lengths.expect("Context lengths should be set").dims()[0];
         let logits = (0..(batch_size * VOCAB_SIZE))
             .map(|_| rng.gen_range(0.0..1.0) as f32)
             .collect::<Vec<_>>();
