@@ -178,7 +178,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                         is_stop_token,
                         logprob: HashMap::from_iter([(
                             next_token,
-                            LogProb::new(*logprob, Some(1), None), // NOTE: we don't compute the decoded token at this point
+                            LogProb::new(logprob, Some(1), None), // NOTE: we don't compute the decoded token at this point
                         )]),
                     },
                 );
