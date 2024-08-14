@@ -58,9 +58,10 @@ where
 {
     /// Constructor
     #[instrument(skip_all)]
-    pub fn new(
+    pub fn new<T: AsRef<Path>>(
         api_key: String,
         block_size: usize,
+        cache_dir: T,
         cache_config: CacheConfig,
         device: Device,
         dtype: DType,
@@ -72,8 +73,8 @@ where
     ) -> Result<Self, ModelWorkerError> {
         info!("Starting a new `ModelWorker` instance");
         // NOTE: for now we use a synchronous model loader
-        let file_paths = M::fetch(api_key, model_name, revision)?;
-        let model = M::load(file_paths)?;
+        let file_paths = M::fetch(api_key, cache_dir, model_name, revision)?;
+        let model = M::load(device.clone(), dtype, file_paths)?;
         let cache_engine = CacheEngine::new(
             block_size,
             device.clone(),

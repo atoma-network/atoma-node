@@ -10,15 +10,19 @@ use crate::{
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
 use candle_core::{DType, Device};
+use metrics::{counter, gauge};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
-    sync::mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
     task::JoinHandle,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, info_span, instrument, Span};
 
-/// `LlmService` - the entrypoint of the Atoma's vLLM service.
+/// `LlmService` - the entrypoint of the Atoma's inference service.
 /// It receives requests from the Atoma's event subscriber
 /// service. It validates and tokenizes such requests
 /// and sends the valid request to the `LlmEngine`
@@ -34,7 +38,7 @@ pub struct LlmService {
     block_size: usize,
     /// Model weights cache directory
     cache_dir: PathBuf,
-    /// Flushes the model storage
+    /// Flushes the model storage, once the service is stopped
     flush_storage: bool,
     /// Join handle for the background task
     /// running the `LlmEngine` instance
@@ -45,18 +49,22 @@ pub struct LlmService {
     request_counter: u64,
     /// A request validation instance
     validation_service: Validation,
+    /// Shutdown signal
+    shutdown_signal: oneshot::Receiver<()>,
+    /// Tracing span
+    span: Span,
 }
 
 impl LlmService {
     /// Starts the service
     #[instrument(skip_all)]
     #[allow(clippy::too_many_arguments)]
-    pub async fn start<M>(
+    pub async fn start<M, T: AsRef<Path>>(
         api_key: String,
         atoma_event_subscriber_receiver: UnboundedReceiver<GenerateRequest>,
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
         cache_config: CacheConfig,
-        cache_dir: PathBuf,
+        cache_dir: T,
         device: Device,
         dtype: DType,
         flush_storage: bool,
@@ -65,16 +73,25 @@ impl LlmService {
         scheduler_config: SchedulerConfig,
         tokenizer: Tokenizer,
         validation_service: Validation,
+        shutdown_signal: oneshot::Receiver<()>,
     ) -> Result<Self, LlmServiceError>
     where
         M: ModelExecutor + Send + Sync + 'static,
     {
+        let span = info_span!("llm-service");
+        let _enter = span.enter();
+
+        info!("Starting a new `LlmService` instance..");
+
         let block_size = cache_config.block_size;
         let scheduler = Scheduler::new(cache_config.clone(), scheduler_config.clone())?;
 
-        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
+        let start_time = Instant::now();
+
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M, _>(
             api_key,
             cache_config,
+            cache_dir,
             device,
             dtype,
             model_name,
@@ -96,18 +113,18 @@ impl LlmService {
             Ok::<_, LlmServiceError>(())
         });
 
-        let start_time = Instant::now();
-
         Ok(Self {
             atoma_event_subscriber_receiver,
             atoma_engine_sender: request_sender,
-            cache_dir,
+            cache_dir: cache_dir.to_path_buf(),
             block_size,
             flush_storage,
             llm_engine_handle,
             request_counter: 0,
             start_time,
             validation_service,
+            shutdown_signal,
+            span,
         })
     }
 
@@ -117,21 +134,39 @@ impl LlmService {
     /// `LlmEngine` background task
     #[instrument(skip_all)]
     pub async fn run(&mut self) -> Result<(), LlmServiceError> {
-        while let Some(request) = self.atoma_event_subscriber_receiver.recv().await {
-            let sequence_group = self.handle_request(request).await?;
-            self.atoma_engine_sender.send(sequence_group)?;
+        loop {
+            tokio::select! {
+                Some(request) = self.atoma_event_subscriber_receiver.recv() => {
+                    let sequence_group = match self.handle_request(request).await {
+                        Ok(sequence_group) => sequence_group,
+                        Err(e) => {
+                            error!("Failed to handle request, with error: {e}");
+                            continue;
+                            // TODO: we need to handle errors more appropriately,
+                            //       we want to commit to these errors, as validation
+                            //       errors should also be committed to, by the node.
+                        }
+                    };
+                    self.atoma_engine_sender.send(sequence_group)?;
+                },
+                _ = self.shutdown_signal.recv() => {
+                    info!("Received shutdown signal, stopping `LlmService` instance..");
+                    break;
+                }
+            }
         }
-
-        Ok(())
+        self.stop().await
     }
 
     /// Handles a new received `GenerateRequest`
-    /// and produces a valid `SequenceGroup` out of it
-    #[instrument(skip(self))]
+    /// and produces a valid `SequenceGroup` from it
+    #[instrument(skip_all)]
     async fn handle_request(
         &mut self,
         request: GenerateRequest,
     ) -> Result<SequenceGroup, LlmServiceError> {
+        let _enter = self.span.enter();
+
         info!("Received new request, with id = {}", request.request_id);
 
         let arrival_time = Instant::now();
@@ -144,8 +179,15 @@ impl LlmService {
             }
         };
 
+        counter!("llm-service-requests-total").increment(1);
+        gauge!("llm-service-request-validation-time").set(arrival_time.elapsed().as_secs_f32());
+        info!(
+            request_id = %request_id,
+            validation_time = ?arrival_time.elapsed(),
+            "Received and validated new request"
+        );
+
         let sequence_id = self.request_counter;
-        self.request_counter += 1;
 
         let sequence = Sequence::new(
             sequence_id,
@@ -166,7 +208,7 @@ impl LlmService {
     }
 
     /// Processes newly arrived inputs
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     async fn process_received_request(
         &self,
         request: GenerateRequest,
@@ -176,22 +218,46 @@ impl LlmService {
 
     /// Stops the running instance
     #[instrument(skip(self))]
-    pub fn stop(self) -> Result<(), LlmServiceError> {
+    pub async fn stop(self) -> Result<(), LlmServiceError> {
         info!(
             "Stopping the `LlmService` instance, running time: {:?}",
             self.start_time.elapsed()
         );
 
+        // Flush storage if configured
         if self.flush_storage {
-            match std::fs::remove_dir(self.cache_dir) {
-                Ok(()) => {}
+            match tokio::fs::remove_dir(self.cache_dir.as_ref()).await {
+                Ok(()) => info!("Successfully removed storage folder"),
                 Err(e) => error!("Failed to remove storage folder, on shutdown: {e}"),
-            };
+            }
         }
 
+        // Abort the background task
         self.llm_engine_handle.abort();
 
+        // Awaits for the task to finish and handle any errors
+        match self.llm_engine_handle.await {
+            Ok(result) => match result {
+                Ok(()) => info!("`LlmService` background task finished successfully"),
+                Err(e) => error!("`LlmService` background task failed, with error: {e}"),
+            },
+            Err(e) => error!("Failed to join the background task: {e}"),
+        }
+
+        info!("`LlmService` stopped successfully");
         Ok(())
+    }
+}
+
+impl Drop for LlmService {
+    fn drop(&mut self) {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            if let Err(e) = self.stop().await {
+                error!("`LlmService` instance failed to stop gracefully, with error: {e}");
+            }
+        });
+        info!("`LlmService` instance dropped successfully");
     }
 }
 

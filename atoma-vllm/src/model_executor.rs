@@ -31,24 +31,29 @@ use crate::{
 pub trait ModelLoader {
     type FilePaths;
 
-    fn fetch(
+    fn fetch<T: AsRef<Path>>(
         api_key: String,
-        model_name: String,
+        cache_dir: T,
+        model_id: String,
         revision: String,
     ) -> Result<Self::FilePaths, ModelLoaderError>;
-    fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
+
+    fn load(
+        device: Device,
+        dtype: DType,
+        file_paths: Self::FilePaths,
+    ) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
 }
 
 /// `ModelMetadata` - Metadata for a LLM model
-pub trait ModelMetadata {
+pub trait ModelMetadata: ModelLoader {
     fn alibi_slopes(&self) -> Option<&Tensor>;
-    fn cache_dir(&self) -> PathBuf;
     fn eos_token_id(&self) -> Option<u32>;
-    fn head_size(&self) -> usize;
+    fn hidden_size(&self) -> usize;
     fn num_attention_heads(&self) -> usize;
-    fn num_layers(&self) -> usize;
+    fn num_hidden_layers(&self) -> usize;
     fn num_kv_heads(&self) -> usize;
     fn softmax_scale(&self) -> f32;
     fn sliding_window(&self) -> Option<usize>;
@@ -268,8 +273,9 @@ impl ModelThreadDispatcher {
     /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
     /// that continuously listens to incoming AI inference requests, and processes these.
     #[instrument(skip_all)]
-    pub(crate) fn start<M>(
+    pub(crate) fn start<M, T: AsRef<Path>>(
         api_key: String,
+        cache_dir: T,
         cache_config: CacheConfig,
         device: Device,
         dtype: DType,
@@ -289,6 +295,7 @@ impl ModelThreadDispatcher {
             let model_worker = ModelWorker::<M>::new(
                 api_key,
                 block_size,
+                cache_dir,
                 cache_config,
                 device,
                 dtype,

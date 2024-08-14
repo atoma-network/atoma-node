@@ -10,6 +10,7 @@ pub mod evictor;
 pub mod llm_engine;
 pub mod llm_service;
 pub mod model_executor;
+pub mod models;
 pub mod policy;
 pub mod sampling_params;
 pub mod scheduler;

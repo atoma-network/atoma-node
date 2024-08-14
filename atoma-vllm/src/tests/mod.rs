@@ -1,4 +1,5 @@
 use std::{
+    net::Shutdown,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -45,7 +46,7 @@ impl ModelLoader for MockModel {
         Ok(())
     }
 
-    fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
+    fn load(_: Device, _: DType, _: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 }
@@ -55,15 +56,11 @@ impl ModelMetadata for MockModel {
         None
     }
 
-    fn cache_dir(&self) -> PathBuf {
-        "./cache/".into()
-    }
-
     fn eos_token_id(&self) -> Option<u32> {
         Some(EOS_TOKEN_ID)
     }
 
-    fn head_size(&self) -> usize {
+    fn hidden_size(&self) -> usize {
         512
     }
 
@@ -71,7 +68,7 @@ impl ModelMetadata for MockModel {
         8
     }
 
-    fn num_layers(&self) -> usize {
+    fn num_hidden_layers(&self) -> usize {
         8
     }
 
@@ -171,7 +168,8 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(()).expect("Failed to create mock model");
+    let model = MockModel::load(Device::Cpu, DType::F16, ()).expect("Failed to create mock model");
+    let (_, shutdown_signal) = oneshot::channel();
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),
@@ -186,6 +184,7 @@ async fn test_llm_engine() {
         "".to_string(),
         scheduler_config,
         tokenizer,
+        shutdown_signal,
         validation,
     )
     .await
@@ -302,7 +301,8 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(()).expect("Failed to create mock model");
+    let model = MockModel::load(Device::Cpu, DType::F16, ()).expect("Failed to create mock model");
+    let (_, shutdown_signal) = oneshot::channel();
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),
@@ -318,6 +318,7 @@ async fn test_llm_engine_with_enable_chunking() {
         scheduler_config,
         tokenizer,
         validation,
+        shutdown_signal,
     )
     .await
     .expect("Failed to start LLM service");
