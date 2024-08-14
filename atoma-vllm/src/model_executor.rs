@@ -323,7 +323,7 @@ impl ModelThreadDispatcher {
 
     /// Sends a `ModelThreadCommand` instance into the corresponding
     /// `Model`'s thread, to be processed by the `Model` itself.
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     pub fn send(&self, request: ExecuteModelRequest) {
         trace!("Sending new `ExecuteModelRequest` to model executor task");
 
