@@ -634,10 +634,6 @@ pub(crate) mod utils {
     pub(crate) fn compute_selected_token_indices(
         cumulative_query_lengths: &Tensor,
     ) -> Result<Tensor, ModelWorkerError> {
-        panic!(
-            "cumulative_query_lenghts.dims() = {:?}",
-            cumulative_query_lengths.dims()
-        );
         let length = cumulative_query_lengths.dims()[0] - 1;
         let ones = Tensor::ones(
             (length,),
