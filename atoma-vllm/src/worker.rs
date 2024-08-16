@@ -4,6 +4,7 @@ use crate::{
     config::CacheConfig,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
+    tokenizer::TokenizerWorker,
 };
 use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
@@ -72,9 +73,6 @@ where
         enable_chunked_prefill: bool,
     ) -> Result<Self, ModelWorkerError> {
         info!("Starting a new `ModelWorker` instance");
-        // NOTE: for now we use a synchronous model loader
-        let file_paths = M::fetch(api_key, cache_dir, model_name, revision)?;
-        let model = M::load(device.clone(), dtype, file_paths)?;
         let cache_engine = CacheEngine::new(
             block_size,
             device.clone(),

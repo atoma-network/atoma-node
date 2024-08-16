@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{info_span, instrument, Span};
 
 use crate::{
-    tokenizer::{TokenizerError, TokenizerRequest},
+    tokenizer::{EncodeTokenizerRequest, TokenizerError},
     types::{GenerateParameters, GenerateRequest},
 };
 
@@ -26,7 +26,7 @@ pub struct Validation {
     /// Tracing span
     span: Span,
     /// Channel to communicate with the background tokenizer task
-    sender: mpsc::UnboundedSender<TokenizerRequest>,
+    sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
 }
 
 impl Validation {
@@ -37,7 +37,7 @@ impl Validation {
         max_top_n_tokens: u32,
         max_input_length: usize,
         max_total_tokens: u32,
-        sender: mpsc::UnboundedSender<TokenizerRequest>,
+        sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
     ) -> Self {
         Self {
             best_of,
@@ -59,7 +59,7 @@ impl Validation {
     ) -> Result<(Encoding, String), ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
-        let request = TokenizerRequest {
+        let request = EncodeTokenizerRequest {
             input,
             sender: response_sender,
             span: Span::current(),

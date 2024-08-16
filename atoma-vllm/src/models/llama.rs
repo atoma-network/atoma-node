@@ -6,7 +6,9 @@ use std::time::Instant;
 use tokenizers::Tokenizer;
 use tracing::info;
 
-use crate::model_executor::{ModelExecutor, ModelExecutorError, ModelLoader, ModelMetadata};
+use crate::model_executor::{
+    ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelMetadata,
+};
 
 pub struct LlamaModel {
     config: Config,
@@ -16,14 +18,12 @@ pub struct LlamaModel {
 }
 
 impl ModelLoader for LlamaModel {
-    type FilePaths = Vec<PathBuf>;
-
     fn fetch<T: AsRef<Path>>(
         api_key: String,
         cache_dir: T,
         model_id: String,
         revision: String,
-    ) -> Result<Self::FilePaths, ModelLoaderError> {
+    ) -> Result<ModelFilePaths, ModelLoaderError> {
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
@@ -40,17 +40,17 @@ impl ModelLoader for LlamaModel {
             hub_load_safetensors(&repo, "model.safetensors.index.json")?
         };
 
-        let mut file_paths = Vec::with_capacity(2 + model_weights_file_paths.len());
-        file_paths.extend(vec![config_file_path, tokenizer_file_path]);
-        file_paths.extend(model_weights_file_paths);
-
-        Ok(file_paths)
+        Ok(ModelFilePaths {
+            config_path: config_file_path,
+            tokenizer_path: tokenizer_file_path,
+            weights_path: model_weights_file_paths,
+        })
     }
 
     fn load(
         device: Device,
         dtype: DType,
-        file_paths: Self::FilePaths,
+        file_paths: ModelFilePaths,
     ) -> Result<Self, ModelLoaderError>
     where
         Self: Sized,
@@ -59,14 +59,16 @@ impl ModelLoader for LlamaModel {
         let start = Instant::now();
 
         let (model, tokenizer, config) = {
-            let config_filename = file_paths[0].clone();
-            let config: LlamaConfig = serde_json::from_slice(&std::fs::read(config_filename)?)?;
+            let config: LlamaConfig =
+                serde_json::from_slice(&std::fs::read(file_paths.config_path)?)?;
 
-            let tokenizer_filename = file_paths[1].clone();
-            let tokenizer = Tokenizer::from_file(tokenizer_filename)?;
-
-            let vb =
-                unsafe { VarBuilder::from_mmaped_safetensors(&file_paths[2..], dtype, &device)? };
+            let vb = unsafe {
+                VarBuilder::from_mmaped_safetensors(
+                    file_paths.weights_path.as_slice(),
+                    dtype,
+                    &device,
+                )?
+            };
             (model::Llama::load(vb, &config)?, tokenizer, config)
         };
         info!("Loaded Llama model in {:?}", start.elapsed());

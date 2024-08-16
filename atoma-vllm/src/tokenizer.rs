@@ -4,11 +4,11 @@ use tokio::sync::{
     mpsc::{self, error::SendError},
     oneshot,
 };
-use tracing::{error, Span};
+use tracing::{error, info, info_span, Span};
 
-/// `TokenizerRequest` - A request for the tokenizer worker tokenize
-/// the string input
-pub struct TokenizerRequest {
+/// `EncodeTokenizerRequest` - A request for encoding a string input
+/// into a suite of tokens (expressed as a `u32` vector)
+pub struct EncodeTokenizerRequest {
     /// Input string
     pub input: String,
     /// `oneshot::Sender`` responsible to deliver the result of tokenization,
@@ -19,8 +19,8 @@ pub struct TokenizerRequest {
     pub span: Span,
 }
 
-/// `DetokenizerRequest` - A request to decode a given token id into an actual text
-pub struct DetokenizerRequest {
+/// `DecodeTokenizerRequest` - A request to decode a given token id into an actual text
+pub struct DecodeTokenizerRequest {
     /// The token id to be decoded
     pub token_id: u32,
     /// `oneshot::Sender` responsible to deliver the result of detokenization
@@ -31,15 +31,19 @@ pub struct DetokenizerRequest {
 
 /// `Tokenizer` - a tokenizer worker
 /// responsible for prepare input requests
-pub struct TokenizerWorker {}
+pub struct TokenizerWorker {
+    span: Span,
+}
 
 impl TokenizerWorker {
     /// Starts the tokenizer workers
     pub async fn start(
         tokenizer: Tokenizer,
-        receiver: mpsc::UnboundedReceiver<TokenizerRequest>,
+        receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         workers: usize,
     ) -> Result<(), TokenizerError> {
+        let span = info_span!("tokenizer-worker");
+        let _enter = span.enter();
         let mut senders = Vec::with_capacity(workers);
 
         for _ in 0..workers {
@@ -49,6 +53,7 @@ impl TokenizerWorker {
 
             // Spawning the worker
             tokio::task::spawn_blocking(|| {
+                info!("Starting tokenizer task");
                 start_tokenizer_task(tokenizer_clone, receiver)?;
                 Ok::<_, TokenizerError>(())
             });
@@ -64,11 +69,11 @@ impl TokenizerWorker {
 /// Starts a new tokenizer tokio task
 fn start_tokenizer_task(
     tokenizer: Tokenizer,
-    mut receiver: mpsc::UnboundedReceiver<TokenizerRequest>,
+    mut receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
 ) -> Result<(), TokenizerError> {
     // Loops over requests
     while let Some(request) = receiver.blocking_recv() {
-        let TokenizerRequest {
+        let EncodeTokenizerRequest {
             input,
             sender,
             span,
@@ -85,8 +90,8 @@ fn start_tokenizer_task(
 /// Check https://en.wikipedia.org/wiki/Round-robin_scheduling
 /// for more details.
 async fn round_robin_task(
-    mut receiver: mpsc::UnboundedReceiver<TokenizerRequest>,
-    senders: Vec<mpsc::UnboundedSender<TokenizerRequest>>,
+    mut receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
+    senders: Vec<mpsc::UnboundedSender<EncodeTokenizerRequest>>,
 ) -> Result<(), TokenizerError> {
     loop {
         for sender in &senders {
@@ -113,5 +118,5 @@ pub enum TokenizerError {
     #[error("Tokenizer error: `{0}`")]
     Tokenizer(#[from] Error),
     #[error("Send error: `{0}`")]
-    SendError(#[from] SendError<TokenizerRequest>),
+    SendError(#[from] SendError<EncodeTokenizerRequest>),
 }

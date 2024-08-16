@@ -6,6 +6,7 @@ use crate::{
     model_executor::{ModelExecutor, ModelThreadDispatcher, ModelThreadError},
     scheduler::{Scheduler, SchedulerError},
     sequence::{Sequence, SequenceError, SequenceGroup},
+    tokenizer::TokenizerWorker,
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
@@ -21,6 +22,12 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{error, info, info_span, instrument, Span};
+
+// TODO: 
+// 1. We should have a configurable number of tokenizer workers
+//     in the service. This can be a configurable parameter.
+// 2. Add a configuration file for the `LlmService` struct
+// 3. Add proper tokenizer shutdown logic, and other related services
 
 /// `LlmService` - the entrypoint of the Atoma's inference service.
 /// It receives requests from the Atoma's event subscriber
@@ -49,6 +56,8 @@ pub struct LlmService {
     request_counter: u64,
     /// A request validation instance
     validation_service: Validation,
+    /// Tokenizer handle
+    tokenizer_handle: JoinHandle<Result<(), LlmServiceError>>,
     /// Shutdown signal
     shutdown_signal: oneshot::Receiver<()>,
     /// Tracing span
@@ -69,9 +78,9 @@ impl LlmService {
         dtype: DType,
         flush_storage: bool,
         model_name: String,
+        num_tokenizer_workers: usize,
         revision: String,
         scheduler_config: SchedulerConfig,
-        tokenizer: Tokenizer,
         validation_service: Validation,
         shutdown_signal: oneshot::Receiver<()>,
     ) -> Result<Self, LlmServiceError>
@@ -87,6 +96,21 @@ impl LlmService {
         let scheduler = Scheduler::new(cache_config.clone(), scheduler_config.clone())?;
 
         let start_time = Instant::now();
+
+        // We do not need to spawn a new thread for fetching model weights files,
+        // as the service will not start until the model is loaded in memory
+        // NOTE: for now we use a synchronous model loader
+        let file_paths = M::fetch(api_key, cache_dir, model_name, revision)?;
+        let tokenizer = Tokenizer::from_file(&file_paths.tokenizer_path)?;
+        let model = M::load(device.clone(), dtype, &file_paths)?;
+
+        let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
+
+        let tokenizer_handle = tokio::spawn(async move {
+            TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers)
+                .await
+                .expect("Failed to start tokenizer");
+        });
 
         let model_thread_dispatcher = ModelThreadDispatcher::start::<M, _>(
             api_key,
@@ -124,6 +148,7 @@ impl LlmService {
             start_time,
             validation_service,
             shutdown_signal,
+            tokenizer_handle,
             span,
         })
     }

@@ -16,7 +16,7 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     model_executor::{
-        ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError, ModelMetadata,
+        ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError, ModelMetadata
     },
     sequence::{
         ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
@@ -40,13 +40,15 @@ const VOCAB_SIZE: usize = 128;
 struct MockModel {}
 
 impl ModelLoader for MockModel {
-    type FilePaths = ();
-
-    fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
-        Ok(())
+    fn fetch(_: String, _: String, _: String) -> Result<ModelFilePaths, ModelLoaderError> {
+        Ok(ModelFilePaths {
+            config_path: "".into(),
+            tokenizer_path: "".into(),
+            weights_path: vec![],
+        })
     }
 
-    fn load(_: Device, _: DType, _: Self::FilePaths) -> Result<Self, ModelLoaderError> {
+    fn load(_: Device, _: DType, _: ModelFilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 }

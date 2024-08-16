@@ -5,6 +5,7 @@ use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
+use tokenizers::Tokenizer;
 use tokio::{
     sync::{
         mpsc,
@@ -24,24 +25,32 @@ use crate::{
     worker::{ModelWorker, ModelWorkerError},
 };
 
+/// `FilePaths` - wrapper struct for the model's file paths
+pub struct ModelFilePaths {
+    /// Configuration file path
+    pub config_path: PathBuf,
+    /// Tokenizer file path
+    pub tokenizer_path: PathBuf,
+    /// Weights file path
+    pub weights_path: Vec<PathBuf>,
+}
+
 /// `ModelLoader` trait - interface for fetching
 /// and loading a LLM model weights. Also has a method
 /// providing the `eos_token_id` for the current model's
 /// tokenizer.
 pub trait ModelLoader {
-    type FilePaths;
-
     fn fetch<T: AsRef<Path>>(
         api_key: String,
         cache_dir: T,
         model_id: String,
         revision: String,
-    ) -> Result<Self::FilePaths, ModelLoaderError>;
+    ) -> Result<ModelFilePaths, ModelLoaderError>;
 
     fn load(
         device: Device,
         dtype: DType,
-        file_paths: Self::FilePaths,
+        file_paths: &ModelFilePaths,
     ) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
@@ -287,7 +296,7 @@ impl ModelThreadDispatcher {
         M: ModelExecutor + Send + Sync + 'static,
     {
         let (sender, receiver) = mpsc::unbounded_channel();
-
+        
         let join_handle = tokio::task::spawn_blocking(move || {
             let block_size = cache_config.block_size();
             let num_cpu_blocks = cache_config.num_cpu_blocks();
