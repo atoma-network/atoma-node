@@ -585,7 +585,7 @@ impl BlockSpaceManager {
     }
 
     /// Gets `BlockId` for each `Sequence` in `BlockTable`
-    pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<i64>> {
+    pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<u32>> {
         self.block_tables.get(sequence_id).and_then(|bt| {
             bt.iter()
                 .map(|b| b.read_lock().map(|ok| ok.block_number()))
