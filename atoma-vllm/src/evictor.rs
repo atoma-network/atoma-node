@@ -16,7 +16,7 @@ pub trait Evictor {
 /// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
 #[derive(Debug)]
 pub struct LRUEvictor {
-    pub free_table: IndexMap<i64, PhysicalTokenBlock>,
+    pub free_table: IndexMap<u32, PhysicalTokenBlock>,
 }
 
 impl LRUEvictor {
@@ -36,7 +36,7 @@ impl Default for LRUEvictor {
 
 impl Evictor for LRUEvictor {
     /// Checks if `LRUEvictor` contains a block for the corresponding `block_number`
-    fn contains(&self, block_number: i64) -> bool {
+    fn contains(&self, block_number: u32) -> bool {
         self.free_table.contains_key(&block_number)
     }
 

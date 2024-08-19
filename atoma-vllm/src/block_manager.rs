@@ -658,7 +658,7 @@ impl BlockSpaceManager {
     pub fn gets_all_computed_blocks(
         &self,
         sequence: Sequence,
-    ) -> Result<Vec<i64>, BlockSpaceManagerError> {
+    ) -> Result<Vec<u32>, BlockSpaceManagerError> {
         info!(
             "Getting all computed blocks for sequence with id = {}",
             sequence.sequence_id()

@@ -1211,7 +1211,7 @@ impl<P: Policy> Scheduler<P> {
             // Mapping from sequence id to `SequenceData`
             let mut sequence_data = HashMap::<u64, SequenceData>::new();
             // Mapping from sequence id to `PhysicalBlock` number
-            let mut block_tables = HashMap::<u64, Vec<i64>>::new();
+            let mut block_tables = HashMap::<u64, Vec<u32>>::new();
 
             for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
                 if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
