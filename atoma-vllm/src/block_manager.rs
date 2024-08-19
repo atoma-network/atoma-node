@@ -383,7 +383,7 @@ impl BlockSpaceManager {
     pub fn swap_in(
         &mut self,
         seq_group: &mut SequenceGroup,
-    ) -> Result<HashMap<i64, i64>, BlockSpaceManagerError> {
+    ) -> Result<HashMap<u32, u32>, BlockSpaceManagerError> {
         info!(
             "Swapping in CPU to GPU blocks, for sequence group with id = {}",
             seq_group.request_id
@@ -454,7 +454,7 @@ impl BlockSpaceManager {
     pub fn swap_out(
         &mut self,
         seq_group: &mut SequenceGroup,
-    ) -> Result<HashMap<i64, i64>, BlockSpaceManagerError> {
+    ) -> Result<HashMap<u32, u32>, BlockSpaceManagerError> {
         info!(
             "Swap out GPU to CPU blocks, for sequence group with id = {}",
             seq_group.request_id

@@ -32,7 +32,7 @@ const SCHEDULE_WAIT_PERIOD: u64 = 100;
 /// `LlmEngine` - An asynchronous worker which is responsible for
 /// scheduling new requests. It is also responsible
 /// to communicate with the `ModelExecutor` service to send new requests
-/// for continously batched AI inference
+/// for continuously batched AI inference
 pub struct LlmEngine {
     /// Atoma's client sender channel, to share newly AI
     /// generated outputs
@@ -205,8 +205,8 @@ impl LlmEngine {
             // after the new LLM inference iteration has been performed
             for (sequence_id, sequence) in scheduled_sequence_group.scheduled_group.sequences.iter()
             {
-                let sequence_output = if let Some(o) = output.outputs.get(sequence_id) {
-                    o
+                let sequence_output = if let Some(output) = output.outputs.get(sequence_id) {
+                    output
                 } else {
                     error!(
                         "Missing generated sequence output token for sequence with id = {}",
@@ -424,8 +424,7 @@ impl GenerateRequestOutput {
     }
 }
 
-/// `InferenceOutput` - Output of running AI inference
-/// on a given sequence group
+/// `InferenceOutput` - Output of running AI inference on a given sequence group
 #[derive(Debug)]
 pub struct InferenceOutput {
     /// The index of the output in the request
