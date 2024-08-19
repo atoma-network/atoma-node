@@ -4,10 +4,10 @@ use thiserror::Error;
 use crate::block::PhysicalTokenBlock;
 
 pub trait Evictor {
-    fn contains(&self, block_number: i64) -> bool;
+    fn contains(&self, block_number: u32) -> bool;
     fn evict(&mut self) -> Result<PhysicalTokenBlock, EvictorError>;
     fn add(&mut self, block: PhysicalTokenBlock);
-    fn remove(&mut self, block_number: i64) -> Option<PhysicalTokenBlock>;
+    fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock>;
     fn num_blocks(&self) -> usize;
 }
 
@@ -84,7 +84,7 @@ impl Evictor for LRUEvictor {
     }
 
     /// Removes, if possible, a block with `block_number`
-    fn remove(&mut self, block_number: i64) -> Option<PhysicalTokenBlock> {
+    fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock> {
         self.free_table.shift_remove(&block_number)
     }
 
