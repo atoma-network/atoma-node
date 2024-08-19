@@ -27,7 +27,7 @@ use crate::{
 };
 
 const BLOCK_SIZE: usize = 16;
-const MAX_ELAPSED_INTERNAL: usize = 50;
+const MAX_ELAPSED_INTERNAL: u64 = 50;
 const MAX_STOP_SEQUENCES: usize = 1;
 const MAX_TOP_N_TOKENS: u32 = 0;
 const MAX_INPUT_LENGTH: usize = 16;
