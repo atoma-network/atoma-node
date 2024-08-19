@@ -1038,7 +1038,7 @@ impl SequenceGroupMetadata {
         sequence_data: HashMap<u64, SequenceData>,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria_params: StoppingCriteriaParameters,
-        block_tables: HashMap<u64, Vec<i64>>,
+        block_tables: HashMap<u64, Vec<u32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,

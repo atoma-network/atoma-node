@@ -395,7 +395,7 @@ where
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
         let block_tables_tensor =
-            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0i64, &self.device)?;
+            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0u32, &self.device)?;
 
         let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
         let mut seq_start_loc =

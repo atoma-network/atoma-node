@@ -201,7 +201,7 @@ impl BlockSpaceManager {
     pub fn append_slots(
         &mut self,
         sequence: RwLockReadGuard<Sequence>,
-    ) -> Result<Option<(i64, i64)>, BlockSpaceManagerError> {
+    ) -> Result<Option<(u32, u32)>, BlockSpaceManagerError> {
         let num_total_logical_token_blocks = sequence.get_num_total_logical_token_blocks();
 
         if num_total_logical_token_blocks == 0 {
