@@ -296,7 +296,7 @@ impl ModelThreadDispatcher {
         M: ModelExecutor + Send + Sync + 'static,
     {
         let (sender, receiver) = mpsc::unbounded_channel();
-        
+
         let join_handle = tokio::task::spawn_blocking(move || {
             let block_size = cache_config.block_size();
             let num_cpu_blocks = cache_config.num_cpu_blocks();

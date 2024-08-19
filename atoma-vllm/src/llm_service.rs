@@ -23,7 +23,7 @@ use tokio::{
 };
 use tracing::{error, info, info_span, instrument, Span};
 
-// TODO: 
+// TODO:
 // 1. We should have a configurable number of tokenizer workers
 //     in the service. This can be a configurable parameter.
 // 2. Add a configuration file for the `LlmService` struct
@@ -257,7 +257,7 @@ impl LlmService {
             }
         }
 
-        // Abort the background task
+        // Abort the background tasks
         self.llm_engine_handle.abort();
 
         // Awaits for the task to finish and handle any errors
@@ -266,7 +266,17 @@ impl LlmService {
                 Ok(()) => info!("`LlmService` background task finished successfully"),
                 Err(e) => error!("`LlmService` background task failed, with error: {e}"),
             },
-            Err(e) => error!("Failed to join the background task: {e}"),
+            Err(e) => error!("Failed to abort the background task: {e}"),
+        }
+
+        self.tokenizer_handle.abort();
+
+        match self.tokenizer_handle.await {
+            Ok(result) => match result {
+                Ok(()) => info!("`LlmService` tokenizer background task finished successfully"),
+                Err(e) => error!("`LlmService` tokenizer background task failed, with error: {e}"),
+            },
+            Err(e) => error!("Failed to abort the tokenizer background task: {e}"),
         }
 
         info!("`LlmService` stopped successfully");

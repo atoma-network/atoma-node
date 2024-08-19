@@ -5,6 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
+mod llama;
+
 use atoma_paged_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
@@ -16,7 +19,8 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     model_executor::{
-        ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError, ModelMetadata
+        ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError,
+        ModelMetadata,
     },
     sequence::{
         ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
