@@ -25,10 +25,14 @@ impl FirebaseOutputManager {
         password: String,
         api_key: String,
         firebase: Firebase,
+        node_id: u64,
     ) -> Result<Self, AtomaOutputManagerError> {
+        let firebase_url = Url::parse(&firebase_url)?;
         Ok(Self {
-            firebase_url: Url::parse(&firebase_url)?,
-            auth: firebase.add_user(email, password, api_key).await?,
+            auth: firebase
+                .add_user(email, password, api_key, &firebase_url, node_id)
+                .await?,
+            firebase_url,
         })
     }
 
@@ -48,7 +52,9 @@ impl FirebaseOutputManager {
             let mut path_segment = url
                 .path_segments_mut()
                 .map_err(|_| AtomaOutputManagerError::UrlError("URL is not valid".to_string()))?;
-            path_segment.push("data");
+            path_segment.push("response");
+            path_segment.push(&output_metadata.small_id.to_string());
+            path_segment.push(&output_metadata.output_destination.user_id());
             path_segment.push(&format!("{}.json", output_metadata.ticket_id));
         }
         url.set_query(Some(&format!("auth={token}")));

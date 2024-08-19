@@ -52,13 +52,14 @@ impl GatewayOutputManager {
             transaction_base_58,
             output_destination,
             output_type,
+            ..
         } = output_metadata;
 
         let gateway_user_id =
             if let OutputDestination::Gateway { gateway_user_id } = output_destination {
                 gateway_user_id
             } else {
-                return Err(AtomaOutputManagerError::InvalidOutputDestiny(
+                return Err(AtomaOutputManagerError::InvalidOutputDestination(
                     "Missing `gateway_user_id` from `OutputDestinty".into(),
                 ));
             };

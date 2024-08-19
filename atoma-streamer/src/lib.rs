@@ -56,6 +56,8 @@ impl AtomaStreamer {
                     config.firebase_email(),
                     config.firebase_password(),
                     config.firebase_api_key(),
+                    &config.firebase_url()?,
+                    config.small_id,
                 )
                 .await?,
         })

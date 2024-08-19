@@ -85,6 +85,10 @@ impl Request {
     pub fn output_destination(&self) -> Vec<u8> {
         self.output_destination.clone()
     }
+
+    pub fn set_prompt(&mut self, prompt: String) {
+        self.params.replace_prompt(prompt);
+    }
 }
 
 impl TryFrom<(u64, Value)> for Request {
@@ -207,6 +211,20 @@ impl PromptParams {
         match self {
             Self::Text2ImagePromptParams(p) => Some(p),
             Self::Text2TextPromptParams(_) => None,
+        }
+    }
+
+    pub fn prompt(&self) -> String {
+        match self {
+            Self::Text2ImagePromptParams(p) => p.prompt(),
+            Self::Text2TextPromptParams(p) => p.prompt(),
+        }
+    }
+
+    pub fn replace_prompt(&mut self, prompt: String) {
+        match self {
+            Self::Text2ImagePromptParams(p) => p.prompt = prompt,
+            Self::Text2TextPromptParams(p) => p.prompt = prompt,
         }
     }
 }
@@ -636,8 +654,24 @@ impl Response {
 /// `OutputDestination` - enum encapsulating the output's destination
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum OutputDestination {
-    Firebase,
+    Firebase { user_id: String },
     Gateway { gateway_user_id: String },
+}
+
+impl OutputDestination {
+    /// Getter for `user_id`
+    pub fn user_id(&self) -> String {
+        match self {
+            Self::Firebase { user_id } => user_id.clone(),
+            Self::Gateway { gateway_user_id } => gateway_user_id.clone(),
+        }
+    }
+}
+
+/// `OutputDestination` - enum encapsulating the output's destination
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum InputSource {
+    Firebase,
 }
 
 /// `OutputType` - enum encapsulating the output type (e.g. `Text`, `Image`, etc)
@@ -645,6 +679,12 @@ pub enum OutputDestination {
 pub enum OutputType {
     Text,
     Image,
+}
+
+/// `OutputType` - enum encapsulating the output type (e.g. `Text`, `Image`, etc)
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum InputType {
+    Text,
 }
 
 impl std::fmt::Display for OutputType {
@@ -682,10 +722,27 @@ pub struct AtomaOutputMetadata {
     pub leaf_hash: Vec<u8>,
     /// The transaction in base58 format (used in the Sui blockchain)
     pub transaction_base_58: String,
-    /// The output destiny
+    /// The output destination
     pub output_destination: OutputDestination,
     /// The output type (e.g. `Text`, `Image`)
     pub output_type: OutputType,
+    /// small_id of the node
+    pub small_id: u64,
+}
+
+/// `AtomaInputMetadata` - metadata associated with the user's input for a given request
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AtomaInputMetadata {
+    /// User's public firebase id
+    pub user_id: String,
+    /// The ticket id associated with the request, in hex format
+    pub ticket_id: String,
+    /// Node id
+    pub node_id: u64,
+    /// The input source
+    pub input_source: InputSource,
+    /// The output type (e.g. `Text`, `Image`)
+    pub input_type: InputType,
 }
 
 mod utils {
