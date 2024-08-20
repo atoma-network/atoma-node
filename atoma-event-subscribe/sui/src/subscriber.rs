@@ -17,6 +17,7 @@ use atoma_types::{AtomaInputMetadata, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 /// The size of a request id, expressed in hex format
 const REQUEST_ID_HEX_SIZE: usize = 64;
+const WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS: u64 = 5;
 
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
@@ -222,7 +223,7 @@ impl SuiSubscriber {
         debug!("event data: {}", event_data);
         let mut request = Request::try_from((self.id, event_data))?;
         let metadata = AtomaInputMetadata {
-            user_id: request.params().prompt(),
+            user_id: request.params().user_id(),
             ticket_id: hex::encode(request.id().as_slice()),
             node_id: self.id,
             input_source: atoma_types::InputSource::Firebase,
@@ -233,9 +234,12 @@ impl SuiSubscriber {
             .send((metadata, oneshot_sender))
             .await
             .map_err(Box::new)?;
-        let result = tokio::time::timeout(Duration::from_secs(5), oneshot_receiver)
-            .await
-            .map_err(|_| SuiSubscriberError::TimeoutError)??;
+        let result = tokio::time::timeout(
+            Duration::from_secs(WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS),
+            oneshot_receiver,
+        )
+        .await
+        .map_err(|_| SuiSubscriberError::TimeoutError)??;
         // Replace the prompt string to the real prompt instead of the firebase user id.
         request.set_prompt(result);
         info!("Received new request: {:?}", request);

@@ -42,12 +42,9 @@ impl FirebaseInputManager {
         &mut self,
         input_metadata: AtomaInputMetadata,
     ) -> Result<String, AtomaInputManagerError> {
-        dbg!(&input_metadata);
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
-        dbg!(&token);
         let mut url = self.firebase_url.clone();
-        dbg!(&url);
         {
             let mut path_segment = url
                 .path_segments_mut()
@@ -59,7 +56,6 @@ impl FirebaseInputManager {
             path_segment.push("prompt.json");
         }
         url.set_query(Some(&format!("auth={token}")));
-        dbg!(&url);
         info!("Firebase's input url: {:?}", url);
         debug!(
             "Submitting to Firebase's real time storage, with metadata: {:?}",

@@ -214,7 +214,7 @@ impl PromptParams {
         }
     }
 
-    pub fn prompt(&self) -> String {
+    pub fn user_id(&self) -> String {
         match self {
             Self::Text2ImagePromptParams(p) => p.prompt(),
             Self::Text2TextPromptParams(p) => p.prompt(),
