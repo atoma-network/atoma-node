@@ -1,13 +1,23 @@
-use atoma_paged_attention::models::{llama::Config, Llama};
-use candle_core::{DType, Device};
+use atoma_paged_attention::{
+    models::{
+        llama::{Config, LlamaConfig},
+        Llama,
+    },
+    FlashAttentionDecodingMetadata,
+};
+use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
-use std::time::Instant;
+use std::{path::Path, time::Instant};
 use tokenizers::Tokenizer;
 use tracing::info;
 
-use crate::model_executor::{
-    ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelMetadata,
+use crate::{
+    model_executor::{
+        ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError,
+        ModelMetadata,
+    },
+    models::hub_load_safetensors,
 };
 
 pub struct LlamaModel {
@@ -27,14 +37,14 @@ impl ModelLoader for LlamaModel {
         let api = ApiBuilder::new()
             .with_progress(true)
             .with_token(Some(api_key))
-            .with_cache_dir(cache_dir)
+            .with_cache_dir(cache_dir.as_ref().to_path_buf())
             .build()?;
 
         let repo = api.repo(Repo::with_revision(model_id, RepoType::Model, revision));
         let config_file_path = repo.get("config.json")?;
         let tokenizer_file_path = repo.get("tokenizer.json")?;
 
-        let model_weights_file_paths = if &repo_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0" {
+        let model_weights_file_paths = if &model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0" {
             vec![repo.get("model.safetensors")?]
         } else {
             hub_load_safetensors(&repo, "model.safetensors.index.json")?
@@ -69,13 +79,13 @@ impl ModelLoader for LlamaModel {
                     &device,
                 )?
             };
-            (model::Llama::load(vb, &config)?, tokenizer, config)
+            (Llama::load(vb, &config, dtype, &device)?, config)
         };
         info!("Loaded Llama model in {:?}", start.elapsed());
 
         Ok(Self {
             model,
-            config,
+            config: config.into_config(),
             device,
             dtype,
         })
@@ -130,7 +140,7 @@ impl ModelExecutor for LlamaModel {
             input,
             input_positions,
             selected_token_positions,
-            kv_cache,
+            &kv_cache,
             attention_metadata,
         )?)
     }

@@ -1,6 +1,11 @@
-use crate::{llm_service::LlmService, validation::Validation, config::{CacheConfig, SchedulerConfig}};
+use crate::{
+    config::{CacheConfig, SchedulerConfig},
+    llm_service::LlmService,
+    validation::Validation,
+};
 use candle_core::{cuda::cudarc::driver::result::device, DType, Device};
 use std::path::PathBuf;
+use tokio::sync::oneshot;
 
 const BLOCK_SIZE: usize = 16;
 const MAX_STOP_SEQUENCES: usize = 1;
@@ -25,16 +30,9 @@ async fn test_llama_model() {
     let (atoma_client_sender, atoma_client_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (tokenizer_sender, tokenizer_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    let cache_config = CacheConfig::new(
-        BLOCK_SIZE,
-        1.0,
-        1,
-        "auto".to_string(),
-        None,
-        None,
-        100,
-        100,
-    ).expect("Failed to create cache config");
+    let cache_config =
+        CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 100, 100)
+            .expect("Failed to create cache config");
 
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");

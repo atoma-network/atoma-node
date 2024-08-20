@@ -1,9 +1,12 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_engine::{EngineError, GenerateRequestOutput, LlmEngine},
-    model_executor::{ModelExecutor, ModelThreadDispatcher, ModelThreadError},
+    model_executor::{ModelExecutor, ModelLoaderError, ModelThreadDispatcher, ModelThreadError},
     scheduler::{Scheduler, SchedulerError},
     sequence::{Sequence, SequenceError, SequenceGroup},
     tokenizer::TokenizerWorker,
@@ -16,6 +19,7 @@ use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
     sync::{
+        broadcast::error,
         mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
@@ -112,14 +116,11 @@ impl LlmService {
                 .expect("Failed to start tokenizer");
         });
 
-        let model_thread_dispatcher = ModelThreadDispatcher::start::<M, _>(
-            api_key,
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
             cache_config,
-            cache_dir,
             device,
             dtype,
-            model_name,
-            revision,
+            model,
             scheduler_config,
         )?;
 
@@ -298,6 +299,10 @@ impl Drop for LlmService {
 
 #[derive(Debug, Error)]
 pub enum LlmServiceError {
+    #[error("Boxed error: `{0}`")]
+    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Model loader error: `{0}`")]
+    ModelLoaderError(#[from] ModelLoaderError),
     #[error("Model thread error: `{0}`")]
     ModelThreadError(#[from] ModelThreadError),
     #[error("Scheduler error: `{0}`")]

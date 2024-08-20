@@ -1,6 +1,6 @@
 use std::{
     net::Shutdown,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -45,7 +45,11 @@ const VOCAB_SIZE: usize = 128;
 struct MockModel {}
 
 impl ModelLoader for MockModel {
-    fn fetch(_: String, _: String, _: String) -> Result<ModelFilePaths, ModelLoaderError> {
+    fn fetch<T: AsRef<Path>>(
+        _: String,
+        _: String,
+        _: String,
+    ) -> Result<ModelFilePaths, ModelLoaderError> {
         Ok(ModelFilePaths {
             config_path: "".into(),
             tokenizer_path: "".into(),
@@ -53,7 +57,7 @@ impl ModelLoader for MockModel {
         })
     }
 
-    fn load(_: Device, _: DType, _: ModelFilePaths) -> Result<Self, ModelLoaderError> {
+    fn load(_: Device, _: DType, _: &ModelFilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 }
@@ -175,7 +179,13 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(Device::Cpu, DType::F16, ()).expect("Failed to create mock model");
+    let model_file_paths = ModelFilePaths {
+        config_path: "".into(),
+        tokenizer_path: "".into(),
+        weights_path: vec![],
+    };
+    let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
+        .expect("Failed to create mock model");
     let (_, shutdown_signal) = oneshot::channel();
 
     let mut service = LlmService::start::<MockModel>(
@@ -308,7 +318,13 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load(Device::Cpu, DType::F16, ()).expect("Failed to create mock model");
+    let model_file_paths = ModelFilePaths {
+        config_path: "".into(),
+        tokenizer_path: "".into(),
+        weights_path: vec![],
+    };
+    let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
+        .expect("Failed to create mock model");
     let (_, shutdown_signal) = oneshot::channel();
 
     let mut service = LlmService::start::<MockModel>(

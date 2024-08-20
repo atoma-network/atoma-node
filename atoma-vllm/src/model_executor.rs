@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
@@ -282,14 +286,11 @@ impl ModelThreadDispatcher {
     /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
     /// that continuously listens to incoming AI inference requests, and processes these.
     #[instrument(skip_all)]
-    pub(crate) fn start<M, T: AsRef<Path>>(
-        api_key: String,
-        cache_dir: T,
+    pub(crate) fn start<M>(
         cache_config: CacheConfig,
         device: Device,
         dtype: DType,
-        model_name: String,
-        revision: String,
+        model: M,
         scheduler_config: SchedulerConfig,
     ) -> Result<Self, ModelThreadError>
     where
@@ -302,14 +303,11 @@ impl ModelThreadDispatcher {
             let num_cpu_blocks = cache_config.num_cpu_blocks();
             let num_gpu_blocks = cache_config.num_gpu_blocks();
             let model_worker = ModelWorker::<M>::new(
-                api_key,
                 block_size,
-                cache_dir,
                 cache_config,
                 device,
                 dtype,
-                model_name,
-                revision,
+                model,
                 num_cpu_blocks,
                 num_gpu_blocks,
                 scheduler_config.enable_chunked_prefill(),

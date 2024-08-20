@@ -59,15 +59,12 @@ where
 {
     /// Constructor
     #[instrument(skip_all)]
-    pub fn new<T: AsRef<Path>>(
-        api_key: String,
+    pub fn new(
         block_size: usize,
-        cache_dir: T,
         cache_config: CacheConfig,
         device: Device,
         dtype: DType,
-        model_name: String,
-        revision: String,
+        model: M,
         num_cpu_blocks: usize,
         num_gpu_blocks: usize,
         enable_chunked_prefill: bool,
@@ -78,9 +75,9 @@ where
             device.clone(),
             dtype,
             model.alibi_slopes(),
-            model.head_size() / model.num_attention_heads(),
+            model.hidden_size() / model.num_attention_heads(),
             model.num_attention_heads(),
-            model.num_layers(),
+            model.num_attention_heads(),
             model.num_kv_heads(),
             num_cpu_blocks,
             num_gpu_blocks,
