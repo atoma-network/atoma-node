@@ -2,6 +2,7 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     validation::Validation,
+    models::llama::LlamaModel,
 };
 use candle_core::{cuda::cudarc::driver::result::device, DType, Device};
 use std::path::PathBuf;
@@ -46,7 +47,7 @@ async fn test_llama_model() {
         tokenizer_sender,
     );
 
-    let llm_service = LlmService::start(
+    let llm_service = LlmService::start::<LlamaModel>(
         api_key,
         atoma_event_subscriber_receiver,
         atoma_client_sender,

@@ -1,10 +1,12 @@
 pub mod llama;
 
+use std::path::PathBuf;
+
 /// Helper function to download safetensors from the HF API
 pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
-) -> Result<Vec<PathBuf>, ModelError> {
+) -> candle_core::Result<Vec<PathBuf>> {
     let json_file = repo.get(json_file)?;
     let json_file = std::fs::File::open(json_file)?;
     let json: serde_json::Value = serde_json::from_reader(&json_file)?;
@@ -19,9 +21,8 @@ pub fn hub_load_safetensors(
             safetensors_files.insert(file.to_string());
         }
     }
-    let safetensors_files = safetensors_files
+    safetensors_files
         .iter()
-        .map(|v| repo.get(v).map_err(candle::Error::wrap))
-        .collect::<candle::Result<Vec<_>>>()?;
-    Ok(safetensors_files)
+        .map(|v| repo.get(v).map_err(candle_core::Error::wrap))
+        .collect::<candle_core::Result<Vec<_>>>()
 }

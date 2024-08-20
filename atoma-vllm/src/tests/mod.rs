@@ -12,7 +12,7 @@ use atoma_paged_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
 use crate::{
@@ -47,6 +47,7 @@ struct MockModel {}
 impl ModelLoader for MockModel {
     fn fetch<T: AsRef<Path>>(
         _: String,
+        _: T,
         _: String,
         _: String,
     ) -> Result<ModelFilePaths, ModelLoaderError> {

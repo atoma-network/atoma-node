@@ -367,7 +367,16 @@ pub enum ModelThreadError {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelLoaderError {}
+pub enum ModelLoaderError {
+    #[error("Api error: `{0}`")]
+    ApiError(#[from] hf_hub::api::sync::ApiError),
+    #[error("Candle error: `{0}`")]
+    CandleError(#[from] candle_core::Error),
+    #[error("Io error: `{0}`")]
+    IoError(#[from] std::io::Error),
+    #[error("Serde json error: `{0}`")]
+    SerdeJsonError(#[from] serde_json::Error),
+}
 
 #[derive(Debug, Error)]
 pub enum ModelExecutorError {

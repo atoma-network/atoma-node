@@ -3,7 +3,7 @@ use atoma_paged_attention::{
         llama::{Config, LlamaConfig},
         Llama,
     },
-    FlashAttentionDecodingMetadata,
+    FlashAttentionMetadata,
 };
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -60,7 +60,7 @@ impl ModelLoader for LlamaModel {
     fn load(
         device: Device,
         dtype: DType,
-        file_paths: ModelFilePaths,
+        file_paths: &ModelFilePaths,
     ) -> Result<Self, ModelLoaderError>
     where
         Self: Sized,
@@ -68,9 +68,10 @@ impl ModelLoader for LlamaModel {
         info!("Loading Llama model ...");
         let start = Instant::now();
 
-        let (model, tokenizer, config) = {
+        let (model, config) = {
             let config: LlamaConfig =
                 serde_json::from_slice(&std::fs::read(file_paths.config_path)?)?;
+            let config = config.into_config();
 
             let vb = unsafe {
                 VarBuilder::from_mmaped_safetensors(
@@ -85,7 +86,7 @@ impl ModelLoader for LlamaModel {
 
         Ok(Self {
             model,
-            config: config.into_config(),
+            config,
             device,
             dtype,
         })

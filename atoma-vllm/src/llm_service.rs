@@ -141,7 +141,7 @@ impl LlmService {
         Ok(Self {
             atoma_event_subscriber_receiver,
             atoma_engine_sender: request_sender,
-            cache_dir: cache_dir.to_path_buf(),
+            cache_dir: cache_dir.as_ref().to_path_buf(),
             block_size,
             flush_storage,
             llm_engine_handle,
@@ -175,7 +175,7 @@ impl LlmService {
                     };
                     self.atoma_engine_sender.send(sequence_group)?;
                 },
-                _ = self.shutdown_signal.recv() => {
+                _ = self.shutdown_signal => {
                     info!("Received shutdown signal, stopping `LlmService` instance..");
                     break;
                 }
