@@ -20,36 +20,45 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), SuiSubscriberError> {
-    //     tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::init();
 
-    //     let args = Args::parse();
-    //     let package_id = ObjectID::from_hex_literal(&args.package_id)?;
-    //     let http_url = args.http_addr;
-    //     let ws_url = args.ws_addr;
+    let args = Args::parse();
+    let package_id = ObjectID::from_hex_literal(&args.package_id)?;
+    let http_url = args.http_addr;
+    let ws_url = args.ws_addr;
 
-    //     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
+    let (input_manager_tx, mut input_manager_rx) = tokio::sync::mpsc::channel(32);
 
-    //     let event_subscriber = SuiSubscriber::new(
-    //         1,
-    //         &http_url,
-    //         Some(&ws_url),
-    //         package_id,
-    //         event_sender,
-    //         Some(Duration::from_secs(5 * 60)),
-    //     )
-    //     .await?;
+    // Spawn a task to discard messages
+    tokio::spawn(async move {
+        while let Some(_msg) = input_manager_rx.recv().await {
+            // Discard the message
+        }
+    });
 
-    //     tokio::spawn(async move {
-    //         info!("initializing subscribe");
-    //         if let Err(err) = event_subscriber.subscribe().await {
-    //             error!("Failed to subscribe: {:?}", err);
-    //         }
-    //         Ok::<_, SuiSubscriberError>(())
-    //     });
+    let event_subscriber = SuiSubscriber::new(
+        1,
+        &http_url,
+        Some(&ws_url),
+        package_id,
+        event_sender,
+        Some(Duration::from_secs(5 * 60)),
+        input_manager_tx,
+    )
+    .await?;
 
-    //     while let Some(event) = event_receiver.recv().await {
-    //         info!("Processed a new event: {:?}", event);
-    //     }
+    tokio::spawn(async move {
+        info!("initializing subscribe");
+        if let Err(err) = event_subscriber.subscribe().await {
+            error!("Failed to subscribe: {:?}", err);
+        }
+        Ok::<_, SuiSubscriberError>(())
+    });
+
+    while let Some(event) = event_receiver.recv().await {
+        info!("Processed a new event: {:?}", event);
+    }
 
     Ok(())
 }
