@@ -11,9 +11,9 @@ pub fn hub_load_safetensors(
     let json_file = std::fs::File::open(json_file)?;
     let json: serde_json::Value = serde_json::from_reader(&json_file)?;
     let weight_map = match json.get("weight_map") {
-        None => bail!("no weight map in {json_file:?}"),
+        None => candle_core::bail!("no weight map in {json_file:?}"),
         Some(serde_json::Value::Object(map)) => map,
-        Some(_) => bail!("weight map in {json_file:?} is not a map"),
+        Some(_) => candle_core::bail!("weight map in {json_file:?} is not a map"),
     };
     let mut safetensors_files = std::collections::HashSet::new();
     for value in weight_map.values() {

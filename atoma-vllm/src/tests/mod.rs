@@ -187,7 +187,7 @@ async fn test_llm_engine() {
     };
     let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
         .expect("Failed to create mock model");
-    let (_, shutdown_signal) = oneshot::channel();
+    let (_, shutdown_signal) = mpsc::channel(1);
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),
@@ -326,7 +326,7 @@ async fn test_llm_engine_with_enable_chunking() {
     };
     let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
         .expect("Failed to create mock model");
-    let (_, shutdown_signal) = oneshot::channel();
+    let (_, shutdown_signal) = mpsc::channel(1);
 
     let mut service = LlmService::start::<MockModel>(
         "".to_string(),

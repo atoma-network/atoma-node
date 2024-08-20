@@ -1,8 +1,8 @@
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
-    validation::Validation,
     models::llama::LlamaModel,
+    validation::Validation,
 };
 use candle_core::{cuda::cudarc::driver::result::device, DType, Device};
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ async fn test_llama_model() {
     let dtype = DType::BF16;
     let num_tokenizer_workers = 2;
     let revision = "main".to_string();
-    let (shutdown_signal_sender, shutdown_signal_receiver) = oneshot::channel();
+    let (shutdown_signal_sender, shutdown_signal_receiver) = tokio::sync::mpsc::channel(1);
 
     let (atoma_event_subscriber_sender, atoma_event_subscriber_receiver) =
         tokio::sync::mpsc::unbounded_channel();

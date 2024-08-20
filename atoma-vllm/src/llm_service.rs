@@ -63,7 +63,7 @@ pub struct LlmService {
     /// Tokenizer handle
     tokenizer_handle: JoinHandle<Result<(), LlmServiceError>>,
     /// Shutdown signal
-    shutdown_signal: oneshot::Receiver<()>,
+    shutdown_signal: mpsc::Receiver<()>,
     /// Tracing span
     span: Span,
 }
@@ -86,7 +86,7 @@ impl LlmService {
         revision: String,
         scheduler_config: SchedulerConfig,
         validation_service: Validation,
-        shutdown_signal: oneshot::Receiver<()>,
+        shutdown_signal: mpsc::Receiver<()>,
     ) -> Result<Self, LlmServiceError>
     where
         M: ModelExecutor + Send + Sync + 'static,
@@ -111,12 +111,10 @@ impl LlmService {
         let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
 
         let tokenizer_handle = tokio::spawn(async move {
-            TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers)
-                .await
-                .expect("Failed to start tokenizer");
+            TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers).await
         });
 
-        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
+        let model_thread_dispatcher: ModelThreadDispatcher = ModelThreadDispatcher::start::<M>(
             cache_config,
             device,
             dtype,
@@ -175,7 +173,7 @@ impl LlmService {
                     };
                     self.atoma_engine_sender.send(sequence_group)?;
                 },
-                _ = self.shutdown_signal => {
+                _ = self.shutdown_signal.recv() => {
                     info!("Received shutdown signal, stopping `LlmService` instance..");
                     break;
                 }
