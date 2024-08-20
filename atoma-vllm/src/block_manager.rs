@@ -201,7 +201,7 @@ impl BlockSpaceManager {
     pub fn append_slots(
         &mut self,
         sequence: RwLockReadGuard<Sequence>,
-    ) -> Result<Option<(i64, i64)>, BlockSpaceManagerError> {
+    ) -> Result<Option<(u32, u32)>, BlockSpaceManagerError> {
         let num_total_logical_token_blocks = sequence.get_num_total_logical_token_blocks();
 
         if num_total_logical_token_blocks == 0 {
@@ -383,7 +383,7 @@ impl BlockSpaceManager {
     pub fn swap_in(
         &mut self,
         seq_group: &mut SequenceGroup,
-    ) -> Result<HashMap<i64, i64>, BlockSpaceManagerError> {
+    ) -> Result<HashMap<u32, u32>, BlockSpaceManagerError> {
         info!(
             "Swapping in CPU to GPU blocks, for sequence group with id = {}",
             seq_group.request_id
@@ -454,7 +454,7 @@ impl BlockSpaceManager {
     pub fn swap_out(
         &mut self,
         seq_group: &mut SequenceGroup,
-    ) -> Result<HashMap<i64, i64>, BlockSpaceManagerError> {
+    ) -> Result<HashMap<u32, u32>, BlockSpaceManagerError> {
         info!(
             "Swap out GPU to CPU blocks, for sequence group with id = {}",
             seq_group.request_id
@@ -585,7 +585,7 @@ impl BlockSpaceManager {
     }
 
     /// Gets `BlockId` for each `Sequence` in `BlockTable`
-    pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<i64>> {
+    pub fn get_block_table_ids(&self, sequence_id: &u64) -> Option<Vec<u32>> {
         self.block_tables.get(sequence_id).and_then(|bt| {
             bt.iter()
                 .map(|b| b.read_lock().map(|ok| ok.block_number()))
@@ -658,7 +658,7 @@ impl BlockSpaceManager {
     pub fn gets_all_computed_blocks(
         &self,
         sequence: Sequence,
-    ) -> Result<Vec<i64>, BlockSpaceManagerError> {
+    ) -> Result<Vec<u32>, BlockSpaceManagerError> {
         info!(
             "Getting all computed blocks for sequence with id = {}",
             sequence.sequence_id()

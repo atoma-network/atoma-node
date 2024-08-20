@@ -32,7 +32,7 @@ pub struct BlockAllocator {
 impl BlockAllocator {
     /// Constructor
     pub fn new(block_size: usize, device: BlockDevice, num_blocks: usize) -> Self {
-        let free_blocks = (0..(num_blocks as i64))
+        let free_blocks = (0..(num_blocks as u32))
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
                     i,
@@ -109,9 +109,9 @@ pub enum BlockAllocatorError {
     #[error("Block already in use")]
     BlockAlreadyInUse,
     #[error("Cannot free unused block, with block_number = `{0}`")]
-    CannotDoubleFree(i64),
+    CannotDoubleFree(u32),
     #[error("Block not found, with block_number = `{0}`")]
-    BlockNotFound(i64),
+    BlockNotFound(u32),
     #[error("Failed to acquire read lock: `{0}`")]
     PoisonError(String),
     #[error("Out of memory error")]

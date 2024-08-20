@@ -32,6 +32,7 @@ use crate::{
 };
 
 const BLOCK_SIZE: usize = 16;
+const MAX_ELAPSED_INTERNAL: u64 = 50;
 const MAX_STOP_SEQUENCES: usize = 1;
 const MAX_TOP_N_TOKENS: u32 = 0;
 const MAX_INPUT_LENGTH: usize = 16;
@@ -253,7 +254,7 @@ async fn test_llm_engine() {
     assert_eq!(elapsed_times.len(), NUM_RUNS);
 
     // Give enough variability time for different machines
-    let max_elapsed_interval = Duration::from_secs(50);
+    let max_elapsed_interval = Duration::from_secs(MAX_ELAPSED_INTERNAL);
     for i in 0..(NUM_RUNS - 1) {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
@@ -387,11 +388,12 @@ async fn test_llm_engine_with_enable_chunking() {
     assert_eq!(elapsed_times.len(), 2 * NUM_RUNS);
 
     // Give enough variability time for different machines
+    let max_elapsed_interval = Duration::from_secs(MAX_ELAPSED_INTERNAL);
     for i in 0..(2 * NUM_RUNS - 1) {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
         // Give enough variability time for different machines
-        assert!(right_run_time - left_run_time <= Duration::from_secs(50));
+        assert!(right_run_time - left_run_time <= max_elapsed_interval);
     }
 }
 

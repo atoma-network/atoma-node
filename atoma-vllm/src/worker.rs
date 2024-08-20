@@ -184,8 +184,8 @@ where
     #[instrument(skip_all)]
     pub fn cache_swap(
         &mut self,
-        blocks_to_swap_in: &HashMap<i64, i64>,
-        blocks_to_swap_out: &HashMap<i64, i64>,
+        blocks_to_swap_in: &HashMap<u32, u32>,
+        blocks_to_swap_out: &HashMap<u32, u32>,
         blocks_to_copy: Option<Tensor>,
     ) -> Result<(), ModelWorkerError> {
         if blocks_to_swap_in.len() > 0 {
@@ -394,7 +394,7 @@ where
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
         let block_tables_tensor =
-            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0i64, &self.device)?;
+            utils::make_tensor_with_pad(block_tables, max_block_table_len, 0u32, &self.device)?;
 
         let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
         let mut seq_start_loc =
@@ -558,7 +558,7 @@ impl CacheEngine {
     #[instrument(skip_all)]
     pub fn swap_in(
         &mut self,
-        blocks_to_swap_in: &HashMap<i64, i64>,
+        blocks_to_swap_in: &HashMap<u32, u32>,
     ) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
@@ -575,7 +575,7 @@ impl CacheEngine {
     #[instrument(skip_all)]
     pub fn swap_out(
         &mut self,
-        blocks_to_swap_out: &HashMap<i64, i64>,
+        blocks_to_swap_out: &HashMap<u32, u32>,
     ) -> Result<(), CacheEngineError> {
         let _enter = self.span.enter();
         for i in 0..self.num_layers {
