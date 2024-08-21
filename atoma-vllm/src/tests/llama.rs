@@ -47,7 +47,7 @@ async fn test_llama_model() {
         tokenizer_sender,
     );
 
-    let llm_service = LlmService::start::<LlamaModel>(
+    let llm_service = LlmService::start::<LlamaModel, _>(
         api_key,
         atoma_event_subscriber_receiver,
         atoma_client_sender,

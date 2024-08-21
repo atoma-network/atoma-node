@@ -111,8 +111,8 @@ impl LlmService {
         let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
 
         let tokenizer_handle = tokio::spawn(async move {
-            TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers)
-                .await
+            Ok(TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers)
+                .await?)
         });
 
         let model_thread_dispatcher: ModelThreadDispatcher = ModelThreadDispatcher::start::<M>(

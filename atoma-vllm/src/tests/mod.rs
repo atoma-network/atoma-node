@@ -188,7 +188,7 @@ async fn test_llm_engine() {
         .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel>(
+    let mut service = LlmService::start::<MockModel, _>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -327,7 +327,7 @@ async fn test_llm_engine_with_enable_chunking() {
         .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel>(
+    let mut service = LlmService::start::<MockModel, _>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
