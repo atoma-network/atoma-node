@@ -4,10 +4,10 @@ use thiserror::Error;
 use crate::block::PhysicalTokenBlock;
 
 pub trait Evictor {
-    fn contains(&self, block_number: u64) -> bool;
+    fn contains(&self, block_number: u32) -> bool;
     fn evict(&mut self) -> Result<PhysicalTokenBlock, EvictorError>;
     fn add(&mut self, block: PhysicalTokenBlock);
-    fn remove(&mut self, block_number: u64) -> Option<PhysicalTokenBlock>;
+    fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock>;
     fn num_blocks(&self) -> usize;
 }
 
@@ -16,7 +16,7 @@ pub trait Evictor {
 /// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
 #[derive(Debug)]
 pub struct LRUEvictor {
-    pub free_table: IndexMap<u64, PhysicalTokenBlock>,
+    pub free_table: IndexMap<u32, PhysicalTokenBlock>,
 }
 
 impl LRUEvictor {
@@ -36,7 +36,7 @@ impl Default for LRUEvictor {
 
 impl Evictor for LRUEvictor {
     /// Checks if `LRUEvictor` contains a block for the corresponding `block_number`
-    fn contains(&self, block_number: u64) -> bool {
+    fn contains(&self, block_number: u32) -> bool {
         self.free_table.contains_key(&block_number)
     }
 
@@ -84,7 +84,7 @@ impl Evictor for LRUEvictor {
     }
 
     /// Removes, if possible, a block with `block_number`
-    fn remove(&mut self, block_number: u64) -> Option<PhysicalTokenBlock> {
+    fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock> {
         self.free_table.shift_remove(&block_number)
     }
 

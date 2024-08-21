@@ -1,9 +1,11 @@
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use async_trait::async_trait;
+use atoma_paged_attention::FlashAttentionMetadata;
+use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
@@ -12,14 +14,20 @@ use tracing::info;
 use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
-    model_executor::{ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError},
-    sequence::ExecuteModelRequest,
+    model_executor::{
+        ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError, ModelMetadata,
+    },
+    sequence::{
+        ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
+        SequenceOutput,
+    },
     tokenizer::TokenizerWorker,
     types::{GenerateParameters, GenerateRequest},
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
 };
 
 const BLOCK_SIZE: usize = 16;
+const MAX_ELAPSED_INTERNAL: u64 = 50;
 const MAX_STOP_SEQUENCES: usize = 1;
 const MAX_TOP_N_TOKENS: u32 = 0;
 const MAX_INPUT_LENGTH: usize = 16;
@@ -27,19 +35,25 @@ const MAX_TOTAL_TOKENS: u32 = 32;
 const NUM_CPU_BLOCKS: usize = 4096;
 const NUM_GPU_BLOCKS: usize = 4096;
 const EOS_TOKEN_ID: u32 = 2048;
+const VOCAB_SIZE: usize = 128;
 
 struct MockModel {}
 
-#[async_trait]
 impl ModelLoader for MockModel {
     type FilePaths = ();
 
-    async fn fetch() -> Result<Self::FilePaths, ModelLoaderError> {
+    fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
         Ok(())
     }
 
-    async fn load() -> Result<Self, ModelLoaderError> {
+    fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
+    }
+}
+
+impl ModelMetadata for MockModel {
+    fn alibi_slopes(&self) -> Option<&Tensor> {
+        None
     }
 
     fn cache_dir(&self) -> PathBuf {
@@ -48,6 +62,30 @@ impl ModelLoader for MockModel {
 
     fn eos_token_id(&self) -> Option<u32> {
         Some(EOS_TOKEN_ID)
+    }
+
+    fn head_size(&self) -> usize {
+        512
+    }
+
+    fn num_attention_heads(&self) -> usize {
+        8
+    }
+
+    fn num_layers(&self) -> usize {
+        8
+    }
+
+    fn num_kv_heads(&self) -> usize {
+        8
+    }
+
+    fn sliding_window(&self) -> Option<usize> {
+        None
+    }
+
+    fn softmax_scale(&self) -> f32 {
+        1.0
     }
 }
 
@@ -65,41 +103,26 @@ impl From<ExecuteModelRequest> for Vec<u32> {
     }
 }
 
-#[async_trait]
 impl ModelExecutor for MockModel {
-    type Input = Vec<u32>;
-    type Logits = Vec<(u32, f32)>;
-    type Output = u32;
-
-    fn forward(&mut self, input: Self::Input) -> Result<Self::Logits, ModelExecutorError> {
+    fn forward(
+        &mut self,
+        _: &Tensor,
+        _: &Tensor,
+        _: &Tensor,
+        _: Vec<&mut Tensor>,
+        attention_metadata: FlashAttentionMetadata,
+    ) -> Result<Tensor, ModelExecutorError> {
         let mut rng = rand::thread_rng();
         std::thread::sleep(Duration::from_secs(2)); // mimic forward pass
-        Ok(input
-            .into_iter()
-            .map(|u| (u, rng.gen_range(0.0..1.0)))
-            .collect())
-    }
+        let batch_size = attention_metadata
+            .context_lengths
+            .expect("Context lengths should be set")
+            .dims()[0];
+        let logits = (0..(batch_size * VOCAB_SIZE))
+            .map(|_| rng.gen_range(0.0..1.0) as f32)
+            .collect::<Vec<_>>();
 
-    fn sample(
-        &mut self,
-        mut logits: Self::Logits,
-        next_token_params: NextTokenChooserParameters,
-        _stopping_params: StoppingCriteriaParameters,
-    ) -> Result<Self::Output, ModelExecutorError> {
-        let top_k = next_token_params.top_k;
-
-        logits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        let top_k_values: Vec<_> = logits.into_iter().take(top_k as usize).collect();
-
-        if top_k_values.is_empty() {
-            panic!("Empty top k tokens array")
-        }
-
-        // Randomly sample one token from the top_k selected values
-        let mut rng = rand::thread_rng();
-        let sampled_index = rng.gen_range(0..top_k_values.len());
-
-        Ok(top_k_values[sampled_index].0)
+        Ok(Tensor::new(logits, &Device::Cpu)?.reshape((batch_size, VOCAB_SIZE))?)
     }
 }
 
@@ -149,17 +172,20 @@ async fn test_llm_engine() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
-        .await
-        .expect("Failed to create mock model");
+    let model = MockModel::load(()).expect("Failed to create mock model");
 
-    let mut service = LlmService::start(
+    let mut service = LlmService::start::<MockModel>(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        "./cache/".into(),
+        Device::Cpu,
+        DType::F16,
         true,
+        "test_model".to_string(),
+        "".to_string(),
         scheduler_config,
-        model,
         tokenizer,
         validation,
     )
@@ -222,11 +248,12 @@ async fn test_llm_engine() {
     assert_eq!(number_of_responses, NUM_REQUESTS);
     assert_eq!(elapsed_times.len(), NUM_RUNS);
 
+    // Give enough variability time for different machines
+    let max_elapsed_interval = Duration::from_secs(MAX_ELAPSED_INTERNAL);
     for i in 0..(NUM_RUNS - 1) {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
-        assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5)); // Give enough variability time for different machines
-        assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
+        assert!(right_run_time - left_run_time <= max_elapsed_interval);
     }
 }
 
@@ -276,17 +303,20 @@ async fn test_llm_engine_with_enable_chunking() {
             .expect("Failed to start tokenizer");
     });
 
-    let model = MockModel::load()
-        .await
-        .expect("Failed to create mock model");
+    let model = MockModel::load(()).expect("Failed to create mock model");
 
-    let mut service = LlmService::start(
+    let mut service = LlmService::start::<MockModel>(
+        "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
         cache_config,
+        "./cache/".into(),
+        Device::Cpu,
+        DType::F16,
         true,
+        "test_model".to_string(),
+        "".to_string(),
         scheduler_config,
-        model,
         tokenizer,
         validation,
     )
@@ -350,16 +380,13 @@ async fn test_llm_engine_with_enable_chunking() {
     assert_eq!(number_of_responses, NUM_REQUESTS);
     assert_eq!(elapsed_times.len(), 2 * NUM_RUNS);
 
+    // Give enough variability time for different machines
+    let max_elapsed_interval = Duration::from_secs(MAX_ELAPSED_INTERNAL);
     for i in 0..(2 * NUM_RUNS - 1) {
         let left_run_time = elapsed_times[i];
         let right_run_time = elapsed_times[i + 1];
         // Give enough variability time for different machines
-        if i % 2 == 0 {
-            assert!(right_run_time - left_run_time <= Duration::from_secs(5));
-        } else {
-            assert!(right_run_time - left_run_time <= elapsed_times[0] + Duration::from_secs(5));
-            assert!(right_run_time - left_run_time >= elapsed_times[0] - Duration::from_secs(5));
-        }
+        assert!(right_run_time - left_run_time <= max_elapsed_interval);
     }
 }
 

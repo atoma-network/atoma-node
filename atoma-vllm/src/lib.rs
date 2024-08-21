@@ -19,3 +19,4 @@ pub mod tests;
 pub mod tokenizer;
 pub mod types;
 pub mod validation;
+pub mod worker;

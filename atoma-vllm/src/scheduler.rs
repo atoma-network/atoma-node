@@ -167,9 +167,9 @@ pub struct SchedulerRunningOutputs {
     // Sequences that are swapped out.
     swapped_out: Vec<SequenceGroup>,
     // The blocks to swap out.
-    blocks_to_swap_out: HashMap<u64, u64>,
+    blocks_to_swap_out: HashMap<u32, u32>,
     // The blocks to copy.
-    blocks_to_copy: HashMap<u64, u64>,
+    blocks_to_copy: HashMap<u32, u32>,
 }
 
 impl SchedulerRunningOutputs {
@@ -196,9 +196,9 @@ pub struct SchedulerSwappedInOutputs {
     /// phase. I.e., it means the prefill has been chunked.
     prefill_seq_groups: Vec<ScheduledSequenceGroup>,
     /// The blocks to swap in.
-    blocks_to_swap_in: HashMap<u64, u64>,
+    blocks_to_swap_in: HashMap<u32, u32>,
     /// The blocks to copy.
-    blocks_to_copy: HashMap<u64, u64>,
+    blocks_to_copy: HashMap<u32, u32>,
     /// Infeasible sequence groups.
     infeasible_seq_groups: Vec<SequenceGroup>,
 }
@@ -244,16 +244,17 @@ pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
     pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
     /// Number of prefill groups scheduled.
+    #[allow(dead_code)]
     number_prefill_groups: usize,
     /// Total number of batched tokens.
     #[allow(dead_code)]
     num_batched_tokens: usize,
     /// Blocks to swap in. List of CPU -> GPU block number.
-    pub blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<u32, u32>,
     /// Blocks to swap out. List of GPU -> CPU block number.
-    pub blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<u32, u32>,
     /// Blocks to copy. Source to dest block.
-    pub blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<u32, u32>,
     /// Ignored sequence groups
     pub ignored_seq_groups: Vec<SequenceGroup>,
     /// The number of requests in the running queue
@@ -511,8 +512,8 @@ impl<P: Policy> Scheduler<P> {
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
         info!("Schedule running..");
         // Blocks that need to be swapped or copied before model execution
-        let mut blocks_to_swap_out = HashMap::<u64, u64>::new();
-        let mut blocks_to_copy = HashMap::<u64, u64>::new();
+        let mut blocks_to_swap_out = HashMap::<u32, u32>::new();
+        let mut blocks_to_copy = HashMap::<u32, u32>::new();
 
         let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
         let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
@@ -655,8 +656,8 @@ impl<P: Policy> Scheduler<P> {
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
         info!("Schedule swapped..");
         // Blocks that need to be swapped or copied before model execution.
-        let mut blocks_to_swap_in = HashMap::<u64, u64>::new();
-        let mut blocks_to_copy = HashMap::<u64, u64>::new();
+        let mut blocks_to_swap_in = HashMap::<u32, u32>::new();
+        let mut blocks_to_copy = HashMap::<u32, u32>::new();
         let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
         let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
 
@@ -1056,6 +1057,7 @@ impl<P: Policy> Scheduler<P> {
     /// by prefill requests.
     #[instrument(skip_all)]
     fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
+        info!("Scheduling chunked prefill..");
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
             self.scheduler_config.max_num_sequences(),
@@ -1209,7 +1211,7 @@ impl<P: Policy> Scheduler<P> {
             // Mapping from sequence id to `SequenceData`
             let mut sequence_data = HashMap::<u64, SequenceData>::new();
             // Mapping from sequence id to `PhysicalBlock` number
-            let mut block_tables = HashMap::<u64, Vec<u64>>::new();
+            let mut block_tables = HashMap::<u64, Vec<u32>>::new();
 
             for sequence in sequence_group.sequences.iter().filter_map(|(_, s)| {
                 if s.read().unwrap().get_sequence_status() == SequenceStatus::Running {
@@ -1352,7 +1354,7 @@ impl<P: Debug> Scheduler<P> {
     fn append_slots(
         &mut self,
         sequence_group: &SequenceGroup,
-        blocks_to_copy: &mut HashMap<u64, u64>,
+        blocks_to_copy: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
         info!(
             "Appending slot to sequence group with id = {}",
@@ -1387,7 +1389,7 @@ impl<P: Debug> Scheduler<P> {
     fn preempt(
         &mut self,
         sequence_group: &mut SequenceGroup,
-        blocks_to_swap_out: &mut HashMap<u64, u64>,
+        blocks_to_swap_out: &mut HashMap<u32, u32>,
         preemption_mode: Option<PreemptionMode>,
     ) -> Result<PreemptionMode, SchedulerError> {
         // If preemption mode is not specified, we determine the mode as follows:
@@ -1475,7 +1477,7 @@ impl<P: Debug> Scheduler<P> {
     fn preempt_by_swap(
         &mut self,
         sequence_group: &mut SequenceGroup,
-        blocks_to_swap_out: &mut HashMap<u64, u64>,
+        blocks_to_swap_out: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
         info!(
             "Preemption by swap for sequence group with id = {}..",
@@ -1492,7 +1494,7 @@ impl<P: Debug> Scheduler<P> {
     fn swap_out(
         &mut self,
         sequence_group: &mut SequenceGroup,
-        blocks_to_swap_out: &mut HashMap<u64, u64>,
+        blocks_to_swap_out: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
         info!(
             "Swapping out for sequence group with id = {}",
@@ -1522,7 +1524,7 @@ impl<P: Debug> Scheduler<P> {
     fn swap_in(
         &mut self,
         sequence_group: &mut SequenceGroup,
-        blocks_to_swap_in: &mut HashMap<u64, u64>,
+        blocks_to_swap_in: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
         let mapping = self.block_manager.swap_in(sequence_group)?;
         blocks_to_swap_in.extend(mapping.iter());
@@ -3270,11 +3272,11 @@ mod tests {
             budget: &mut SchedulingBudget,
             enable_chunking: bool,
             id: &str,
-            append_slots: Option<(u64, u64)>,
+            append_slots: Option<(u32, u32)>,
         ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
             // Blocks that need to be swapped or copied before model execution
-            let mut blocks_to_swap_out = HashMap::<u64, u64>::new();
-            let mut blocks_to_copy = HashMap::<u64, u64>::new();
+            let mut blocks_to_swap_out = HashMap::<u32, u32>::new();
+            let mut blocks_to_copy = HashMap::<u32, u32>::new();
 
             let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
             let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
@@ -3403,8 +3405,8 @@ mod tests {
         fn mock_append_slots(
             &mut self,
             sequence_group: &SequenceGroup,
-            blocks_to_copy: &mut HashMap<u64, u64>,
-            value: (u64, u64),
+            blocks_to_copy: &mut HashMap<u32, u32>,
+            value: (u32, u32),
         ) -> Result<(), SchedulerError> {
             info!(
                 "Appending slot to sequence group with id = {}",
@@ -3429,12 +3431,12 @@ mod tests {
             swapped_queue: VecDeque<SequenceGroup>,
             enable_chunking: bool,
             allocation_status: Option<AllocationStatus>,
-            append_slots: Option<(u64, u64)>,
+            append_slots: Option<(u32, u32)>,
         ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
             info!("Schedule swapped..");
             // Blocks that need to be swapped or copied before model execution.
-            let mut blocks_to_swap_in = HashMap::<u64, u64>::new();
-            let mut blocks_to_copy = HashMap::<u64, u64>::new();
+            let mut blocks_to_swap_in = HashMap::<u32, u32>::new();
+            let mut blocks_to_copy = HashMap::<u32, u32>::new();
             let mut decode_seq_groups = Vec::<ScheduledSequenceGroup>::new();
             let mut prefill_seq_groups = Vec::<ScheduledSequenceGroup>::new();
 

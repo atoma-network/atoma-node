@@ -9,6 +9,7 @@ use crate::{
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
+use candle_core::{DType, Device};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
@@ -51,12 +52,17 @@ impl LlmService {
     #[instrument(skip_all)]
     #[allow(clippy::too_many_arguments)]
     pub async fn start<M>(
+        api_key: String,
         atoma_event_subscriber_receiver: UnboundedReceiver<GenerateRequest>,
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
         cache_config: CacheConfig,
+        cache_dir: PathBuf,
+        device: Device,
+        dtype: DType,
         flush_storage: bool,
+        model_name: String,
+        revision: String,
         scheduler_config: SchedulerConfig,
-        model: M,
         tokenizer: Tokenizer,
         validation_service: Validation,
     ) -> Result<Self, LlmServiceError>
@@ -64,18 +70,22 @@ impl LlmService {
         M: ModelExecutor + Send + Sync + 'static,
     {
         let block_size = cache_config.block_size;
-        let cache_dir = model.cache_dir();
-        let scheduler = Scheduler::new(cache_config, scheduler_config)?;
+        let scheduler = Scheduler::new(cache_config.clone(), scheduler_config.clone())?;
 
-        // TODO: it might be better to initialize the model `M` inside this method
-        let eos_token_id = model.eos_token_id().unwrap();
-        let model_thread_dispatcher = ModelThreadDispatcher::start(model)?;
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
+            api_key,
+            cache_config,
+            device,
+            dtype,
+            model_name,
+            revision,
+            scheduler_config,
+        )?;
 
         let (request_sender, request_receiver) = mpsc::unbounded_channel();
         let llm_engine_handle = tokio::spawn(async move {
             let llm_engine = LlmEngine::new(
                 atoma_client_sender,
-                eos_token_id,
                 model_thread_dispatcher,
                 request_receiver,
                 scheduler,

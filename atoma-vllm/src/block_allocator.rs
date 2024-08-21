@@ -8,7 +8,7 @@ use crate::{
     types::{ReadLock, WriteLock},
 };
 
-/// `UncachedBlockAllocator` Manages free physical token blocks for a device, without cache.
+/// `BlockAllocator` Manages free physical token blocks for a device, without cache.
 ///
 /// The allocator maintains a list of free blocks and allocates a block when
 /// requested. When a block is freed, its reference count is decremented. If
@@ -32,7 +32,7 @@ pub struct BlockAllocator {
 impl BlockAllocator {
     /// Constructor
     pub fn new(block_size: usize, device: BlockDevice, num_blocks: usize) -> Self {
-        let free_blocks = (0..(num_blocks as u64))
+        let free_blocks = (0..(num_blocks as u32))
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
                     i,
@@ -73,10 +73,7 @@ impl BlockAllocator {
             let block_ref_count = block_guard.ref_count();
             let block_number = block_guard.block_number();
             if block_ref_count == 0 {
-                error!(
-                    "Double free! {} is already freed.",
-                    block_guard.block_number()
-                );
+                error!("Double free! {} is already freed.", block_number);
                 return Err(BlockAllocatorError::CannotDoubleFree(block_number));
             }
         }
@@ -112,9 +109,9 @@ pub enum BlockAllocatorError {
     #[error("Block already in use")]
     BlockAlreadyInUse,
     #[error("Cannot free unused block, with block_number = `{0}`")]
-    CannotDoubleFree(u64),
+    CannotDoubleFree(u32),
     #[error("Block not found, with block_number = `{0}`")]
-    BlockNotFound(u64),
+    BlockNotFound(u32),
     #[error("Failed to acquire read lock: `{0}`")]
     PoisonError(String),
     #[error("Out of memory error")]

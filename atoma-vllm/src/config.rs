@@ -23,9 +23,6 @@ pub struct CacheConfig {
     gpu_memory_utilization: f32,
     /// Swap space bytes
     swap_space_bytes: usize,
-    /// Cache dtype
-    #[allow(dead_code)]
-    cache_dtype: String,
     /// Number of GPU blocks to override (optional)
     num_gpu_blocks_override: Option<usize>,
     /// Sliding window (optional)
@@ -53,7 +50,6 @@ impl CacheConfig {
             block_size,
             gpu_memory_utilization,
             swap_space_bytes: swap_space * GB,
-            cache_dtype,
             num_gpu_blocks_override,
             sliding_window,
             num_gpu_blocks,
@@ -223,3 +219,25 @@ pub enum SchedulerConfigError {
     #[error("Failed verify scheduler config: `{0}")]
     FailedVerifySchedulerConfig(String),
 }
+
+/// Configuration for LLM model
+#[derive(Clone, Debug)]
+pub struct ModelConfig {
+    /// HuggingFace model identifier
+    model_id: String,
+    /// Dtype
+    dtype: String,
+    /// The model revision identifier
+    revision: String,
+    /// Maximum length of a sequence (including prompt and
+    /// output). If None, will be derived from the model.
+    max_model_len: usize,
+    /// Whether to disable sliding window. If True,
+    /// we will disable the sliding window functionality of the model.
+    /// If the model does not support sliding window, this argument is
+    /// ignored.
+    disable_sliding_window: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum ModelConfigError {}

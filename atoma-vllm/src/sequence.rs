@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use candle::Tensor;
+use candle_core::Tensor;
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, Span};
 
@@ -168,7 +168,7 @@ impl SequenceData {
 
     /// Get all token ids
     pub fn get_token_ids(&self) -> Vec<u32> {
-        let mut output = Vec::with_capacity(self.get_prompt_len() + self.get_output_len());
+        let mut output = Vec::with_capacity(self.length());
         output.extend(self.prompt_token_ids.iter());
         output.extend(self.output_token_ids.iter());
         output
@@ -1010,15 +1010,15 @@ impl SequenceGroup {
 #[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
-    request_id: String,
+    pub request_id: String,
     /// Is prompt (bool)
-    is_prompt: bool,
+    pub is_prompt: bool,
     /// Next token chooser parameters
     pub next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria parameters
     pub stopping_criteria_params: StoppingCriteriaParameters,
     /// Block tables
-    block_tables: HashMap<u64, Vec<u64>>,
+    pub block_tables: HashMap<u64, Vec<u32>>,
     /// Do sample (bool)
     pub do_sample: bool,
     /// Token chunk size
@@ -1038,7 +1038,7 @@ impl SequenceGroupMetadata {
         sequence_data: HashMap<u64, SequenceData>,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria_params: StoppingCriteriaParameters,
-        block_tables: HashMap<u64, Vec<u64>>,
+        block_tables: HashMap<u64, Vec<u32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
         state: SequenceGroupState,
@@ -1090,6 +1090,17 @@ pub struct SequenceOutput {
     pub output_token: u32,
     /// Log probabilities
     pub logprob: HashMap<u32, LogProb>,
+    /// Is stop token
+    pub is_stop_token: bool,
+}
+
+/// `SequenceGroupMetrics` - Metrics for a sequence group token generation
+#[derive(Clone, Debug, Default)]
+pub struct SequenceGroupMetrics {
+    /// Time taken to generate the batched output
+    pub time_to_generate: Option<f32>,
+    /// Number of batched tokens generated
+    pub num_tokens_generated: usize,
 }
 
 /// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
@@ -1109,6 +1120,8 @@ pub struct SequenceGroupOutput {
     pub sampled_token_ids: Option<Tensor>,
     /// Spec decoder worker metrics
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
+    /// Sequence group metrics
+    pub sequence_group_metrics: SequenceGroupMetrics,
 }
 
 impl SequenceGroupOutput {
@@ -1162,11 +1175,11 @@ pub struct ExecuteModelRequest {
     /// The sequence groups metadata vector
     pub sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
     /// Blocks to swap in. List of CPU -> GPU block number
-    pub blocks_to_swap_in: HashMap<u64, u64>,
+    pub blocks_to_swap_in: HashMap<u32, u32>,
     /// Blocks to swap out. List of GPU -> CPU block number
-    pub blocks_to_swap_out: HashMap<u64, u64>,
+    pub blocks_to_swap_out: HashMap<u32, u32>,
     /// Blocks to copy. Source to dest block
-    pub blocks_to_copy: HashMap<u64, u64>,
+    pub blocks_to_copy: HashMap<u32, u32>,
     /// The number of requests in the running queue
     pub running_queue_size: usize,
 }
@@ -1175,9 +1188,9 @@ impl ExecuteModelRequest {
     /// Constructor
     pub fn new(
         sequence_groups_metadata: Vec<Arc<SequenceGroupMetadata>>,
-        blocks_to_swap_in: HashMap<u64, u64>,
-        blocks_to_swap_out: HashMap<u64, u64>,
-        blocks_to_copy: HashMap<u64, u64>,
+        blocks_to_swap_in: HashMap<u32, u32>,
+        blocks_to_swap_out: HashMap<u32, u32>,
+        blocks_to_copy: HashMap<u32, u32>,
         running_queue_size: usize,
     ) -> Self {
         Self {
@@ -1246,6 +1259,7 @@ pub(crate) mod tests {
                         parent_sequence_id: 0,
                         output_token: i as u32,
                         logprob: HashMap::new(),
+                        is_stop_token: false,
                     },
                 )
             })
@@ -1259,6 +1273,10 @@ pub(crate) mod tests {
             sampled_token_probs: None,
             logprobs: None,
             spec_decode_worker_metrics: None,
+            sequence_group_metrics: SequenceGroupMetrics {
+                time_to_generate: None,
+                num_tokens_generated: 0,
+            },
         }
     }
 

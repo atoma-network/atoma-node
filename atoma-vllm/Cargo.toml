@@ -8,7 +8,9 @@ edition.workspace = true
 [dependencies]
 # TODO: this dependency should only work with features = "cuda"
 async-trait.workspace = true
-candle.workspace = true
+atoma-paged-attention.workspace = true
+candle-core = { version = "0.6.0", features = ["cuda"] }
+candle-transformers = { version = "0.6.0", features = ["cuda"] }
 futures.workspace = true
 indexmap.workspace = true
 metrics.workspace = true
