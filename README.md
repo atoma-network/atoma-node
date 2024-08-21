@@ -106,6 +106,12 @@ The supported models currently are:
 | llama3_8b                          | meta-llama/Meta-Llama-3-8B               |
 | llama3_instruct_8b                 | meta-llama/Meta-Llama-3-8B-Instruct      |
 | llama3_70b                         | meta-llama/Meta-Llama-3-70B              |
+| llama31_8b                         | meta-llama/Meta-Llama-3.1-8B             |
+| llama31_instruct8b                 | meta-llama/Meta-Llama-3.1-8B-Instruct    |
+| llama31_70b                        | meta-llama/Meta-Llama-3.1-70B            |
+| llama31_instruct70b                | meta-llama/Meta-Llama-3.1-70B-Instruct   |
+| llama31_405b                       | meta-llama/Meta-Llama-3.1-405B           |
+| llama31_instruct405b               | meta-llama/Meta-Llama-3.1-405B-Instruct  |
 | mamba_130m                         | state-spaces/mamba-130m                  |
 | mamba_370m                         | state-spaces/mamba-370m                  |
 | mamba_790m                         | state-spaces/mamba-790m                  |
@@ -115,7 +121,10 @@ The supported models currently are:
 | mistral_7bv02                      | mistralai/Mistral-7B-v0.2                |
 | mistral_7b-instruct-v01            | mistralai/Mistral-7B-Instruct-v0.1       |
 | mistral_7b-instruct-v02            | mistralai/Mistral-7B-Instruct-v0.2       |
-| mixtral_8x7b                       | mistralai/Mixtral-8x7B-v0.1              |
+| mixtral_8x7b-v01                   | mistralai/Mixtral-8x7B-v0.1              |
+| mixtral_8x7b-instruct-v01          | mistralai/Mixtral-8x7B-Instruct-v0.1     |
+| mixtral_8x22b-v01                  | mistralai/Mixtral-8x22B-v0.1             |
+| mixtral_8x22b-instruct-v01         | mistralai/Mixtral-8x22B-Instruct-v0.1    |
 | phi_3-mini                         | microsoft/Phi-3-mini-4k-instruct         |
 | stable_diffusion_v1-5              | runwayml/stable-diffusion-v1-5           |
 | stable_diffusion_v2-1              | stabilityai/stable-diffusion-2-1         |

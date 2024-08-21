@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use config::Config;
 use serde::Deserialize;
@@ -6,8 +6,8 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 /// Atoma's Firebase configuration values
 pub struct AtomaOutputManagerConfig {
-    /// The Atoma's Firebase authentication URI
-    pub firebase_uri: PathBuf,
+    /// The Atoma's Firebase authentication URL
+    pub firebase_url: String,
     /// Currently we use email/password authentication for Firebase
     /// Email
     pub firebase_email: String,

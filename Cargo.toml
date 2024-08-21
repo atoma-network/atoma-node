@@ -17,7 +17,7 @@ members = [
     "atoma-output-manager",
     "atoma-streamer",
     "atoma-helpers",
-    "atoma-vllm"
+    "atoma-vllm",
 ]
 
 [workspace.package]
@@ -91,3 +91,4 @@ tokio = "1.36.0"
 toml = "0.8.12"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+url = "2.5.2"

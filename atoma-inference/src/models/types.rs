@@ -40,6 +40,12 @@ pub enum ModelType {
     Llama3_8b,
     Llama3Instruct8b,
     Llama3_70b,
+    Llama31_8b,
+    Llama31Instruct8b,
+    Llama31_70b,
+    Llama31Instruct70b,
+    Llama31_405b,
+    Llama31Instruct405b,
     Mamba130m,
     Mamba370m,
     Mamba790m,
@@ -49,7 +55,10 @@ pub enum ModelType {
     Mistral7bV02,
     Mistral7bInstructV01,
     Mistral7bInstructV02,
-    Mixtral8x7b,
+    Mixtral8x7bV01,
+    Mixtral8x7bInstructV01,
+    Mixtral8x22bInstructV01,
+    Mixtral8x22bV01,
     Phi3Mini,
     StableDiffusionV1_5,
     StableDiffusionV2_1,
@@ -101,6 +110,12 @@ impl FromStr for ModelType {
             "llama3_8b" => Ok(Self::Llama3_8b),
             "llama3_instruct_8b" => Ok(Self::Llama3Instruct8b),
             "llama3_70b" => Ok(Self::Llama3_70b),
+            "llama31_8b" => Ok(Self::Llama31_8b),
+            "llama31_instruct8b" => Ok(Self::Llama31Instruct8b),
+            "llama31_70b" => Ok(Self::Llama31_70b),
+            "llama31_instruct70b" => Ok(Self::Llama31Instruct70b),
+            "llama31_405b" => Ok(Self::Llama31_405b),
+            "llama31_instruct405b" => Ok(Self::Llama31Instruct405b),
             "mamba_130m" => Ok(Self::Mamba130m),
             "mamba_370m" => Ok(Self::Mamba370m),
             "mamba_790m" => Ok(Self::Mamba790m),
@@ -110,7 +125,10 @@ impl FromStr for ModelType {
             "mistral_7bv02" => Ok(Self::Mistral7bV02),
             "mistral_7b-instruct-v01" => Ok(Self::Mistral7bInstructV01),
             "mistral_7b-instruct-v02" => Ok(Self::Mistral7bInstructV02),
-            "mixtral_8x7b" => Ok(Self::Mixtral8x7b),
+            "mixtral_8x7b-v01" => Ok(Self::Mixtral8x7bV01),
+            "mixtral_8x7b-instruct-v01" => Ok(Self::Mixtral8x7bInstructV01),
+            "mixtral_8x22b-v01" => Ok(Self::Mixtral8x22bV01),
+            "mixtral_8x22b-instruct-v01" => Ok(Self::Mixtral8x22bInstructV01),
             "phi_3-mini" => Ok(Self::Phi3Mini),
             "stable_diffusion_v1-5" => Ok(Self::StableDiffusionV1_5),
             "stable_diffusion_v2-1" => Ok(Self::StableDiffusionV2_1),
@@ -166,6 +184,12 @@ impl ModelType {
             Self::Llama3_8b => "meta-llama/Meta-Llama-3-8B",
             Self::Llama3Instruct8b => "meta-llama/Meta-Llama-3-8B-Instruct",
             Self::Llama3_70b => "meta-llama/Meta-Llama-3-70B",
+            Self::Llama31_8b => "meta-llama/Meta-Llama-3.1-8B",
+            Self::Llama31Instruct8b => "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            Self::Llama31_70b => "meta-llama/Meta-Llama-3.1-70B",
+            Self::Llama31Instruct70b => "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            Self::Llama31_405b => "meta-llama/Meta-Llama-3.1-405B",
+            Self::Llama31Instruct405b => "meta-llama/Meta-Llama-3.1-405B-Instruct",
             Self::Mamba130m => "state-spaces/mamba-130m",
             Self::Mamba370m => "state-spaces/mamba-370m",
             Self::Mamba790m => "state-spaces/mamba-790m",
@@ -175,7 +199,10 @@ impl ModelType {
             Self::Mistral7bV02 => "mistralai/Mistral-7B-v0.2",
             Self::Mistral7bInstructV01 => "mistralai/Mistral-7B-Instruct-v0.1",
             Self::Mistral7bInstructV02 => "mistralai/Mistral-7B-Instruct-v0.2",
-            Self::Mixtral8x7b => "mistralai/Mixtral-8x7B-v0.1",
+            Self::Mixtral8x7bV01 => "mistralai/Mixtral-8x7B-v0.1",
+            Self::Mixtral8x7bInstructV01 => "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            Self::Mixtral8x22bV01 => "mistralai/Mixtral-8x22B-v0.1",
+            Self::Mixtral8x22bInstructV01 => "mistralai/Mixtral-8x22B-Instruct-v0.1",
             Self::Phi3Mini => "microsoft/Phi-3-mini-4k-instruct",
             Self::StableDiffusionV1_5 => "runwayml/stable-diffusion-v1-5",
             Self::StableDiffusionV2_1 => "stabilityai/stable-diffusion-2-1",
@@ -225,11 +252,20 @@ impl ModelType {
             | Self::Llama3_8b
             | Self::Llama3Instruct8b
             | Self::Llama3_70b
+            | Self::Llama31_8b
+            | Self::Llama31Instruct8b
+            | Self::Llama31_70b
+            | Self::Llama31Instruct70b
+            | Self::Llama31_405b
+            | Self::Llama31Instruct405b
             | Self::Mistral7bV01
             | Self::Mistral7bV02
             | Self::Mistral7bInstructV01
             | Self::Mistral7bInstructV02
-            | Self::Mixtral8x7b
+            | Self::Mixtral8x7bV01
+            | Self::Mixtral8x7bInstructV01
+            | Self::Mixtral8x22bV01
+            | Self::Mixtral8x22bInstructV01
             | Self::Phi3Mini
             | Self::QwenW0_5b
             | Self::QwenW1_8b
@@ -285,6 +321,12 @@ impl Display for ModelType {
             Self::Llama3_8b => write!(f, "llama3_8b"),
             Self::Llama3Instruct8b => write!(f, "llama3_instruct_8b"),
             Self::Llama3_70b => write!(f, "llama3_70b"),
+            Self::Llama31_8b => write!(f, "llama31_8b"),
+            Self::Llama31Instruct8b => write!(f, "llama31_instruct8b"),
+            Self::Llama31_70b => write!(f, "llama31_70b"),
+            Self::Llama31Instruct70b => write!(f, "llama31_instruct70b"),
+            Self::Llama31_405b => write!(f, "llama31_405b"),
+            Self::Llama31Instruct405b => write!(f, "llama31_instruct405b"),
             Self::Mamba130m => write!(f, "mamba_130m"),
             Self::Mamba370m => write!(f, "mamba_370m"),
             Self::Mamba790m => write!(f, "mamba_790m"),
@@ -294,7 +336,10 @@ impl Display for ModelType {
             Self::Mistral7bV02 => write!(f, "mistral_7bv02"),
             Self::Mistral7bInstructV01 => write!(f, "mistral_7b-instruct-v01"),
             Self::Mistral7bInstructV02 => write!(f, "mistral_7b-instruct-v02"),
-            Self::Mixtral8x7b => write!(f, "mixtral_8x7b"),
+            Self::Mixtral8x7bV01 => write!(f, "mixtral_8x7b-v01"),
+            Self::Mixtral8x7bInstructV01 => write!(f, "mixtral_8x7b-instruct-v01"),
+            Self::Mixtral8x22bV01 => write!(f, "mixtral_8x22b-v01"),
+            Self::Mixtral8x22bInstructV01 => write!(f, "mixtral_8x22b-instruct-v01"),
             Self::Phi3Mini => write!(f, "phi_3-mini"),
             Self::QwenW0_5b => write!(f, "qwen_w0.5b"),
             Self::QwenW1_8b => write!(f, "qwen_w1.8b"),

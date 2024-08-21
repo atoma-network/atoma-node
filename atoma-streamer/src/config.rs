@@ -1,11 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use config::Config;
 use serde::Deserialize;
+use url::{ParseError, Url};
 
 #[derive(Debug, Deserialize)]
 pub struct AtomaFirebaseStreamerConfig {
-    firebase_uri: String,
+    firebase_url: String,
     firebase_email: String,
     firebase_password: String,
     firebase_api_key: String,
@@ -24,9 +25,9 @@ impl AtomaFirebaseStreamerConfig {
             .expect("Failed to generated Atoma Firebase streamer config file")
     }
 
-    /// Get the firebase_uri from the config
-    pub fn firebase_uri(&self) -> PathBuf {
-        self.firebase_uri.clone().into()
+    /// Get the firebase_url from the config
+    pub fn firebase_url(&self) -> Result<Url, ParseError> {
+        Url::parse(self.firebase_url.as_str())
     }
 
     /// Get the email from the config

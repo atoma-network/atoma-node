@@ -1,5 +1,4 @@
 use std::{
-    net::Shutdown,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
