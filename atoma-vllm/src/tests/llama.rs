@@ -19,7 +19,7 @@ const MAX_TOTAL_TOKENS: u32 = 2048;
 async fn test_llama_model() {
     let api_key = "".to_string();
     let cache_dir: PathBuf = "./test_llama_cache_dir/".into();
-    let model_name = "llama_tiny_llama_1_1b_chat".to_string();
+    let model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string();
     let device = Device::new_cuda(0).expect("Failed to create new CUDA device");
     let dtype = DType::BF16;
     let num_tokenizer_workers = 2;

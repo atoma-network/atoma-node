@@ -40,7 +40,11 @@ impl ModelLoader for LlamaModel {
             .with_cache_dir(cache_dir.as_ref().to_path_buf())
             .build()?;
 
-        let repo = api.repo(Repo::with_revision(model_id.clone(), RepoType::Model, revision));
+        let repo = api.repo(Repo::with_revision(
+            model_id.clone(),
+            RepoType::Model,
+            revision,
+        ));
         let config_file_path = repo.get("config.json")?;
         let tokenizer_file_path = repo.get("tokenizer.json")?;
 
@@ -70,7 +74,7 @@ impl ModelLoader for LlamaModel {
 
         let (model, config) = {
             let config: LlamaConfig =
-                serde_json::from_slice(&std::fs::read(file_paths.config_path.as_ref())?)?;
+                serde_json::from_slice(&std::fs::read(&file_paths.config_path)?)?;
             let config = config.into_config();
 
             let vb = unsafe {

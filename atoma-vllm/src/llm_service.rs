@@ -9,7 +9,7 @@ use crate::{
     model_executor::{ModelExecutor, ModelLoaderError, ModelThreadDispatcher, ModelThreadError},
     scheduler::{Scheduler, SchedulerError},
     sequence::{Sequence, SequenceError, SequenceGroup},
-    tokenizer::TokenizerWorker,
+    tokenizer::{TokenizerError, TokenizerWorker},
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
@@ -92,7 +92,8 @@ impl LlmService {
         M: ModelExecutor + Send + Sync + 'static,
     {
         let span = info_span!("llm-service");
-        let _enter = span.enter();
+        let _span = span.clone();
+        let _enter = _span.enter();
 
         info!("Starting a new `LlmService` instance..");
 
@@ -104,15 +105,18 @@ impl LlmService {
         // We do not need to spawn a new thread for fetching model weights files,
         // as the service will not start until the model is loaded in memory
         // NOTE: for now we use a synchronous model loader
-        let file_paths = M::fetch(api_key, cache_dir, model_name, revision)?;
+        let file_paths = M::fetch(api_key, &cache_dir, model_name, revision)?;
         let tokenizer = Tokenizer::from_file(&file_paths.tokenizer_path)?;
         let model = M::load(device.clone(), dtype, &file_paths)?;
 
         let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
 
+        let cloned_tokenizer = tokenizer.clone();
         let tokenizer_handle = tokio::spawn(async move {
-            Ok(TokenizerWorker::start(tokenizer, tokenizer_receiver, num_tokenizer_workers)
-                .await?)
+            Ok(
+                TokenizerWorker::start(cloned_tokenizer, tokenizer_receiver, num_tokenizer_workers)
+                    .await?,
+            )
         });
 
         let model_thread_dispatcher: ModelThreadDispatcher = ModelThreadDispatcher::start::<M>(
@@ -158,7 +162,7 @@ impl LlmService {
     /// and once the request is validated, it sends it to the
     /// `LlmEngine` background task
     #[instrument(skip_all)]
-    pub async fn run(&mut self) -> Result<(), LlmServiceError> {
+    pub async fn run(mut self) -> Result<(), LlmServiceError> {
         loop {
             tokio::select! {
                 Some(request) = self.atoma_event_subscriber_receiver.recv() => {
@@ -251,7 +255,7 @@ impl LlmService {
 
         // Flush storage if configured
         if self.flush_storage {
-            match tokio::fs::remove_dir(self.cache_dir.as_ref()).await {
+            match tokio::fs::remove_dir(&self.cache_dir).await {
                 Ok(()) => info!("Successfully removed storage folder"),
                 Err(e) => error!("Failed to remove storage folder, on shutdown: {e}"),
             }
@@ -284,18 +288,6 @@ impl LlmService {
     }
 }
 
-impl Drop for LlmService {
-    fn drop(&mut self) {
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-        runtime.block_on(async {
-            if let Err(e) = self.stop().await {
-                error!("`LlmService` instance failed to stop gracefully, with error: {e}");
-            }
-        });
-        info!("`LlmService` instance dropped successfully");
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum LlmServiceError {
     #[error("Boxed error: `{0}`")]
@@ -314,4 +306,6 @@ pub enum LlmServiceError {
     SequenceError(#[from] SequenceError),
     #[error("Send error: `{0}`")]
     SendError(#[from] SendError<SequenceGroup>),
+    #[error("Tokenizer error: `{0}`")]
+    TokenizerError(#[from] TokenizerError),
 }

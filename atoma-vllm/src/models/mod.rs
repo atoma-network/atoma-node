@@ -12,7 +12,7 @@ pub fn hub_load_safetensors(
         Err(e) => candle_core::bail!("Failed to get json file from HF API, with error: {e}"),
     };
     let json_file = std::fs::File::open(json_file)?;
-    let json: serde_json::Value = match serde_json::from_reader(&json_file) { 
+    let json: serde_json::Value = match serde_json::from_reader(&json_file) {
         Ok(json) => json,
         Err(e) => candle_core::bail!("Failed to deserialize json file, with error: {e}"),
     };

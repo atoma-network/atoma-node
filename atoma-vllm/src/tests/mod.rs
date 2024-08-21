@@ -188,7 +188,7 @@ async fn test_llm_engine() {
         .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel, _>(
+    let mut service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -198,11 +198,11 @@ async fn test_llm_engine() {
         DType::F16,
         true,
         "test_model".to_string(),
+        4,
         "".to_string(),
         scheduler_config,
-        tokenizer,
-        shutdown_signal,
         validation,
+        shutdown_signal,
     )
     .await
     .expect("Failed to start LLM service");
@@ -327,7 +327,7 @@ async fn test_llm_engine_with_enable_chunking() {
         .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel, _>(
+    let mut service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -337,9 +337,9 @@ async fn test_llm_engine_with_enable_chunking() {
         DType::F16,
         true,
         "test_model".to_string(),
+        4,
         "".to_string(),
         scheduler_config,
-        tokenizer,
         validation,
         shutdown_signal,
     )
