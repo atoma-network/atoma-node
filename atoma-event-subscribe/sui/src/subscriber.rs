@@ -13,7 +13,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
-use atoma_types::{AtomaInputMetadata, Request, SmallId, NON_SAMPLED_NODE_ERR};
+use atoma_types::{InputSource, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 /// The size of a request id, expressed in hex format
 const REQUEST_ID_HEX_SIZE: usize = 64;
@@ -44,7 +44,7 @@ pub struct SuiSubscriber {
     /// The websocket address of a Sui RPC node
     ws_addr: Option<String>,
     /// Input manager sender, responsible for sending the input metadata and a oneshot sender, to the input manager service to get back the user prompt.
-    input_manager_tx: mpsc::Sender<(AtomaInputMetadata, oneshot::Sender<String>)>,
+    input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
 }
 
 impl SuiSubscriber {
@@ -56,7 +56,7 @@ impl SuiSubscriber {
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
-        input_manager_tx: mpsc::Sender<(AtomaInputMetadata, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
@@ -92,7 +92,7 @@ impl SuiSubscriber {
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
-        input_manager_tx: mpsc::Sender<(AtomaInputMetadata, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -222,16 +222,11 @@ impl SuiSubscriber {
     async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
         let mut request = Request::try_from((self.id, event_data))?;
-        let metadata = AtomaInputMetadata {
-            user_id: request.params().user_id(),
-            ticket_id: hex::encode(request.id().as_slice()),
-            node_id: self.id,
-            input_source: atoma_types::InputSource::Firebase,
-            input_type: atoma_types::InputType::Text,
-        };
+
+        // Get the prompt and replace with the actual prompt.
         let (oneshot_sender, oneshot_receiver) = tokio::sync::oneshot::channel();
         self.input_manager_tx
-            .send((metadata, oneshot_sender))
+            .send((request.params().prompt(), oneshot_sender))
             .await
             .map_err(Box::new)?;
         let result = tokio::time::timeout(
@@ -241,18 +236,11 @@ impl SuiSubscriber {
         .await
         .map_err(|_| SuiSubscriberError::TimeoutError)??;
         // Replace the prompt string to the real prompt instead of the firebase user id.
-        request.set_prompt(result);
+        request.set_raw_prompt(result);
         info!("Received new request: {:?}", request);
-        let request_id =
-            request
-                .id()
-                .iter()
-                .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
-                    write!(acc, "{:02x}", b).expect("Failed to write to request_id");
-                    acc
-                });
+        let request_id = request.id();
         info!(
-            "Current node has been sampled for request with id: {}",
+            "Current node has been sampled for request with id: {:?}",
             request_id
         );
         self.event_sender.send(request).await.map_err(Box::new)?;
@@ -352,9 +340,7 @@ pub enum SuiSubscriberError {
     #[error("Malformed event: `{0}`")]
     MalformedEvent(String),
     #[error("Sending input to input manager error: `{0}`")]
-    SendInputError(
-        #[from] Box<mpsc::error::SendError<(AtomaInputMetadata, oneshot::Sender<String>)>>,
-    ),
+    SendInputError(#[from] Box<mpsc::error::SendError<(InputSource, oneshot::Sender<String>)>>),
     #[error("Error while sending request to input manager: `{0}`")]
     InputManagerError(#[from] Box<tokio::sync::oneshot::error::RecvError>),
     #[error("Timeout error getting the input from the input manager")]

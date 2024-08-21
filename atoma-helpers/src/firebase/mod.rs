@@ -39,15 +39,15 @@ impl Firebase {
         let mut url = fireabase_url.clone();
         {
             let mut path_segment = url.path_segments_mut().unwrap();
-            path_segment.push("users");
+            path_segment.push("nodes");
             path_segment.push(&format!("{}.json", firebase_auth.get_local_id()?));
         }
         url.set_query(Some(&format!("auth={token}")));
         let data = json!({
-            "node":node_id.to_string()
+            "id":node_id.to_string()
         });
         let response = client.put(url).json(&data).send().await?;
-        let text = response.text().await?;
+        response.text().await?;
 
         Ok(firebase_auth)
     }

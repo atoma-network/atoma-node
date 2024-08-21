@@ -387,7 +387,7 @@ pub struct TextModelInput {
     /// the Atoma's smart contract (on some blockchain).
     /// In that case, is a unique identifier in 32-byte
     /// format
-    pub(crate) request_id: Digest,
+    pub(crate) request_id: String,
     /// The actual prompt text (to be used as input
     /// on the model's inference run)
     pub(crate) prompt: String,
@@ -458,14 +458,14 @@ impl TextModelInput {
     }
 }
 
-impl TryFrom<(Digest, PromptParams)> for TextModelInput {
+impl TryFrom<(String, PromptParams)> for TextModelInput {
     type Error = ModelError;
 
-    fn try_from((request_id, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((request_id, value): (String, PromptParams)) -> Result<Self, Self::Error> {
         match value {
             PromptParams::Text2TextPromptParams(p) => Ok(Self {
                 request_id,
-                prompt: p.prompt(),
+                prompt: p.get_input_text(),
                 temperature: p.temperature(),
                 random_seed: p.random_seed(),
                 repeat_penalty: p.repeat_penalty(),
@@ -578,7 +578,7 @@ impl TryFrom<(Digest, PromptParams)> for StableDiffusionInput {
     fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
         match value {
             PromptParams::Text2ImagePromptParams(p) => Ok(Self {
-                prompt: p.prompt(),
+                prompt: p.get_input_text(),
                 uncond_prompt: p.uncond_prompt(),
                 height: p.height().map(|t| t.try_into().unwrap()),
                 width: p.width().map(|t| t.try_into().unwrap()),

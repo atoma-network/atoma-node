@@ -3,8 +3,8 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
-use atoma_types::Digest;
 use atoma_types::Text2TextPromptParams;
+use atoma_types::{AtomaStreamingData, Digest};
 use prompts::PROMPTS;
 use serde::Serialize;
 
@@ -72,7 +72,7 @@ impl ModelTrait for TestModel {
 
     fn load(
         duration: Self::LoadData,
-        _: tokio::sync::mpsc::Sender<(Digest, String)>,
+        _: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
@@ -95,7 +95,7 @@ impl ModelTrait for TestModel {
 }
 
 impl ModelThreadDispatcher {
-    fn test_start(stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>) -> Self {
+    fn test_start(stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>) -> Self {
         let duration_in_secs = vec![1, 2, 5, 10];
         let mut model_senders = HashMap::with_capacity(4);
 

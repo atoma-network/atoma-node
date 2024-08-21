@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle::{
     quantized::{ggml_file, gguf_file},
     DType, Device, Tensor,
@@ -44,7 +44,7 @@ impl QuantizedModel {
         device: Device,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Self {
         Self {
             model,
@@ -144,7 +144,7 @@ impl ModelTrait for QuantizedModel {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,

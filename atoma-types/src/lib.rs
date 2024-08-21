@@ -86,8 +86,9 @@ impl Request {
         self.output_destination.clone()
     }
 
-    pub fn set_prompt(&mut self, prompt: String) {
-        self.params.replace_prompt(prompt);
+    /// Once we get the prompt, we can set it as raw for the inference
+    pub fn set_raw_prompt(&mut self, prompt: String) {
+        self.params.set_raw_prompt(prompt);
     }
 }
 
@@ -214,17 +215,27 @@ impl PromptParams {
         }
     }
 
-    pub fn user_id(&self) -> String {
+    pub fn prompt(&self) -> InputSource {
         match self {
-            Self::Text2ImagePromptParams(p) => p.prompt(),
             Self::Text2TextPromptParams(p) => p.prompt(),
+            Self::Text2ImagePromptParams(p) => p.prompt(),
         }
     }
 
-    pub fn replace_prompt(&mut self, prompt: String) {
+    pub fn get_input_text(&self) -> String {
+        match self.prompt() {
+            InputSource::Firebase { .. } => {
+                unreachable!("Firebase request id found when raw prompt was expected")
+            }
+            InputSource::Raw { prompt } => prompt,
+        }
+    }
+
+    /// Once we get the prompt, we can set it as raw for the inference
+    pub fn set_raw_prompt(&mut self, prompt: String) {
         match self {
-            Self::Text2ImagePromptParams(p) => p.prompt = prompt,
-            Self::Text2TextPromptParams(p) => p.prompt = prompt,
+            Self::Text2TextPromptParams(p) => p.set_raw_prompt(prompt),
+            Self::Text2ImagePromptParams(p) => p.set_raw_prompt(prompt),
         }
     }
 }
@@ -257,8 +268,7 @@ impl TryFrom<Value> for PromptParams {
 /// - should_stream_output: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2TextPromptParams {
-    /// The prompt, in String format
-    prompt: String,
+    prompt: InputSource,
     /// The specified model of the request
     model: String,
     /// The temperature
@@ -288,7 +298,7 @@ impl Text2TextPromptParams {
     #[allow(clippy::too_many_arguments)]
     /// Constructor
     pub fn new(
-        prompt: String,
+        prompt: InputSource,
         model: String,
         temperature: f64,
         random_seed: u64,
@@ -318,7 +328,7 @@ impl Text2TextPromptParams {
     }
 
     /// Getter for `prompt`
-    pub fn prompt(&self) -> String {
+    pub fn prompt(&self) -> InputSource {
         self.prompt.clone()
     }
 
@@ -376,6 +386,19 @@ impl Text2TextPromptParams {
     pub fn pre_prompt_tokens(&self) -> Vec<u32> {
         self.pre_prompt_tokens.clone()
     }
+
+    pub fn set_raw_prompt(&mut self, prompt: String) {
+        self.prompt = InputSource::Raw { prompt };
+    }
+
+    pub fn get_input_text(&self) -> String {
+        match &self.prompt {
+            InputSource::Firebase { .. } => {
+                unreachable!("Firebase request id found when raw prompt was expected")
+            }
+            InputSource::Raw { prompt } => prompt.clone(),
+        }
+    }
 }
 
 impl TryFrom<Value> for Text2TextPromptParams {
@@ -383,7 +406,9 @@ impl TryFrom<Value> for Text2TextPromptParams {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         Ok(Self {
-            prompt: utils::parse_str(&value["prompt"])?,
+            prompt: Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
+                serde_json::from_value::<Vec<u8>>(value["prompt"].clone())?.as_slice(),
+            ))?,
             model: utils::parse_str(&value["model"])?,
             temperature: utils::parse_f32_from_le_bytes(&value["temperature"])? as f64,
             random_seed: utils::parse_u64(&value["random_seed"])?,
@@ -426,7 +451,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2ImagePromptParams {
     /// Prompt, in String format
-    prompt: String,
+    prompt: InputSource,
     /// Model to run the inference
     model: String,
     /// Unconditional prompt, used in stable diffusion models
@@ -453,7 +478,7 @@ impl Text2ImagePromptParams {
     #[allow(clippy::too_many_arguments)]
     /// Constructor
     pub fn new(
-        prompt: String,
+        prompt: InputSource,
         model: String,
         uncond_prompt: String,
         height: Option<u64>,
@@ -481,7 +506,7 @@ impl Text2ImagePromptParams {
     }
 
     /// Getter for `prompt`
-    pub fn prompt(&self) -> String {
+    pub fn prompt(&self) -> InputSource {
         self.prompt.clone()
     }
 
@@ -534,6 +559,20 @@ impl Text2ImagePromptParams {
     pub fn random_seed(&self) -> Option<u32> {
         self.random_seed
     }
+
+    /// Once we get the prompt, we can set it as raw for the inference
+    pub fn set_raw_prompt(&mut self, prompt: String) {
+        self.prompt = InputSource::Raw { prompt };
+    }
+
+    pub fn get_input_text(&self) -> String {
+        match &self.prompt {
+            InputSource::Firebase { .. } => {
+                unreachable!("Firebase request id found when raw prompt was expected")
+            }
+            InputSource::Raw { prompt } => prompt.clone(),
+        }
+    }
 }
 
 impl TryFrom<Value> for Text2ImagePromptParams {
@@ -541,7 +580,9 @@ impl TryFrom<Value> for Text2ImagePromptParams {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         Ok(Self {
-            prompt: utils::parse_str(&value["prompt"])?,
+            prompt: Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
+                serde_json::from_value::<Vec<u8>>(value["prompt"].clone())?.as_slice(),
+            ))?,
             model: utils::parse_str(&value["model"])?,
             uncond_prompt: utils::parse_str(&value["uncond_prompt"])?,
             random_seed: Some(utils::parse_u32(&value["random_seed"])?),
@@ -651,27 +692,27 @@ impl Response {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum InputSource {
+    Firebase { request_id: String },
+    Raw { prompt: String }, // This means that the prompt is stored in the request
+}
+
 /// `OutputDestination` - enum encapsulating the output's destination
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum OutputDestination {
-    Firebase { user_id: String },
+    Firebase { request_id: String },
     Gateway { gateway_user_id: String },
 }
 
 impl OutputDestination {
     /// Getter for `user_id`
-    pub fn user_id(&self) -> String {
+    pub fn request_id(&self) -> String {
         match self {
-            Self::Firebase { user_id } => user_id.clone(),
-            Self::Gateway { gateway_user_id } => gateway_user_id.clone(),
+            Self::Firebase { request_id } => request_id.clone(),
+            Self::Gateway { .. } => unimplemented!("Gateway user id not implemented"),
         }
     }
-}
-
-/// `OutputDestination` - enum encapsulating the output's destination
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum InputSource {
-    Firebase,
 }
 
 /// `OutputType` - enum encapsulating the output type (e.g. `Text`, `Image`, etc)
@@ -726,23 +767,6 @@ pub struct AtomaOutputMetadata {
     pub output_destination: OutputDestination,
     /// The output type (e.g. `Text`, `Image`)
     pub output_type: OutputType,
-    /// small_id of the node
-    pub small_id: u64,
-}
-
-/// `AtomaInputMetadata` - metadata associated with the user's input for a given request
-#[derive(Debug, Deserialize, Serialize)]
-pub struct AtomaInputMetadata {
-    /// User's public firebase id
-    pub user_id: String,
-    /// The ticket id associated with the request, in hex format
-    pub ticket_id: String,
-    /// Node id
-    pub node_id: u64,
-    /// The input source
-    pub input_source: InputSource,
-    /// The output type (e.g. `Text`, `Image`)
-    pub input_type: InputType,
 }
 
 mod utils {
@@ -805,5 +829,24 @@ mod utils {
         value
             .as_bool()
             .ok_or_else(|| anyhow!("Expected a bool, found none"))
+    }
+}
+
+pub struct AtomaStreamingData {
+    request_id: String,
+    data: String,
+}
+
+impl AtomaStreamingData {
+    pub fn new(request_id: String, data: String) -> Self {
+        Self { request_id, data }
+    }
+
+    pub fn data(&self) -> &String {
+        &self.data
+    }
+
+    pub fn request_id(&self) -> &String {
+        &self.request_id
     }
 }

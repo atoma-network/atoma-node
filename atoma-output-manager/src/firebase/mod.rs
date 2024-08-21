@@ -46,16 +46,14 @@ impl FirebaseOutputManager {
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
-        let local_id = self.auth.get_local_id()?;
         let mut url = self.firebase_url.clone();
         {
             let mut path_segment = url
                 .path_segments_mut()
                 .map_err(|_| AtomaOutputManagerError::UrlError("URL is not valid".to_string()))?;
-            path_segment.push("response");
-            path_segment.push(&output_metadata.small_id.to_string());
-            path_segment.push(&output_metadata.output_destination.user_id());
-            path_segment.push(&format!("{}.json", output_metadata.ticket_id));
+            path_segment.push("data");
+            path_segment.push(&output_metadata.output_destination.request_id());
+            path_segment.push("response.json");
         }
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's output url: {:?}", url);
@@ -64,11 +62,10 @@ impl FirebaseOutputManager {
             output_metadata
         );
         let data = json!({
-            "result": {
+            "data": {
                 "metadata": output_metadata,
                 "data": output,
             },
-            "creatorUid": local_id,
         });
         let response = client.put(url).json(&data).send().await?;
         let text = response.text().await?;

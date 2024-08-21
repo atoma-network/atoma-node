@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use atoma_helpers::Firebase;
-use atoma_types::{AtomaInputMetadata, InputSource};
+use atoma_types::InputSource;
 use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use thiserror::Error;
@@ -22,17 +22,14 @@ pub struct AtomaInputManager {
     firebase_input_manager: FirebaseInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
-    input_manager_rx: mpsc::Receiver<(AtomaInputMetadata, tokio::sync::oneshot::Sender<String>)>,
+    input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
 }
 
 impl AtomaInputManager {
     /// Constructor
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        input_manager_rx: mpsc::Receiver<(
-            AtomaInputMetadata,
-            tokio::sync::oneshot::Sender<String>,
-        )>,
+        input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
@@ -55,17 +52,18 @@ impl AtomaInputManager {
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaInputManagerError> {
         info!("Starting firebase input service..");
-        while let Some((input_metadata, oneshot)) = self.input_manager_rx.recv().await {
+        while let Some((input_source, oneshot)) = self.input_manager_rx.recv().await {
             info!(
                 "Received a new input to be submitted to a data storage {:?}..",
-                input_metadata.input_source
+                input_source
             );
-            let text = match input_metadata.input_source {
-                InputSource::Firebase => {
+            let text = match input_source {
+                InputSource::Firebase { request_id } => {
                     self.firebase_input_manager
-                        .handle_get_request(input_metadata)
+                        .handle_get_request(request_id)
                         .await?
                 }
+                InputSource::Raw { prompt } => prompt,
             };
             oneshot
                 .send(text)

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -182,7 +182,7 @@ impl ModelTrait for StableDiffusion {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        _: mpsc::Sender<(Digest, String)>,
+        _: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,

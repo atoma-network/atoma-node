@@ -1,4 +1,4 @@
-use atoma_types::{Digest, Request, Response};
+use atoma_types::{AtomaStreamingData, Request, Response};
 use candle::Error as CandleError;
 use futures::StreamExt;
 use std::fmt::Debug;
@@ -49,7 +49,7 @@ impl ModelService {
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
-        stream_tx: Sender<(Digest, String)>,
+        stream_tx: Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -197,7 +197,7 @@ mod tests {
 
         fn load(
             _: Self::LoadData,
-            _: tokio::sync::mpsc::Sender<(Digest, String)>,
+            _: tokio::sync::mpsc::Sender<AtomaStreamingData>,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }

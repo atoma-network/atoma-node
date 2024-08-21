@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use atoma_helpers::{Firebase, FirebaseAuth};
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use config::AtomaFirebaseStreamerConfig;
 use reqwest::{Client, Url};
 use serde_json::json;
@@ -17,10 +17,10 @@ pub struct AtomaStreamer {
     firebase_url: Url,
     /// A `mpsc::Receiver` channel, listening to newly
     /// AI generated outputs
-    streamer_rx: mpsc::Receiver<(Digest, String)>,
+    streamer_rx: mpsc::Receiver<AtomaStreamingData>,
     /// Last streamed index mapping, for each
     /// `Digest`
-    last_streamed_index: HashMap<Digest, usize>,
+    last_streamed_index: HashMap<String, usize>,
     /// Firebase authentication
     auth: FirebaseAuth,
 }
@@ -29,7 +29,7 @@ impl AtomaStreamer {
     /// Constructor
     pub fn new(
         firebase_url: Url,
-        streamer_rx: mpsc::Receiver<(Digest, String)>,
+        streamer_rx: mpsc::Receiver<AtomaStreamingData>,
         auth: FirebaseAuth,
     ) -> Self {
         Self {
@@ -43,7 +43,7 @@ impl AtomaStreamer {
     /// Creates a new `AtomaStreamer` instance from a configuration file
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
-        streamer_rx: mpsc::Receiver<(Digest, String)>,
+        streamer_rx: mpsc::Receiver<AtomaStreamingData>,
         firebase: Firebase,
     ) -> Result<Self, AtomaStreamerError> {
         let config = AtomaFirebaseStreamerConfig::from_file_path(config_path);
@@ -67,9 +67,13 @@ impl AtomaStreamer {
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaStreamerError> {
         info!("Starting firebase service..");
-        while let Some((tx_digest, data)) = self.streamer_rx.recv().await {
+        while let Some(streaming_data) = self.streamer_rx.recv().await {
             info!("Received a new output to be submitted to Firebase..");
-            self.handle_streaming_request(tx_digest, data).await?;
+            self.handle_streaming_request(
+                streaming_data.request_id().clone(),
+                streaming_data.data().clone(),
+            )
+            .await?;
         }
 
         Ok(())
@@ -81,19 +85,19 @@ impl AtomaStreamer {
     #[instrument(skip_all)]
     async fn handle_streaming_request(
         &mut self,
-        tx_digest: Digest,
+        request_id: String,
         data: String,
     ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
         let mut url = self.firebase_url.clone();
         let token = self.auth.get_id_token().await?;
-        let local_id = self.auth.get_local_id()?;
         {
             let mut path_segment = url
                 .path_segments_mut()
                 .map_err(|_| AtomaStreamerError::UrlError("URL is cannot-be-a-base".to_string()))?;
             path_segment.push("data");
-            path_segment.push(&format!("{tx_digest}.json"));
+            path_segment.push(&request_id);
+            path_segment.push(&format!("response.json"));
         }
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's output url: {:?}", url);
@@ -102,12 +106,12 @@ impl AtomaStreamer {
             data
         );
 
-        let last_streamed_index = self.last_streamed_index.entry(tx_digest).or_insert(0);
+        let last_streamed_index = self.last_streamed_index.entry(request_id).or_insert(0);
         let index = last_streamed_index.to_string();
         tokio::spawn(async move {
             let response = client
                 .patch(url)
-                .json(&json!({index: data, "creatorUid": local_id}))
+                .json(&json!({index: data}))
                 .send()
                 .await
                 .unwrap();

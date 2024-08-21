@@ -1,7 +1,6 @@
 use atoma_helpers::{Firebase, FirebaseAuth};
-use atoma_types::AtomaInputMetadata;
 use reqwest::Client;
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 use url::Url;
 
 use crate::AtomaInputManagerError;
@@ -40,7 +39,7 @@ impl FirebaseInputManager {
     #[instrument(skip_all)]
     pub async fn handle_get_request(
         &mut self,
-        input_metadata: AtomaInputMetadata,
+        request_id: String,
     ) -> Result<String, AtomaInputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
@@ -49,18 +48,13 @@ impl FirebaseInputManager {
             let mut path_segment = url
                 .path_segments_mut()
                 .map_err(|_| AtomaInputManagerError::UrlError("URL is not valid".to_string()))?;
-            path_segment.push("prompts");
-            path_segment.push(&input_metadata.user_id);
-            path_segment.push(&input_metadata.node_id.to_string());
-            path_segment.push(&input_metadata.ticket_id);
-            path_segment.push("prompt.json");
+            path_segment.push("data");
+            path_segment.push(&request_id);
+            path_segment.push("prompt");
+            path_segment.push("data.json");
         }
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's input url: {:?}", url);
-        debug!(
-            "Submitting to Firebase's real time storage, with metadata: {:?}",
-            input_metadata
-        );
         for _ in 0..NUMBER_OF_REQUESTS_TO_TRY {
             let response = client.get(url.clone()).send().await?;
             if response.status().is_success() {
