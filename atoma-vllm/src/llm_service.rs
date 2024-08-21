@@ -85,6 +85,7 @@ impl LlmService {
         num_tokenizer_workers: usize,
         revision: String,
         scheduler_config: SchedulerConfig,
+        tokenizer_receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         validation_service: Validation,
         shutdown_signal: mpsc::Receiver<()>,
     ) -> Result<Self, LlmServiceError>
@@ -108,8 +109,6 @@ impl LlmService {
         let file_paths = M::fetch(api_key, &cache_dir, model_name, revision)?;
         let tokenizer = Tokenizer::from_file(&file_paths.tokenizer_path)?;
         let model = M::load(device.clone(), dtype, &file_paths)?;
-
-        let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
 
         let cloned_tokenizer = tokenizer.clone();
         let tokenizer_handle = tokio::spawn(async move {

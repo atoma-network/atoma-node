@@ -1,10 +1,9 @@
 use thiserror::Error;
 use tokenizers::{tokenizer::Tokenizer, Encoding, Error};
 use tokio::sync::{
-    mpsc::{self, error::SendError},
-    oneshot,
+    broadcast::error, mpsc::{self, error::SendError}, oneshot
 };
-use tracing::{error, info, info_span, span, Span};
+use tracing::{error, info, info_span, instrument, span, Span};
 
 /// `EncodeTokenizerRequest` - A request for encoding a string input
 /// into a suite of tokens (expressed as a `u32` vector)
@@ -46,15 +45,16 @@ impl TokenizerWorker {
 
         for i in 0..workers {
             let tokenizer_clone = tokenizer.clone();
-            let (sender, receiver) = mpsc::unbounded_channel();
+            let (sender, worker_receiver) = mpsc::unbounded_channel();
             senders.push(sender);
 
             // Spawning the worker
             let span = info_span!("tokenizer-worker");
             tokio::task::spawn_blocking(move || {
-                let _enter = span.enter();
+                let _span = span.clone();
+                let _enter = _span.enter();
                 info!("Starting {i}-th tokenizer task");
-                start_tokenizer_task(tokenizer_clone, receiver, span)?;
+                start_tokenizer_task(tokenizer_clone, worker_receiver, span)?;
                 Ok::<_, TokenizerError>(())
             });
         }
@@ -102,8 +102,14 @@ async fn round_robin_task(
     loop {
         for sender in &senders {
             match receiver.recv().await {
-                None => return Ok(()),
-                Some(request) => sender.send(request)?,
+                None => {
+                    error!("Received None from the tokenizer receiver");
+                    return Ok(());
+                },
+                Some(request) => {
+                    info!("Received a new request from the tokenizer receiver");
+                    sender.send(request)?;
+                }
             }
         }
     }

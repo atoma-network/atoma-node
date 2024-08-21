@@ -171,21 +171,6 @@ async fn test_llm_engine() {
         MAX_TOTAL_TOKENS,
         tokenizer_sender,
     );
-
-    let tokenizer_clone = tokenizer.clone();
-    let _tokenizer_handle = tokio::spawn(async move {
-        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
-            .await
-            .expect("Failed to start tokenizer");
-    });
-
-    let model_file_paths = ModelFilePaths {
-        config_path: "".into(),
-        tokenizer_path: "".into(),
-        weights_path: vec![],
-    };
-    let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
-        .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
     let mut service = LlmService::start::<MockModel, PathBuf>(
@@ -197,11 +182,12 @@ async fn test_llm_engine() {
         Device::Cpu,
         DType::F16,
         true,
-        "test_model".to_string(),
+        "anthony/tokenizers-test".to_string(),
         4,
         "".to_string(),
         scheduler_config,
         validation,
+        tokenizer_receiver,
         shutdown_signal,
     )
     .await
@@ -299,7 +285,7 @@ async fn test_llm_engine_with_enable_chunking() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, true, 0)
         .expect("Failed to create scheduler config");
 
-    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
+    // let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
@@ -310,21 +296,6 @@ async fn test_llm_engine_with_enable_chunking() {
         MAX_TOTAL_TOKENS,
         tokenizer_sender,
     );
-
-    let tokenizer_clone = tokenizer.clone();
-    let _tokenizer_handle = tokio::spawn(async move {
-        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
-            .await
-            .expect("Failed to start tokenizer");
-    });
-
-    let model_file_paths = ModelFilePaths {
-        config_path: "".into(),
-        tokenizer_path: "".into(),
-        weights_path: vec![],
-    };
-    let model = MockModel::load(Device::Cpu, DType::F16, &model_file_paths)
-        .expect("Failed to create mock model");
     let (_, shutdown_signal) = mpsc::channel(1);
 
     let mut service = LlmService::start::<MockModel, PathBuf>(
@@ -336,11 +307,12 @@ async fn test_llm_engine_with_enable_chunking() {
         Device::Cpu,
         DType::F16,
         true,
-        "test_model".to_string(),
+        "anthony/tokenizers-test".to_string(),
         4,
         "".to_string(),
         scheduler_config,
         validation,
+        tokenizer_receiver,
         shutdown_signal,
     )
     .await

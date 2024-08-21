@@ -64,6 +64,7 @@ async fn test_llama_model() {
         revision,
         scheduler_config,
         validation_service,
+        tokenizer_receiver,
         shutdown_signal_receiver,
     )
     .await

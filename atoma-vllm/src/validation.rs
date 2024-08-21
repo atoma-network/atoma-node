@@ -114,7 +114,10 @@ impl Validation {
 
         // Validate `input_len`
         if input_len > self.max_input_length {
-            error!("Input length exceeded by request's input length ({input_len} > {})", self.max_input_length);
+            error!(
+                "Input length exceeded by request's input length ({input_len} > {})",
+                self.max_input_length
+            );
             return Err(ValidationError::InputLength(
                 self.max_input_length,
                 input_len,
@@ -222,7 +225,11 @@ impl Validation {
         }
 
         if stop_sequences.len() > self.max_stop_sequences {
-            error!("Stop sequences exceeded by request's stop sequences ({} > {})", stop_sequences.len(), self.max_stop_sequences);
+            error!(
+                "Stop sequences exceeded by request's stop sequences ({} > {})",
+                stop_sequences.len(),
+                self.max_stop_sequences
+            );
             return Err(ValidationError::StopSequence(
                 self.max_stop_sequences,
                 stop_sequences.len(),
@@ -265,7 +272,10 @@ impl Validation {
         let truncate = truncate
             .map(|value| {
                 if value == 0 || value > self.max_input_length {
-                    error!("Truncate exceeded by request's truncate ({value} > {})", self.max_input_length);
+                    error!(
+                        "Truncate exceeded by request's truncate ({value} > {})",
+                        self.max_input_length
+                    );
                     return Err(ValidationError::Truncate(self.max_input_length, value));
                 }
                 Ok(Some(value))
