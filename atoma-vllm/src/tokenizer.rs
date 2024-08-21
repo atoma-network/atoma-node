@@ -4,7 +4,7 @@ use tokio::sync::{
     mpsc::{self, error::SendError},
     oneshot,
 };
-use tracing::{error, info, info_span, Span};
+use tracing::{error, info, info_span, span, Span};
 
 /// `EncodeTokenizerRequest` - A request for encoding a string input
 /// into a suite of tokens (expressed as a `u32` vector)
@@ -54,7 +54,7 @@ impl TokenizerWorker {
             tokio::task::spawn_blocking(move || {
                 let _enter = span.enter();
                 info!("Starting {i}-th tokenizer task");
-                start_tokenizer_task(tokenizer_clone, receiver)?;
+                start_tokenizer_task(tokenizer_clone, receiver, span)?;
                 Ok::<_, TokenizerError>(())
             });
         }
@@ -67,12 +67,18 @@ impl TokenizerWorker {
 }
 
 /// Starts a new tokenizer tokio task
+#[instrument(skip_all)]
 fn start_tokenizer_task(
     tokenizer: Tokenizer,
     mut receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
+    span: Span,
 ) -> Result<(), TokenizerError> {
+    let _enter = span.enter();
+    info!("Starting tokenizer task..");
+
     // Loops over requests
     while let Some(request) = receiver.blocking_recv() {
+        info!("Received new `EncodeTokenizerRequest`");
         let EncodeTokenizerRequest {
             input,
             sender,

@@ -52,7 +52,7 @@ impl Validation {
     }
 
     /// Tokenize inputs
-    #[instrument(skip(input))]
+    #[instrument(skip_all)]
     pub async fn tokenize(
         &self,
         input: String,
@@ -222,7 +222,7 @@ impl Validation {
         }
 
         if stop_sequences.len() > self.max_stop_sequences {
-            error!("Stop sequences exceeded by request's stop sequences ({stop_sequences.len()} > {})", self.max_stop_sequences);
+            error!("Stop sequences exceeded by request's stop sequences ({} > {})", stop_sequences.len(), self.max_stop_sequences);
             return Err(ValidationError::StopSequence(
                 self.max_stop_sequences,
                 stop_sequences.len(),
