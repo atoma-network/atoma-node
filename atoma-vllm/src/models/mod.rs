@@ -7,7 +7,10 @@ pub fn hub_load_safetensors(
     repo: &hf_hub::api::sync::ApiRepo,
     json_file: &str,
 ) -> candle_core::Result<Vec<PathBuf>> {
-    let json_file = repo.get(json_file)?;
+    let json_file = match repo.get(json_file) {
+        Ok(path) => path,
+        Err(e) => candle_core::bail!("Failed to get json file from HF API, with error: {e}"),
+    };
     let json_file = std::fs::File::open(json_file)?;
     let json: serde_json::Value = serde_json::from_reader(&json_file)?;
     let weight_map = match json.get("weight_map") {
