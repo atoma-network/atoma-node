@@ -42,18 +42,18 @@ impl TokenizerWorker {
         receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         workers: usize,
     ) -> Result<(), TokenizerError> {
-        let span = info_span!("tokenizer-worker");
-        let _enter = span.enter();
         let mut senders = Vec::with_capacity(workers);
 
-        for _ in 0..workers {
+        for i in 0..workers {
             let tokenizer_clone = tokenizer.clone();
             let (sender, receiver) = mpsc::unbounded_channel();
             senders.push(sender);
 
             // Spawning the worker
-            tokio::task::spawn_blocking(|| {
-                info!("Starting tokenizer task");
+            let span = info_span!("tokenizer-worker");
+            tokio::task::spawn_blocking(move || {
+                let _enter = span.enter();
+                info!("Starting {i}-th tokenizer task");
                 start_tokenizer_task(tokenizer_clone, receiver)?;
                 Ok::<_, TokenizerError>(())
             });

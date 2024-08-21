@@ -17,7 +17,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{error, info, instrument, trace};
+use tracing::{error, info, info_span, instrument, trace, Span};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
@@ -235,6 +235,7 @@ pub struct ModelThreadCommand {
 pub struct ModelThread<M: ModelExecutor> {
     worker: ModelWorker<M>,
     receiver: mpsc::UnboundedReceiver<ModelThreadCommand>,
+    span: Span,
 }
 
 impl<M> ModelThread<M>
@@ -247,6 +248,7 @@ where
     /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
     #[instrument(skip(self))]
     pub fn run(mut self) -> Result<(), ModelThreadError> {
+        let _enter = self.span.enter();
         info!("Start Model thread");
 
         while let Some(command) = self.receiver.blocking_recv() {
@@ -315,6 +317,7 @@ impl ModelThreadDispatcher {
             let model_thread = ModelThread {
                 worker: model_worker,
                 receiver,
+                span: info_span!("model-thread"),
             };
             if let Err(e) = model_thread.run() {
                 error!("Model thread error: {e}");

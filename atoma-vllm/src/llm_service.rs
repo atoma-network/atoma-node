@@ -25,7 +25,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, info_span, instrument, Span};
 
 // TODO:
 // 1. We should have a configurable number of tokenizer workers
@@ -119,7 +119,7 @@ impl LlmService {
             )
         });
 
-        let model_thread_dispatcher: ModelThreadDispatcher = ModelThreadDispatcher::start::<M>(
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
             cache_config,
             device,
             dtype,
@@ -158,9 +158,9 @@ impl LlmService {
     }
 
     /// Main loop - awaits for incoming requests from the atoma
-    /// event subscriber channel. It then validates the request
-    /// and once the request is validated, it sends it to the
-    /// `LlmEngine` background task
+    ///     event subscriber channel. It then validates the request
+    ///     and once the request is validated, it sends it to the
+    ///     `LlmEngine` background task
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), LlmServiceError> {
         loop {

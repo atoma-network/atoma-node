@@ -11,7 +11,7 @@ use tokio::sync::{
     mpsc::{error::SendError, UnboundedReceiver, UnboundedSender},
     oneshot::error::RecvError,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, info_span, instrument, trace, Span};
 
 use crate::{
     model_executor::ModelThreadDispatcher,
@@ -53,6 +53,8 @@ pub struct LlmEngine {
     scheduler: Scheduler<FcfsPolicy>,
     /// Tokenizer for decoding sequences
     tokenizer: Tokenizer,
+    /// Tracing span
+    span: Span,
 }
 
 impl LlmEngine {
@@ -72,6 +74,7 @@ impl LlmEngine {
             scheduler,
             tokenizer,
             request_receiver,
+            span: info_span!("llm-engine"),
         }
     }
 
@@ -85,9 +88,13 @@ impl LlmEngine {
     ///         service.
     #[instrument(skip(self))]
     pub async fn run(mut self) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         loop {
             tokio::select! {
                 Some(sequence_group) = self.request_receiver.recv() => {
+                    trace!("Received new sequence group, with id = {}", sequence_group.request_id);
                     // 1. Adds the received `SequenceGroup` to the `Scheduler` instance.
                     self.scheduler.add_sequence_group(sequence_group);
 
@@ -116,6 +123,9 @@ impl LlmEngine {
         &mut self,
         outputs: Result<Vec<SequenceGroupOutput>, EngineError>,
     ) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         match outputs {
             Ok(outputs) => {
                 // 1. Processes the newly AI generated outputs
@@ -152,6 +162,9 @@ impl LlmEngine {
     /// 2. It sends a new `ExecuteModelRequest` to the `ModelExecutor`'s thread.
     #[instrument(skip_all)]
     pub fn step(&mut self) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         info!("`LlmEngine` new step..");
         // 1. Schedule new requests
         let (sequence_groups_metadata, scheduler_outputs) = self.scheduler.schedule()?;

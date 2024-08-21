@@ -69,6 +69,10 @@ where
         num_gpu_blocks: usize,
         enable_chunked_prefill: bool,
     ) -> Result<Self, ModelWorkerError> {
+        let span = info_span!("model-worker");
+        let _span = span.clone();
+        let _enter = _span.enter();
+
         info!("Starting a new `ModelWorker` instance");
         let cache_engine = CacheEngine::new(
             block_size,
@@ -95,7 +99,7 @@ where
             enable_chunked_prefill,
             model,
             initial_gpu_memory: 0, // TODO 2.
-            span: info_span!("model-worker"),
+            span,
         })
     }
 
