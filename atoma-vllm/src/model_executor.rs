@@ -155,7 +155,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // 5. Select the given sequence logits, and apply a
                 // repetition penalty if necessary
                 let sequence_logits = if repetition_penalty == 1. {
-                    logits.i(logits_idx)?
+                    logits.i(logits_idx)?.squeeze(0)?
                 } else {
                     debug_assert!(repeat_last_n > 0, "repeat_last_n should be > 0");
                     let num_sequence_tokens = sequence_data.length();
@@ -164,7 +164,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                         .unwrap_or_default();
                     let context = sequence_data.get_token_ids();
                     candle_transformers::utils::apply_repeat_penalty(
-                        &logits.i(logits_idx)?,
+                        &logits.i(logits_idx)?.squeeze(0)?,
                         repetition_penalty,
                         &context[start_at..],
                     )?

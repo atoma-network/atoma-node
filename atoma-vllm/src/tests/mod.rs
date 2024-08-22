@@ -186,8 +186,8 @@ async fn test_llm_engine() {
         4,
         "".to_string(),
         scheduler_config,
-        validation,
         tokenizer_receiver,
+        validation,
         shutdown_signal,
     )
     .await
@@ -311,8 +311,8 @@ async fn test_llm_engine_with_enable_chunking() {
         4,
         "".to_string(),
         scheduler_config,
-        validation,
         tokenizer_receiver,
+        validation,
         shutdown_signal,
     )
     .await

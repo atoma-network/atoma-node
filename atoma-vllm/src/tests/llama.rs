@@ -63,8 +63,8 @@ async fn test_llama_model() {
         num_tokenizer_workers,
         revision,
         scheduler_config,
-        validation_service,
         tokenizer_receiver,
+        validation_service,
         shutdown_signal_receiver,
     )
     .await

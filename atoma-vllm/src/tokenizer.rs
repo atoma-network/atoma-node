@@ -1,7 +1,9 @@
 use thiserror::Error;
 use tokenizers::{tokenizer::Tokenizer, Encoding, Error};
 use tokio::sync::{
-    broadcast::error, mpsc::{self, error::SendError}, oneshot
+    broadcast::error,
+    mpsc::{self, error::SendError},
+    oneshot,
 };
 use tracing::{error, info, info_span, instrument, span, Span};
 
@@ -105,7 +107,7 @@ async fn round_robin_task(
                 None => {
                     error!("Received None from the tokenizer receiver");
                     return Ok(());
-                },
+                }
                 Some(request) => {
                     info!("Received a new request from the tokenizer receiver");
                     sender.send(request)?;

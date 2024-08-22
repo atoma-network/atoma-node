@@ -320,7 +320,7 @@ where
 
                 // 8. Update intermediate states
                 block_tables.push(block_table);
-                sequence_lengths.push(sliding_sequence_length as f32);
+                sequence_lengths.push(sliding_sequence_length as u32);
                 context_lengths.push(sliding_context_length as u32);
 
                 query_lengths.push(query_length as u32);
@@ -401,11 +401,14 @@ where
         let mut seq_start_loc =
             Tensor::zeros(seq_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
-        let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?.to_dtype(DType::U32)?;
+        let cumsum_seq_lens = seq_lens_tensor
+            .to_dtype(DType::F32)?
+            .cumsum(0)?
+            .to_dtype(DType::U32)?;
         seq_start_loc = seq_start_loc.slice_assign(&[1..], &cumsum_seq_lens)?;
 
-        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?;
-        let input_positions_tensor = Tensor::new(input_positions, &self.device)?;
+        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?.unsqueeze(0)?;
+        let input_positions_tensor = Tensor::new(input_positions, &self.device)?.unsqueeze(0)?;
         let slot_mapping_tensor = Tensor::new(slot_mapping, &self.device)?;
 
         let context_lens_tensor = Tensor::new(context_lengths, &self.device)?;
@@ -622,7 +625,7 @@ pub(crate) mod utils {
         let mut padded_output = Vec::new();
         for mut x_i in x {
             x_i.extend([pad].repeat(max_length - x_i.len()));
-            let shape = (x_i.len(),);
+            let shape = (1, x_i.len());
             padded_output.push(Tensor::from_vec(x_i, shape, device)?);
         }
         Ok(Tensor::cat(&padded_output[..], 0)?)

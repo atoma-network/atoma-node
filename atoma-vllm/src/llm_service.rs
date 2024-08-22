@@ -9,7 +9,7 @@ use crate::{
     model_executor::{ModelExecutor, ModelLoaderError, ModelThreadDispatcher, ModelThreadError},
     scheduler::{Scheduler, SchedulerError},
     sequence::{Sequence, SequenceError, SequenceGroup},
-    tokenizer::{TokenizerError, TokenizerWorker},
+    tokenizer::{EncodeTokenizerRequest, TokenizerError, TokenizerWorker},
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
