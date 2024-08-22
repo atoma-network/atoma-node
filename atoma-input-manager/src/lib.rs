@@ -67,7 +67,7 @@ impl AtomaInputManager {
             };
             oneshot
                 .send(text)
-                .map_err(|e| AtomaInputManagerError::SendPromptError(e))?;
+                .map_err(AtomaInputManagerError::SendPromptError)?;
         }
 
         Ok(())

@@ -147,7 +147,7 @@ pub enum ModelServiceError {
 
 #[cfg(test)]
 mod tests {
-    use atoma_types::PromptParams;
+    use atoma_types::{Digest, PromptParams};
     use serde::Serialize;
     use std::io::Write;
     use toml::{toml, Value};

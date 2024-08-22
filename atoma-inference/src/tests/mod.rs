@@ -145,7 +145,9 @@ async fn test_mock_model_thread() {
             let (response_sender, response_receiver) = oneshot::channel();
             let max_tokens = i as u64;
             let prompt_params = PromptParams::Text2TextPromptParams(Text2TextPromptParams::new(
-                "".to_string(),
+                atoma_types::InputSource::Raw {
+                    prompt: "".to_string(),
+                },
                 "".to_string(),
                 0.0,
                 1,

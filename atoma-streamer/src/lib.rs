@@ -97,7 +97,7 @@ impl AtomaStreamer {
                 .map_err(|_| AtomaStreamerError::UrlError("URL is cannot-be-a-base".to_string()))?;
             path_segment.push("data");
             path_segment.push(&request_id);
-            path_segment.push(&format!("response.json"));
+            path_segment.push("response.json");
         }
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's output url: {:?}", url);

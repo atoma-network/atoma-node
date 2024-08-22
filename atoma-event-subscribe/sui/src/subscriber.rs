@@ -1,4 +1,4 @@
-use std::{fmt::Write, path::Path, str::FromStr, time::Duration};
+use std::{path::Path, str::FromStr, time::Duration};
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -16,7 +16,6 @@ use crate::AtomaEvent;
 use atoma_types::{InputSource, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 /// The size of a request id, expressed in hex format
-const REQUEST_ID_HEX_SIZE: usize = 64;
 const WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS: u64 = 5;
 
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
