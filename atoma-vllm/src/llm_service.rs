@@ -217,6 +217,34 @@ impl LlmService {
 
         let sequence_id = self.request_counter;
 
+        let sampling =
+            if !valid_request.parameters.do_sample || valid_request.parameters.temperature == 1.0 {
+                Sampling::ArgMax
+            } else if valid_request.parameters.top_p == 1.0 && valid_request.parameters.top_k == 0 {
+                Sampling::All {
+                    temperature: valid_request.parameters.temperature as f64,
+                }
+            } else if valid_request.parameters.top_k == 0 && valid_request.parameters.top_p < 1.0 {
+                Sampling::TopP {
+                    p: valid_request.parameters.top_p as f64,
+                    temperature: valid_request.parameters.temperature as f64,
+                }
+            } else if valid_request.parameters.top_k != 0 && valid_request.parameters.top_p == 1.0 {
+                Sampling::TopK {
+                    k: valid_request.parameters.top_k as usize,
+                    temperature: valid_request.parameters.temperature as f64,
+                }
+            } else {
+                Sampling::TopKThenTopP {
+                    k: valid_request.parameters.top_k as usize,
+                    p: valid_request.parameters.top_p as f64,
+                    temperature: valid_request.parameters.temperature as f64,
+                }
+            };
+
+        let logits_processor =
+            LogitsProcessor::from_sampling(valid_request.parameters.random_seed, sampling);
+
         let sequence = Sequence::new(
             sequence_id,
             valid_request.inputs.clone(),
@@ -230,6 +258,7 @@ impl LlmService {
             arrival_time,
             valid_request.parameters.clone(),
             valid_request.stopping_parameters.clone(),
+            logits_processor,
         )?;
 
         Ok(sequence_group)

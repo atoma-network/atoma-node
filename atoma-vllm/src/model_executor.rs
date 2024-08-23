@@ -118,34 +118,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 ..
             } = sequence_group_metadata.next_token_chooser_params;
 
-            let sampling = if !do_sample || temperature == 1.0 {
-                Sampling::ArgMax
-            } else if top_p == 1.0 && top_k == 0 {
-                Sampling::All {
-                    temperature: temperature as f64,
-                }
-            } else if top_k == 0 && top_p < 1.0 {
-                Sampling::TopP {
-                    p: top_p as f64,
-                    temperature: temperature as f64,
-                }
-            } else if top_k != 0 && top_p == 1.0 {
-                Sampling::TopK {
-                    k: top_k as usize,
-                    temperature: temperature as f64,
-                }
-            } else {
-                Sampling::TopKThenTopP {
-                    k: top_k as usize,
-                    p: top_p as f64,
-                    temperature: temperature as f64,
-                }
-            };
-
-            // 3. Create a `LogitsProcessor` instance, with the sampling strategy
-            let mut logits_processor = LogitsProcessor::from_sampling(random_seed, sampling);
-
-            // 4. Allocate a `HashMap` to store each of the sequence group's outputs
+            // 3. Allocate a `HashMap` to store each of the sequence group's outputs
             let mut sequence_outputs =
                 HashMap::with_capacity(sequence_group_metadata.sequence_data.len());
 
@@ -174,7 +147,11 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // TODO: we should be able to sample `best_of` sequences
                 //      simultaneously, so we can later generate multiple
                 //      sequences at once, in parallel.
-                let next_token = logits_processor.sample(&sequence_logits)?;
+                let next_token = sequence_group_metadata
+                    .logits_processor
+                    .write()
+                    .unwrap()
+                    .sample(&sequence_logits)?;
 
                 let is_stop_token = self
                     .eos_token_id()

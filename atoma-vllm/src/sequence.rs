@@ -6,6 +6,7 @@ use std::{
 };
 
 use candle_core::Tensor;
+use candle_transformers::generation::LogitsProcessor;
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, Span};
 
@@ -633,8 +634,8 @@ pub struct SequenceGroup {
     next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria
     stopping_criteria: StoppingCriteriaParameters,
-    /// State
-    state: SequenceGroupState,
+    /// Logits processor tied to this sequence group
+    pub logits_processor: Arc<RwLock<LogitsProcessor>>,
 }
 
 impl SequenceGroup {
@@ -645,6 +646,7 @@ impl SequenceGroup {
         arrival_time: Instant,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria: StoppingCriteriaParameters,
+        logits_processor: LogitsProcessor,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
             return Err(SequenceError::ConstructorError(
@@ -668,7 +670,7 @@ impl SequenceGroup {
             prompt_logprobs: None,
             next_token_chooser_params,
             stopping_criteria,
-            state: SequenceGroupState { generator: None },
+            logits_processor: Arc::new(RwLock::new(logits_processor)),
         })
     }
 
@@ -1025,8 +1027,8 @@ pub struct SequenceGroupMetadata {
     pub token_chunk_size: usize,
     /// Sequence data
     pub sequence_data: HashMap<u64, SequenceData>,
-    /// Internal state tied to this sequence group
-    state: SequenceGroupState,
+    /// Logits processor tied to this sequence group`   `
+    pub logits_processor: Arc<RwLock<LogitsProcessor>>,
 }
 
 impl SequenceGroupMetadata {
@@ -1041,7 +1043,7 @@ impl SequenceGroupMetadata {
         block_tables: HashMap<u64, Vec<u32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
-        state: SequenceGroupState,
+        logits_processor: LogitsProcessor,
     ) -> Self {
         let token_chunk_size = if let Some(size) = token_chunk_size {
             size
@@ -1064,7 +1066,7 @@ impl SequenceGroupMetadata {
             block_tables,
             do_sample,
             token_chunk_size,
-            state,
+            logits_processor: Arc::new(RwLock::new(logits_processor)),
         }
     }
 
@@ -1308,6 +1310,7 @@ pub(crate) mod tests {
                 ..Default::default()
             },
             Default::default(),
+            LogitsProcessor::new(0, None, None),
         )
         .expect("Failed to construct a new sequence group");
 

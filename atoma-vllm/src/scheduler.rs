@@ -1273,7 +1273,7 @@ impl<P: Policy> Scheduler<P> {
                 block_tables,
                 do_sample,
                 Some(token_chunk_size),
-                sequence_group.state(),
+                sequence_group.logits_processor.clone(),
             ));
             sequence_groups_metadata.push(sequence_group_metadata);
         }
