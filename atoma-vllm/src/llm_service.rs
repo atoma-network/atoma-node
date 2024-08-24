@@ -14,6 +14,7 @@ use crate::{
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
 use candle_core::{DType, Device};
+use candle_transformers::generation::{LogitsProcessor, Sampling};
 use metrics::{counter, gauge};
 use thiserror::Error;
 use tokenizers::Tokenizer;

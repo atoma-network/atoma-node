@@ -308,7 +308,7 @@ impl LlmEngine {
             // 5. Decode the generated output token id.
             let generated_token = self
                 .tokenizer
-                .decode(&[generated_token_id], true)
+                .decode(&sequence_guard_lock.sequence_data.get_token_ids(), true)
                 .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
 
             // 6. Update the `output_text` with the newly generated token,

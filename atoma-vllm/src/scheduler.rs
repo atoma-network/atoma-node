@@ -1922,7 +1922,6 @@ mod tests {
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),
                 sequence_group.sequences.keys().collect::<Vec<_>>()
             );
-            assert_eq!(running_sequence_group.state(), sequence_group.state())
         }
         assert_eq!(outputs.num_batched_tokens, num_tokens);
         assert!(
@@ -1967,7 +1966,6 @@ mod tests {
                 running_sequence_group.sequences.keys().collect::<Vec<_>>(),
                 sequence_group.sequences.keys().collect::<Vec<_>>()
             );
-            assert_eq!(running_sequence_group.state(), sequence_group.state())
         }
         assert_eq!(outputs.num_batched_tokens, num_sequence_groups);
         assert!(

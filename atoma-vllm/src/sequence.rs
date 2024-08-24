@@ -620,7 +620,7 @@ pub struct MultiModalData {
 ///        for an embedding model.
 ///
 /// Warn: Our implementation does not consider LoRA and embeddings requests (contrary to vLLM).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
@@ -976,11 +976,6 @@ impl SequenceGroup {
             .all(|s| s.read().unwrap().is_finished())
     }
 
-    /// Getter for `state`
-    pub fn state(&self) -> SequenceGroupState {
-        self.state.clone()
-    }
-
     /// Getter for sampling next token chooser params
     pub fn next_token_chooser_params(&self) -> NextTokenChooserParameters {
         self.next_token_chooser_params.clone()
@@ -989,6 +984,19 @@ impl SequenceGroup {
     /// Getter for stopping parameters
     pub fn stopping_params(&self) -> StoppingCriteriaParameters {
         self.stopping_criteria.clone()
+    }
+}
+
+impl std::fmt::Debug for SequenceGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SequenceGroup")
+            .field("request_id", &self.request_id)
+            .field("sequences", &self.sequences)
+            .field("metrics", &self.metrics)
+            .field("prompt_logprobs", &self.prompt_logprobs)
+            .field("next_token_chooser_params", &self.next_token_chooser_params)
+            .field("stopping_criteria", &self.stopping_criteria)
+            .finish()
     }
 }
 
@@ -1009,7 +1017,6 @@ impl SequenceGroup {
 ///          used in prefix caching.
 ///     `state`: Internal state tied to this sequence group.
 ///     `multi_modal_data`: Multi modal data.
-#[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
     pub request_id: String,
@@ -1043,7 +1050,7 @@ impl SequenceGroupMetadata {
         block_tables: HashMap<u64, Vec<u32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
-        logits_processor: LogitsProcessor,
+        logits_processor: Arc<RwLock<LogitsProcessor>>,
     ) -> Self {
         let token_chunk_size = if let Some(size) = token_chunk_size {
             size
@@ -1066,13 +1073,28 @@ impl SequenceGroupMetadata {
             block_tables,
             do_sample,
             token_chunk_size,
-            logits_processor: Arc::new(RwLock::new(logits_processor)),
+            logits_processor,
         }
     }
 
     /// Getter for `request_id`
     pub fn request_id(&self) -> String {
         self.request_id.clone()
+    }
+}
+
+impl std::fmt::Debug for SequenceGroupMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SequenceGroupMetadata")
+            .field("request_id", &self.request_id)
+            .field("is_prompt", &self.is_prompt)
+            .field("next_token_chooser_params", &self.next_token_chooser_params)
+            .field("stopping_criteria_params", &self.stopping_criteria_params)
+            .field("block_tables", &self.block_tables)
+            .field("do_sample", &self.do_sample)
+            .field("token_chunk_size", &self.token_chunk_size)
+            .field("sequence_data", &self.sequence_data)
+            .finish()
     }
 }
 
