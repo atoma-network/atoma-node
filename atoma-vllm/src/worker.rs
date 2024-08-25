@@ -397,7 +397,7 @@ where
         let block_tables_tensor =
             utils::make_tensor_with_pad(block_tables, max_block_table_len, 0u32, &self.device)?;
 
-        let q = Tensor::new(sequence_lengths, &self.device)?;
+        let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
         let mut seq_start_loc =
             Tensor::zeros(seq_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
