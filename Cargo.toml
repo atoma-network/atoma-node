@@ -17,7 +17,7 @@ members = [
     "atoma-output-manager",
     "atoma-streamer",
     "atoma-helpers",
-    "atoma-vllm", "hey",
+    "atoma-vllm",
 ]
 
 [workspace.package]
