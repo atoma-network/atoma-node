@@ -8,7 +8,7 @@ edition.workspace = true
 [dependencies]
 # TODO: this dependency should only work with features = "cuda"
 async-trait.workspace = true
-atoma-paged-attention.workspace = true
+atoma-node-inference.workspace = true
 candle-core = { version = "0.6.0", features = ["cuda"] }
 candle-nn = { version = "0.6.0", features = ["cuda"] }
 candle-transformers = { version = "0.6.0", features = ["cuda"] }

@@ -1,4 +1,4 @@
-use atoma_paged_attention::{
+use atoma_node_inference::{
     models::{
         llama::{Config, LlamaConfig},
         Llama,

@@ -7,7 +7,7 @@ use std::{
 #[cfg(test)]
 mod llama;
 
-use atoma_paged_attention::FlashAttentionMetadata;
+use atoma_node_inference::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;

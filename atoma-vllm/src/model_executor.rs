@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
+use atoma_node_inference::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::stream::FuturesUnordered;

@@ -17,7 +17,7 @@ members = [
     "atoma-output-manager",
     "atoma-streamer",
     "atoma-helpers",
-    "atoma-vllm",
+    "atoma-vllm", "hey",
 ]
 
 [workspace.package]
@@ -32,7 +32,7 @@ atoma-crypto = { path = "./atoma-crypto/" }
 atoma-helpers = { path = "./atoma-helpers/" }
 atoma-inference = { path = "./atoma-inference/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
-atoma-paged-attention = { git = "https://github.com/atoma-network/atoma-paged-attention", branch = "main" }
+atoma-node-inference = { git = "https://github.com/atoma-network/atoma-node-inference", branch = "main" }
 atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-streamer = { path = "./atoma-streamer" }
 atoma-types = { path = "./atoma-types" }

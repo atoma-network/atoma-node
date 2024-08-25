@@ -6,7 +6,7 @@ use crate::{
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
     tokenizer::TokenizerWorker,
 };
-use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
+use atoma_node_inference::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
@@ -397,7 +397,7 @@ where
         let block_tables_tensor =
             utils::make_tensor_with_pad(block_tables, max_block_table_len, 0u32, &self.device)?;
 
-        let seq_lens_tensor = Tensor::new(sequence_lengths, &self.device)?;
+        let q = Tensor::new(sequence_lengths, &self.device)?;
         let mut seq_start_loc =
             Tensor::zeros(seq_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
