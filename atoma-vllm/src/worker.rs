@@ -6,7 +6,7 @@ use crate::{
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
     tokenizer::TokenizerWorker,
 };
-use atoma_node_inference::flash_attention::{FlashAttention, FlashAttentionMetadata};
+use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, warn, Span};
