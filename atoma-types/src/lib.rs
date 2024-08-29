@@ -412,7 +412,7 @@ pub struct Text2ImagePromptParams {
     /// Model to run the inference
     model: String,
     /// Unconditional prompt, used in stable diffusion models
-    uncond_prompt: String,
+    uncond_prompt: Option<String>,
     /// Height of the final generated image
     height: Option<u64>,
     /// Width of the final generated image
@@ -429,6 +429,8 @@ pub struct Text2ImagePromptParams {
     img2img_strength: f64,
     /// The random seed for inference sampling
     random_seed: Option<u32>,
+    /// Only decode the image (applicable to Flux models)
+    decode_only: Option<String>,
 }
 
 impl Text2ImagePromptParams {
@@ -437,7 +439,7 @@ impl Text2ImagePromptParams {
     pub fn new(
         prompt: String,
         model: String,
-        uncond_prompt: String,
+        uncond_prompt: Option<String>,
         height: Option<u64>,
         width: Option<u64>,
         n_steps: Option<u64>,
@@ -446,6 +448,7 @@ impl Text2ImagePromptParams {
         img2img: Option<String>,
         img2img_strength: f64,
         random_seed: Option<u32>,
+        decode_only: Option<String>,
     ) -> Self {
         Self {
             prompt,
@@ -459,6 +462,7 @@ impl Text2ImagePromptParams {
             img2img,
             img2img_strength,
             random_seed,
+            decode_only,
         }
     }
 
@@ -473,7 +477,7 @@ impl Text2ImagePromptParams {
     }
 
     /// Getter for `uncond_prompt`
-    pub fn uncond_prompt(&self) -> String {
+    pub fn uncond_prompt(&self) -> Option<String> {
         self.uncond_prompt.clone()
     }
 
@@ -516,6 +520,11 @@ impl Text2ImagePromptParams {
     pub fn random_seed(&self) -> Option<u32> {
         self.random_seed
     }
+
+    /// Getter for `decode_only`
+    pub fn decode_only(&self) -> Option<String> {
+        self.decode_only.clone()
+    }
 }
 
 impl TryFrom<Value> for Text2ImagePromptParams {
@@ -525,7 +534,7 @@ impl TryFrom<Value> for Text2ImagePromptParams {
         Ok(Self {
             prompt: utils::parse_str(&value["prompt"])?,
             model: utils::parse_str(&value["model"])?,
-            uncond_prompt: utils::parse_str(&value["uncond_prompt"])?,
+            uncond_prompt: utils::parse_optional_str(&value["uncond_prompt"]),
             random_seed: Some(utils::parse_u32(&value["random_seed"])?),
             height: Some(utils::parse_u64(&value["height"])?),
             width: Some(utils::parse_u64(&value["width"])?),
@@ -534,6 +543,7 @@ impl TryFrom<Value> for Text2ImagePromptParams {
             guidance_scale: Some(utils::parse_f32_from_le_bytes(&value["guidance_scale"])? as f64),
             img2img: utils::parse_optional_str(&value["img2img"]),
             img2img_strength: utils::parse_f32_from_le_bytes(&value["img2img_strength"])? as f64,
+            decode_only: utils::parse_optional_str(&value["decode_only"]),
         })
     }
 }
