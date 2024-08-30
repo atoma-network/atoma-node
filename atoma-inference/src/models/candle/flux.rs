@@ -176,7 +176,8 @@ impl ModelTrait for Flux {
         load_data: Self::LoadData,
         _stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
-        info!("Loading Flux model..");
+        info!("Loading T5 model..");
+        let start = std::time::Instant::now();
         let t5_config_filename = load_data.file_paths[0].clone();
         let t5_tokenizer_filename = load_data.file_paths[1].clone();
         let t5_model_filename = load_data.file_paths[2].clone();
@@ -199,9 +200,10 @@ impl ModelTrait for Flux {
         let t5_model = t5::T5EncoderModel::load(t5_vb, &t5_config)?;
         let t5_tokenizer = Tokenizer::from_file(t5_tokenizer_filename)?;
 
-        info!("Loaded T5 model..");
+        info!("Loaded T5 model in {} seconds", start.elapsed().as_secs_f64());
         info!("Loading CLIP model..");
 
+        let start = std::time::Instant::now();
         let clip_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[clip_model_filename],
@@ -224,9 +226,10 @@ impl ModelTrait for Flux {
             clip::text_model::ClipTextTransformer::new(clip_vb.pp("text_model"), &clip_config)?;
         let clip_tokenizer = Tokenizer::from_file(clip_tokenizer_filename)?;
 
-        info!("Loaded CLIP model..");
+        info!("Loaded CLIP model in {} seconds", start.elapsed().as_secs_f64());
         info!("Loading Biflux model..");
 
+        let start = std::time::Instant::now();
         let bf_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[bf_model_filename],
@@ -241,9 +244,10 @@ impl ModelTrait for Flux {
         };
         let bf_model = flux::model::Flux::new(&bf_config, bf_vb)?;
 
-        info!("Loaded Biflux model..");
+        info!("Loaded Biflux model in {} seconds", start.elapsed().as_secs_f64());
         info!("Loading Autoencoder model..");
 
+        let start = std::time::Instant::now();
         let ae_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[ae_model_filename],
@@ -257,7 +261,7 @@ impl ModelTrait for Flux {
         };
         let ae_model = flux::autoencoder::AutoEncoder::new(&ae_config, ae_vb)?;
 
-        info!("Loaded Autoencoder model..");
+        info!("Loaded Autoencoder model in {} seconds", start.elapsed().as_secs_f64());
 
         Ok(Self {
             device: load_data.device.clone(),
