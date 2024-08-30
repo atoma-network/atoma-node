@@ -9,14 +9,14 @@ use std::{path::PathBuf, str::FromStr};
 use crate::{
     bail,
     models::{
-        candle::{convert_to_image, save_image},
+        candle::convert_to_image,
         config::ModelConfig,
         types::{LlmOutput, ModelType},
         ModelError, ModelTrait,
     },
 };
 use atoma_types::{Digest, PromptParams};
-use candle::{DType, Device, IndexOp, Module, Tensor};
+use candle::{DType, Device, Module, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::{clip, flux, t5};
 use hf_hub::api::sync::ApiBuilder;
@@ -353,8 +353,11 @@ impl ModelTrait for Flux {
         let img = self.ae_model.decode(&img)?;
         trace!("img\n{img}");
 
-        let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?.to_dtype(candle::DType::U8)?;
-        save_image(&img.i(0)?, "flux_output.png")?;
+        let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?
+            .to_dtype(candle::DType::U8)?
+            .squeeze(0)?;
+        info!("FLAG: img.dims() = {:?}", img.dims());
+        save_image(&img, "flux_output.png")?;
         let (img, width, height) = convert_to_image(&img)?;
 
         Ok(FluxOutput {
@@ -400,4 +403,23 @@ impl LlmOutput for FluxOutput {
     fn time_to_generate(&self) -> f64 {
         self.time_to_generate
     }
+}
+
+/// Saves an image to disk using the image crate, this expects an input with shape
+/// (c, height, width).
+fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> Result<(), ModelError> {
+    let p = p.as_ref();
+    let (channel, height, width) = img.dims3()?;
+    if channel != 3 {
+        bail!("save_image expects an input of shape (3, height, width)")
+    }
+    let img = img.permute((1, 2, 0))?.flatten_all()?;
+    let pixels = img.to_vec1::<u8>()?;
+    let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+        match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
+            Some(image) => image,
+            None => bail!("error saving image {p:?}"),
+        };
+    image.save(p)?;
+    Ok(())
 }
