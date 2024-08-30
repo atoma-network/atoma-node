@@ -9,7 +9,7 @@ use std::{path::PathBuf, str::FromStr};
 use crate::{
     bail,
     models::{
-        candle::convert_to_image,
+        candle::{convert_to_image, save_image},
         config::ModelConfig,
         types::{LlmOutput, ModelType},
         ModelError, ModelTrait,
@@ -314,6 +314,7 @@ impl ModelTrait for Flux {
         trace!("img\n{img}");
 
         let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?.to_dtype(candle::DType::U8)?;
+        save_image(&img, "flux_output.png")?;
         let (img, width, height) = convert_to_image(&img)?;
 
         Ok(FluxOutput {
