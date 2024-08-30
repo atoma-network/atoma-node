@@ -105,6 +105,7 @@ impl ModelTrait for Flux {
         cache_dir: PathBuf,
         config: ModelConfig,
     ) -> Result<Self::LoadData, ModelError> {
+        info!("Fetching Flux model..");
         let device = device(config.device_first_id())?;
         let dtype = DType::from_str(&config.dtype())?;
 
@@ -116,6 +117,8 @@ impl ModelTrait for Flux {
 
         let model_type = ModelType::from_str(&config.model_id())?;
         let repo_id = model_type.repo().to_string();
+
+        info!("Fetching T5 model files..");
 
         let bf_repo = api.repo(hf_hub::Repo::model(repo_id));
         let t5_repo = api.repo(hf_hub::Repo::with_revision(
@@ -129,6 +132,8 @@ impl ModelTrait for Flux {
             .model("lmz/mt5-tokenizers".to_string())
             .get("t5-v1_1-xxl.tokenizer.json")?;
 
+        info!("Fetching CLIP model files..");
+
         let clip_repo = api.repo(hf_hub::Repo::model(
             "openai/clip-vit-large-patch14".to_string(),
         ));
@@ -141,11 +146,14 @@ impl ModelTrait for Flux {
             _ => bail!("Invalid model type for Flux model"),
         };
 
+        info!("Fetching Biflux model files..");
+        
         let bf_model_file = match model {
             Model::Schnell => bf_repo.get("flux1-schnell.safetensors")?,
             Model::Dev => bf_repo.get("flux1-dev.safetensors")?,
         };
 
+        info!("Fetching Autoencoder model files..");
         let ae_model_file = bf_repo.get("ae.safetensors")?;
 
         Ok(Self::LoadData {
@@ -168,6 +176,7 @@ impl ModelTrait for Flux {
         load_data: Self::LoadData,
         _stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
+        info!("Loading Flux model..");
         let t5_config_filename = load_data.file_paths[0].clone();
         let t5_tokenizer_filename = load_data.file_paths[1].clone();
         let t5_model_filename = load_data.file_paths[2].clone();
@@ -189,6 +198,9 @@ impl ModelTrait for Flux {
 
         let t5_model = t5::T5EncoderModel::load(t5_vb, &t5_config)?;
         let t5_tokenizer = Tokenizer::from_file(t5_tokenizer_filename)?;
+
+        info!("Loaded T5 model..");
+        info!("Loading CLIP model..");
 
         let clip_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
@@ -212,6 +224,9 @@ impl ModelTrait for Flux {
             clip::text_model::ClipTextTransformer::new(clip_vb.pp("text_model"), &clip_config)?;
         let clip_tokenizer = Tokenizer::from_file(clip_tokenizer_filename)?;
 
+        info!("Loaded CLIP model..");
+        info!("Loading Biflux model..");
+
         let bf_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[bf_model_filename],
@@ -226,6 +241,9 @@ impl ModelTrait for Flux {
         };
         let bf_model = flux::model::Flux::new(&bf_config, bf_vb)?;
 
+        info!("Loaded Biflux model..");
+        info!("Loading Autoencoder model..");
+
         let ae_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[ae_model_filename],
@@ -238,6 +256,8 @@ impl ModelTrait for Flux {
             Model::Schnell => flux::autoencoder::Config::schnell(),
         };
         let ae_model = flux::autoencoder::AutoEncoder::new(&ae_config, ae_vb)?;
+
+        info!("Loaded Autoencoder model..");
 
         Ok(Self {
             device: load_data.device.clone(),
