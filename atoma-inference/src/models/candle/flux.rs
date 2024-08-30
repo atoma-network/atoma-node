@@ -8,13 +8,18 @@ use std::{path::PathBuf, str::FromStr};
 
 use crate::{
     bail,
-    models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait},
+    models::{
+        candle::convert_to_image,
+        config::ModelConfig,
+        types::{LlmOutput, ModelType},
+        ModelError, ModelTrait,
+    },
 };
 use atoma_types::{Digest, PromptParams};
-use candle::{DType, Device, IndexOp, Module, Tensor};
+use candle::{DType, Device, Module, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::{clip, flux, t5};
-use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
+use hf_hub::api::sync::ApiBuilder;
 use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
 use tracing::{info, trace};
@@ -45,28 +50,18 @@ pub enum Model {
 pub struct Flux {
     /// Device that hosts the models
     device: Device,
-    /// Data type of the models
-    dtype: DType,
     /// Flux model variant
     model: Model,
-    /// T5 config
-    t5_config: t5::Config,
     /// T5 model
     t5_model: t5::T5EncoderModel,
     /// T5 tokenizer
     t5_tokenizer: Tokenizer,
-    /// CLIP config
-    clip_config: clip::text_model::ClipTextConfig,
     /// CLIP model
     clip_model: clip::text_model::ClipTextTransformer,
     /// CLIP tokenizer
     clip_tokenizer: Tokenizer,
-    /// Biflux config
-    bf_config: flux::model::Config,
     /// Biflux model
     bf_model: flux::model::Flux,
-    /// Autoencoder config
-    ae_config: flux::autoencoder::Config,
     /// Autoencoder model
     ae_model: flux::autoencoder::AutoEncoder,
 }
@@ -84,9 +79,25 @@ pub struct FluxLoadData {
     model: Model,
 }
 
+/// Flux model output
+/// Stable diffusion output
+#[derive(Serialize)]
+pub struct FluxOutput {
+    /// Data buffer of the image encoding
+    pub image_data: Vec<u8>,
+    /// Height of the image
+    pub height: usize,
+    /// Width of the image
+    pub width: usize,
+    /// Number of input tokens
+    input_tokens: usize,
+    /// Time to generate output
+    time_to_generate: f64,
+}
+
 impl ModelTrait for Flux {
     type Input = FluxInput;
-    type Output = ();
+    type Output = FluxOutput;
     type LoadData = FluxLoadData;
 
     fn fetch(
@@ -105,7 +116,6 @@ impl ModelTrait for Flux {
 
         let model_type = ModelType::from_str(&config.model_id())?;
         let repo_id = model_type.repo().to_string();
-        let revision = model_type.default_revision().to_string();
 
         let bf_repo = api.repo(hf_hub::Repo::model(repo_id));
         let t5_repo = api.repo(hf_hub::Repo::with_revision(
@@ -156,7 +166,7 @@ impl ModelTrait for Flux {
 
     fn load(
         load_data: Self::LoadData,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        _stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
     ) -> Result<Self, ModelError> {
         let t5_config_filename = load_data.file_paths[0].clone();
         let t5_tokenizer_filename = load_data.file_paths[1].clone();
@@ -216,7 +226,7 @@ impl ModelTrait for Flux {
         };
         let bf_model = flux::model::Flux::new(&bf_config, bf_vb)?;
 
-        let ae_vb = unsafe { 
+        let ae_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[ae_model_filename],
                 load_data.dtype,
@@ -231,17 +241,12 @@ impl ModelTrait for Flux {
 
         Ok(Self {
             device: load_data.device.clone(),
-            dtype: load_data.dtype,
             model: load_data.model,
-            t5_config,
             t5_model,
             t5_tokenizer,
-            clip_config,
             clip_model,
             clip_tokenizer,
-            bf_config,
             bf_model,
-            ae_config,
             ae_model,
         })
     }
@@ -255,6 +260,7 @@ impl ModelTrait for Flux {
 
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError> {
         info!("Running Flux model, on input prompt: {}", input.prompt);
+        let start = std::time::Instant::now();
 
         let width = input.width.unwrap_or(1360);
         let height = input.height.unwrap_or(768);
@@ -308,7 +314,15 @@ impl ModelTrait for Flux {
         trace!("img\n{img}");
 
         let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?.to_dtype(candle::DType::U8)?;
-        Ok(())
+        let (img, width, height) = convert_to_image(&img)?;
+
+        Ok(FluxOutput {
+            image_data: img,
+            height,
+            width,
+            input_tokens: input.prompt.len(),
+            time_to_generate: start.elapsed().as_secs_f64(),
+        })
     }
 }
 
@@ -323,16 +337,28 @@ impl TryFrom<(Digest, PromptParams)> for FluxInput {
                 let width = p.width().map(|w| w as usize);
                 let prompt = p.prompt();
                 let decode_only = p.decode_only();
-                return Ok(Self {
+                Ok(Self {
                     prompt,
                     height,
                     width,
                     decode_only,
-                });
+                })
             }
-            PromptParams::Text2TextPromptParams(p) => {
-                return Err(ModelError::InvalidPromptParams);
+            PromptParams::Text2TextPromptParams(_) => {
+                Err(ModelError::InvalidPromptParams)
             }
         }
+    }
+}
+
+impl LlmOutput for FluxOutput {
+    fn num_input_tokens(&self) -> usize {
+        self.input_tokens
+    }
+    fn num_output_tokens(&self) -> Option<usize> {
+        None
+    }
+    fn time_to_generate(&self) -> f64 {
+        self.time_to_generate
     }
 }

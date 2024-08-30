@@ -15,9 +15,9 @@ use crate::models::candle::mixtral_nccl::MixtralNcclModel;
 
 use crate::models::{
     candle::{
-        falcon::FalconModel, llama::LlamaModel, mamba::MambaModel, mistral::MistralModel,
-        mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel, qwen::QwenModel,
-        stable_diffusion::StableDiffusion,
+        falcon::FalconModel, flux::Flux, llama::LlamaModel, mamba::MambaModel,
+        mistral::MistralModel, mixtral::MixtralModel, phi3::Phi3Model, quantized::QuantizedModel,
+        qwen::QwenModel, stable_diffusion::StableDiffusion,
     },
     config::{ModelConfig, ModelsConfig},
     types::{LlmOutput, ModelType},
@@ -288,6 +288,14 @@ pub(crate) fn dispatch_model_thread(
                     stream_tx,
                 )
             }
+            ModelType::FluxSchnell | ModelType::FluxDev => spawn_model_thread::<Flux>(
+                model_name,
+                api_key.clone(),
+                cache_dir.clone(),
+                model_config,
+                model_receiver,
+                stream_tx,
+            ),
             ModelType::LlamaV1
             | ModelType::LlamaV2
             | ModelType::LlamaTinyLlama1_1BChat
