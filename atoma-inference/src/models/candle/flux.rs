@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use atoma_types::{Digest, PromptParams};
-use candle::{DType, Device, Module, Tensor};
+use candle::{DType, Device, IndexOp, Module, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::{clip, flux, t5};
 use hf_hub::api::sync::ApiBuilder;
@@ -50,6 +50,8 @@ pub enum Model {
 pub struct Flux {
     /// Device that hosts the models
     device: Device,
+    /// Data type of the models
+    dtype: DType,
     /// Flux model variant
     model: Model,
     /// T5 model
@@ -147,7 +149,7 @@ impl ModelTrait for Flux {
         };
 
         info!("Fetching Biflux model files..");
-        
+
         let bf_model_file = match model {
             Model::Schnell => bf_repo.get("flux1-schnell.safetensors")?,
             Model::Dev => bf_repo.get("flux1-dev.safetensors")?,
@@ -200,7 +202,10 @@ impl ModelTrait for Flux {
         let t5_model = t5::T5EncoderModel::load(t5_vb, &t5_config)?;
         let t5_tokenizer = Tokenizer::from_file(t5_tokenizer_filename)?;
 
-        info!("Loaded T5 model in {} seconds", start.elapsed().as_secs_f64());
+        info!(
+            "Loaded T5 model in {} seconds",
+            start.elapsed().as_secs_f64()
+        );
         info!("Loading CLIP model..");
 
         let start = std::time::Instant::now();
@@ -226,7 +231,10 @@ impl ModelTrait for Flux {
             clip::text_model::ClipTextTransformer::new(clip_vb.pp("text_model"), &clip_config)?;
         let clip_tokenizer = Tokenizer::from_file(clip_tokenizer_filename)?;
 
-        info!("Loaded CLIP model in {} seconds", start.elapsed().as_secs_f64());
+        info!(
+            "Loaded CLIP model in {} seconds",
+            start.elapsed().as_secs_f64()
+        );
         info!("Loading Biflux model..");
 
         let start = std::time::Instant::now();
@@ -244,7 +252,10 @@ impl ModelTrait for Flux {
         };
         let bf_model = flux::model::Flux::new(&bf_config, bf_vb)?;
 
-        info!("Loaded Biflux model in {} seconds", start.elapsed().as_secs_f64());
+        info!(
+            "Loaded Biflux model in {} seconds",
+            start.elapsed().as_secs_f64()
+        );
         info!("Loading Autoencoder model..");
 
         let start = std::time::Instant::now();
@@ -261,10 +272,14 @@ impl ModelTrait for Flux {
         };
         let ae_model = flux::autoencoder::AutoEncoder::new(&ae_config, ae_vb)?;
 
-        info!("Loaded Autoencoder model in {} seconds", start.elapsed().as_secs_f64());
+        info!(
+            "Loaded Autoencoder model in {} seconds",
+            start.elapsed().as_secs_f64()
+        );
 
         Ok(Self {
             device: load_data.device.clone(),
+            dtype: load_data.dtype,
             model: load_data.model,
             t5_model,
             t5_tokenizer,
@@ -312,7 +327,8 @@ impl ModelTrait for Flux {
         info!("Produced a CLIP embedding");
 
         info!("Running Biflux model, on input prompt: {}", input.prompt);
-        let img = flux::sampling::get_noise(1, height, width, &self.device)?;
+        let img =
+            flux::sampling::get_noise(1, height, width, &self.device)?.to_dtype(self.dtype)?;
         let state = flux::sampling::State::new(&t5_embedding, &clip_embedding, &img)?;
         let timesteps = match self.model {
             Model::Dev => flux::sampling::get_schedule(50, Some((state.img.dim(1)?, 0.5, 1.15))),
@@ -338,7 +354,7 @@ impl ModelTrait for Flux {
         trace!("img\n{img}");
 
         let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?.to_dtype(candle::DType::U8)?;
-        save_image(&img, "flux_output.png")?;
+        save_image(&img.i(0)?, "flux_output.png")?;
         let (img, width, height) = convert_to_image(&img)?;
 
         Ok(FluxOutput {
@@ -369,9 +385,7 @@ impl TryFrom<(Digest, PromptParams)> for FluxInput {
                     decode_only,
                 })
             }
-            PromptParams::Text2TextPromptParams(_) => {
-                Err(ModelError::InvalidPromptParams)
-            }
+            PromptParams::Text2TextPromptParams(_) => Err(ModelError::InvalidPromptParams),
         }
     }
 }
