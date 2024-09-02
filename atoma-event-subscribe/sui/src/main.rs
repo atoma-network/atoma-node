@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
+use atoma_types::InputSource;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
+use tokio::sync::oneshot;
 use tracing::{error, info};
 
 #[derive(Debug, Parser)]
@@ -28,6 +30,22 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let ws_url = args.ws_addr;
 
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
+    let (input_manager_tx, mut input_manager_rx) =
+        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<String>)>(32);
+
+    // Spawn a task to discard messages
+    tokio::spawn(async move {
+        while let Some((input_source, oneshot)) = input_manager_rx.recv().await {
+            info!("Received input from source: {:?}", input_source);
+            let data = match input_source {
+                InputSource::Firebase { request_id } => request_id,
+                InputSource::Raw { prompt } => prompt,
+            };
+            if let Err(err) = oneshot.send(data) {
+                error!("Failed to send response: {:?}", err);
+            }
+        }
+    });
 
     let event_subscriber = SuiSubscriber::new(
         1,
@@ -36,6 +54,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
         package_id,
         event_sender,
         Some(Duration::from_secs(5 * 60)),
+        input_manager_tx,
     )
     .await?;
 

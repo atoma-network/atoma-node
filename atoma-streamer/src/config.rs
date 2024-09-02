@@ -10,6 +10,7 @@ pub struct AtomaFirebaseStreamerConfig {
     firebase_email: String,
     firebase_password: String,
     firebase_api_key: String,
+    pub small_id: u64,
 }
 
 impl AtomaFirebaseStreamerConfig {

@@ -22,6 +22,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 image = { workspace = true }
 metrics.workspace = true
+rmp-serde.workspace = true
 thiserror.workspace = true
 tokenizers = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }

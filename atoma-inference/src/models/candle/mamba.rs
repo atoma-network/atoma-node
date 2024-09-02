@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -51,7 +51,7 @@ impl MambaModel {
         dtype: DType,
         model_type: ModelType,
         tokenizer: Tokenizer,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Self {
         Self {
             model,
@@ -112,7 +112,7 @@ impl ModelTrait for MambaModel {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,

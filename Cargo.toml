@@ -2,21 +2,22 @@
 resolver = "2"
 
 members = [
-    "atoma-crypto",
     "atoma-client",
+    "atoma-crypto",
     "atoma-event-subscribe/arbitrum",
     "atoma-event-subscribe/solana",
     "atoma-event-subscribe/sui",
-    "atoma-inference",
     "atoma-helpers",
+    "atoma-helpers",
+    "atoma-inference",
+    "atoma-input-manager",
+    "atoma-json-rpc",
     "atoma-networking",
     "atoma-node",
-    "atoma-json-rpc",
-    "atoma-storage",
-    "atoma-types",
     "atoma-output-manager",
+    "atoma-storage",
     "atoma-streamer",
-    "atoma-helpers",
+    "atoma-types",
     "atoma-vllm",
 ]
 
@@ -31,10 +32,11 @@ atoma-client = { path = "./atoma-client/" }
 atoma-crypto = { path = "./atoma-crypto/" }
 atoma-helpers = { path = "./atoma-helpers/" }
 atoma-inference = { path = "./atoma-inference/" }
+atoma-input-manager = { path = "./atoma-input-manager/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-paged-attention = { git = "https://github.com/atoma-network/atoma-paged-attention", branch = "main" }
-atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-streamer = { path = "./atoma-streamer" }
+atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 blake2 = "0.10.6"

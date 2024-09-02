@@ -43,6 +43,7 @@ impl AtomaOutputManager {
             config.firebase_password,
             config.firebase_api_key,
             firebase,
+            config.small_id,
         )
         .await?;
         let gateway_output_manager =
@@ -65,7 +66,7 @@ impl AtomaOutputManager {
                 output_metadata.output_destination
             );
             match output_metadata.output_destination {
-                OutputDestination::Firebase => {
+                OutputDestination::Firebase { .. } => {
                     self.firebase_output_manager
                         .handle_post_request(output_metadata, output)
                         .await?
@@ -90,8 +91,8 @@ pub enum AtomaOutputManagerError {
     RequestError(#[from] reqwest::Error),
     #[error("GraphQl error: `{0}`")]
     GraphQlError(String),
-    #[error("Invalid output destiny: `{0}`")]
-    InvalidOutputDestiny(String),
+    #[error("Invalid output destination: `{0}`")]
+    InvalidOutputDestination(String),
     #[error("Firebase authentication error: `{0}`")]
     FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
     #[error("Url error: `{0}`")]

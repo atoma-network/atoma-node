@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use atoma_types::{Digest, PromptParams};
+use atoma_types::{AtomaStreamingData, Digest, PromptParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
 use thiserror::Error;
@@ -38,7 +38,7 @@ pub trait ModelTrait {
     /// Loading the model from a `LoadData`
     fn load(
         load_data: Self::LoadData,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized;
@@ -73,7 +73,7 @@ pub enum ModelError {
     #[error("Invalid model input")]
     InvalidModelInput,
     #[error("Send error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    SendError(#[from] mpsc::error::SendError<AtomaStreamingData>),
     #[error("Invalid prompt params")]
     InvalidPromptParams,
     #[cfg(feature = "nccl")]

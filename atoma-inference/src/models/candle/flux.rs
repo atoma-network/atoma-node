@@ -15,7 +15,7 @@ use crate::{
         ModelError, ModelTrait,
     },
 };
-use atoma_types::{Digest, PromptParams};
+use atoma_types::{AtomaStreamingData, Digest, PromptParams};
 use candle::{DType, Device, Module, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::{clip, flux, t5};
@@ -176,7 +176,7 @@ impl ModelTrait for Flux {
 
     fn load(
         load_data: Self::LoadData,
-        _stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        _stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError> {
         info!("Loading T5 model..");
         let start = std::time::Instant::now();
@@ -379,7 +379,7 @@ impl TryFrom<(Digest, PromptParams)> for FluxInput {
             PromptParams::Text2ImagePromptParams(p) => {
                 let height = p.height().map(|h| h as usize);
                 let width = p.width().map(|w| w as usize);
-                let prompt = p.prompt();
+                let prompt = p.get_input_text(); // TODO: for now we use the raw prompt, but likely to fetch it from an external source in the future
                 let decode_only = p.decode_only();
                 Ok(Self {
                     prompt,

@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 
 use crate::{bail, models::ModelError};
 
@@ -20,14 +20,14 @@ pub struct TokenOutputStream {
     current_index: usize,
     /// A `mpsc` channel responsible to stream each newly generated token
     /// to some external streaming service (currently Atoma's stream service)
-    stream_tx: mpsc::Sender<(Digest, String)>,
+    stream_tx: mpsc::Sender<AtomaStreamingData>,
 }
 
 impl TokenOutputStream {
     /// Constructor
     pub fn new(
         tokenizer: tokenizers::Tokenizer,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Self {
         Self {
             tokenizer,
@@ -60,7 +60,7 @@ impl TokenOutputStream {
     pub fn next_token(
         &mut self,
         token: u32,
-        request_id: Option<Digest>,
+        request_id: Option<String>,
     ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
@@ -75,9 +75,9 @@ impl TokenOutputStream {
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
             let output = text.1.to_string();
-            if let Some(digest) = request_id {
+            if let Some(request_id) = request_id {
                 self.stream_tx
-                    .blocking_send((digest, output.clone()))
+                    .blocking_send(AtomaStreamingData::new(request_id, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -87,7 +87,7 @@ impl TokenOutputStream {
     }
 
     /// Tries to decode the rest of the `String`, in
-    pub fn decode_rest(&self, request_id: Option<Digest>) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(&self, request_id: Option<String>) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -98,9 +98,9 @@ impl TokenOutputStream {
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
             let output = text.1.to_string();
-            if let Some(digest) = request_id {
+            if let Some(request_id) = request_id {
                 self.stream_tx
-                    .blocking_send((digest, output.clone()))
+                    .blocking_send(AtomaStreamingData::new(request_id, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -137,9 +137,9 @@ impl TokenOutputStream {
     }
 
     /// Ends the stream, through a special value, encapsulated in `END_STREAM`
-    pub fn end_stream(&self, tx_digest: Digest) -> Result<(), ModelError> {
+    pub fn end_stream(&self, request_id: String) -> Result<(), ModelError> {
         self.stream_tx
-            .blocking_send((tx_digest, END_STREAM.to_string()))
+            .blocking_send(AtomaStreamingData::new(request_id, END_STREAM.to_string()))
             .map_err(ModelError::SendError)
     }
 }

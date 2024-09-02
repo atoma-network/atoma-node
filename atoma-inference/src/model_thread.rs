@@ -2,8 +2,9 @@ use std::{
     collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
-use atoma_types::{Digest, OutputType, PromptParams, Request, Response};
+use atoma_types::{AtomaStreamingData, OutputType, PromptParams, Request, Response};
 use futures::stream::FuturesUnordered;
+use serde::Deserialize;
 use thiserror::Error;
 use tokio::sync::oneshot::{self, error::RecvError};
 use tracing::{debug, error, info, instrument, warn, Span};
@@ -97,7 +98,15 @@ where
                 PromptParams::Text2ImagePromptParams(_) => OutputType::Image,
                 PromptParams::Text2TextPromptParams(_) => OutputType::Text,
             };
-            let model_input = M::Input::try_from((hex::encode(&request_id), params))?;
+            let output_destination = Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
+                request.output_destination().as_slice(),
+            ))
+            .unwrap();
+            let output_id = match output_destination {
+                atoma_types::OutputDestination::Firebase { request_id } => request_id,
+                atoma_types::OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
+            };
+            let model_input = M::Input::try_from((output_id, params))?;
             let model_output = self.model.run(model_input)?;
             let time_to_generate = model_output.time_to_generate();
             let num_input_tokens = model_output.num_input_tokens();
@@ -145,7 +154,7 @@ impl ModelThreadDispatcher {
     #[instrument(skip_all)]
     pub(crate) fn start(
         config: ModelsConfig,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<(Self, Vec<ModelThreadHandle>), ModelThreadError> {
         let mut handles = Vec::new();
         let mut model_senders = HashMap::new();
@@ -236,7 +245,7 @@ pub(crate) fn dispatch_model_thread(
     model_type: ModelType,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+    stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     if model_config.device_ids().len() > 1 {
         #[cfg(not(feature = "nccl"))]
@@ -423,7 +432,7 @@ pub(crate) fn spawn_model_thread<M>(
     cache_dir: PathBuf,
     model_config: ModelConfig,
     model_receiver: mpsc::Receiver<ModelThreadCommand>,
-    stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+    stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
     M: ModelTrait + Send + 'static,
