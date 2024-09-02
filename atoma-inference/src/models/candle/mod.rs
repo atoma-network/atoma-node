@@ -21,6 +21,7 @@ pub mod mixtral_nccl;
 #[cfg(feature = "nccl")]
 mod mixtral_nccl_model;
 
+pub mod flux;
 pub mod mamba;
 pub mod mistral;
 pub mod mixtral;

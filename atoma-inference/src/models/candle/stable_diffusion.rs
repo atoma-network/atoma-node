@@ -663,7 +663,7 @@ impl StableDiffusion {
 
     /// Pre-processes image
     fn image_preprocess<T: AsRef<std::path::Path>>(path: T) -> Result<Tensor, ModelError> {
-        let img = image::ImageReader::open(path)?.decode()?;
+        let img = image::io::Reader::open(path)?.decode()?;
         let (height, width) = (img.height() as usize, img.width() as usize);
         let height = height - height % 32;
         let width = width - width % 32;

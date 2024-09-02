@@ -33,6 +33,8 @@ pub enum ModelType {
     Falcon7b,
     Falcon40b,
     Falcon180b,
+    FluxSchnell,
+    FluxDev,
     LlamaV1,
     LlamaV2,
     LlamaSolar10_7B,
@@ -103,6 +105,8 @@ impl FromStr for ModelType {
             "falcon_7b" => Ok(Self::Falcon7b),
             "falcon_40b" => Ok(Self::Falcon40b),
             "falcon_180b" => Ok(Self::Falcon180b),
+            "flux_dev" => Ok(Self::FluxDev),
+            "flux_schnell" => Ok(Self::FluxSchnell),
             "llama_v1" => Ok(Self::LlamaV1),
             "llama_v2" => Ok(Self::LlamaV2),
             "llama_solar_10_7b" => Ok(Self::LlamaSolar10_7B),
@@ -177,6 +181,8 @@ impl ModelType {
             Self::Falcon7b => "tiiuae/falcon-7b",
             Self::Falcon40b => "tiiuae/falcon-40b",
             Self::Falcon180b => "tiiuae/falcon-180b",
+            Self::FluxDev => "black-forest-labs/FLUX.1-dev",
+            Self::FluxSchnell => "black-forest-labs/FLUX.1-schnell",
             Self::LlamaV1 => "Narsil/amall-7b",
             Self::LlamaV2 => "meta-llama/Llama-2-7b-hf",
             Self::LlamaSolar10_7B => "upstage/SOLAR-10.7B-v1.0",
@@ -279,7 +285,9 @@ impl ModelType {
             Self::Mamba790m => "refs/pr/1",
             Self::Mamba1_4b => "refs/pr/1",
             Self::Mamba2_8b => "refs/pr/4",
-            Self::QuantizedL8b
+            Self::FluxDev
+            | Self::FluxSchnell
+            | Self::QuantizedL8b
             | Self::QuantizedLeo13b
             | Self::QuantizedLeo7b
             | Self::QuantizedLlama13b
@@ -314,6 +322,8 @@ impl Display for ModelType {
             Self::Falcon7b => write!(f, "falcon_7b"),
             Self::Falcon40b => write!(f, "falcon_40b"),
             Self::Falcon180b => write!(f, "falcon_180b"),
+            Self::FluxDev => write!(f, "flux_dev"),
+            Self::FluxSchnell => write!(f, "flux_schnell"),
             Self::LlamaV1 => write!(f, "llama_v1"),
             Self::LlamaV2 => write!(f, "llama_v2"),
             Self::LlamaSolar10_7B => write!(f, "llama_solar_10_7b"),
@@ -579,7 +589,7 @@ impl TryFrom<(Digest, PromptParams)> for StableDiffusionInput {
         match value {
             PromptParams::Text2ImagePromptParams(p) => Ok(Self {
                 prompt: p.get_input_text(),
-                uncond_prompt: p.uncond_prompt(),
+                uncond_prompt: p.uncond_prompt().unwrap_or_default(),
                 height: p.height().map(|t| t.try_into().unwrap()),
                 width: p.width().map(|t| t.try_into().unwrap()),
                 n_steps: p.n_steps().map(|t| t.try_into().unwrap()),
