@@ -74,6 +74,8 @@ pub enum ModelError {
     InvalidModelInput,
     #[error("Send error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    #[error("Invalid prompt params")]
+    InvalidPromptParams,
     #[cfg(feature = "nccl")]
     #[error("Nccl error: `{}`", 0.0)]
     NcclError(NcclError),
