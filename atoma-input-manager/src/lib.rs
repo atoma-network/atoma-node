@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use atoma_helpers::Firebase;
-use atoma_types::{InputFormat, InputSource};
+use atoma_types::{InputFormat, InputSource, ModelInput};
 use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use ipfs::IpfsInputManager;
@@ -26,7 +26,7 @@ pub struct AtomaInputManager {
     ipfs_input_manager: IpfsInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
-    input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
+    input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<ModelInput>)>,
 }
 
 impl AtomaInputManager {
@@ -34,7 +34,7 @@ impl AtomaInputManager {
     #[instrument(skip_all)]
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
+        input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<ModelInput>)>,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
         info!("Starting Atoma Input Manager...");
@@ -44,10 +44,8 @@ impl AtomaInputManager {
         let firebase_input_manager = FirebaseInputManager::new(
             config.firebase_url,
             config.firebase_email,
-            config
-                .firebase_password,
-            config
-                .firebase_api_key,
+            config.firebase_password,
+            config.firebase_api_key,
             firebase,
             config.small_id,
         )
@@ -69,21 +67,20 @@ impl AtomaInputManager {
                 "Received a new input to be submitted to a data storage {:?}..",
                 input_source
             );
-            let text = match input_source {
+            let model_input = match input_source {
                 InputSource::Firebase { request_id } => {
                     self.firebase_input_manager
                         .handle_get_request(request_id)
                         .await?
                 }
                 InputSource::Ipfs { cid, format } => match format {
-                    InputFormat::Json => self.ipfs_input_manager.fetch_json(&cid).await?,
                     InputFormat::Image => self.ipfs_input_manager.fetch_image(&cid).await?,
                     InputFormat::Text => self.ipfs_input_manager.fetch_text(&cid).await?,
                 },
-                InputSource::Raw { prompt } => prompt,
+                InputSource::Raw { prompt } => ModelInput::Text(prompt),
             };
             oneshot
-                .send(text)
+                .send(model_input)
                 .map_err(AtomaInputManagerError::SendPromptError)?;
         }
 
@@ -112,7 +109,7 @@ pub enum AtomaInputManagerError {
     #[error("IPFS error: `{0}`")]
     IpfsError(String),
     #[error("Error sending prompt to the model: `{0:?}`")]
-    SendPromptError(String),
+    SendPromptError(ModelInput),
     #[error("Timeout error, could not get input from firebase in time")]
     TimeoutError,
 }

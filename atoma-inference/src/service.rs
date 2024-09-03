@@ -147,7 +147,7 @@ pub enum ModelServiceError {
 
 #[cfg(test)]
 mod tests {
-    use atoma_types::{Digest, PromptParams};
+    use atoma_types::{Digest, ModelParams};
     use serde::Serialize;
     use std::io::Write;
     use toml::{toml, Value};
@@ -178,10 +178,10 @@ mod tests {
         }
     }
 
-    impl TryFrom<(Digest, PromptParams)> for MockInput {
+    impl TryFrom<(Digest, ModelParams)> for MockInput {
         type Error = ModelError;
 
-        fn try_from(_: (Digest, PromptParams)) -> Result<Self, Self::Error> {
+        fn try_from(_: (Digest, ModelParams)) -> Result<Self, Self::Error> {
             Ok(Self {})
         }
     }

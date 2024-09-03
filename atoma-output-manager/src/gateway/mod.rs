@@ -69,7 +69,10 @@ impl GatewayOutputManager {
     }
 }
 
-fn build_text_query(output: String, output_metadata: &AtomaOutputMetadata) -> Result<String, AtomaOutputManagerError> {
+fn build_text_query(
+    output: String,
+    output_metadata: &AtomaOutputMetadata,
+) -> Result<String, AtomaOutputManagerError> {
     let AtomaOutputMetadata {
         node_public_key,
         ticket_id,

@@ -16,7 +16,7 @@ pub type SmallId = u64;
 ///     `sampled_node_index`: usize - Current node id in the list of sampled nodes.
 ///         This value should not be optional, as a request is only processed if a node has been selected, to begin with.
 ///     `num_sampled_nodes`: usize - The total number of sampled nodes to process this request.
-///     `params`: PromptParams - Contains the relevant data to run the requested AI inference, including
+///     `params`: ModelParams - Contains the relevant data to run the requested AI inference, including
 ///         which model to be used, the prompt input, temperature, etc.
 ///     `output_destination`: Vec<u8> - The output destination, serialized into a byte buffer.
 #[derive(Clone, Debug, Deserialize)]
@@ -31,7 +31,7 @@ pub struct Request {
     /// the current inference request
     num_sampled_nodes: usize,
     /// Prompt parameters
-    params: PromptParams,
+    params: ModelParams,
     /// The output destination, in a byte representation. The node
     /// should be able to deserialize it into actual metadata
     /// specifying how to store the actual output
@@ -44,7 +44,7 @@ impl Request {
         id: RequestId,
         sampled_node_index: usize,
         num_sampled_nodes: usize,
-        params: PromptParams,
+        params: ModelParams,
         output_destination: Vec<u8>,
     ) -> Self {
         Self {
@@ -77,7 +77,7 @@ impl Request {
     }
 
     /// Getter for `params`
-    pub fn params(&self) -> PromptParams {
+    pub fn params(&self) -> ModelParams {
         self.params.clone()
     }
 
@@ -89,6 +89,11 @@ impl Request {
     /// Once we get the prompt, we can set it as raw for the inference
     pub fn set_raw_prompt(&mut self, prompt: String) {
         self.params.set_raw_prompt(prompt);
+    }
+
+    /// Image to image request
+    pub fn set_raw_image(&mut self, image_bytes: Vec<u8>) {
+        self.params.set_raw_image(image_bytes);
     }
 }
 
@@ -113,7 +118,7 @@ impl TryFrom<(u64, Value)> for Request {
             .position(|n| n == &node_id)
             .ok_or(anyhow!(NON_SAMPLED_NODE_ERR))?;
         let num_sampled_nodes = sampled_nodes.len();
-        let params = PromptParams::try_from(value["params"].clone())?;
+        let params = ModelParams::try_from(value["params"].clone())?;
         let output_destination = value["output_destination"]
             .as_array()
             .ok_or(anyhow!(
@@ -154,7 +159,7 @@ impl TryFrom<(&str, usize, Value)> for Request {
         let prompt_params_value = value
             .get("params")
             .ok_or(anyhow!("invalid `params` field",))?;
-        let prompt_params = PromptParams::try_from(prompt_params_value.clone())?;
+        let prompt_params = ModelParams::try_from(prompt_params_value.clone())?;
 
         let output_destination = value["output_destination"]
             .as_array()
@@ -183,42 +188,42 @@ impl TryFrom<(&str, usize, Value)> for Request {
 /// - Text to text prompt parameters;
 /// - Text to image prompt parameters.
 #[derive(Clone, Debug, Deserialize)]
-pub enum PromptParams {
-    Text2TextPromptParams(Text2TextPromptParams),
-    Text2ImagePromptParams(Text2ImagePromptParams),
+pub enum ModelParams {
+    Text2TextModelParams(Text2TextModelParams),
+    Text2ImageModelParams(Text2ImageModelParams),
 }
 
-impl PromptParams {
+impl ModelParams {
     /// Gets the model associated to the current instance of `Self`
     pub fn model(&self) -> String {
         match self {
-            Self::Text2ImagePromptParams(p) => p.model(),
-            Self::Text2TextPromptParams(p) => p.model(),
+            Self::Text2ImageModelParams(p) => p.model(),
+            Self::Text2TextModelParams(p) => p.model(),
         }
     }
 
-    /// Extracts a `Text2TextPromptParams` from a `PromptParams` enum, or None
-    /// if `PromptParams` does not correspond to `PromptParams::Text2TextPromptParams`
-    pub fn into_text2text_prompt_params(self) -> Option<Text2TextPromptParams> {
+    /// Extracts a `Text2TextModelParams` from a `ModelParams` enum, or None
+    /// if `ModelParams` does not correspond to `ModelParams::Text2TextModelParams`
+    pub fn into_text2text_prompt_params(self) -> Option<Text2TextModelParams> {
         match self {
-            Self::Text2TextPromptParams(p) => Some(p),
-            Self::Text2ImagePromptParams(_) => None,
+            Self::Text2TextModelParams(p) => Some(p),
+            Self::Text2ImageModelParams(_) => None,
         }
     }
 
-    // Extracts a `Text2ImagePromptParams` from a `PromptParams` enum, or None
-    /// if `PromptParams` does not correspond to `PromptParams::Text2ImagePromptParams`
-    pub fn into_text2image_prompt_params(self) -> Option<Text2ImagePromptParams> {
+    // Extracts a `Text2ImageModelParams` from a `ModelParams` enum, or None
+    /// if `ModelParams` does not correspond to `ModelParams::Text2ImageModelParams`
+    pub fn into_text2image_prompt_params(self) -> Option<Text2ImageModelParams> {
         match self {
-            Self::Text2ImagePromptParams(p) => Some(p),
-            Self::Text2TextPromptParams(_) => None,
+            Self::Text2ImageModelParams(p) => Some(p),
+            Self::Text2TextModelParams(_) => None,
         }
     }
 
     pub fn prompt(&self) -> InputSource {
         match self {
-            Self::Text2TextPromptParams(p) => p.prompt(),
-            Self::Text2ImagePromptParams(p) => p.prompt(),
+            Self::Text2TextModelParams(p) => p.prompt(),
+            Self::Text2ImageModelParams(p) => p.prompt(),
         }
     }
 
@@ -237,24 +242,34 @@ impl PromptParams {
     /// Once we get the prompt, we can set it as raw for the inference
     pub fn set_raw_prompt(&mut self, prompt: String) {
         match self {
-            Self::Text2TextPromptParams(p) => p.set_raw_prompt(prompt),
-            Self::Text2ImagePromptParams(p) => p.set_raw_prompt(prompt),
+            Self::Text2TextModelParams(p) => p.set_raw_prompt(prompt),
+            Self::Text2ImageModelParams(p) => p.set_raw_prompt(prompt),
+        }
+    }
+
+    /// Set the image to image value for `Text2ImageModelParams` variant
+    pub fn set_raw_image(&mut self, image_bytes: Vec<u8>) {
+        match self {
+            Self::Text2ImageModelParams(p) => p.set_raw_image(image_bytes),
+            Self::Text2TextModelParams(_) => {
+                unreachable!("Setting raw image for Text2TextModelParams is not allowed")
+            }
         }
     }
 }
 
-impl TryFrom<Value> for PromptParams {
+impl TryFrom<Value> for ModelParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         if value["temperature"].is_null() {
-            Ok(Self::Text2ImagePromptParams(
-                Text2ImagePromptParams::try_from(value)?,
+            Ok(Self::Text2ImageModelParams(
+                Text2ImageModelParams::try_from(value)?,
             ))
         } else {
-            Ok(Self::Text2TextPromptParams(
-                Text2TextPromptParams::try_from(value)?,
-            ))
+            Ok(Self::Text2TextModelParams(Text2TextModelParams::try_from(
+                value,
+            )?))
         }
     }
 }
@@ -270,7 +285,7 @@ impl TryFrom<Value> for PromptParams {
 /// - top_p: parameter controlling probabilities for top tokens
 /// - should_stream_output: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
-pub struct Text2TextPromptParams {
+pub struct Text2TextModelParams {
     prompt: InputSource,
     /// The specified model of the request
     model: String,
@@ -297,7 +312,7 @@ pub struct Text2TextPromptParams {
     should_stream_output: bool,
 }
 
-impl Text2TextPromptParams {
+impl Text2TextModelParams {
     #[allow(clippy::too_many_arguments)]
     /// Constructor
     pub fn new(
@@ -407,7 +422,7 @@ impl Text2TextPromptParams {
     }
 }
 
-impl TryFrom<Value> for Text2TextPromptParams {
+impl TryFrom<Value> for Text2TextModelParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -455,7 +470,7 @@ impl TryFrom<Value> for Text2TextPromptParams {
 ///   information;
 /// - random_seed: the seed to use when generating random samples.
 #[derive(Clone, Debug, Deserialize)]
-pub struct Text2ImagePromptParams {
+pub struct Text2ImageModelParams {
     /// Prompt, in String format
     prompt: InputSource,
     /// Model to run the inference
@@ -473,7 +488,7 @@ pub struct Text2ImagePromptParams {
     /// Guidance scale (optional)
     guidance_scale: Option<f64>,
     /// Image to image (optional)
-    img2img: Option<String>,
+    img2img: Option<Vec<u8>>,
     /// Image to image strength
     img2img_strength: f64,
     /// The random seed for inference sampling
@@ -482,7 +497,7 @@ pub struct Text2ImagePromptParams {
     decode_only: Option<String>,
 }
 
-impl Text2ImagePromptParams {
+impl Text2ImageModelParams {
     #[allow(clippy::too_many_arguments)]
     /// Constructor
     pub fn new(
@@ -494,7 +509,7 @@ impl Text2ImagePromptParams {
         n_steps: Option<u64>,
         num_samples: u64,
         guidance_scale: Option<f64>,
-        img2img: Option<String>,
+        img2img: Option<Vec<u8>>,
         img2img_strength: f64,
         random_seed: Option<u32>,
         decode_only: Option<String>,
@@ -556,7 +571,7 @@ impl Text2ImagePromptParams {
     }
 
     /// Getter for `img2img`
-    pub fn img2img(&self) -> Option<String> {
+    pub fn img2img(&self) -> Option<Vec<u8>> {
         self.img2img.clone()
     }
 
@@ -592,9 +607,14 @@ impl Text2ImagePromptParams {
     pub fn decode_only(&self) -> Option<String> {
         self.decode_only.clone()
     }
+
+    /// Sets the image to image value for `Text2ImageModelParams` variant
+    pub fn set_raw_image(&mut self, image_bytes: Vec<u8>) {
+        self.img2img = Some(image_bytes);
+    }
 }
 
-impl TryFrom<Value> for Text2ImagePromptParams {
+impl TryFrom<Value> for Text2ImageModelParams {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -610,7 +630,7 @@ impl TryFrom<Value> for Text2ImagePromptParams {
             n_steps: Some(utils::parse_u64(&value["n_steps"])?),
             num_samples: utils::parse_u64(&value["num_samples"])?,
             guidance_scale: Some(utils::parse_f32_from_le_bytes(&value["guidance_scale"])? as f64),
-            img2img: utils::parse_optional_str(&value["img2img"]),
+            img2img: utils::parse_optional_bytes(&value["img2img"]),
             img2img_strength: utils::parse_f32_from_le_bytes(&value["img2img_strength"])? as f64,
             decode_only: utils::parse_optional_str(&value["decode_only"]),
         })
@@ -714,11 +734,18 @@ impl Response {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InputFormat {
-    Json,
     Image,
     Text,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ModelInput {
+    ImageBytes(Vec<u8>),
+    ImageFile(String),
+    Text(String),
+}
+
+/// `InputSource` - Enum describing available input sources
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InputSource {
     Firebase { request_id: String },
@@ -859,6 +886,16 @@ mod utils {
         value
             .as_bool()
             .ok_or_else(|| anyhow!("Expected a bool, found none"))
+    }
+
+    /// Util method that extract an (optional) slice of bytes
+    /// from a JSON value.
+    pub(crate) fn parse_optional_bytes(value: &Value) -> Option<Vec<u8>> {
+        value.as_array().and_then(|arr| {
+            arr.iter()
+                .map(|v| v.as_u64().map(|n| n as u8))
+                .collect::<Option<Vec<u8>>>()
+        })
     }
 }
 

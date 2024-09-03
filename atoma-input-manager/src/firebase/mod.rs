@@ -1,4 +1,5 @@
 use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_types::ModelInput;
 use reqwest::Client;
 use tracing::{info, instrument};
 use url::Url;
@@ -40,7 +41,7 @@ impl FirebaseInputManager {
     pub async fn handle_get_request(
         &mut self,
         request_id: String,
-    ) -> Result<String, AtomaInputManagerError> {
+    ) -> Result<ModelInput, AtomaInputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
         let mut url = self.firebase_url.clone();
@@ -60,7 +61,7 @@ impl FirebaseInputManager {
             if response.status().is_success() {
                 let text = response.text().await?;
                 info!("Received response with text: {text}");
-                return Ok(text);
+                return Ok(ModelInput::Text(text));
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(SLEEP_BETWEEN_REQUESTS_SEC)).await;
         }

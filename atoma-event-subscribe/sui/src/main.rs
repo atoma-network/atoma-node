@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
-use atoma_types::InputSource;
+use atoma_types::{InputSource, ModelInput};
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
 use tokio::sync::oneshot;
@@ -31,7 +31,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
 
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
     let (input_manager_tx, mut input_manager_rx) =
-        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<String>)>(32);
+        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<ModelInput>)>(32);
 
     // Spawn a task to discard messages
     tokio::spawn(async move {
@@ -42,7 +42,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
                 InputSource::Ipfs { cid, format } => format!("{cid}.{format:?}"),
                 InputSource::Raw { prompt } => prompt,
             };
-            if let Err(err) = oneshot.send(data) {
+            if let Err(err) = oneshot.send(ModelInput::Text(data)) {
                 error!("Failed to send response: {:?}", err);
             }
         }

@@ -13,7 +13,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
-use atoma_types::{InputSource, Request, SmallId, NON_SAMPLED_NODE_ERR};
+use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 /// The size of a request id, expressed in hex format
 const WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS: u64 = 5;
@@ -43,7 +43,7 @@ pub struct SuiSubscriber {
     /// The websocket address of a Sui RPC node
     ws_addr: Option<String>,
     /// Input manager sender, responsible for sending the input metadata and a oneshot sender, to the input manager service to get back the user prompt.
-    input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+    input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<ModelInput>)>,
 }
 
 impl SuiSubscriber {
@@ -55,7 +55,7 @@ impl SuiSubscriber {
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
-        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<ModelInput>)>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
@@ -91,7 +91,7 @@ impl SuiSubscriber {
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
-        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<ModelInput>)>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -235,7 +235,17 @@ impl SuiSubscriber {
         .await
         .map_err(|_| SuiSubscriberError::TimeoutError)??;
         // Replace the prompt string to the real prompt instead of the firebase user id.
-        request.set_raw_prompt(result);
+        match result {
+            ModelInput::ImageBytes(bytes) => {
+                request.set_raw_image(bytes);
+            }
+            ModelInput::ImageFile(path) => {
+                request.set_raw_prompt(path);
+            }
+            ModelInput::Text(text) => {
+                request.set_raw_prompt(text);
+            }
+        }
         info!("Received new request: {:?}", request);
         let request_id = request.id();
         info!(
@@ -339,7 +349,7 @@ pub enum SuiSubscriberError {
     #[error("Malformed event: `{0}`")]
     MalformedEvent(String),
     #[error("Sending input to input manager error: `{0}`")]
-    SendInputError(#[from] Box<mpsc::error::SendError<(InputSource, oneshot::Sender<String>)>>),
+    SendInputError(#[from] Box<mpsc::error::SendError<(InputSource, oneshot::Sender<ModelInput>)>>),
     #[error("Error while sending request to input manager: `{0}`")]
     InputManagerError(#[from] Box<tokio::sync::oneshot::error::RecvError>),
     #[error("Timeout error getting the input from the input manager")]

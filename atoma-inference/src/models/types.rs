@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
-use atoma_types::{Digest, PromptParams};
+use atoma_types::{Digest, ModelParams};
 use candle::{DType, Device};
 use serde::{Deserialize, Serialize};
 
@@ -468,12 +468,12 @@ impl TextModelInput {
     }
 }
 
-impl TryFrom<(String, PromptParams)> for TextModelInput {
+impl TryFrom<(String, ModelParams)> for TextModelInput {
     type Error = ModelError;
 
-    fn try_from((request_id, value): (String, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((request_id, value): (String, ModelParams)) -> Result<Self, Self::Error> {
         match value {
-            PromptParams::Text2TextPromptParams(p) => Ok(Self {
+            ModelParams::Text2TextModelParams(p) => Ok(Self {
                 request_id,
                 prompt: p.get_input_text(),
                 temperature: p.temperature(),
@@ -487,7 +487,7 @@ impl TryFrom<(String, PromptParams)> for TextModelInput {
                 pre_prompt_tokens: p.pre_prompt_tokens(),
                 should_stream_output: p.should_stream_output(),
             }),
-            PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
+            ModelParams::Text2ImageModelParams(_) => Err(ModelError::InvalidModelInput),
         }
     }
 }
@@ -573,7 +573,7 @@ pub struct StableDiffusionInput {
     /// Image to image, to be used if one aims to
     /// transform the initial generated image in a given
     /// specific way
-    pub img2img: Option<String>,
+    pub img2img: Option<Vec<u8>>,
     /// The strength, indicates how much to transform the initial image. The
     /// value must be between 0 and 1, a value of 1 discards the initial image
     /// information.
@@ -582,12 +582,12 @@ pub struct StableDiffusionInput {
     pub random_seed: Option<u32>,
 }
 
-impl TryFrom<(Digest, PromptParams)> for StableDiffusionInput {
+impl TryFrom<(Digest, ModelParams)> for StableDiffusionInput {
     type Error = ModelError;
 
-    fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((_, value): (Digest, ModelParams)) -> Result<Self, Self::Error> {
         match value {
-            PromptParams::Text2ImagePromptParams(p) => Ok(Self {
+            ModelParams::Text2ImageModelParams(p) => Ok(Self {
                 prompt: p.get_input_text(),
                 uncond_prompt: p.uncond_prompt().unwrap_or_default(),
                 height: p.height().map(|t| t.try_into().unwrap()),
