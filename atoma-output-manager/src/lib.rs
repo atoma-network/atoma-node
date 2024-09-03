@@ -105,7 +105,7 @@ pub enum AtomaOutputManagerError {
     #[error("Invalid output destination: `{0}`")]
     InvalidOutputDestination(String),
     #[error("IPFS error: `{0}`")]
-    IpfsError(#[from] ipfs_api_backend_hyper::Error),
+    IpfsError(String),
     #[error("Failed to convert output to string: `{0}`")]
     FromUtf8Error(#[from] FromUtf8Error),
     #[error("Failed to build IPFS client: `{0}`")]

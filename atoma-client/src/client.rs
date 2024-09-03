@@ -37,7 +37,7 @@ pub struct AtomaSuiClient {
     response_rx: mpsc::Receiver<Response>,
     /// A mpsc sender, responsible to send the actual output to the `OutputManager` service (for being shared with an end user or protocol)
     /// It sends a tuple, containing the output's metadata and the actual output (in JSON format).
-    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
+    output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
 }
 
 impl AtomaSuiClient {
@@ -51,7 +51,7 @@ impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
         let mut wallet_ctx = WalletContext::new(
@@ -75,12 +75,12 @@ impl AtomaSuiClient {
     /// Inputs:
     ///     `config_path` - Path for the configuration file, which is deserialized into an `AtomaSuiClientConfig`.
     ///     `response_rx` - A mpsc receiver, associated to a `Response`.
-    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`AtomaOutputMetadata`, `String`), responsible for
+    ///     `output_manager_tx` - A mpsc sender, associated with a tuple (`AtomaOutputMetadata`, `Vec<u8>`), responsible for
     ///         sharing the actual output with the `OutputManager` service.
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_rx: mpsc::Receiver<Response>,
-        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, String)>,
+        output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
         Self::new_from_config(config, response_rx, output_manager_tx)
@@ -199,9 +199,37 @@ impl AtomaSuiClient {
                         OutputType::Text => output["text"]
                             .as_str()
                             .ok_or(AtomaSuiClientError::MissingOutputData)?
-                            .to_string(),
+                            .to_string()
+                            .as_bytes()
+                            .to_vec(),
                         OutputType::Image => {
-                            todo!()
+                            let mut image_data = {
+                                let img_pixels_u64 = output["image_data"]
+                                    .as_array()
+                                    .ok_or(AtomaSuiClientError::MissingOutputData)?
+                                    .iter()
+                                    .map(|v| {
+                                        v.as_u64().ok_or(AtomaSuiClientError::MissingOutputData)
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                img_pixels_u64
+                                    .into_iter()
+                                    .map(|v| v as u8)
+                                    .collect::<Vec<_>>()
+                            };
+                            let height = (output["height"]
+                                .as_u64()
+                                .ok_or(AtomaSuiClientError::MissingOutputData)?
+                                as u32)
+                                .to_le_bytes();
+                            let width = (output["width"]
+                                .as_u64()
+                                .ok_or(AtomaSuiClientError::MissingOutputData)?
+                                as u32)
+                                .to_le_bytes();
+                            image_data.extend_from_slice(&height);
+                            image_data.extend_from_slice(&width);
+                            image_data
                         }
                     };
                     let output_metadata = AtomaOutputMetadata {
@@ -259,7 +287,7 @@ pub enum AtomaSuiClientError {
     #[error("Failed signature: `{0}`")]
     FailedSignature(String),
     #[error("Sender error: `{0}`")]
-    SendError(#[from] Box<mpsc::error::SendError<(AtomaOutputMetadata, String)>>),
+    SendError(#[from] Box<mpsc::error::SendError<(AtomaOutputMetadata, Vec<u8>)>>),
     #[error("Failed response JSON parsing")]
     FailedResponseJsonParsing,
     #[error("No available funds")]

@@ -112,10 +112,10 @@ impl AtomaNode {
                 info!("Starting Atoma output manager service..");
                 let atoma_output_manager =
                     AtomaOutputManager::new(config_path, output_manager_rx, firebase).await?;
-                atoma_output_manager
-                    .run()
-                    .await
-                    .map_err(AtomaNodeError::AtomaOutputManagerError)
+                atoma_output_manager.run().await.map_err(|e| {
+                    error!("Error with Atoma output manager: {e}");
+                    AtomaNodeError::AtomaOutputManagerError(e)
+                })
             })
         };
 
@@ -128,10 +128,10 @@ impl AtomaNode {
                 info!("Starting Atoma input manager service..");
                 let atoma_input_manager =
                     AtomaInputManager::new(config_path, input_manager_rx, firebase).await?;
-                atoma_input_manager
-                    .run()
-                    .await
-                    .map_err(AtomaNodeError::AtomaInputManagerError)
+                atoma_input_manager.run().await.map_err(|e| {
+                    error!("Error with Atoma input manager: {e}");
+                    AtomaNodeError::AtomaInputManagerError(e)
+                })
             })
         };
 

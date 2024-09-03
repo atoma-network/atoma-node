@@ -16,17 +16,17 @@ impl IpfsOutputManager {
         let client = IpfsClient::from_str(config.ipfs_api_url.as_str())
             .map_err(|e| AtomaOutputManagerError::FailedToBuildIpfsClient(e.to_string()))?
             .with_credentials(config.ipfs_username.clone(), config.ipfs_password.clone());
-        match client.version().await {
-            Ok(version) => {
-                info!(
-                    "IPFS client built successfully, with version = {:?}",
-                    version
-                );
-            }
-            Err(e) => {
-                error!("Failed to obtain IPFS client's version: {}", e);
-            }
-        }
+        // match client.version().await {
+        //     Ok(version) => {
+        //         info!(
+        //             "IPFS client built successfully, with version = {:?}",
+        //             version
+        //         );
+        //     }
+        //     Err(e) => {
+        //         error!("Failed to obtain IPFS client's version: {}", e);
+        //     }
+        // }
         Ok(Self { client })
     }
 }
@@ -39,7 +39,7 @@ impl IpfsOutputManager {
         output: Vec<u8>,
     ) -> Result<(), AtomaOutputManagerError> {
         info!("Storing new data to IPFS for new request");
-        let metadata_json = serde_json::to_value(&output_metadata)?;
+        let metadata_json = serde_json::to_value(output_metadata)?;
         let json_output = json!({
             "metadata": metadata_json,
             "output": output,
@@ -55,7 +55,7 @@ impl IpfsOutputManager {
             }
             Err(e) => {
                 error!("Failed to store data to IPFS: {}", e);
-                Err(AtomaOutputManagerError::IpfsError(e))
+                Err(AtomaOutputManagerError::IpfsError(e.to_string()))
             }
         }
     }
