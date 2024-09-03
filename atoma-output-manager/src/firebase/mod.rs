@@ -1,5 +1,5 @@
 use atoma_helpers::{Firebase, FirebaseAuth};
-use atoma_types::AtomaOutputMetadata;
+use atoma_types::{AtomaOutputMetadata, OutputType};
 use reqwest::Client;
 use serde_json::json;
 use tracing::{debug, info, instrument};
@@ -42,7 +42,7 @@ impl FirebaseOutputManager {
     pub async fn handle_post_request(
         &mut self,
         output_metadata: &AtomaOutputMetadata,
-        output: String,
+        output: Vec<u8>,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.get_id_token().await?;
@@ -61,12 +61,35 @@ impl FirebaseOutputManager {
             "Submitting to Firebase's real time storage, with metadata: {:?}",
             output_metadata
         );
-        let data = json!({
-            "data": {
-                "metadata": output_metadata,
-                "data": output,
-            },
-        });
+        let data = match output_metadata.output_type {
+            OutputType::Text => {
+                let output = String::from_utf8(output)?;
+                json!({
+                    "data": {
+                        "metadata": output_metadata,
+                        "data": output,
+                    },
+                })
+            }
+            OutputType::Image => {
+                let mut height_bytes_buffer = [0; 4];
+                height_bytes_buffer.copy_from_slice(&output[output.len() - 4..output.len()]);
+
+                let mut width_bytes_buffer = [0; 4];
+                width_bytes_buffer.copy_from_slice(&output[output.len() - 8..output.len() - 4]);
+
+                let height = u32::from_be_bytes(height_bytes_buffer) as usize;
+                let width = u32::from_be_bytes(width_bytes_buffer) as usize;
+
+                let output = output[..output.len() - 8].to_vec();
+                json!({
+                    "data": {
+                        "metadata": output_metadata,
+                        "data": (output, height, width),
+                    }
+                })
+            }
+        };
         let response = client.put(url).json(&data).send().await?;
         let text = response.text().await?;
         info!("Received response with text: {text}");

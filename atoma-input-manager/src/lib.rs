@@ -1,15 +1,17 @@
 use std::path::Path;
 
 use atoma_helpers::Firebase;
-use atoma_types::InputSource;
+use atoma_types::{InputFormat, InputSource};
 use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
+use ipfs::IpfsInputManager;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{info, instrument};
 
 mod config;
 mod firebase;
+mod ipfs;
 
 /// `AtomaInputManager` - manages different input sources
 ///     requests, allowing for a flexible interaction between
@@ -20,6 +22,8 @@ mod firebase;
 pub struct AtomaInputManager {
     /// Firebase's input manager instance.
     firebase_input_manager: FirebaseInputManager,
+    /// IPFS's input manager instance.
+    ipfs_input_manager: IpfsInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
     input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
@@ -27,22 +31,30 @@ pub struct AtomaInputManager {
 
 impl AtomaInputManager {
     /// Constructor
+    #[instrument(skip_all)]
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
         input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
+        info!("Starting Atoma Input Manager...");
+        let start = std::time::Instant::now();
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
+        let ipfs_input_manager = IpfsInputManager::new(&config).await?;
         let firebase_input_manager = FirebaseInputManager::new(
             config.firebase_url,
             config.firebase_email,
-            config.firebase_password,
-            config.firebase_api_key,
+            config
+                .firebase_password,
+            config
+                .firebase_api_key,
             firebase,
             config.small_id,
         )
         .await?;
+        info!("Atoma Input Manager started in {:?}", start.elapsed());
         Ok(Self {
+            ipfs_input_manager,
             firebase_input_manager,
             input_manager_rx,
         })
@@ -63,6 +75,11 @@ impl AtomaInputManager {
                         .handle_get_request(request_id)
                         .await?
                 }
+                InputSource::Ipfs { cid, format } => match format {
+                    InputFormat::Json => self.ipfs_input_manager.fetch_json(&cid).await?,
+                    InputFormat::Image => self.ipfs_input_manager.fetch_image(&cid).await?,
+                    InputFormat::Text => self.ipfs_input_manager.fetch_text(&cid).await?,
+                },
                 InputSource::Raw { prompt } => prompt,
             };
             oneshot
@@ -84,12 +101,16 @@ pub enum AtomaInputManagerError {
     GraphQlError(String),
     #[error("Invalid input source: `{0}`")]
     InvalidInputSource(String),
+    #[error("Failed to build IPFS client: `{0}`")]
+    FailedToBuildIpfsClient(String),
     #[error("Firebase authentication error: `{0}`")]
     FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
     #[error("Url error: `{0}`")]
     UrlError(String),
     #[error("Url parse error: `{0}`")]
     UrlParseError(#[from] url::ParseError),
+    #[error("IPFS error: `{0}`")]
+    IpfsError(String),
     #[error("Error sending prompt to the model: `{0:?}`")]
     SendPromptError(String),
     #[error("Timeout error, could not get input from firebase in time")]

@@ -39,6 +39,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
             info!("Received input from source: {:?}", input_source);
             let data = match input_source {
                 InputSource::Firebase { request_id } => request_id,
+                InputSource::Ipfs { cid, format } => format!("{cid}.{format:?}"),
                 InputSource::Raw { prompt } => prompt,
             };
             if let Err(err) = oneshot.send(data) {

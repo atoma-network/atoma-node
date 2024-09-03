@@ -227,6 +227,9 @@ impl PromptParams {
             InputSource::Firebase { .. } => {
                 unreachable!("Firebase request id found when raw prompt was expected")
             }
+            InputSource::Ipfs { .. } => {
+                unreachable!("IPFS request id found when raw prompt was expected")
+            }
             InputSource::Raw { prompt } => prompt,
         }
     }
@@ -395,6 +398,9 @@ impl Text2TextPromptParams {
         match &self.prompt {
             InputSource::Firebase { .. } => {
                 unreachable!("Firebase request id found when raw prompt was expected")
+            }
+            InputSource::Ipfs { .. } => {
+                unreachable!("IPFS request cid found when raw prompt was expected")
             }
             InputSource::Raw { prompt } => prompt.clone(),
         }
@@ -575,6 +581,9 @@ impl Text2ImagePromptParams {
             InputSource::Firebase { .. } => {
                 unreachable!("Firebase request id found when raw prompt was expected")
             }
+            InputSource::Ipfs { .. } => {
+                unreachable!("IPFS request cid found when raw prompt was expected")
+            }
             InputSource::Raw { prompt } => prompt.clone(),
         }
     }
@@ -704,8 +713,16 @@ impl Response {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum InputFormat {
+    Json,
+    Image,
+    Text,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InputSource {
     Firebase { request_id: String },
+    Ipfs { cid: String, format: InputFormat },
     Raw { prompt: String }, // This means that the prompt is stored in the request
 }
 
@@ -713,6 +730,7 @@ pub enum InputSource {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum OutputDestination {
     Firebase { request_id: String },
+    Ipfs { cid: String },
     Gateway { gateway_user_id: String },
 }
 
@@ -721,6 +739,7 @@ impl OutputDestination {
     pub fn request_id(&self) -> String {
         match self {
             Self::Firebase { request_id } => request_id.clone(),
+            Self::Ipfs { cid } => cid.clone(),
             Self::Gateway { .. } => unimplemented!("Gateway user id not implemented"),
         }
     }
