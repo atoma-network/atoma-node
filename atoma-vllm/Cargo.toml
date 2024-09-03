@@ -1,0 +1,27 @@
+[package]
+name = "atoma-vllm"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# TODO: this dependency should only work with features = "cuda"
+async-trait.workspace = true
+atoma-paged-attention.workspace = true
+candle-core = { version = "0.6.0", features = ["cuda"] }
+candle-transformers = { version = "0.6.0", features = ["cuda"] }
+futures.workspace = true
+indexmap.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokenizers.workspace = true
+tokio = { workspace = true, features = ["macros"] }
+tracing.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
+tracing-subscriber.workspace = true
+tokenizers = { workspace = true, features = ["http"] }
