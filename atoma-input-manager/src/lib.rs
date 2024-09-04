@@ -22,14 +22,20 @@ pub struct AtomaInputManager {
     firebase_input_manager: FirebaseInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
-    input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
+    input_manager_rx: mpsc::Receiver<(
+        InputSource,
+        tokio::sync::oneshot::Sender<Result<String, AtomaInputManagerError>>,
+    )>,
 }
 
 impl AtomaInputManager {
     /// Constructor
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        input_manager_rx: mpsc::Receiver<(InputSource, tokio::sync::oneshot::Sender<String>)>,
+        input_manager_rx: mpsc::Receiver<(
+            InputSource,
+            tokio::sync::oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        )>,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
@@ -61,13 +67,13 @@ impl AtomaInputManager {
                 InputSource::Firebase { request_id } => {
                     self.firebase_input_manager
                         .handle_get_request(request_id)
-                        .await?
+                        .await
                 }
-                InputSource::Raw { prompt } => prompt,
+                InputSource::Raw { prompt } => Ok(prompt),
             };
             oneshot
                 .send(text)
-                .map_err(AtomaInputManagerError::SendPromptError)?;
+                .map_err(|_| AtomaInputManagerError::SendPromptError)?;
         }
 
         Ok(())
@@ -90,8 +96,8 @@ pub enum AtomaInputManagerError {
     UrlError(String),
     #[error("Url parse error: `{0}`")]
     UrlParseError(#[from] url::ParseError),
-    #[error("Error sending prompt to the model: `{0:?}`")]
-    SendPromptError(String),
+    #[error("Error sending prompt to the model")]
+    SendPromptError,
     #[error("Timeout error, could not get input from firebase in time")]
     TimeoutError,
 }

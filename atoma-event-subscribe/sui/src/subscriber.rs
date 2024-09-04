@@ -1,5 +1,6 @@
 use std::{path::Path, str::FromStr, time::Duration};
 
+use atoma_input_manager::AtomaInputManagerError;
 use futures::StreamExt;
 use serde_json::Value;
 use sui_sdk::rpc_types::{EventFilter, SuiEvent};
@@ -43,7 +44,10 @@ pub struct SuiSubscriber {
     /// The websocket address of a Sui RPC node
     ws_addr: Option<String>,
     /// Input manager sender, responsible for sending the input metadata and a oneshot sender, to the input manager service to get back the user prompt.
-    input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+    input_manager_tx: mpsc::Sender<(
+        InputSource,
+        oneshot::Sender<Result<String, AtomaInputManagerError>>,
+    )>,
 }
 
 impl SuiSubscriber {
@@ -55,7 +59,10 @@ impl SuiSubscriber {
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
-        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(
+            InputSource,
+            oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        )>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
@@ -91,7 +98,10 @@ impl SuiSubscriber {
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
-        input_manager_tx: mpsc::Sender<(InputSource, oneshot::Sender<String>)>,
+        input_manager_tx: mpsc::Sender<(
+            InputSource,
+            oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        )>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -228,12 +238,7 @@ impl SuiSubscriber {
             .send((request.params().prompt(), oneshot_sender))
             .await
             .map_err(Box::new)?;
-        let result = tokio::time::timeout(
-            Duration::from_secs(WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS),
-            oneshot_receiver,
-        )
-        .await
-        .map_err(|_| SuiSubscriberError::TimeoutError)??;
+        let result = oneshot_receiver.await??;
         // Replace the prompt string to the real prompt instead of the firebase user id.
         request.set_raw_prompt(result);
         info!("Received new request: {:?}", request);
@@ -338,8 +343,18 @@ pub enum SuiSubscriberError {
     TypeConversionError(#[from] anyhow::Error),
     #[error("Malformed event: `{0}`")]
     MalformedEvent(String),
+    #[error("Input manager error : `{0}`")]
+    AtomaInputManagerError(#[from] AtomaInputManagerError),
     #[error("Sending input to input manager error: `{0}`")]
-    SendInputError(#[from] Box<mpsc::error::SendError<(InputSource, oneshot::Sender<String>)>>),
+    SendInputError(
+        #[from]
+        Box<
+            mpsc::error::SendError<(
+                InputSource,
+                oneshot::Sender<Result<String, AtomaInputManagerError>>,
+            )>,
+        >,
+    ),
     #[error("Error while sending request to input manager: `{0}`")]
     InputManagerError(#[from] Box<tokio::sync::oneshot::error::RecvError>),
     #[error("Timeout error getting the input from the input manager")]
