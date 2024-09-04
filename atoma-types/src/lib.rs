@@ -757,7 +757,7 @@ pub enum InputSource {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum OutputDestination {
     Firebase { request_id: String },
-    Ipfs { cid: String },
+    Ipfs,
     Gateway { gateway_user_id: String },
 }
 
@@ -900,20 +900,20 @@ mod utils {
 }
 
 pub struct AtomaStreamingData {
-    request_id: String,
+    output_source_id: String,
     data: String,
 }
 
 impl AtomaStreamingData {
-    pub fn new(request_id: String, data: String) -> Self {
-        Self { request_id, data }
+    pub fn new(output_source_id: String, data: String) -> Self {
+        Self { output_source_id, data }
     }
 
     pub fn data(&self) -> &String {
         &self.data
     }
 
-    pub fn request_id(&self) -> &String {
-        &self.request_id
+    pub fn output_source_id(&self) -> &String {
+        &self.output_source_id
     }
 }

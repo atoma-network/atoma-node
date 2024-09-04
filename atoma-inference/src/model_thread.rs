@@ -105,7 +105,7 @@ where
             let output_id = match output_destination {
                 atoma_types::OutputDestination::Firebase { request_id } => request_id,
                 atoma_types::OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
-                atoma_types::OutputDestination::Ipfs { cid } => cid,
+                atoma_types::OutputDestination::Ipfs => todo!(),
             };
             let model_input = M::Input::try_from((output_id, params))?;
             let model_output = self.model.run(model_input)?;

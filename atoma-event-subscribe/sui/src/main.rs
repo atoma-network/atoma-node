@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use atoma_input_manager::AtomaInputManagerError;
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
 use atoma_types::{InputSource, ModelInput};
 use clap::Parser;
@@ -31,7 +32,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
 
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
     let (input_manager_tx, mut input_manager_rx) =
-        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<ModelInput>)>(32);
+        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>)>(32);
 
     // Spawn a task to discard messages
     tokio::spawn(async move {

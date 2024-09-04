@@ -18,8 +18,7 @@ impl IpfsInputManager {
         info!("Building IPFS client...");
 
         let client = IpfsClient::from_multiaddr_str("https://ipfs.io/ipfs/")
-            .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?
-            .with_credentials(config.ipfs_username.clone(), config.ipfs_password.clone());
+            .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
         match client.version().await {
             Ok(version) => {
                 info!(

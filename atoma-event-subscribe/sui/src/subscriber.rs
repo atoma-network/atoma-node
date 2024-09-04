@@ -16,9 +16,6 @@ use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
-/// The size of a request id, expressed in hex format
-const WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS: u64 = 5;
-
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
 ///

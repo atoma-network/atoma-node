@@ -60,7 +60,7 @@ impl TokenOutputStream {
     pub fn next_token(
         &mut self,
         token: u32,
-        request_id: Option<String>,
+        output_source_id: Option<String>,
     ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
@@ -75,9 +75,9 @@ impl TokenOutputStream {
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
             let output = text.1.to_string();
-            if let Some(request_id) = request_id {
+            if let Some(output_source_id) = output_source_id {
                 self.stream_tx
-                    .blocking_send(AtomaStreamingData::new(request_id, output.clone()))
+                    .blocking_send(AtomaStreamingData::new(output_source_id, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -87,7 +87,7 @@ impl TokenOutputStream {
     }
 
     /// Tries to decode the rest of the `String`, in
-    pub fn decode_rest(&self, request_id: Option<String>) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(&self, output_source_id: Option<String>) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -98,9 +98,9 @@ impl TokenOutputStream {
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
             let output = text.1.to_string();
-            if let Some(request_id) = request_id {
+            if let Some(output_source_id) = output_source_id {
                 self.stream_tx
-                    .blocking_send(AtomaStreamingData::new(request_id, output.clone()))
+                    .blocking_send(AtomaStreamingData::new(output_source_id, output.clone()))
                     .map_err(ModelError::SendError)?;
             }
             Ok(Some(output))
@@ -137,9 +137,9 @@ impl TokenOutputStream {
     }
 
     /// Ends the stream, through a special value, encapsulated in `END_STREAM`
-    pub fn end_stream(&self, request_id: String) -> Result<(), ModelError> {
+    pub fn end_stream(&self, output_source_id: String) -> Result<(), ModelError> {
         self.stream_tx
-            .blocking_send(AtomaStreamingData::new(request_id, END_STREAM.to_string()))
+            .blocking_send(AtomaStreamingData::new(output_source_id, END_STREAM.to_string()))
             .map_err(ModelError::SendError)
     }
 }
