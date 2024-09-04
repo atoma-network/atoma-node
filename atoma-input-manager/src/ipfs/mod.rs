@@ -1,9 +1,9 @@
 use atoma_types::ModelInput;
 use futures::TryStreamExt;
-use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use tracing::{error, info, instrument};
 
-use crate::{config::AtomaInputManagerConfig, AtomaInputManagerError};
+use crate::{AtomaInputManagerError};
 
 /// IPFS input manager
 pub struct IpfsInputManager {
@@ -14,11 +14,10 @@ pub struct IpfsInputManager {
 impl IpfsInputManager {
     /// Constructor
     #[tracing::instrument(skip_all)]
-    pub async fn new(config: &AtomaInputManagerConfig) -> Result<Self, AtomaInputManagerError> {
+    pub async fn new() -> Result<Self, AtomaInputManagerError> {
         info!("Building IPFS client...");
 
-        let client = IpfsClient::from_multiaddr_str("https://ipfs.io/ipfs/")
-            .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
+        let client = IpfsClient::default();
         match client.version().await {
             Ok(version) => {
                 info!(

@@ -19,12 +19,6 @@ pub struct AtomaOutputManagerConfig {
     pub gateway_api_key: String,
     /// The node's Gateway's bearer token
     pub gateway_bearer_token: String,
-    /// The node's IPFS api url
-    pub ipfs_api_url: String,
-    /// The node's IPFS username
-    pub ipfs_username: String,
-    /// The node's IPFS password
-    pub ipfs_password: String,
     /// The node's small id
     pub small_id: u64,
 }

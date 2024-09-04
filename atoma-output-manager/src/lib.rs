@@ -41,7 +41,7 @@ impl AtomaOutputManager {
         firebase: Firebase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
-        let ipfs_output_manager = IpfsOutputManager::new(&config).await?;
+        let ipfs_output_manager = IpfsOutputManager::new().await?;
         let firebase_output_manager = FirebaseOutputManager::new(
             config.firebase_url,
             config.firebase_email,

@@ -70,7 +70,7 @@ impl AtomaStreamer {
         while let Some(streaming_data) = self.streamer_rx.recv().await {
             info!("Received a new output to be submitted to Firebase..");
             self.handle_streaming_request(
-                streaming_data.request_id().clone(),
+                streaming_data.output_source_id().clone(),
                 streaming_data.data().clone(),
             )
             .await?;

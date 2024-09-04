@@ -15,12 +15,6 @@ pub struct AtomaInputManagerConfig {
     pub firebase_password: String,
     /// The node's Firebase api key
     pub firebase_api_key: String,
-    /// The IPFS client api url
-    pub ipfs_api_url: String,
-    /// The IPFS client username
-    pub ipfs_username: String,
-    /// The IPFS client password
-    pub ipfs_password: String,
     /// The small id of the node
     pub small_id: u64,
 }

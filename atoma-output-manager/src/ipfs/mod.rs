@@ -1,9 +1,9 @@
 use atoma_types::AtomaOutputMetadata;
-use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use serde_json::json;
 use tracing::{error, info, instrument};
 
-use crate::{config::AtomaOutputManagerConfig, AtomaOutputManagerError};
+use crate::AtomaOutputManagerError;
 pub struct IpfsOutputManager {
     client: IpfsClient,
 }
@@ -11,22 +11,20 @@ pub struct IpfsOutputManager {
 impl IpfsOutputManager {
     /// Constructor
     #[instrument(skip_all)]
-    pub async fn new(config: &AtomaOutputManagerConfig) -> Result<Self, AtomaOutputManagerError> {
+    pub async fn new() -> Result<Self, AtomaOutputManagerError> {
         info!("Building IPFS client...");
-        let client = IpfsClient::from_str(config.ipfs_api_url.as_str())
-            .map_err(|e| AtomaOutputManagerError::FailedToBuildIpfsClient(e.to_string()))?
-            .with_credentials(config.ipfs_username.clone(), config.ipfs_password.clone());
-        // match client.version().await {
-        //     Ok(version) => {
-        //         info!(
-        //             "IPFS client built successfully, with version = {:?}",
-        //             version
-        //         );
-        //     }
-        //     Err(e) => {
-        //         error!("Failed to obtain IPFS client's version: {}", e);
-        //     }
-        // }
+        let client = IpfsClient::default();
+        match client.version().await {
+            Ok(version) => {
+                info!(
+                    "IPFS client built successfully, with version = {:?}",
+                    version
+                );
+            }
+            Err(e) => {
+                error!("Failed to obtain IPFS client's version: {}", e);
+            }
+        }
         Ok(Self { client })
     }
 }

@@ -46,7 +46,7 @@ impl AtomaInputManager {
         info!("Starting Atoma Input Manager...");
         let start = std::time::Instant::now();
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
-        let ipfs_input_manager = IpfsInputManager::new(&config).await?;
+        let ipfs_input_manager = IpfsInputManager::new().await?;
         let firebase_input_manager = FirebaseInputManager::new(
             config.firebase_url,
             config.firebase_email,

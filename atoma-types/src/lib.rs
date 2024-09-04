@@ -766,7 +766,7 @@ impl OutputDestination {
     pub fn request_id(&self) -> String {
         match self {
             Self::Firebase { request_id } => request_id.clone(),
-            Self::Ipfs { cid } => cid.clone(),
+            Self::Ipfs => unimplemented!("IPFS output destination not implemented"),
             Self::Gateway { .. } => unimplemented!("Gateway user id not implemented"),
         }
     }

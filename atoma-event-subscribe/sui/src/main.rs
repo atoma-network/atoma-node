@@ -43,7 +43,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
                 InputSource::Ipfs { cid, format } => format!("{cid}.{format:?}"),
                 InputSource::Raw { prompt } => prompt,
             };
-            if let Err(err) = oneshot.send(ModelInput::Text(data)) {
+            if let Err(err) = oneshot.send(Ok(ModelInput::Text(data))) {
                 error!("Failed to send response: {:?}", err);
             }
         }
