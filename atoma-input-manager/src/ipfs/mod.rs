@@ -3,7 +3,7 @@ use futures::TryStreamExt;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use tracing::{error, info, instrument};
 
-use crate::{AtomaInputManagerError};
+use crate::AtomaInputManagerError;
 
 /// IPFS input manager
 pub struct IpfsInputManager {

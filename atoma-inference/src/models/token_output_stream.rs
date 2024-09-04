@@ -87,7 +87,10 @@ impl TokenOutputStream {
     }
 
     /// Tries to decode the rest of the `String`, in
-    pub fn decode_rest(&self, output_source_id: Option<String>) -> Result<Option<String>, ModelError> {
+    pub fn decode_rest(
+        &self,
+        output_source_id: Option<String>,
+    ) -> Result<Option<String>, ModelError> {
         let prev_text = if self.tokens.is_empty() {
             String::new()
         } else {
@@ -139,7 +142,10 @@ impl TokenOutputStream {
     /// Ends the stream, through a special value, encapsulated in `END_STREAM`
     pub fn end_stream(&self, output_source_id: String) -> Result<(), ModelError> {
         self.stream_tx
-            .blocking_send(AtomaStreamingData::new(output_source_id, END_STREAM.to_string()))
+            .blocking_send(AtomaStreamingData::new(
+                output_source_id,
+                END_STREAM.to_string(),
+            ))
             .map_err(ModelError::SendError)
     }
 }

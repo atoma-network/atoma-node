@@ -906,7 +906,10 @@ pub struct AtomaStreamingData {
 
 impl AtomaStreamingData {
     pub fn new(output_source_id: String, data: String) -> Self {
-        Self { output_source_id, data }
+        Self {
+            output_source_id,
+            data,
+        }
     }
 
     pub fn data(&self) -> &String {

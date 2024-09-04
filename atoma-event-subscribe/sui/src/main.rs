@@ -31,8 +31,10 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let ws_url = args.ws_addr;
 
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
-    let (input_manager_tx, mut input_manager_rx) =
-        tokio::sync::mpsc::channel::<(InputSource, oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>)>(32);
+    let (input_manager_tx, mut input_manager_rx) = tokio::sync::mpsc::channel::<(
+        InputSource,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+    )>(32);
 
     // Spawn a task to discard messages
     tokio::spawn(async move {

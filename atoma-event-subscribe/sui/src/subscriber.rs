@@ -16,6 +16,13 @@ use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
+type BoxedSenderError = Box<
+    mpsc::error::SendError<(
+        InputSource,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+    )>,
+>;
+
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
 ///
@@ -353,15 +360,7 @@ pub enum SuiSubscriberError {
     #[error("Input manager error : `{0}`")]
     AtomaInputManagerError(#[from] AtomaInputManagerError),
     #[error("Sending input to input manager error: `{0}`")]
-    SendInputError(
-        #[from]
-        Box<
-            mpsc::error::SendError<(
-                InputSource,
-                oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
-            )>,
-        >,
-    ),
+    SendInputError(#[from] BoxedSenderError),
     #[error("Error while sending request to input manager: `{0}`")]
     InputManagerError(#[from] Box<tokio::sync::oneshot::error::RecvError>),
     #[error("Timeout error getting the input from the input manager")]
