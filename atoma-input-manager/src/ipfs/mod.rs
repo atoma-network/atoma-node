@@ -16,7 +16,8 @@ impl IpfsInputManager {
     #[tracing::instrument(skip_all)]
     pub async fn new(config: &AtomaInputManagerConfig) -> Result<Self, AtomaInputManagerError> {
         info!("Building IPFS client...");
-        let client = IpfsClient::from_str(config.ipfs_api_url.as_str())
+
+        let client = IpfsClient::from_multiaddr_str("https://ipfs.io/ipfs/")
             .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?
             .with_credentials(config.ipfs_username.clone(), config.ipfs_password.clone());
         match client.version().await {
