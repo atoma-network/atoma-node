@@ -6,12 +6,26 @@ use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use ipfs::IpfsInputManager;
 use thiserror::Error;
-use tokio::sync::mpsc;
-use tracing::{info, instrument};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
+use tracing::{info, instrument, trace};
 
 mod config;
 mod firebase;
 mod ipfs;
+
+type SendRequestError = mpsc::error::SendError<(
+    String,
+    InputFormat,
+    oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+)>;
+type IpfsRequestSender = mpsc::UnboundedSender<(
+    String,
+    InputFormat,
+    oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+)>;
 
 /// `AtomaInputManager` - manages different input sources
 ///     requests, allowing for a flexible interaction between
@@ -22,14 +36,16 @@ mod ipfs;
 pub struct AtomaInputManager {
     /// Firebase's input manager instance.
     firebase_input_manager: FirebaseInputManager,
-    /// IPFS's input manager instance.
-    ipfs_input_manager: IpfsInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
     input_manager_rx: mpsc::Receiver<(
         InputSource,
-        tokio::sync::oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
     )>,
+    /// A mpsc sender that sends requests to the IPFS input manager.
+    ipfs_request_tx: IpfsRequestSender,
+    /// The join handle to the IPFS input manager background task.
+    ipfs_join_handle: JoinHandle<Result<(), AtomaInputManagerError>>,
 }
 
 impl AtomaInputManager {
@@ -46,7 +62,11 @@ impl AtomaInputManager {
         info!("Starting Atoma Input Manager...");
         let start = std::time::Instant::now();
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
-        let ipfs_input_manager = IpfsInputManager::new().await?;
+        let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
+        let ipfs_join_handle = tokio::spawn(async move {
+            let ipfs_input_manager = IpfsInputManager::new(ipfs_request_rx).await?;
+            ipfs_input_manager.run().await
+        });
         let firebase_input_manager = FirebaseInputManager::new(
             config.firebase_url,
             config.firebase_email,
@@ -58,37 +78,67 @@ impl AtomaInputManager {
         .await?;
         info!("Atoma Input Manager started in {:?}", start.elapsed());
         Ok(Self {
-            ipfs_input_manager,
             firebase_input_manager,
             input_manager_rx,
+            ipfs_request_tx,
+            ipfs_join_handle,
         })
     }
 
     /// Main loop, responsible for continuously listening to incoming user prompts.
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaInputManagerError> {
-        info!("Starting firebase input service..");
+        info!("Starting `AtomaInputManager` service..");
         while let Some((input_source, oneshot)) = self.input_manager_rx.recv().await {
             info!(
                 "Received a new input to be submitted to a data storage {:?}..",
                 input_source
             );
-            let model_input = match input_source {
+            match input_source {
                 InputSource::Firebase { request_id } => {
-                    self.firebase_input_manager
+                    let model_input_result = self
+                        .firebase_input_manager
                         .handle_get_request(request_id)
-                        .await
+                        .await;
+                    oneshot
+                        .send(model_input_result)
+                        .map_err(|_| AtomaInputManagerError::SendPromptError)?;
                 }
-                InputSource::Ipfs { cid, format } => match format {
-                    InputFormat::Image => self.ipfs_input_manager.fetch_image(&cid).await,
-                    InputFormat::Text => self.ipfs_input_manager.fetch_text(&cid).await,
-                },
-                InputSource::Raw { prompt } => Ok(ModelInput::Text(prompt)),
-            };
-            oneshot
-                .send(model_input)
-                .map_err(|_| AtomaInputManagerError::SendPromptError)?;
+                InputSource::Ipfs { cid, format } => {
+                    self.ipfs_request_tx
+                        .send((cid, format, oneshot))
+                        .map_err(|_| AtomaInputManagerError::SendPromptError)?;
+                }
+                InputSource::Raw { prompt } => {
+                    oneshot
+                        .send(Ok(ModelInput::Text(prompt)))
+                        .map_err(|_| AtomaInputManagerError::SendPromptError)?;
+                }
+            }
         }
+        Ok(())
+    }
+
+    /// Graceful shutdown
+    #[instrument(skip_all)]
+    pub async fn shutdown(self) -> Result<(), AtomaInputManagerError> {
+        info!("Shutting down Atoma Input Manager...");
+
+        trace!("Dropping IPFS request tx...");
+        drop(self.ipfs_request_tx);
+
+        trace!("Aborting IPFS manager join handle...");
+        self.ipfs_join_handle.abort();
+
+        trace!("Waiting for IPFS manager to join...");
+        match self.ipfs_join_handle.await {
+            Ok(_) => Ok(()),
+            Err(e) if e.is_cancelled() => Ok(()),
+            Err(e) => Err(AtomaInputManagerError::JoinError(e)),
+        }?;
+
+        trace!("Dropping output manager receiver...");
+        drop(self.input_manager_rx);
 
         Ok(())
     }
@@ -118,4 +168,8 @@ pub enum AtomaInputManagerError {
     SendPromptError,
     #[error("Timeout error, could not get input from firebase in time")]
     TimeoutError,
+    #[error("Error sending request to IPFS input manager: `{0}`")]
+    SendRequestError(#[from] SendRequestError),
+    #[error("Join error: `{0}`")]
+    JoinError(#[from] tokio::task::JoinError),
 }

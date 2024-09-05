@@ -8,7 +8,7 @@ use gateway::GatewayOutputManager;
 use ipfs::IpfsOutputManager;
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{info, instrument};
+use tracing::{info, instrument, trace};
 
 mod config;
 mod firebase;
@@ -91,7 +91,9 @@ impl AtomaOutputManager {
                         .await?
                 }
                 OutputDestination::Ipfs => {
-                    self.ipfs_request_tx.send((output_metadata, output))?;
+                    self.ipfs_request_tx
+                        .send((output_metadata, output))
+                        .map_err(Box::new)?;
                     // TODO: we need to handle the response CID
                     // either by storing it in firebase, or submitting
                     // an on-chain transaction
@@ -103,6 +105,30 @@ impl AtomaOutputManager {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Graceful shutdown
+    #[instrument(skip_all)]
+    pub async fn stop(self) -> Result<(), AtomaOutputManagerError> {
+        info!("Stopping IPFS manager...");
+
+        trace!("Dropping IPFS request tx...");
+        drop(self.ipfs_request_tx);
+
+        trace!("Aborting IPFS manager join handle...");
+        self.ipfs_manager_join_handle.abort();
+
+        trace!("Waiting for IPFS manager to join...");
+        match self.ipfs_manager_join_handle.await {
+            Ok(_) => Ok(()),
+            Err(e) if e.is_cancelled() => Ok(()),
+            Err(e) => Err(AtomaOutputManagerError::JoinError(e)),
+        }?;
+
+        trace!("Dropping output manager receiver...");
+        drop(self.output_manager_rx);
 
         Ok(())
     }
@@ -129,7 +155,9 @@ pub enum AtomaOutputManagerError {
     #[error("Url parse error: `{0}`")]
     UrlParseError(#[from] url::ParseError),
     #[error("IPFS send request error: `{0}`")]
-    IpfsSendRequestError(#[from] IpfsSendRequestError),
-    #[error("Unknown IPFS error")]
-    UnknownIpfsError,
+    IpfsSendRequestError(#[from] Box<IpfsSendRequestError>),
+    #[error("Unknown IPFS error: `{0}`")]
+    IpfsError(#[from] ipfs_api_backend_hyper::Error),
+    #[error("Join error: `{0}`")]
+    JoinError(#[from] tokio::task::JoinError),
 }
