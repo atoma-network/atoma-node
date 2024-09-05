@@ -28,7 +28,7 @@ impl Firebase {
         email: String,
         password: String,
         api_key: String,
-        fireabase_url: &Url,
+        firebase_url: &Url,
         node_id: u64,
     ) -> Result<FirebaseAuth, FirebaseAuthError> {
         // This will prevent multiple calls to add_user from happening at the same time. Because in case the user doesn't exists it will trigger multiple signups.
@@ -36,7 +36,7 @@ impl Firebase {
         let mut firebase_auth = FirebaseAuth::new(email, password, api_key).await?;
         let client = Client::new();
         let token = firebase_auth.get_id_token().await?;
-        let mut url = fireabase_url.clone();
+        let mut url = firebase_url.clone();
         {
             let mut path_segment = url.path_segments_mut().unwrap();
             path_segment.push("nodes");
