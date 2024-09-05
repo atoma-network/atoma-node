@@ -60,8 +60,8 @@ impl FirebaseInputManager {
                 let text = response.text().await?;
                 let json: serde_json::Value = serde_json::from_str(&text)?;
                 let mut tokens = Vec::new();
-                let previous_transaction = json["prev"].as_str().unwrap();
-                if previous_transaction != "" {
+                if let Some(previous_transaction) = json.get("previous_transaction") {
+                    let previous_transaction = previous_transaction.as_str().unwrap();
                     // There is a previous transaction from which we can get the context tokens
                     let mut url = self.firebase_url.clone();
                     {
@@ -77,7 +77,7 @@ impl FirebaseInputManager {
                     if response.status().is_success() {
                         let text = response.text().await?;
                         let json: serde_json::Value = serde_json::from_str(&text)?;
-                        tokens = json["tokens"]
+                        tokens = json
                             .as_array()
                             .unwrap_or(&vec![])
                             .iter()
