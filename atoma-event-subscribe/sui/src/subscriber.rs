@@ -15,10 +15,6 @@ use tracing::{debug, error, info, instrument};
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 use atoma_types::{InputSource, Request, SmallId, NON_SAMPLED_NODE_ERR};
-
-/// The size of a request id, expressed in hex format
-const WAIT_FOR_INPUT_MANAGER_RESPONSE_SECS: u64 = 5;
-
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
 ///
@@ -46,7 +42,7 @@ pub struct SuiSubscriber {
     /// Input manager sender, responsible for sending the input metadata and a oneshot sender, to the input manager service to get back the user prompt.
     input_manager_tx: mpsc::Sender<(
         InputSource,
-        oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
     )>,
 }
 
@@ -61,7 +57,7 @@ impl SuiSubscriber {
         request_timeout: Option<Duration>,
         input_manager_tx: mpsc::Sender<(
             InputSource,
-            oneshot::Sender<Result<String, AtomaInputManagerError>>,
+            oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
         )>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
@@ -100,7 +96,7 @@ impl SuiSubscriber {
         event_sender: mpsc::Sender<Request>,
         input_manager_tx: mpsc::Sender<(
             InputSource,
-            oneshot::Sender<Result<String, AtomaInputManagerError>>,
+            oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
         )>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
@@ -238,9 +234,10 @@ impl SuiSubscriber {
             .send((request.params().prompt(), oneshot_sender))
             .await
             .map_err(Box::new)?;
-        let result = oneshot_receiver.await??;
+        let (prompt_text, preprompts) = oneshot_receiver.await??;
         // Replace the prompt string to the real prompt instead of the firebase user id.
-        request.set_raw_prompt(result);
+        request.set_raw_prompt(prompt_text);
+        request.set_preprompt_tokens(preprompts);
         info!("Received new request: {:?}", request);
         let request_id = request.id();
         info!(
@@ -351,7 +348,7 @@ pub enum SuiSubscriberError {
         Box<
             mpsc::error::SendError<(
                 InputSource,
-                oneshot::Sender<Result<String, AtomaInputManagerError>>,
+                oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
             )>,
         >,
     ),

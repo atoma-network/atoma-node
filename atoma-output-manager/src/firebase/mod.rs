@@ -58,18 +58,29 @@ impl FirebaseOutputManager {
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's output url: {:?}", url);
         debug!(
-            "Submitting to Firebase's real time storage, with metadata: {:?}",
+            "Submitting to Firebase's realtime database, with metadata: {:?}",
             output_metadata
         );
         let data = json!({
-            "data": {
-                "metadata": output_metadata,
-                "data": output,
-            },
+            "metadata": output_metadata,
+            "data": output,
         });
         let response = client.put(url).json(&data).send().await?;
         let text = response.text().await?;
-        info!("Received response with text: {text}");
+        if output_metadata.tokens.len() > 0 {
+            let mut url = self.firebase_url.clone();
+            {
+                let mut path_segment = url.path_segments_mut().map_err(|_| {
+                    AtomaOutputManagerError::UrlError("URL is not valid".to_string())
+                })?;
+                path_segment.push("data");
+                path_segment.push(&output_metadata.output_destination.request_id());
+                path_segment.push("tokens.json");
+            }
+            url.set_query(Some(&format!("auth={token}")));
+            let data = json!(output_metadata.tokens);
+            let response = client.put(url).json(&data).send().await?;
+        }
         Ok(())
     }
 }

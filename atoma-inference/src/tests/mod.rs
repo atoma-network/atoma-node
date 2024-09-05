@@ -45,6 +45,9 @@ impl LlmOutput for MockInputOutput {
     fn time_to_generate(&self) -> f64 {
         0.0
     }
+    fn tokens(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
 impl TryFrom<(Digest, PromptParams)> for MockInputOutput {

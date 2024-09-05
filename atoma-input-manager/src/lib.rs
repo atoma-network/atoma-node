@@ -24,7 +24,7 @@ pub struct AtomaInputManager {
     /// the actual user prompt, in JSON format.
     input_manager_rx: mpsc::Receiver<(
         InputSource,
-        tokio::sync::oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        tokio::sync::oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
     )>,
 }
 
@@ -34,7 +34,7 @@ impl AtomaInputManager {
         config_file_path: P,
         input_manager_rx: mpsc::Receiver<(
             InputSource,
-            tokio::sync::oneshot::Sender<Result<String, AtomaInputManagerError>>,
+            tokio::sync::oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
         )>,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
@@ -69,7 +69,7 @@ impl AtomaInputManager {
                         .handle_get_request(request_id)
                         .await
                 }
-                InputSource::Raw { prompt } => Ok(prompt),
+                InputSource::Raw { prompt } => Ok((prompt, vec![])),
             };
             oneshot
                 .send(text)
