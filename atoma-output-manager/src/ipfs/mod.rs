@@ -2,16 +2,21 @@ use atoma_types::AtomaOutputMetadata;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use serde_json::json;
 use tracing::{error, info, instrument};
+use tokio::sync::mpsc;
 
 use crate::AtomaOutputManagerError;
+
+type Output = Vec<u8>;
+
 pub struct IpfsOutputManager {
     client: IpfsClient,
+    ipfs_request_rx: mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output)>,
 }
 
 impl IpfsOutputManager {
     /// Constructor
     #[instrument(skip_all)]
-    pub async fn new() -> Result<Self, AtomaOutputManagerError> {
+    pub async fn new(ipfs_request_rx: mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output)>) -> Result<Self, AtomaOutputManagerError> {
         info!("Building IPFS client...");
         let client = IpfsClient::default();
         match client.version().await {
@@ -22,11 +27,15 @@ impl IpfsOutputManager {
                 );
             }
             Err(e) => {
-                error!("Failed to obtain IPFS client's version: {}", e);
+                error!(
+                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, run `$ ipfs daemon`"
+                );
             }
         }
-        Ok(Self { client })
+        Ok(Self { client, ipfs_request_rx })
     }
+
+    /// 
 }
 
 impl IpfsOutputManager {
