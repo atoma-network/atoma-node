@@ -90,6 +90,11 @@ impl Request {
     pub fn set_raw_prompt(&mut self, prompt: String) {
         self.params.set_raw_prompt(prompt);
     }
+
+    /// Set preprompts for the request
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        self.params.set_preprompt_tokens(pre_prompt_tokens);
+    }
 }
 
 impl TryFrom<(u64, Value)> for Request {
@@ -236,6 +241,13 @@ impl PromptParams {
         match self {
             Self::Text2TextPromptParams(p) => p.set_raw_prompt(prompt),
             Self::Text2ImagePromptParams(p) => p.set_raw_prompt(prompt),
+        }
+    }
+
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        match self {
+            Self::Text2TextPromptParams(p) => p.set_preprompt_tokens(pre_prompt_tokens),
+            Self::Text2ImagePromptParams(_) => unimplemented!("Preprompt tokens are not supported"),
         }
     }
 }
@@ -389,6 +401,10 @@ impl Text2TextPromptParams {
 
     pub fn set_raw_prompt(&mut self, prompt: String) {
         self.prompt = InputSource::Raw { prompt };
+    }
+
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        self.pre_prompt_tokens = pre_prompt_tokens;
     }
 
     pub fn get_input_text(&self) -> String {
@@ -687,7 +703,7 @@ impl Response {
 }
 
 impl Response {
-    /// Extracts the number of `input_tokens` from the request's propmpt
+    /// Extracts the number of `input_tokens` from the request's prompt
     pub fn input_tokens(&self) -> u64 {
         self.response["input_tokens"].as_u64().unwrap_or(0)
     }
@@ -700,6 +716,14 @@ impl Response {
     /// The duration, in seconds, taken to generate the current output
     pub fn time_to_generate(&self) -> f64 {
         self.response["time"].as_f64().unwrap_or(0.0)
+    }
+
+    /// Tokens generated
+    pub fn tokens(&self) -> Vec<u32> {
+        self.response["tokens"]
+            .as_array()
+            .map(|v| v.iter().map(|t| t.as_u64().unwrap_or(0) as u32).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -778,6 +802,8 @@ pub struct AtomaOutputMetadata {
     pub output_destination: OutputDestination,
     /// The output type (e.g. `Text`, `Image`)
     pub output_type: OutputType,
+    /// Tokens generated
+    pub tokens: Vec<u32>,
 }
 
 mod utils {

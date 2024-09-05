@@ -60,7 +60,7 @@ impl GatewayOutputManager {
                 gateway_user_id
             } else {
                 return Err(AtomaOutputManagerError::InvalidOutputDestination(
-                    "Missing `gateway_user_id` from `OutputDestinty".into(),
+                    "Missing `gateway_user_id` from `OutputDestination".into(),
                 ));
             };
         let query = format!(

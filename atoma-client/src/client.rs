@@ -217,6 +217,7 @@ impl AtomaSuiClient {
                         leaf_hash: pre_image.to_vec(),
                         output_destination,
                         output_type,
+                        tokens: response.tokens(),
                     };
 
                     self.output_manager_tx
