@@ -401,4 +401,7 @@ impl LlmOutput for FluxOutput {
     fn time_to_generate(&self) -> f64 {
         self.time_to_generate
     }
+    fn tokens(&self) -> Vec<u32> {
+        panic!("Asking image models for the tokens is not supported")
+    }
 }

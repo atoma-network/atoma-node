@@ -91,6 +91,16 @@ impl Request {
         self.params.set_raw_prompt(prompt);
     }
 
+    /// Once we get an image,
+    pub fn set_image_path(&mut self, path: String) {
+        self.params.set_image_path(path);
+    }
+
+    /// Set preprompts for the request
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        self.params.set_preprompt_tokens(pre_prompt_tokens);
+    }
+
     /// Image to image request
     pub fn set_raw_image(&mut self, image_bytes: Vec<u8>) {
         self.params.set_raw_image(image_bytes);
@@ -256,6 +266,23 @@ impl ModelParams {
             }
         }
     }
+
+    /// Sets the image path for `Text2ImageModelParams` variant
+    pub fn set_image_path(&mut self, path: String) {
+        match self {
+            Self::Text2ImageModelParams(p) => p.set_image_path(path),
+            Self::Text2TextModelParams(_) => {
+                unreachable!("Setting image path for Text2TextModelParams is not allowed")
+            }
+        }
+    }
+
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        match self {
+            Self::Text2TextModelParams(p) => p.set_preprompt_tokens(pre_prompt_tokens),
+            Self::Text2ImageModelParams(_) => unimplemented!("Preprompt tokens are not supported"),
+        }
+    }
 }
 
 impl TryFrom<Value> for ModelParams {
@@ -409,6 +436,10 @@ impl Text2TextModelParams {
         self.prompt = InputSource::Raw { prompt };
     }
 
+    pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
+        self.pre_prompt_tokens = pre_prompt_tokens;
+    }
+
     pub fn get_input_text(&self) -> String {
         match &self.prompt {
             InputSource::Firebase { .. } => {
@@ -489,6 +520,8 @@ pub struct Text2ImageModelParams {
     guidance_scale: Option<f64>,
     /// Image to image (optional)
     img2img: Option<Vec<u8>>,
+    /// Image path (optional)
+    img_path: Option<String>,
     /// Image to image strength
     img2img_strength: f64,
     /// The random seed for inference sampling
@@ -511,6 +544,7 @@ impl Text2ImageModelParams {
         guidance_scale: Option<f64>,
         img2img: Option<Vec<u8>>,
         img2img_strength: f64,
+        img_path: Option<String>,
         random_seed: Option<u32>,
         decode_only: Option<String>,
     ) -> Self {
@@ -525,6 +559,7 @@ impl Text2ImageModelParams {
             guidance_scale,
             img2img,
             img2img_strength,
+            img_path,
             random_seed,
             decode_only,
         }
@@ -608,6 +643,11 @@ impl Text2ImageModelParams {
         self.decode_only.clone()
     }
 
+    /// Sets the image path for `Text2ImageModelParams` variant
+    pub fn set_image_path(&mut self, path: String) {
+        self.img_path = Some(path);
+    }
+
     /// Sets the image to image value for `Text2ImageModelParams` variant
     pub fn set_raw_image(&mut self, image_bytes: Vec<u8>) {
         self.img2img = Some(image_bytes);
@@ -632,6 +672,7 @@ impl TryFrom<Value> for Text2ImageModelParams {
             guidance_scale: Some(utils::parse_f32_from_le_bytes(&value["guidance_scale"])? as f64),
             img2img: utils::parse_optional_bytes(&value["img2img"]),
             img2img_strength: utils::parse_f32_from_le_bytes(&value["img2img_strength"])? as f64,
+            img_path: utils::parse_optional_str(&value["img_path"]),
             decode_only: utils::parse_optional_str(&value["decode_only"]),
         })
     }
@@ -716,7 +757,7 @@ impl Response {
 }
 
 impl Response {
-    /// Extracts the number of `input_tokens` from the request's propmpt
+    /// Extracts the number of `input_tokens` from the request's prompt
     pub fn input_tokens(&self) -> u64 {
         self.response["input_tokens"].as_u64().unwrap_or(0)
     }
@@ -730,6 +771,14 @@ impl Response {
     pub fn time_to_generate(&self) -> f64 {
         self.response["time"].as_f64().unwrap_or(0.0)
     }
+
+    /// Tokens generated
+    pub fn tokens(&self) -> Vec<u32> {
+        self.response["tokens"]
+            .as_array()
+            .map(|v| v.iter().map(|t| t.as_u64().unwrap_or(0) as u32).collect())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -740,6 +789,7 @@ pub enum InputFormat {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum ModelInput {
+    Chat((String, Vec<u32>)),
     ImageBytes(Vec<u8>),
     ImageFile(String),
     Text(String),
@@ -824,6 +874,8 @@ pub struct AtomaOutputMetadata {
     pub output_destination: OutputDestination,
     /// The output type (e.g. `Text`, `Image`)
     pub output_type: OutputType,
+    /// Tokens generated
+    pub tokens: Vec<u32>,
 }
 
 mod utils {

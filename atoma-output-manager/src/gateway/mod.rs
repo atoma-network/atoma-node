@@ -94,7 +94,7 @@ fn build_text_query(
         gateway_user_id
     } else {
         return Err(AtomaOutputManagerError::InvalidOutputDestination(
-            "Missing `gateway_user_id` from `OutputDestinty".into(),
+            "Missing `gateway_user_id` from `OutputDestination".into(),
         ));
     };
     Ok(format!(
@@ -165,7 +165,7 @@ fn build_image_query(
         gateway_user_id
     } else {
         return Err(AtomaOutputManagerError::InvalidOutputDestination(
-            "Missing `gateway_user_id` from `OutputDestinty".into(),
+            "Missing `gateway_user_id` from `OutputDestination".into(),
         ));
     };
     Ok(format!(

@@ -29,6 +29,11 @@ type IpfsRequestSender = mpsc::UnboundedSender<(
     oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
 )>;
 
+type InputManagerReceiver = mpsc::Receiver<(
+    InputSource,
+    oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+)>;
+
 /// `AtomaInputManager` - manages different input sources
 ///     requests, allowing for a flexible interaction between
 ///     the user and the Atoma Network.
@@ -40,10 +45,7 @@ pub struct AtomaInputManager {
     firebase_input_manager: FirebaseInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
-    input_manager_rx: mpsc::Receiver<(
-        InputSource,
-        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
-    )>,
+    input_manager_rx: InputManagerReceiver,
     /// A mpsc sender that sends requests to the IPFS input manager.
     ipfs_request_tx: IpfsRequestSender,
     /// The join handle to the IPFS input manager background task.
@@ -55,10 +57,7 @@ impl AtomaInputManager {
     #[instrument(skip_all)]
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        input_manager_rx: mpsc::Receiver<(
-            InputSource,
-            tokio::sync::oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
-        )>,
+        input_manager_rx: InputManagerReceiver,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
         info!("Starting Atoma Input Manager...");
@@ -117,7 +116,7 @@ impl AtomaInputManager {
                 InputSource::Firebase { request_id } => {
                     let model_input_result = self
                         .firebase_input_manager
-                        .handle_get_request(request_id)
+                        .handle_chat_request(request_id)
                         .await;
                     oneshot
                         .send(model_input_result)

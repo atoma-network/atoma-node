@@ -501,6 +501,8 @@ pub trait LlmOutput: Serialize {
     fn num_output_tokens(&self) -> Option<usize>;
     /// Time to generate the output
     fn time_to_generate(&self) -> f64;
+    /// The tokens generated
+    fn tokens(&self) -> Vec<u32>;
 }
 
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
@@ -545,6 +547,10 @@ impl LlmOutput for TextModelOutput {
 
     fn time_to_generate(&self) -> f64 {
         self.time
+    }
+
+    fn tokens(&self) -> Vec<u32> {
+        self.tokens.clone()
     }
 }
 

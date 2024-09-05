@@ -14,6 +14,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
+
 use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
 
 type BoxedSenderError = Box<
@@ -249,10 +250,14 @@ impl SuiSubscriber {
                 request.set_raw_image(bytes);
             }
             ModelInput::ImageFile(path) => {
-                request.set_raw_prompt(path);
+                request.set_image_path(path);
             }
             ModelInput::Text(text) => {
                 request.set_raw_prompt(text);
+            }
+            ModelInput::Chat((text, preprompts)) => {
+                request.set_raw_prompt(text);
+                request.set_preprompt_tokens(preprompts);
             }
         }
         info!("Received new request: {:?}", request);

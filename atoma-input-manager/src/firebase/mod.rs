@@ -35,10 +35,10 @@ impl FirebaseInputManager {
         })
     }
 
-    /// Handles  a new post request. Encapsulates the logic necessary
+    /// Handles  a new chat request. Encapsulates the logic necessary
     /// to post new requests, using `reqwest::Client`.
     #[instrument(skip_all)]
-    pub async fn handle_get_request(
+    pub async fn handle_chat_request(
         &mut self,
         request_id: String,
     ) -> Result<ModelInput, AtomaInputManagerError> {
@@ -51,8 +51,7 @@ impl FirebaseInputManager {
                 .map_err(|_| AtomaInputManagerError::UrlError("URL is not valid".to_string()))?;
             path_segment.push("data");
             path_segment.push(&request_id);
-            path_segment.push("prompt");
-            path_segment.push("data.json");
+            path_segment.push("prompt.json");
         }
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's input url: {:?}", url);
@@ -60,8 +59,37 @@ impl FirebaseInputManager {
             let response = client.get(url.clone()).send().await?;
             if response.status().is_success() {
                 let text = response.text().await?;
-                info!("Received response with text: {text}");
-                return Ok(ModelInput::Text(text));
+                let json: serde_json::Value = serde_json::from_str(&text)?;
+                let mut tokens = Vec::new();
+                if let Some(previous_transaction) = json.get("previous_transaction") {
+                    let previous_transaction = previous_transaction.as_str().unwrap();
+                    // There is a previous transaction from which we can get the context tokens
+                    let mut url = self.firebase_url.clone();
+                    {
+                        let mut path_segment = url.path_segments_mut().map_err(|_| {
+                            AtomaInputManagerError::UrlError("URL is not valid".to_string())
+                        })?;
+                        path_segment.push("data");
+                        path_segment.push(previous_transaction);
+                        path_segment.push("tokens.json");
+                    }
+                    url.set_query(Some(&format!("auth={token}")));
+                    let response = client.get(url).send().await?;
+                    if response.status().is_success() {
+                        let text = response.text().await?;
+                        let json: serde_json::Value = serde_json::from_str(&text)?;
+                        tokens = json
+                            .as_array()
+                            .unwrap_or(&vec![])
+                            .iter()
+                            .map(|value| value.as_u64().unwrap_or_default() as u32)
+                            .collect();
+                    }
+                }
+                return Ok(ModelInput::Chat((
+                    json["data"].as_str().unwrap().to_string(),
+                    tokens,
+                )));
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(SLEEP_BETWEEN_REQUESTS_SEC)).await;
         }

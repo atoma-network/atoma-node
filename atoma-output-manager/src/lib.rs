@@ -182,4 +182,6 @@ pub enum AtomaOutputManagerError {
     IpfsError(#[from] ipfs_api_backend_hyper::Error),
     #[error("Join error: `{0}`")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("Firebase error: `{0}`")]
+    FirebaseError(String),
 }

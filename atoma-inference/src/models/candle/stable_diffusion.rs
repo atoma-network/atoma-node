@@ -103,6 +103,10 @@ impl LlmOutput for StableDiffusionOutput {
     fn time_to_generate(&self) -> f64 {
         self.time_to_generate
     }
+
+    fn tokens(&self) -> Vec<u32> {
+        panic!("Asking image models for the tokens is not supported")
+    }
 }
 
 impl ModelTrait for StableDiffusion {

@@ -1,8 +1,8 @@
 use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::{AtomaOutputMetadata, OutputType};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde_json::json;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::AtomaOutputManagerError;
@@ -58,17 +58,15 @@ impl FirebaseOutputManager {
         url.set_query(Some(&format!("auth={token}")));
         info!("Firebase's output url: {:?}", url);
         debug!(
-            "Submitting to Firebase's real time storage, with metadata: {:?}",
+            "Submitting to Firebase's realtime database, with metadata: {:?}",
             output_metadata
         );
         let data = match output_metadata.output_type {
             OutputType::Text => {
                 let output = String::from_utf8(output)?;
                 json!({
-                    "data": {
-                        "metadata": output_metadata,
-                        "data": output,
-                    },
+                    "metadata": output_metadata,
+                    "data": output,
                 })
             }
             OutputType::Image => {
@@ -83,16 +81,46 @@ impl FirebaseOutputManager {
 
                 let output = output[..output.len() - 8].to_vec();
                 json!({
-                    "data": {
-                        "metadata": output_metadata,
-                        "data": (output, height, width),
-                    }
+                    "metadata": output_metadata,
+                    "data": (output, height, width),
                 })
             }
         };
-        let response = client.put(url).json(&data).send().await?;
-        let text = response.text().await?;
-        info!("Received response with text: {text}");
+        submit_put_request(&client, url, &data).await?;
+        if !output_metadata.tokens.is_empty() {
+            let mut url = self.firebase_url.clone();
+            {
+                let mut path_segment = url.path_segments_mut().map_err(|_| {
+                    AtomaOutputManagerError::UrlError("URL is not valid".to_string())
+                })?;
+                path_segment.push("data");
+                path_segment.push(&output_metadata.output_destination.request_id());
+                path_segment.push("tokens.json");
+            }
+            url.set_query(Some(&format!("auth={token}")));
+            let data = json!(output_metadata.tokens);
+            submit_put_request(&client, url, &data).await?;
+        }
         Ok(())
     }
+}
+
+async fn submit_put_request(
+    client: &Client,
+    url: Url,
+    data: &serde_json::Value,
+) -> Result<(), AtomaOutputManagerError> {
+    match client.put(url).json(data).send().await?.status() {
+        StatusCode::OK => {
+            info!("Output submitted to Firebase successfully");
+        }
+        status => {
+            error!("Failed to submit to Firebase, with status: {:?}", status);
+            return Err(AtomaOutputManagerError::FirebaseError(format!(
+                "Failed to submit to Firebase, with status: {:?}",
+                status
+            )));
+        }
+    }
+    Ok(())
 }
