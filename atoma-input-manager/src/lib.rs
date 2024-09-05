@@ -5,12 +5,13 @@ use atoma_types::{InputFormat, InputSource, ModelInput};
 use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use ipfs::IpfsInputManager;
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
 };
-use tracing::{info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 mod config;
 mod firebase;
@@ -21,6 +22,7 @@ type SendRequestError = mpsc::error::SendError<(
     InputFormat,
     oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
 )>;
+
 type IpfsRequestSender = mpsc::UnboundedSender<(
     String,
     InputFormat,
@@ -45,7 +47,7 @@ pub struct AtomaInputManager {
     /// A mpsc sender that sends requests to the IPFS input manager.
     ipfs_request_tx: IpfsRequestSender,
     /// The join handle to the IPFS input manager background task.
-    ipfs_join_handle: JoinHandle<Result<(), AtomaInputManagerError>>,
+    ipfs_join_handle: Option<JoinHandle<Result<(), AtomaInputManagerError>>>,
 }
 
 impl AtomaInputManager {
@@ -63,10 +65,27 @@ impl AtomaInputManager {
         let start = std::time::Instant::now();
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
-        let ipfs_join_handle = tokio::spawn(async move {
-            let ipfs_input_manager = IpfsInputManager::new(ipfs_request_rx).await?;
-            ipfs_input_manager.run().await
-        });
+
+        info!("Building IPFS client...");
+        let client = IpfsClient::default();
+
+        let ipfs_join_handle = match client.version().await {
+            Ok(version) => {
+                info!(
+                    "IPFS client built successfully, with version = {:?}",
+                    version
+                );
+                let ipfs_join_handle = tokio::spawn(async move {
+                    let ipfs_input_manager = IpfsInputManager::new(client, ipfs_request_rx).await?;
+                    ipfs_input_manager.run().await
+                });
+                Some(ipfs_join_handle)
+            }
+            Err(e) => {
+                error!("Failed to obtain IPFS client's version: {}", e);
+                None
+            }
+        };
         let firebase_input_manager = FirebaseInputManager::new(
             config.firebase_url,
             config.firebase_email,
@@ -128,14 +147,16 @@ impl AtomaInputManager {
         drop(self.ipfs_request_tx);
 
         trace!("Aborting IPFS manager join handle...");
-        self.ipfs_join_handle.abort();
+        if let Some(handle) = self.ipfs_join_handle {
+            handle.abort();
 
-        trace!("Waiting for IPFS manager to join...");
-        match self.ipfs_join_handle.await {
-            Ok(_) => Ok(()),
-            Err(e) if e.is_cancelled() => Ok(()),
-            Err(e) => Err(AtomaInputManagerError::JoinError(e)),
-        }?;
+            trace!("Waiting for IPFS manager to join...");
+            match handle.await {
+                Ok(_) => Ok(()),
+                Err(e) if e.is_cancelled() => Ok(()),
+                Err(e) => Err(AtomaInputManagerError::JoinError(e)),
+            }?;
+        }
 
         trace!("Dropping output manager receiver...");
         drop(self.input_manager_rx);

@@ -6,9 +6,10 @@ use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
 use ipfs::IpfsOutputManager;
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 mod config;
 mod firebase;
@@ -27,7 +28,7 @@ pub struct AtomaOutputManager {
     /// Firebase's output manager instance.
     firebase_output_manager: FirebaseOutputManager,
     /// IPFS's join handle related to the IPFS output manager background task.
-    ipfs_manager_join_handle: JoinHandle<Result<(), AtomaOutputManagerError>>,
+    ipfs_join_handle: Option<JoinHandle<Result<(), AtomaOutputManagerError>>>,
     /// Request sender to the IPFS manager background task.
     ipfs_request_tx: mpsc::UnboundedSender<(AtomaOutputMetadata, Vec<u8>)>,
     /// Gateway's output manager.
@@ -58,16 +59,35 @@ impl AtomaOutputManager {
         let gateway_output_manager =
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
 
+        info!("Building IPFS client...");
+        let client = IpfsClient::default();
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
-        let ipfs_manager_join_handle = tokio::spawn(async move {
-            let mut ipfs_output_manager = IpfsOutputManager::new(ipfs_request_rx).await?;
-            ipfs_output_manager.run().await?;
-            Ok(())
-        });
+
+        let ipfs_join_handle = match client.version().await {
+            Ok(version) => {
+                info!(
+                    "IPFS client built successfully, with version = {:?}",
+                    version
+                );
+                let ipfs_join_handle = tokio::spawn(async move {
+                    let mut ipfs_output_manager =
+                        IpfsOutputManager::new(client, ipfs_request_rx).await?;
+                    ipfs_output_manager.run().await?;
+                    Ok(())
+                });
+                Some(ipfs_join_handle)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, run `$ ipfs daemon`"
+                );
+                None
+            }
+        };
 
         Ok(Self {
             firebase_output_manager,
-            ipfs_manager_join_handle,
+            ipfs_join_handle,
             ipfs_request_tx,
             gateway_output_manager,
             output_manager_rx,
@@ -118,14 +138,16 @@ impl AtomaOutputManager {
         drop(self.ipfs_request_tx);
 
         trace!("Aborting IPFS manager join handle...");
-        self.ipfs_manager_join_handle.abort();
+        if let Some(handle) = self.ipfs_join_handle {
+            handle.abort();
 
-        trace!("Waiting for IPFS manager to join...");
-        match self.ipfs_manager_join_handle.await {
-            Ok(_) => Ok(()),
-            Err(e) if e.is_cancelled() => Ok(()),
-            Err(e) => Err(AtomaOutputManagerError::JoinError(e)),
-        }?;
+            trace!("Waiting for IPFS manager to join...");
+            match handle.await {
+                Ok(_) => Ok(()),
+                Err(e) if e.is_cancelled() => Ok(()),
+                Err(e) => Err(AtomaOutputManagerError::JoinError(e)),
+            }?;
+        }
 
         trace!("Dropping output manager receiver...");
         drop(self.output_manager_rx);

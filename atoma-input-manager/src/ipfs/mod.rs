@@ -2,7 +2,7 @@ use atoma_types::{InputFormat, ModelInput};
 use futures::TryStreamExt;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use tokio::sync::{mpsc, oneshot::Sender};
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 use crate::AtomaInputManagerError;
 
@@ -24,21 +24,10 @@ pub struct IpfsInputManager {
 impl IpfsInputManager {
     /// Constructor
     #[tracing::instrument(skip_all)]
-    pub async fn new(ipfs_request_rx: IpfsRequestReceiver) -> Result<Self, AtomaInputManagerError> {
-        info!("Building IPFS client...");
-
-        let client = IpfsClient::default();
-        match client.version().await {
-            Ok(version) => {
-                info!(
-                    "IPFS client built successfully, with version = {:?}",
-                    version
-                );
-            }
-            Err(e) => {
-                error!("Failed to obtain IPFS client's version: {}", e);
-            }
-        }
+    pub async fn new(
+        client: IpfsClient,
+        ipfs_request_rx: IpfsRequestReceiver,
+    ) -> Result<Self, AtomaInputManagerError> {
         Ok(Self {
             client,
             ipfs_request_rx,

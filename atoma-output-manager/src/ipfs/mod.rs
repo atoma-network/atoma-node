@@ -18,23 +18,9 @@ impl IpfsOutputManager {
     /// Constructor
     #[instrument(skip_all)]
     pub async fn new(
+        client: IpfsClient,
         ipfs_request_rx: mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output)>,
     ) -> Result<Self, AtomaOutputManagerError> {
-        info!("Building IPFS client...");
-        let client = IpfsClient::default();
-        match client.version().await {
-            Ok(version) => {
-                info!(
-                    "IPFS client built successfully, with version = {:?}",
-                    version
-                );
-            }
-            Err(e) => {
-                error!(
-                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, run `$ ipfs daemon`"
-                );
-            }
-        }
         Ok(Self {
             client,
             ipfs_request_rx,
