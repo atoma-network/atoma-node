@@ -1,5 +1,8 @@
 mod auth;
+mod config;
+use atoma_types::SmallId;
 pub use auth::*;
+pub use config::*;
 use reqwest::{Client, Url};
 use serde_json::json;
 use std::sync::Arc;
@@ -7,48 +10,42 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Firebase {
-    add_user_lock: Arc<Mutex<()>>,
-}
-
-impl Default for Firebase {
-    fn default() -> Self {
-        Self::new()
-    }
+    auth: Arc<Mutex<FirebaseAuth>>,
+    url: Url,
 }
 
 impl Firebase {
-    pub fn new() -> Self {
-        Self {
-            add_user_lock: Arc::new(Mutex::new(())),
-        }
-    }
-
-    pub async fn add_user(
-        &self,
-        email: String,
-        password: String,
+    pub async fn new(
         api_key: String,
-        firebase_url: &Url,
-        node_id: u64,
-    ) -> Result<FirebaseAuth, FirebaseAuthError> {
-        // This will prevent multiple calls to add_user from happening at the same time. Because in case the user doesn't exists it will trigger multiple signups.
-        let _guard = self.add_user_lock.lock().await;
-        let mut firebase_auth = FirebaseAuth::new(email, password, api_key).await?;
+        url: Url,
+        node_id: SmallId,
+    ) -> Result<Self, FirebaseAuthError> {
+        let mut auth = FirebaseAuth::new(api_key).await?;
         let client = Client::new();
-        let token = firebase_auth.get_id_token().await?;
-        let mut url = firebase_url.clone();
+        let token = auth.get_id_token().await?;
+        let mut add_node_url = url.clone();
         {
-            let mut path_segment = url.path_segments_mut().unwrap();
+            let mut path_segment = add_node_url.path_segments_mut().unwrap();
             path_segment.push("nodes");
-            path_segment.push(&format!("{}.json", firebase_auth.get_local_id()?));
+            path_segment.push(&format!("{}.json", auth.get_local_id()?));
         }
-        url.set_query(Some(&format!("auth={token}")));
+        add_node_url.set_query(Some(&format!("auth={token}")));
         let data = json!({
             "id":node_id.to_string()
         });
-        let response = client.put(url).json(&data).send().await?;
-        response.text().await?;
+        client.put(add_node_url).json(&data).send().await?;
 
-        Ok(firebase_auth)
+        Ok(Self {
+            auth: Arc::new(Mutex::new(auth)),
+            url,
+        })
+    }
+
+    pub fn get_auth(&self) -> Arc<Mutex<FirebaseAuth>> {
+        Arc::clone(&self.auth)
+    }
+
+    pub fn get_url(&self) -> Url {
+        self.url.clone()
     }
 }

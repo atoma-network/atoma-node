@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::AtomaOutputMetadata;
 use reqwest::Client;
 use serde_json::json;
+use tokio::sync::Mutex;
 use tracing::{debug, info, instrument};
 use url::Url;
 
@@ -14,26 +17,18 @@ use crate::AtomaOutputManagerError;
 pub struct FirebaseOutputManager {
     /// The Atoma's firebase URL
     firebase_url: Url,
-    auth: FirebaseAuth,
+    auth: Arc<Mutex<FirebaseAuth>>,
 }
 
 impl FirebaseOutputManager {
     /// Constructor
-    pub async fn new(
-        firebase_url: String,
-        email: String,
-        password: String,
-        api_key: String,
+    pub fn new(
         firebase: Firebase,
-        node_id: u64,
-    ) -> Result<Self, AtomaOutputManagerError> {
-        let firebase_url = Url::parse(&firebase_url)?;
-        Ok(Self {
-            auth: firebase
-                .add_user(email, password, api_key, &firebase_url, node_id)
-                .await?,
-            firebase_url,
-        })
+    ) -> Self {
+        Self {
+            auth: firebase.get_auth(),
+            firebase_url:firebase.get_url(),
+        }
     }
 
     /// Handles  a new post request. Encapsulates the logic necessary
@@ -45,7 +40,7 @@ impl FirebaseOutputManager {
         output: String,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
-        let token = self.auth.get_id_token().await?;
+        let token = self.auth.lock().await.get_id_token().await?;
         let mut url = self.firebase_url.clone();
         {
             let mut path_segment = url
@@ -65,8 +60,7 @@ impl FirebaseOutputManager {
             "metadata": output_metadata,
             "data": output,
         });
-        let response = client.put(url).json(&data).send().await?;
-        let text = response.text().await?;
+        client.put(url).json(&data).send().await?;
         if output_metadata.tokens.len() > 0 {
             let mut url = self.firebase_url.clone();
             {
@@ -79,7 +73,7 @@ impl FirebaseOutputManager {
             }
             url.set_query(Some(&format!("auth={token}")));
             let data = json!(output_metadata.tokens);
-            let response = client.put(url).json(&data).send().await?;
+            client.put(url).json(&data).send().await?;
         }
         Ok(())
     }

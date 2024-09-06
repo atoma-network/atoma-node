@@ -1,14 +1,10 @@
-use std::path::Path;
-
 use atoma_helpers::Firebase;
 use atoma_types::InputSource;
-use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{info, instrument};
 
-mod config;
 mod firebase;
 
 /// `AtomaInputManager` - manages different input sources
@@ -30,28 +26,19 @@ pub struct AtomaInputManager {
 
 impl AtomaInputManager {
     /// Constructor
-    pub async fn new<P: AsRef<Path>>(
-        config_file_path: P,
+    pub fn new(
         input_manager_rx: mpsc::Receiver<(
             InputSource,
             tokio::sync::oneshot::Sender<Result<(String, Vec<u32>), AtomaInputManagerError>>,
         )>,
         firebase: Firebase,
-    ) -> Result<Self, AtomaInputManagerError> {
-        let config = AtomaInputManagerConfig::from_file_path(config_file_path);
-        let firebase_input_manager = FirebaseInputManager::new(
-            config.firebase_url,
-            config.firebase_email,
-            config.firebase_password,
-            config.firebase_api_key,
-            firebase,
-            config.small_id,
-        )
-        .await?;
-        Ok(Self {
+    ) -> Self {
+        let firebase_input_manager =
+            FirebaseInputManager::new(firebase);
+        Self {
             firebase_input_manager,
             input_manager_rx,
-        })
+        }
     }
 
     /// Main loop, responsible for continuously listening to incoming user prompts.
