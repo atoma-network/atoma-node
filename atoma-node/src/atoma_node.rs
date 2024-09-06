@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
-use atoma_helpers::Firebase;
+use atoma_helpers::{Firebase, FirebaseConfig};
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
@@ -44,7 +44,13 @@ impl AtomaNode {
         let (input_manager_tx, input_manager_rx) = mpsc::channel(CHANNEL_SIZE);
         let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
 
-        let firebase = Firebase::new();
+        let firebase_config = FirebaseConfig::from_file_path(config_path.clone());
+        let firebase = Firebase::new(
+            firebase_config.api_key(),
+            firebase_config.url()?,
+            firebase_config.small_id(),
+        )
+        .await?;
 
         let span = Span::current();
         let model_service_handle = {
@@ -120,14 +126,13 @@ impl AtomaNode {
         };
 
         let atoma_input_manager_handle = {
-            let config_path = config_path.clone();
             let firebase = firebase.clone();
             let span = span.clone();
             tokio::spawn(async move {
                 let _enter = span.enter();
                 info!("Starting Atoma input manager service..");
                 let atoma_input_manager =
-                    AtomaInputManager::new(config_path, input_manager_rx, firebase).await?;
+                    AtomaInputManager::new(input_manager_rx, firebase).await?;
                 atoma_input_manager.run().await.map_err(|e| {
                     error!("Error with Atoma input manager: {e}");
                     AtomaNodeError::AtomaInputManagerError(e)
@@ -138,8 +143,7 @@ impl AtomaNode {
         let atoma_streamer_handle = tokio::spawn(async move {
             let _enter = span.enter();
             info!("Starting Atoma streamer service..");
-            let atoma_streamer =
-                AtomaStreamer::new_from_config(config_path, streamer_rx, firebase).await?;
+            let atoma_streamer = AtomaStreamer::new(streamer_rx, firebase).await?;
             atoma_streamer.run().await.map_err(|e| {
                 error!("Error with Atoma streamer: {e}");
                 AtomaNodeError::AtomaStreamerError(e)
@@ -200,4 +204,8 @@ pub enum AtomaNodeError {
     AtomaStreamerError(#[from] AtomaStreamerError),
     #[error("Tokio failed to join task: `{0}`")]
     JoinError(#[from] JoinError),
+    #[error("Url parse error: `{0}`")]
+    UrlParseError(#[from] url::ParseError),
+    #[error("Firebase authentication error: `{0}`")]
+    FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
 }

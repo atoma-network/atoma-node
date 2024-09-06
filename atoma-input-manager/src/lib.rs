@@ -1,8 +1,5 @@
-use std::path::Path;
-
 use atoma_helpers::Firebase;
 use atoma_types::{InputFormat, InputSource, ModelInput};
-use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use ipfs::IpfsInputManager;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
@@ -13,7 +10,6 @@ use tokio::{
 };
 use tracing::{error, info, instrument, trace};
 
-mod config;
 mod firebase;
 mod ipfs;
 
@@ -55,14 +51,12 @@ pub struct AtomaInputManager {
 impl AtomaInputManager {
     /// Constructor
     #[instrument(skip_all)]
-    pub async fn new<P: AsRef<Path>>(
-        config_file_path: P,
+    pub async fn new(
         input_manager_rx: InputManagerReceiver,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
         info!("Starting Atoma Input Manager...");
         let start = std::time::Instant::now();
-        let config = AtomaInputManagerConfig::from_file_path(config_file_path);
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
 
         info!("Building IPFS client...");
@@ -85,15 +79,7 @@ impl AtomaInputManager {
                 None
             }
         };
-        let firebase_input_manager = FirebaseInputManager::new(
-            config.firebase_url,
-            config.firebase_email,
-            config.firebase_password,
-            config.firebase_api_key,
-            firebase,
-            config.small_id,
-        )
-        .await?;
+        let firebase_input_manager = FirebaseInputManager::new(firebase);
         info!("Atoma Input Manager started in {:?}", start.elapsed());
         Ok(Self {
             firebase_input_manager,

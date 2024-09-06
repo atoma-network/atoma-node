@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::ModelInput;
 use reqwest::Client;
+use tokio::sync::Mutex;
 use tracing::{info, instrument};
 use url::Url;
 
@@ -13,26 +16,16 @@ const SLEEP_BETWEEN_REQUESTS_SEC: u64 = 1;
 pub struct FirebaseInputManager {
     /// The Atoma's firebase URL
     firebase_url: Url,
-    auth: FirebaseAuth,
+    auth: Arc<Mutex<FirebaseAuth>>,
 }
 
 impl FirebaseInputManager {
     /// Constructor
-    pub async fn new(
-        firebase_url: String,
-        email: String,
-        password: String,
-        api_key: String,
-        firebase: Firebase,
-        node_id: u64,
-    ) -> Result<Self, AtomaInputManagerError> {
-        let firebase_url = Url::parse(&firebase_url)?;
-        Ok(Self {
-            auth: firebase
-                .add_user(email, password, api_key, &firebase_url, node_id)
-                .await?,
-            firebase_url,
-        })
+    pub fn new(firebase: Firebase) -> Self {
+        Self {
+            auth: firebase.get_auth(),
+            firebase_url: firebase.get_url(),
+        }
     }
 
     /// Handles  a new chat request. Encapsulates the logic necessary
@@ -43,7 +36,7 @@ impl FirebaseInputManager {
         request_id: String,
     ) -> Result<ModelInput, AtomaInputManagerError> {
         let client = Client::new();
-        let token = self.auth.get_id_token().await?;
+        let token = self.auth.lock().await.get_id_token().await?;
         let mut url = self.firebase_url.clone();
         {
             let mut path_segment = url

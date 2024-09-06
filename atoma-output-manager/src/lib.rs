@@ -46,16 +46,7 @@ impl AtomaOutputManager {
         firebase: Firebase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
-        let firebase_output_manager = FirebaseOutputManager::new(
-            config.firebase_url,
-            config.firebase_email,
-            config.firebase_password,
-            config.firebase_api_key,
-            firebase,
-            config.small_id,
-        )
-        .await?;
-
+        let firebase_output_manager = FirebaseOutputManager::new(firebase);
         let gateway_output_manager =
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
 
