@@ -1,15 +1,12 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, sync::Arc};
 
 use atoma_helpers::{Firebase, FirebaseAuth};
 use atoma_types::AtomaStreamingData;
-use config::AtomaFirebaseStreamerConfig;
 use reqwest::{Client, Url};
 use serde_json::json;
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, instrument};
-
-mod config;
 
 /// `AtomaStreamer` instance
 pub struct AtomaStreamer {
@@ -22,44 +19,20 @@ pub struct AtomaStreamer {
     /// `Digest`
     last_streamed_index: HashMap<String, usize>,
     /// Firebase authentication
-    auth: FirebaseAuth,
+    auth: Arc<Mutex<FirebaseAuth>>,
 }
 
 impl AtomaStreamer {
-    /// Constructor
-    pub fn new(
-        firebase_url: Url,
-        streamer_rx: mpsc::Receiver<AtomaStreamingData>,
-        auth: FirebaseAuth,
-    ) -> Self {
-        Self {
-            firebase_url,
-            streamer_rx,
-            last_streamed_index: HashMap::new(),
-            auth,
-        }
-    }
-
-    /// Creates a new `AtomaStreamer` instance from a configuration file
-    pub async fn new_from_config<P: AsRef<Path>>(
-        config_path: P,
+    /// Creates a new `AtomaStreamer` instance from a firebase instance
+    pub async fn new(
         streamer_rx: mpsc::Receiver<AtomaStreamingData>,
         firebase: Firebase,
     ) -> Result<Self, AtomaStreamerError> {
-        let config = AtomaFirebaseStreamerConfig::from_file_path(config_path);
         Ok(Self {
-            firebase_url: config.firebase_url()?,
+            firebase_url: firebase.get_url(),
             streamer_rx,
             last_streamed_index: HashMap::new(),
-            auth: firebase
-                .add_user(
-                    config.firebase_email(),
-                    config.firebase_password(),
-                    config.firebase_api_key(),
-                    &config.firebase_url()?,
-                    config.small_id,
-                )
-                .await?,
+            auth: firebase.get_auth(),
         })
     }
 
@@ -90,7 +63,7 @@ impl AtomaStreamer {
     ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
         let mut url = self.firebase_url.clone();
-        let token = self.auth.get_id_token().await?;
+        let token = self.auth.lock().await.get_id_token().await?;
         {
             let mut path_segment = url
                 .path_segments_mut()

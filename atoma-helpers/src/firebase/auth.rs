@@ -7,12 +7,6 @@ use thiserror::Error;
 
 /// If we are within this amount seconds of the token expiring, we will refresh it
 const EXPIRATION_DELTA: usize = 10;
-const SIGN_IN_URL: fn(&str) -> String = |api_key: &str| {
-    format!(
-        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={}",
-        api_key
-    )
-};
 const SIGN_UP_URL: fn(&str) -> String = |api_key: &str| {
     format!(
         "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={}",
@@ -28,9 +22,6 @@ const REFRESH_URL: fn(&str) -> String = |api_key: &str| {
 
 /// Firebase Auth struct
 pub struct FirebaseAuth {
-    /// Email and password for the Firebase account
-    pub email: String,
-    pub password: String,
     /// The id_token is the token we will use to authenticate with Firebase DB requests
     pub id_token: Option<String>,
     /// The refresh_token is used to get a new id_token when the current one expires
@@ -69,14 +60,8 @@ pub struct SignInResponse {
 }
 
 impl FirebaseAuth {
-    pub(crate) async fn new(
-        email: String,
-        password: String,
-        api_key: String,
-    ) -> Result<Self, FirebaseAuthError> {
+    pub(crate) async fn new(api_key: String) -> Result<Self, FirebaseAuthError> {
         let mut res = Self {
-            email,
-            password,
             id_token: None,
             refresh_token: None,
             api_key,
@@ -84,14 +69,9 @@ impl FirebaseAuth {
             requested_at: None,
             local_id: None,
         };
-        if let Ok(response) = res.sign_in().await {
-            // If we have an account, good, fill the token
-            res.set_from_response(response)?;
-        } else {
-            // If we don't have an account yet, sign up. This will fail if the email is already in use, that means the password is probably wrong
-            let response = res.sign_up().await?;
-            res.set_from_response(response)?;
-        }
+        // If we don't have an account yet, sign up. This will fail if the email is already in use, that means the password is probably wrong
+        let response = res.sign_up().await?;
+        res.set_from_response(response)?;
         Ok(res)
     }
 
@@ -101,23 +81,7 @@ impl FirebaseAuth {
         let url = SIGN_UP_URL(&self.api_key);
         let res = client
             .post(url)
-            .json(
-                &json!({"email": self.email, "password": self.password, "returnSecureToken": true}),
-            )
-            .send()
-            .await?;
-        Ok(res.json::<SignInResponse>().await?)
-    }
-
-    /// Sign in with email and password
-    async fn sign_in(&self) -> Result<SignInResponse, FirebaseAuthError> {
-        let client = Client::new();
-        let url = SIGN_IN_URL(&self.api_key);
-        let res = client
-            .post(url)
-            .json(
-                &json!({"email": self.email, "password": self.password, "returnSecureToken": true}),
-            )
+            .json(&json!({"returnSecureToken": true}))
             .send()
             .await?;
         Ok(res.json::<SignInResponse>().await?)
@@ -136,7 +100,7 @@ impl FirebaseAuth {
             res.json::<SignInResponse>().await?
         } else {
             // In rare occasions, the refresh token may expire, in which case we need to sign in again
-            self.sign_in().await?
+            self.sign_up().await?
         };
         self.set_from_response(response)?;
         Ok(())
@@ -156,14 +120,14 @@ impl FirebaseAuth {
     pub async fn get_id_token(&mut self) -> Result<String, FirebaseAuthError> {
         // If the id_token is None, we need to sign in
         if self.id_token.is_none() {
-            let response = self.sign_in().await?;
+            let response = self.sign_up().await?;
             self.set_from_response(response)?;
         }
         // If the id_token is about to expire, we need to refresh it
         if self.requested_at.unwrap().elapsed().as_secs() as usize
             >= self.expires_in.unwrap() - EXPIRATION_DELTA
         {
-            let response = self.sign_in().await.unwrap();
+            let response = self.sign_up().await.unwrap();
             self.set_from_response(response)?;
         }
         // Return the id_token that is valid at least `EXPIRATION_DELTA` seconds
