@@ -69,8 +69,13 @@ impl AtomaOutputManager {
                 Some(ipfs_join_handle)
             }
             Err(e) => {
+                #[cfg(target_os = "windows")]
                 error!(
-                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, run `$ ipfs daemon`"
+                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, install IPFS daemon on your machine and run `ipfs daemon`."
+                );
+                #[cfg(not(target_os = "windows"))]
+                error!(
+                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, instal the IPFS daemon on your machine and run `$ ipfs daemon`."
                 );
                 None
             }

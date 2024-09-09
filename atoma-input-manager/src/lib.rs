@@ -143,7 +143,7 @@ impl AtomaInputManager {
             }?;
         }
 
-        trace!("Dropping output manager receiver...");
+        trace!("Dropping input manager receiver...");
         drop(self.input_manager_rx);
 
         Ok(())
