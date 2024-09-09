@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use atoma_input_manager::AtomaInputManagerError;
 use atoma_sui::subscriber::{SuiSubscriber, SuiSubscriberError};
-use atoma_types::InputSource;
+use atoma_types::{InputSource, ModelInput};
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
 use tokio::sync::oneshot;
@@ -33,7 +33,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(32);
     let (input_manager_tx, mut input_manager_rx) = tokio::sync::mpsc::channel::<(
         InputSource,
-        oneshot::Sender<Result<String, AtomaInputManagerError>>,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
     )>(32);
 
     // Spawn a task to discard messages
@@ -41,10 +41,11 @@ async fn main() -> Result<(), SuiSubscriberError> {
         while let Some((input_source, oneshot)) = input_manager_rx.recv().await {
             info!("Received input from source: {:?}", input_source);
             let data = match input_source {
-                InputSource::Firebase { request_id } => Ok(request_id),
-                InputSource::Raw { prompt } => Ok(prompt),
+                InputSource::Firebase { request_id } => request_id,
+                InputSource::Ipfs { cid, format } => format!("{cid}.{format:?}"),
+                InputSource::Raw { prompt } => prompt,
             };
-            if let Err(err) = oneshot.send(data) {
+            if let Err(err) = oneshot.send(Ok(ModelInput::Text(data))) {
                 error!("Failed to send response: {:?}", err);
             }
         }

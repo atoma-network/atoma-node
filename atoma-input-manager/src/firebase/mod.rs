@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_types::ModelInput;
 use reqwest::Client;
 use tokio::sync::Mutex;
 use tracing::{info, instrument};
@@ -20,22 +21,20 @@ pub struct FirebaseInputManager {
 
 impl FirebaseInputManager {
     /// Constructor
-    pub fn new(
-        firebase: Firebase,
-    ) -> Self {
+    pub fn new(firebase: Firebase) -> Self {
         Self {
             auth: firebase.get_auth(),
             firebase_url: firebase.get_url(),
         }
     }
 
-    /// Handles  a new post request. Encapsulates the logic necessary
+    /// Handles  a new chat request. Encapsulates the logic necessary
     /// to post new requests, using `reqwest::Client`.
     #[instrument(skip_all)]
-    pub async fn handle_get_request(
+    pub async fn handle_chat_request(
         &mut self,
         request_id: String,
-    ) -> Result<(String, Vec<u32>), AtomaInputManagerError> {
+    ) -> Result<ModelInput, AtomaInputManagerError> {
         let client = Client::new();
         let token = self.auth.lock().await.get_id_token().await?;
         let mut url = self.firebase_url.clone();
@@ -80,7 +79,10 @@ impl FirebaseInputManager {
                             .collect();
                     }
                 }
-                return Ok((json["data"].as_str().unwrap().to_string(), tokens));
+                return Ok(ModelInput::Chat((
+                    json["data"].as_str().unwrap().to_string(),
+                    tokens,
+                )));
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(SLEEP_BETWEEN_REQUESTS_SEC)).await;
         }

@@ -3,14 +3,14 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
-use atoma_types::Text2TextPromptParams;
+use atoma_types::Text2TextModelParams;
 use atoma_types::{AtomaStreamingData, Digest};
 use prompts::PROMPTS;
 use serde::Serialize;
 
 use std::{collections::HashMap, sync::mpsc};
 
-use atoma_types::{PromptParams, Request};
+use atoma_types::{ModelParams, Request};
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::Client;
 use serde_json::json;
@@ -50,10 +50,10 @@ impl LlmOutput for MockInputOutput {
     }
 }
 
-impl TryFrom<(Digest, PromptParams)> for MockInputOutput {
+impl TryFrom<(Digest, ModelParams)> for MockInputOutput {
     type Error = ModelError;
 
-    fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((_, value): (Digest, ModelParams)) -> Result<Self, Self::Error> {
         Ok(Self {
             id: value.into_text2text_prompt_params().unwrap().max_tokens(),
         })
@@ -147,7 +147,7 @@ async fn test_mock_model_thread() {
         for sender in model_thread_dispatcher.model_senders.values() {
             let (response_sender, response_receiver) = oneshot::channel();
             let max_tokens = i as u64;
-            let prompt_params = PromptParams::Text2TextPromptParams(Text2TextPromptParams::new(
+            let prompt_params = ModelParams::Text2TextModelParams(Text2TextModelParams::new(
                 atoma_types::InputSource::Raw {
                     prompt: "".to_string(),
                 },

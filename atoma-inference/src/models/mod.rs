@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use atoma_types::{AtomaStreamingData, Digest, PromptParams};
+use atoma_types::{AtomaStreamingData, Digest, ModelParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
 use thiserror::Error;
@@ -25,7 +25,7 @@ pub type ModelId = String;
 /// Such interface abstracts the fetching, loading and running of an LLM. Moreover, it
 /// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
-    type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
+    type Input: TryFrom<(Digest, ModelParams), Error = ModelError>;
     type Output: LlmOutput;
     type LoadData;
 
@@ -75,7 +75,7 @@ pub enum ModelError {
     #[error("Send error: `{0}`")]
     SendError(#[from] mpsc::error::SendError<AtomaStreamingData>),
     #[error("Invalid prompt params")]
-    InvalidPromptParams,
+    InvalidModelParams,
     #[cfg(feature = "nccl")]
     #[error("Nccl error: `{}`", 0.0)]
     NcclError(NcclError),

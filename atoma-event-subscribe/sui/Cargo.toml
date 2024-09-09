@@ -7,8 +7,8 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-atoma-types.workspace = true
 atoma-input-manager.workspace = true
+atoma-types.workspace = true
 clap.workspace = true
 config.workspace = true
 futures.workspace = true

@@ -12,6 +12,8 @@ config.workspace = true
 futures.workspace = true
 gql_client.workspace = true
 hex.workspace = true
+image.workspace = true
+ipfs-api-backend-hyper = { workspace = true, features = ["with-send-sync"] }
 reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true

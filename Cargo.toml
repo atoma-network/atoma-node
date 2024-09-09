@@ -18,7 +18,6 @@ members = [
     "atoma-storage",
     "atoma-streamer",
     "atoma-types",
-    "atoma-vllm",
 ]
 
 [workspace.package]
@@ -74,6 +73,7 @@ image = { version = "0.25.2", default-features = false, features = [
     "png",
 ] }
 indexmap = "2.2.6"
+ipfs-api-backend-hyper = "0.6.0"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.14.0"
 rand = "0.8.5"

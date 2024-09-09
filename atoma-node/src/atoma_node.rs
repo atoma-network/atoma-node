@@ -45,7 +45,12 @@ impl AtomaNode {
         let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
 
         let firebase_config = FirebaseConfig::from_file_path(config_path.clone());
-        let firebase = Firebase::new(firebase_config.api_key(),firebase_config.url()?, firebase_config.small_id()).await?;
+        let firebase = Firebase::new(
+            firebase_config.api_key(),
+            firebase_config.url()?,
+            firebase_config.small_id(),
+        )
+        .await?;
 
         let span = Span::current();
         let model_service_handle = {
@@ -113,10 +118,10 @@ impl AtomaNode {
                 info!("Starting Atoma output manager service..");
                 let atoma_output_manager =
                     AtomaOutputManager::new(config_path, output_manager_rx, firebase).await?;
-                atoma_output_manager
-                    .run()
-                    .await
-                    .map_err(AtomaNodeError::AtomaOutputManagerError)
+                atoma_output_manager.run().await.map_err(|e| {
+                    error!("Error with Atoma output manager: {e}");
+                    AtomaNodeError::AtomaOutputManagerError(e)
+                })
             })
         };
 
@@ -127,19 +132,18 @@ impl AtomaNode {
                 let _enter = span.enter();
                 info!("Starting Atoma input manager service..");
                 let atoma_input_manager =
-                    AtomaInputManager::new(input_manager_rx, firebase);
-                atoma_input_manager
-                    .run()
-                    .await
-                    .map_err(AtomaNodeError::AtomaInputManagerError)
+                    AtomaInputManager::new(input_manager_rx, firebase).await?;
+                atoma_input_manager.run().await.map_err(|e| {
+                    error!("Error with Atoma input manager: {e}");
+                    AtomaNodeError::AtomaInputManagerError(e)
+                })
             })
         };
 
         let atoma_streamer_handle = tokio::spawn(async move {
             let _enter = span.enter();
             info!("Starting Atoma streamer service..");
-            let atoma_streamer =
-                AtomaStreamer::new(streamer_rx, firebase).await?;
+            let atoma_streamer = AtomaStreamer::new(streamer_rx, firebase).await?;
             atoma_streamer.run().await.map_err(|e| {
                 error!("Error with Atoma streamer: {e}");
                 AtomaNodeError::AtomaStreamerError(e)

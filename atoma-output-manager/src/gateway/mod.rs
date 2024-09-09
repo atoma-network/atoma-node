@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use atoma_types::{AtomaOutputMetadata, OutputDestination};
+use atoma_types::{AtomaOutputMetadata, OutputDestination, OutputType};
 use gql_client::Client;
 use tracing::{info, instrument};
 
@@ -37,73 +37,28 @@ impl GatewayOutputManager {
     pub async fn handle_request(
         &self,
         output_metadata: &AtomaOutputMetadata,
-        output: String,
+        output: Vec<u8>,
     ) -> Result<(), AtomaOutputManagerError> {
-        let AtomaOutputMetadata {
-            node_public_key,
-            ticket_id,
-            num_input_tokens,
-            num_output_tokens,
-            time_to_generate,
-            commitment_root_hash,
-            num_sampled_nodes,
-            index_of_node,
-            leaf_hash,
-            transaction_base_58,
-            output_destination,
-            output_type,
-            ..
-        } = output_metadata;
+        let query = match output_metadata.output_type {
+            OutputType::Text => {
+                let output = String::from_utf8(output)?;
+                build_text_query(output, output_metadata)?
+            }
+            OutputType::Image => {
+                let mut height_bytes_buffer = [0; 4];
+                height_bytes_buffer.copy_from_slice(&output[output.len() - 4..output.len()]);
 
-        let gateway_user_id =
-            if let OutputDestination::Gateway { gateway_user_id } = output_destination {
-                gateway_user_id
-            } else {
-                return Err(AtomaOutputManagerError::InvalidOutputDestination(
-                    "Missing `gateway_user_id` from `OutputDestination".into(),
-                ));
-            };
-        let query = format!(
-            r#"mutation createPDA {{
-            createPDA(
-              input: {{
-                title: "Atoma's output for ticket id: {ticket_id}",
-                description: "Atoma Node output for ticket id {ticket_id}",
-                owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
-                dataModelId: "{ATOMA_DATA_MODEL_ID}",
-                expirationDate: null,
-                organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
-                claim: {{
-                  nodePublicKey: "{node_public_key}",
-                  ticketId: "{ticket_id}",
-                  output: "{output}",
-                  inputTokens: {num_input_tokens},
-                  outputTokens: {num_output_tokens},
-                  timeToGenerate: {time_to_generate},
-                  commitmentRootHash: "{commitment_root_hash:?}",
-                  numSampledNodes: {num_sampled_nodes},
-                  indexSubmissionNode: {index_of_node},
-                  leafHash: "{leaf_hash:?}",
-                  transactionBase58: "{transaction_base_58}",
-                  outputType: "{output_type}"
-                }}
-              }}
-            ) {{
-              id
-              arweaveUrl
-              dataAsset {{
-                owner {{
-                  id
-                  gatewayId
-                }}
-                issuer {{
-                  id
-                  gatewayId
-                }}
-              }}
-            }}
-          }}"#
-        );
+                let mut width_bytes_buffer = [0; 4];
+                width_bytes_buffer.copy_from_slice(&output[output.len() - 8..output.len() - 4]);
+
+                let height = u32::from_be_bytes(height_bytes_buffer) as usize;
+                let width = u32::from_be_bytes(width_bytes_buffer) as usize;
+
+                let output = output[..output.len() - 8].to_vec();
+                let img_output = (output, height, width);
+                build_image_query(img_output, output_metadata)?
+            }
+        };
 
         self.client
             .query::<String>(&query)
@@ -112,4 +67,146 @@ impl GatewayOutputManager {
 
         Ok(())
     }
+}
+
+fn build_text_query(
+    output: String,
+    output_metadata: &AtomaOutputMetadata,
+) -> Result<String, AtomaOutputManagerError> {
+    let AtomaOutputMetadata {
+        node_public_key,
+        ticket_id,
+        num_input_tokens,
+        num_output_tokens,
+        time_to_generate,
+        commitment_root_hash,
+        num_sampled_nodes,
+        index_of_node,
+        leaf_hash,
+        transaction_base_58,
+        output_destination,
+        output_type,
+        ..
+    } = output_metadata;
+
+    let gateway_user_id = if let OutputDestination::Gateway { gateway_user_id } = output_destination
+    {
+        gateway_user_id
+    } else {
+        return Err(AtomaOutputManagerError::InvalidOutputDestination(
+            "Missing `gateway_user_id` from `OutputDestination".into(),
+        ));
+    };
+    Ok(format!(
+        r#"mutation createPDA {{
+      createPDA(
+        input: {{
+          title: "Atoma's output for ticket id: {ticket_id}",
+          description: "Atoma Node output for ticket id {ticket_id}",
+          owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
+          dataModelId: "{ATOMA_DATA_MODEL_ID}",
+          expirationDate: null,
+          organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
+          claim: {{
+            nodePublicKey: "{node_public_key}",
+            ticketId: "{ticket_id}",
+            output: "{output}",
+            inputTokens: {num_input_tokens},
+            outputTokens: {num_output_tokens},
+            timeToGenerate: {time_to_generate},
+            commitmentRootHash: "{commitment_root_hash:?}",
+            numSampledNodes: {num_sampled_nodes},
+            indexSubmissionNode: {index_of_node},
+            leafHash: "{leaf_hash:?}",
+            transactionBase58: "{transaction_base_58}",
+            outputType: "{output_type}"
+          }}
+        }}
+      ) {{
+        id
+        arweaveUrl
+        dataAsset {{
+          owner {{
+            id
+            gatewayId
+          }}
+          issuer {{
+            id
+            gatewayId
+          }}
+        }}
+      }}
+    }}"#
+    ))
+}
+
+fn build_image_query(
+    output: (Vec<u8>, usize, usize),
+    output_metadata: &AtomaOutputMetadata,
+) -> Result<String, AtomaOutputManagerError> {
+    let AtomaOutputMetadata {
+        node_public_key,
+        ticket_id,
+        num_input_tokens,
+        num_output_tokens,
+        time_to_generate,
+        commitment_root_hash,
+        num_sampled_nodes,
+        index_of_node,
+        leaf_hash,
+        transaction_base_58,
+        output_destination,
+        output_type,
+        ..
+    } = output_metadata;
+
+    let gateway_user_id = if let OutputDestination::Gateway { gateway_user_id } = output_destination
+    {
+        gateway_user_id
+    } else {
+        return Err(AtomaOutputManagerError::InvalidOutputDestination(
+            "Missing `gateway_user_id` from `OutputDestination".into(),
+        ));
+    };
+    Ok(format!(
+        r#"mutation createPDA {{
+      createPDA(
+        input: {{
+          title: "Atoma's output for ticket id: {ticket_id}",
+          description: "Atoma Node output for ticket id {ticket_id}",
+          owner: {{ type: GATEWAY_ID, value: "{gateway_user_id}" }},
+          dataModelId: "{ATOMA_DATA_MODEL_ID}",
+          expirationDate: null,
+          organization: {{ type: GATEWAY_ID, value: "AtomaNetwork" }},
+          claim: {{
+            nodePublicKey: "{node_public_key}",
+            ticketId: "{ticket_id}",
+            output: "{output:?}",
+            inputTokens: {num_input_tokens},
+            outputTokens: {num_output_tokens},
+            timeToGenerate: {time_to_generate},
+            commitmentRootHash: "{commitment_root_hash:?}",
+            numSampledNodes: {num_sampled_nodes},
+            indexSubmissionNode: {index_of_node},
+            leafHash: "{leaf_hash:?}",
+            transactionBase58: "{transaction_base_58}",
+            outputType: "{output_type}"
+          }}
+        }}
+      ) {{
+        id
+        arweaveUrl
+        dataAsset {{
+          owner {{
+            id
+            gatewayId
+          }}
+          issuer {{
+            id
+            gatewayId
+          }}
+        }}
+      }}
+    }}"#
+    ))
 }

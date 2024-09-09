@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, fmt::Debug, path::PathBuf, str::FromStr, sync::mpsc, thread::JoinHandle,
 };
 
-use atoma_types::{AtomaStreamingData, OutputType, PromptParams, Request, Response};
+use atoma_types::{AtomaStreamingData, ModelParams, OutputType, Request, Response};
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
 use thiserror::Error;
@@ -95,8 +95,8 @@ where
             let num_sampled_nodes = request.num_sampled_nodes();
             let params = request.params();
             let output_type = match params {
-                PromptParams::Text2ImagePromptParams(_) => OutputType::Image,
-                PromptParams::Text2TextPromptParams(_) => OutputType::Text,
+                ModelParams::Text2ImageModelParams(_) => OutputType::Image,
+                ModelParams::Text2TextModelParams(_) => OutputType::Text,
             };
             let output_destination = Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
                 request.output_destination().as_slice(),
@@ -105,6 +105,7 @@ where
             let output_id = match output_destination {
                 atoma_types::OutputDestination::Firebase { request_id } => request_id,
                 atoma_types::OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
+                atoma_types::OutputDestination::Ipfs => "ipfs".to_string(), // NOTE: this is just a placeholder as streaming is not supported for IPFS storage
             };
             let model_input = M::Input::try_from((output_id, params))?;
             let model_output = self.model.run(model_input)?;

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use atoma_helpers::{Firebase, FirebaseAuth};
-use atoma_types::AtomaOutputMetadata;
-use reqwest::Client;
+use atoma_types::{AtomaOutputMetadata, OutputType};
+use reqwest::{Client, StatusCode};
 use serde_json::json;
 use tokio::sync::Mutex;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::AtomaOutputManagerError;
@@ -22,12 +22,10 @@ pub struct FirebaseOutputManager {
 
 impl FirebaseOutputManager {
     /// Constructor
-    pub fn new(
-        firebase: Firebase,
-    ) -> Self {
+    pub fn new(firebase: Firebase) -> Self {
         Self {
             auth: firebase.get_auth(),
-            firebase_url:firebase.get_url(),
+            firebase_url: firebase.get_url(),
         }
     }
 
@@ -37,7 +35,7 @@ impl FirebaseOutputManager {
     pub async fn handle_post_request(
         &mut self,
         output_metadata: &AtomaOutputMetadata,
-        output: String,
+        output: Vec<u8>,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.lock().await.get_id_token().await?;
@@ -56,12 +54,33 @@ impl FirebaseOutputManager {
             "Submitting to Firebase's realtime database, with metadata: {:?}",
             output_metadata
         );
-        let data = json!({
-            "metadata": output_metadata,
-            "data": output,
-        });
-        client.put(url).json(&data).send().await?;
-        if output_metadata.tokens.len() > 0 {
+        let data = match output_metadata.output_type {
+            OutputType::Text => {
+                let output = String::from_utf8(output)?;
+                json!({
+                    "metadata": output_metadata,
+                    "data": output,
+                })
+            }
+            OutputType::Image => {
+                let mut height_bytes_buffer = [0; 4];
+                height_bytes_buffer.copy_from_slice(&output[output.len() - 4..output.len()]);
+
+                let mut width_bytes_buffer = [0; 4];
+                width_bytes_buffer.copy_from_slice(&output[output.len() - 8..output.len() - 4]);
+
+                let height = u32::from_be_bytes(height_bytes_buffer) as usize;
+                let width = u32::from_be_bytes(width_bytes_buffer) as usize;
+
+                let output = output[..output.len() - 8].to_vec();
+                json!({
+                    "metadata": output_metadata,
+                    "data": (output, height, width),
+                })
+            }
+        };
+        submit_put_request(&client, url, &data).await?;
+        if !output_metadata.tokens.is_empty() {
             let mut url = self.firebase_url.clone();
             {
                 let mut path_segment = url.path_segments_mut().map_err(|_| {
@@ -73,8 +92,28 @@ impl FirebaseOutputManager {
             }
             url.set_query(Some(&format!("auth={token}")));
             let data = json!(output_metadata.tokens);
-            client.put(url).json(&data).send().await?;
+            submit_put_request(&client, url, &data).await?;
         }
         Ok(())
     }
+}
+
+async fn submit_put_request(
+    client: &Client,
+    url: Url,
+    data: &serde_json::Value,
+) -> Result<(), AtomaOutputManagerError> {
+    match client.put(url).json(data).send().await?.status() {
+        StatusCode::OK => {
+            info!("Output submitted to Firebase successfully");
+        }
+        status => {
+            error!("Failed to submit to Firebase, with status: {:?}", status);
+            return Err(AtomaOutputManagerError::FirebaseError(format!(
+                "Failed to submit to Firebase, with status: {:?}",
+                status
+            )));
+        }
+    }
+    Ok(())
 }
