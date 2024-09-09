@@ -70,7 +70,7 @@ impl AtomaOutputManager {
             }
             Err(e) => {
                 error!(
-                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, run `$ ipfs daemon`"
+                    "Failed to obtain IPFS client's version: {e}, most likely IPFS daemon is not running in the background. To start it, install IPFS daemon on your machine and run `$ ipfs daemon` on Linux, or `ipfs daemon` on Windows."
                 );
                 None
             }
