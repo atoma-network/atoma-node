@@ -6,15 +6,24 @@ use tokio::sync::{
 };
 use tracing::{error, Span};
 
+/// `PreparedInputs` - struct holding the result of tokenization
+#[derive(Debug, Clone)]
+pub struct PreparedInput {
+    pub encoding: Encoding,
+    pub input: String,
+}
+
+type EncodingSender = oneshot::Sender<Result<PreparedInput, TokenizerError>>;
+
 /// `TokenizerRequest` - A request for the tokenizer worker tokenize
 /// the string input
 pub struct TokenizerRequest {
     /// Input string
     pub input: String,
-    /// `oneshot::Sender`` responsible to deliver the result of tokenization,
+    /// `oneshot::Sender` responsible to deliver the result of tokenization,
     /// which includes the actual `Encoding`, together with the original input
     /// in `String` format
-    pub sender: oneshot::Sender<Result<(Encoding, String), TokenizerError>>,
+    pub sender: EncodingSender,
     /// The current tracing span
     pub span: Span,
 }
@@ -43,13 +52,13 @@ impl TokenizerWorker {
         let mut senders = Vec::with_capacity(workers);
 
         for _ in 0..workers {
-            let tokenizer_clone = tokenizer.clone();
+            let tokenizer = tokenizer.clone();
             let (sender, receiver) = mpsc::unbounded_channel();
             senders.push(sender);
 
             // Spawning the worker
             tokio::task::spawn_blocking(|| {
-                start_tokenizer_task(tokenizer_clone, receiver)?;
+                start_tokenizer_task(tokenizer, receiver)?;
                 Ok::<_, TokenizerError>(())
             });
         }
@@ -74,7 +83,7 @@ fn start_tokenizer_task(
             span,
         } = request;
         span.in_scope(|| {
-            let prepared_inputs = prepare_inputs(&tokenizer, input);
+            let prepared_inputs = prepare_input(&tokenizer, input);
             sender.send(prepared_inputs).unwrap_or(())
         });
     }
@@ -98,12 +107,9 @@ async fn round_robin_task(
     }
 }
 
-fn prepare_inputs(
-    tokenizer: &Tokenizer,
-    input: String,
-) -> Result<(Encoding, String), TokenizerError> {
+fn prepare_input(tokenizer: &Tokenizer, input: String) -> Result<PreparedInput, TokenizerError> {
     let encoding = tokenizer.encode(input.clone(), true)?;
-    Ok((encoding, input))
+    Ok(PreparedInput { encoding, input })
 }
 
 #[derive(Debug, Error)]

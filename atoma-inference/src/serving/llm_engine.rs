@@ -29,7 +29,7 @@ impl LlmEngine {
     ///     3. Sends finished `SequenceGroup` outputs to the Atoma's client
     ///         service.
     #[instrument(skip(self))]
-    pub async fn run(mut self) -> Result<(), EngineError> {
+    pub async fn run(self) -> Result<(), EngineError> {
         loop {}
     }
 }

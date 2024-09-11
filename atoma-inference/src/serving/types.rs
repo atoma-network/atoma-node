@@ -23,7 +23,7 @@ pub struct GenerateParameters {
     /// The parameter for repetition penalty. 1.0 means no penalty.
     /// See [this paper](https://arxiv.org/pdf/1909.05858.pdf) for more details.
     pub repetition_penalty: Option<f32>,
-    /// The parameter for frequency penalty. 1.0 means no penalty
+    /// The parameter for frequency penalty. 0.0 means no penalty
     /// Penalize new tokens based on their existing frequency in the text so far,
     /// decreasing the model's likelihood to repeat the same line verbatim
     pub frequency_penalty: Option<f32>,

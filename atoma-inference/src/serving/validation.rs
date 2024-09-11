@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{info_span, instrument, Span};
 
 use crate::{
-    serving::tokenizer::{TokenizerError, TokenizerRequest},
+    serving::tokenizer::{PreparedInput, TokenizerError, TokenizerRequest},
     serving::types::{GenerateParameters, GenerateRequest},
 };
 
@@ -56,7 +56,7 @@ impl Validation {
         &self,
         input: String,
         truncate: Option<usize>,
-    ) -> Result<(Encoding, String), ValidationError> {
+    ) -> Result<PreparedInput, ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
         let request = TokenizerRequest {
@@ -80,7 +80,7 @@ impl Validation {
         truncate: Option<usize>,
         max_new_tokens: Option<u32>,
     ) -> Result<(String, Encoding, u32), ValidationError> {
-        let (encoding, input) = self.tokenize(input.clone(), truncate).await?;
+        let PreparedInput { encoding, input } = self.tokenize(input.clone(), truncate).await?;
         let input_len = if let Some(truncate) = truncate {
             std::cmp::min(truncate, encoding.len())
         } else {

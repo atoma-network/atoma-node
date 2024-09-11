@@ -11,7 +11,7 @@ use tracing::{error, Span};
 pub struct TokenizerRequest {
     /// Input string
     pub input: String,
-    /// `oneshot::Sender`` responsible to deliver the result of tokenization,
+    /// `oneshot::Sender` responsible to deliver the result of tokenization,
     /// which includes the actual `Encoding`, together with the original input
     /// in `String` format
     pub sender: oneshot::Sender<Result<(Encoding, String), TokenizerError>>,

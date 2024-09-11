@@ -10,7 +10,10 @@ use crate::serving::{
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
-    sync::mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
+    sync::{
+        broadcast::Receiver,
+        mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
+    },
     task::JoinHandle,
 };
 use tracing::{error, info, instrument};
@@ -36,6 +39,8 @@ pub struct LlmService {
     start_time: Instant,
     /// Request counter
     request_counter: u64,
+    /// Shutdown signal receiver
+    shutdown_signal: Receiver<()>,
     /// A request validation instance
     validation_service: Validation,
 }
@@ -49,6 +54,7 @@ impl LlmService {
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
         model_config: ModelConfig,
         tokenizer: Tokenizer,
+        shutdown_signal: Receiver<()>,
         validation_service: Validation,
     ) -> Result<Self, LlmServiceError>
     where
@@ -61,7 +67,7 @@ impl LlmService {
         //     // scheduler_config,
         // )?;
 
-        let (request_sender, request_receiver) = mpsc::unbounded_channel();
+        let (request_sender, _request_receiver) = mpsc::unbounded_channel();
         let llm_engine_handle = tokio::spawn(async move {
             let llm_engine = LlmEngine::new(
                 // atoma_client_sender,
@@ -84,6 +90,7 @@ impl LlmService {
             llm_engine_handle,
             request_counter: 0,
             start_time,
+            shutdown_signal,
             validation_service,
         })
     }
@@ -93,12 +100,23 @@ impl LlmService {
     /// and once the request is validated, it sends it to the
     /// `LlmEngine` background task
     #[instrument(skip_all)]
-    pub async fn run(&mut self) -> Result<(), LlmServiceError> {
-        while let Some(request) = self.atoma_event_subscriber_receiver.recv().await {
-            let sequence = self.handle_request(request).await?;
-            self.atoma_engine_sender.send(sequence)?;
+    pub async fn run(mut self) -> Result<(), LlmServiceError> {
+        loop {
+            tokio::select! {
+                request = self.atoma_event_subscriber_receiver.recv() => {
+                    if let Some(request) = request {
+                        info!("Received new request, with id = {}", request.request_id);
+                        let sequence = self.handle_request(request).await?;
+                        self.atoma_engine_sender.send(sequence)?;
+                    }
+                },
+                _ = self.shutdown_signal.recv() => {
+                    info!("Received shutdown signal");
+                    break;
+                }
+            }
         }
-
+        self.stop()?;
         Ok(())
     }
 
@@ -193,8 +211,9 @@ mod tests {
     async fn test_llm_service() {
         let (atoma_event_subscriber_sender, atoma_event_subscriber_receiver) =
             mpsc::unbounded_channel();
-        let (atoma_client_sender, atoma_client_receiver) = mpsc::unbounded_channel();
-        let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
+        let (atoma_client_sender, _atoma_client_receiver) = mpsc::unbounded_channel();
+        let (shutdown_signal_sender, shutdown_signal_receiver) = tokio::sync::broadcast::channel(1);
+        let (tokenizer_sender, _tokenizer_receiver) = mpsc::unbounded_channel();
         let model_config = ModelConfig::new(
             None,
             "".to_string(),
@@ -214,6 +233,7 @@ mod tests {
                 atoma_client_sender,
                 model_config,
                 tokenizer,
+                shutdown_signal_receiver,
                 validation_service,
             )
             .await?;
@@ -222,11 +242,16 @@ mod tests {
         });
 
         for i in 0..100 {
-            atoma_event_subscriber_sender.send(GenerateRequest {
-                request_id: format!("request-{i}",),
-                inputs: format!("Hello world, {i}"),
-                parameters: GenerateParameters::default(),
-            });
+            atoma_event_subscriber_sender
+                .send(GenerateRequest {
+                    request_id: format!("request-{i}",),
+                    inputs: format!("Hello world, {i}"),
+                    parameters: GenerateParameters::default(),
+                })
+                .unwrap();
         }
+
+        shutdown_signal_sender.send(());
+        llm_service_handle.await.unwrap();
     }
 }
