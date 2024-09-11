@@ -14,7 +14,7 @@ pub struct GenerateRequest {
 
 /// `GenerateParameters` - Parameters used for
 /// LLM inference
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct GenerateParameters {
     /// Generate `best_of` sequences and return the one with the highest token logprobs
     pub best_of: Option<usize>,

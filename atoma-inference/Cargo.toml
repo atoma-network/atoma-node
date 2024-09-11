@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 rand.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 toml.workspace = true
+tokenizers = { workspace = true, features = ["http"] }
 
 [features]
 accelerate = [

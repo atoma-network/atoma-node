@@ -182,3 +182,51 @@ pub enum LlmServiceError {
     #[error("Send error: `{0}`")]
     SendError(#[from] SendError<Sequence>),
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::serving::types::GenerateParameters;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_llm_service() {
+        let (atoma_event_subscriber_sender, atoma_event_subscriber_receiver) =
+            mpsc::unbounded_channel();
+        let (atoma_client_sender, atoma_client_receiver) = mpsc::unbounded_channel();
+        let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
+        let model_config = ModelConfig::new(
+            None,
+            "".to_string(),
+            true,
+            "".to_string(),
+            "".to_string(),
+            vec![0],
+            "".to_string(),
+        );
+        let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
+
+        let validation_service = Validation::new(1, 4, 16, 512, 1024, tokenizer_sender);
+
+        let llm_service_handle = tokio::spawn(async move {
+            let mut llm_service = LlmService::start::<()>(
+                atoma_event_subscriber_receiver,
+                atoma_client_sender,
+                model_config,
+                tokenizer,
+                validation_service,
+            )
+            .await?;
+            llm_service.run().await?;
+            Ok::<_, LlmServiceError>(())
+        });
+
+        for i in 0..100 {
+            atoma_event_subscriber_sender.send(GenerateRequest {
+                request_id: format!("request-{i}",),
+                inputs: format!("Hello world, {i}"),
+                parameters: GenerateParameters::default(),
+            });
+        }
+    }
+}
