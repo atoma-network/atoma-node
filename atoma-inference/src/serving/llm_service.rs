@@ -1,12 +1,18 @@
-use std::time::Instant;
+use std::{str::FromStr, time::Instant};
 
-use crate::serving::{
+use crate::serving::tokenizer::TokenizerWorker;
+
+use super::{
     config::ModelConfig,
     llm_engine::{EngineError, GenerateRequestOutput, LlmEngine},
+    model_executor::{ModelExecutor, ModelThreadDispatcher},
     sequence::{Sequence, SequenceError},
+    tokenizer::EncodeTokenizerRequest,
     types::GenerateRequest,
     validation::{ValidGenerateRequest, Validation, ValidationError},
 };
+use candle::{DType, Device};
+use metrics::{counter, gauge};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
@@ -16,7 +22,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, info_span, instrument, Span};
 
 /// `LlmService` - the entrypoint of the Atoma's vLLM service.
 /// It receives requests from the Atoma's event subscriber
@@ -39,10 +45,14 @@ pub struct LlmService {
     start_time: Instant,
     /// Request counter
     request_counter: u64,
+    /// Tokenizer handle
+    tokenizer_handle: JoinHandle<Result<(), LlmServiceError>>,
     /// Shutdown signal receiver
     shutdown_signal: Receiver<()>,
     /// A request validation instance
     validation_service: Validation,
+    /// Span
+    span: Span,
 }
 
 impl LlmService {
@@ -53,35 +63,61 @@ impl LlmService {
         atoma_event_subscriber_receiver: UnboundedReceiver<GenerateRequest>,
         atoma_client_sender: UnboundedSender<Vec<GenerateRequestOutput>>,
         model_config: ModelConfig,
-        tokenizer: Tokenizer,
+        num_tokenizer_workers: usize,
+        tokenizer_receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         shutdown_signal: Receiver<()>,
         validation_service: Validation,
     ) -> Result<Self, LlmServiceError>
     where
         // M: ModelExecutor + Send + Sync + 'static,
-        M: Send + Sync + 'static,
+        M: ModelExecutor + Send + Sync + 'static,
     {
-        // let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(
-        //     model_config.clone(),
-        //     // cache_config,
-        //     // scheduler_config,
-        // )?;
+        let span = info_span!("llm-service");
+        let _span = span.clone();
+        let _enter = _span.enter();
+
+        info!("Starting a new `LlmService` instance..");
+        let start_time = Instant::now();
+
+        // We do not need to spawn a new thread for fetching model weights files,
+        // as the service will not start until the model is loaded in memory
+        // NOTE: for now we use a synchronous model loader
+        let file_paths = M::fetch(
+            model_config.api_key.unwrap_or_default(),
+            &model_config.cache_dir,
+            model_config.model_name,
+            model_config.revision,
+        )?;
+        let tokenizer = Tokenizer::from_file(&file_paths.tokenizer_path)?;
+
+        // TODO: support multiple devices
+        let device = Device::new_cuda(model_config.device_ids[0])?;
+        let dtype = DType::from_str(&model_config.dtype).unwrap();
+        let model = M::load(device, dtype, &file_paths)?;
+
+        let cloned_tokenizer = tokenizer.clone();
+        let tokenizer_handle = tokio::spawn(async move {
+            Ok(
+                TokenizerWorker::start(cloned_tokenizer, tokenizer_receiver, num_tokenizer_workers)
+                    .await?,
+            )
+        });
+
+        let model_thread_dispatcher = ModelThreadDispatcher::start::<M>(device, dtype, model)?;
 
         let (request_sender, _request_receiver) = mpsc::unbounded_channel();
         let llm_engine_handle = tokio::spawn(async move {
             let llm_engine = LlmEngine::new(
-                // atoma_client_sender,
-                // model_thread_dispatcher,
-                // request_receiver,
+                atoma_client_sender,
+                model_thread_dispatcher,
+                request_receiver,
                 // scheduler,
-                // tokenizer,
+                tokenizer,
             );
 
             llm_engine.run().await?;
             Ok::<_, LlmServiceError>(())
         });
-
-        let start_time = Instant::now();
 
         Ok(Self {
             atoma_event_subscriber_receiver,

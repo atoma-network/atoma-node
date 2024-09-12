@@ -1,10 +1,10 @@
 use thiserror::Error;
 use tokenizers::Encoding;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{info_span, instrument, Span};
+use tracing::{error, info_span, instrument, Span};
 
 use crate::{
-    serving::tokenizer::{PreparedInput, TokenizerError, TokenizerRequest},
+    serving::tokenizer::{EncodeTokenizerRequest, PreparedInput, TokenizerError},
     serving::types::{GenerateParameters, GenerateRequest},
 };
 
@@ -26,7 +26,7 @@ pub struct Validation {
     /// Tracing span
     span: Span,
     /// Channel to communicate with the background tokenizer task
-    sender: mpsc::UnboundedSender<TokenizerRequest>,
+    sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
 }
 
 impl Validation {
@@ -37,7 +37,7 @@ impl Validation {
         max_top_n_tokens: u32,
         max_input_length: usize,
         max_total_tokens: u32,
-        sender: mpsc::UnboundedSender<TokenizerRequest>,
+        sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
     ) -> Self {
         Self {
             best_of,
@@ -59,7 +59,7 @@ impl Validation {
     ) -> Result<PreparedInput, ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
-        let request = TokenizerRequest {
+        let request = EncodeTokenizerRequest {
             input,
             sender: response_sender,
             span: Span::current(),
@@ -80,6 +80,7 @@ impl Validation {
         truncate: Option<usize>,
         max_new_tokens: Option<u32>,
     ) -> Result<(String, Encoding, u32), ValidationError> {
+        let _enter = self.span.enter();
         let PreparedInput { encoding, input } = self.tokenize(input.clone(), truncate).await?;
         let input_len = if let Some(truncate) = truncate {
             std::cmp::min(truncate, encoding.len())
@@ -102,6 +103,7 @@ impl Validation {
 
         // Validate `total_tokens`
         if total_tokens > self.max_total_tokens {
+            error!("Max total tokens exceeded by request's total number of tokens ({total_tokens} > {})", self.max_total_tokens);
             return Err(ValidationError::MaxTotalTokens(
                 self.max_total_tokens,
                 input_len,
@@ -111,6 +113,10 @@ impl Validation {
 
         // Validate `input_len`
         if input_len > self.max_input_length {
+            error!(
+                "Input length exceeded by request's input length ({input_len} > {})",
+                self.max_input_length
+            );
             return Err(ValidationError::InputLength(
                 self.max_input_length,
                 input_len,
@@ -129,6 +135,7 @@ impl Validation {
         &self,
         request: GenerateRequest,
     ) -> Result<ValidGenerateRequest, ValidationError> {
+        let _enter = self.span.enter();
         let GenerateParameters {
             best_of,
             temperature,
@@ -158,11 +165,13 @@ impl Validation {
             || typical_p.is_some();
 
         if best_of > 1 && !sampling {
+            error!("Best of is only supported with sampling");
             return Err(ValidationError::BestOfSampling);
         }
 
         let temperature = temperature.unwrap_or(1.0);
         if temperature <= 0.0 {
+            error!("Temperature must be greater than 0");
             return Err(ValidationError::Temperature);
         }
 
@@ -173,12 +182,14 @@ impl Validation {
 
         let frequency_penalty = frequency_penalty.unwrap_or(0.0);
         if !(-2.0..=2.0).contains(&frequency_penalty) {
+            error!("Frequency penalty must be between -2.0 and 2.0");
             return Err(ValidationError::FrequencyPenalty);
         }
 
         let top_p = top_p
             .map(|value| {
                 if value <= 0.0 || value >= 1.0 {
+                    error!("Top p must be between 0.0 and 1.0");
                     return Err(ValidationError::TopP);
                 }
                 Ok(value)
@@ -188,6 +199,7 @@ impl Validation {
         let typical_p = typical_p
             .map(|value| {
                 if value <= 0.0 || value >= 1.0 {
+                    error!("Typical p must be between 0.0 and 1.0");
                     return Err(ValidationError::TypicalP);
                 }
                 Ok(value)
@@ -197,6 +209,7 @@ impl Validation {
         let top_k = top_k
             .map(|value| {
                 if value == 0 {
+                    error!("Top k must be greater than 0");
                     return Err(ValidationError::TopK);
                 }
                 Ok(value)
@@ -204,10 +217,16 @@ impl Validation {
             .unwrap_or(Ok(0))?;
 
         if max_new_tokens == Some(0) {
+            error!("Max new tokens must be greater than 0");
             return Err(ValidationError::NegativeMaxNewTokens);
         }
 
         if stop_sequences.len() > self.max_stop_sequences {
+            error!(
+                "Stop sequences exceeded by request's stop sequences ({} > {})",
+                stop_sequences.len(),
+                self.max_stop_sequences
+            );
             return Err(ValidationError::StopSequence(
                 self.max_stop_sequences,
                 stop_sequences.len(),
@@ -221,6 +240,7 @@ impl Validation {
             None => DEFAULT_RANDOM_SEED,
             Some(seed) => {
                 if best_of > 1 {
+                    error!("Best of is not supported with sampling");
                     return Err(ValidationError::BestOfSampling);
                 }
                 seed
@@ -230,6 +250,7 @@ impl Validation {
         let top_n_tokens = top_n_tokens
             .map(|value| {
                 if value > self.max_top_n_tokens {
+                    error!("`Validation` instance top n tokens exceeded by request's top n tokens ({value} > {})", self.max_top_n_tokens);
                     return Err(ValidationError::TopNTokens(self.max_top_n_tokens, value));
                 }
                 Ok(value)
@@ -247,6 +268,10 @@ impl Validation {
         let truncate = truncate
             .map(|value| {
                 if value == 0 || value > self.max_input_length {
+                    error!(
+                        "Truncate exceeded by request's truncate ({value} > {})",
+                        self.max_input_length
+                    );
                     return Err(ValidationError::Truncate(self.max_input_length, value));
                 }
                 Ok(Some(value))
