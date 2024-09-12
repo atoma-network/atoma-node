@@ -308,11 +308,12 @@ mod tests {
         cache.remove_sequence(max_batch_size as u64 - 1).unwrap();
         assert_eq!(cache.active_sequences.len(), max_batch_size - 1);
 
+        let sequence_token_len = 10;
         let kvs = std::iter::repeat_with(|| {
             Tensor::rand(
                 0f32,
                 10f32,
-                (2, max_batch_size, MAX_SEQ_LEN, NUM_KV_HEADS, HEAD_DIM),
+                (2, max_batch_size, sequence_token_len, NUM_KV_HEADS, HEAD_DIM),
                 &device,
             )?
             .to_dtype(dtype)
