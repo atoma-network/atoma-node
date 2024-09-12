@@ -293,6 +293,7 @@ mod tests {
         let max_batch_size = cache.max_batch_size;
         assert!(max_batch_size > 0);
 
+        let device = Device::new_cuda(0).unwrap();
         let dtype = DType::from_str("bf16").unwrap();
 
         let should_be_max_batch_size =
