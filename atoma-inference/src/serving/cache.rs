@@ -166,7 +166,7 @@ impl CacheEngine {
         for kv in new_kv.iter() {
             let (t, n, h, d) = kv.dims4()?;
             if t != 2 || n != new_len || h != self.num_kv_heads || d != self.head_dim {
-                return Err(CacheEngineError::InvalidSequenceKvDims);
+                return Err(CacheEngineError::InvalidSequenceKvDims(t, n, h, d));
             }
         }
         for (layer, new_kv_layer) in self.gpu_cache.iter_mut().zip(new_kv.iter()) {
@@ -253,8 +253,8 @@ pub enum CacheEngineError {
     CudaError(String),
     #[error("No batch index available")]
     NoBatchIndexAvailable,
-    #[error("Invalid sequence Kv dims")]
-    InvalidSequenceKvDims,
+    #[error("Invalid sequence Kv dims: `{0}, {1}, {2}, {3}`")]
+    InvalidSequenceKvDims(usize, usize, usize, usize),
     #[error("Max sequence length exceeded")]
     MaxSequenceLengthExceeded,
     #[error("Sequence not found")]
