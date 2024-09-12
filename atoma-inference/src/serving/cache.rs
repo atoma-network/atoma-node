@@ -302,7 +302,7 @@ mod tests {
             cache.add_sequence(i as u64, 10).unwrap();
             assert_eq!(cache.active_sequences.len(), i + 1);
         }
-        assert_eq!(cache.active_sequences.len(), sequence_token_len);
+        assert_eq!(cache.active_sequences.len(), max_batch_size);
 
         assert!(cache.add_sequence(max_batch_size as u64, sequence_token_len).is_err());
 
