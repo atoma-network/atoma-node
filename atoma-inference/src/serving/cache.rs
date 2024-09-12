@@ -323,7 +323,8 @@ mod tests {
             .to_dtype(dtype)
         })
         .take(NUM_LAYERS)
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
 
         cache.update_sequence(0, kvs.as_slice(), 1024).unwrap();
     }
