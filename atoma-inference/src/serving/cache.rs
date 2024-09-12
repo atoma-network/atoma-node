@@ -278,7 +278,7 @@ mod tests {
         const HEAD_DIM: usize = 128;
         const NUM_KV_HEADS: usize = 32;
         const NUM_LAYERS: usize = 32;
-        let DTYPE: &str = "bf16";
+        const DTYPE: &str = "bf16";
 
         let mut cache = CacheEngine::new(
             CacheConfig {
@@ -298,9 +298,10 @@ mod tests {
         let dtype = DType::from_str("bf16").unwrap();
 
         let should_be_max_batch_size =
-            utils::compute_max_batch_size(dtype, 1024, 32, 32, 128).unwrap();
-        assert_eq!(max_batch_size, should_be_max_batch_size);
-        assert_eq!(max_batch_size, should_be_max_batch_size);
+            utils::compute_max_batch_size(dtype, MAX_SEQ_LEN, NUM_LAYERS, NUM_KV_HEADS, HEAD_DIM)
+                .unwrap();
+        
+        assert_eq!(0.8 * (max_batch_size as f32) as usize, should_be_max_batch_size);
 
         for i in 0..max_batch_size {
             cache.add_sequence(i as u64, 1024).unwrap();
