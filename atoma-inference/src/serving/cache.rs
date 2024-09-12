@@ -322,7 +322,7 @@ mod tests {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-        cache.update_sequence(0, kvs.as_slice(), 1024).unwrap();
+        cache.update_sequence(0, kvs.as_slice(), sequence_token_len).unwrap();
 
         for (cache_tensor, kv_tensor) in cache.gpu_cache.iter().zip(kvs.iter()) {
             assert_eq!(
