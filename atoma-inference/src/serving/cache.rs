@@ -335,6 +335,7 @@ mod tests {
                     .i((.., 0, .., .., ..))
                     .unwrap()
                     .to_dtype(DType::F32)
+                    .unwrap()
                     .flatten_all()
                     .unwrap()
                     .to_vec::<f32>()
