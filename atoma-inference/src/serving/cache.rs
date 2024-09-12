@@ -330,7 +330,7 @@ mod tests {
 
         for (cache_tensor, kv_tensor) in cache.gpu_cache.iter().zip(kvs.iter()) {
             assert_eq!(
-                tensor
+                cache_tensor
                     .i((.., 0, .., .., ..))
                     .to_dtype(DType::F32)
                     .flatten_all()
