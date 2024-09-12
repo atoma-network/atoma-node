@@ -270,6 +270,7 @@ pub enum CacheEngineError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use candle::IndexOp;
 
     #[test]
     fn test_compute_max_batch_size() {

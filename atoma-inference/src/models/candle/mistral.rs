@@ -259,7 +259,7 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let (sender, receiver) = mpsc::channel(1);
+        let (sender, _) = mpsc::channel(1);
         let mut model = MistralModel::load(load_data, sender).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
@@ -352,7 +352,7 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let (sender, receiver) = mpsc::channel(1);
+        let (sender, _) = mpsc::channel(1);
         let mut model = MistralModel::load(load_data, sender).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
