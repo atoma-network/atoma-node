@@ -313,7 +313,7 @@ mod tests {
             Tensor::rand(
                 0f32,
                 10f32,
-                (2, max_batch_size, sequence_token_len, NUM_KV_HEADS, HEAD_DIM),
+                (2, sequence_token_len, NUM_KV_HEADS, HEAD_DIM),
                 &device,
             )?
             .to_dtype(dtype)
