@@ -297,18 +297,18 @@ mod tests {
         
         assert_eq!(((1. - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize, new_max_batch_size);
 
+        let sequence_token_len = 10;
         for i in 0..max_batch_size {
-            cache.add_sequence(i as u64, 1024).unwrap();
+            cache.add_sequence(i as u64, 10).unwrap();
             assert_eq!(cache.active_sequences.len(), i + 1);
         }
-        assert_eq!(cache.active_sequences.len(), max_batch_size);
+        assert_eq!(cache.active_sequences.len(), sequence_token_len);
 
-        assert!(cache.add_sequence(max_batch_size as u64, 1024).is_err());
+        assert!(cache.add_sequence(max_batch_size as u64, sequence_token_len).is_err());
 
         cache.remove_sequence(max_batch_size as u64 - 1).unwrap();
         assert_eq!(cache.active_sequences.len(), max_batch_size - 1);
 
-        let sequence_token_len = 10;
         let kvs = std::iter::repeat_with(|| {
             Tensor::rand(
                 0f32,
