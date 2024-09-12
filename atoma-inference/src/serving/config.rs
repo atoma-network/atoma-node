@@ -105,3 +105,16 @@ impl ModelConfig {
         }
     }
 }
+
+/// `CacheConfig` - Cache configuration values
+/// to manage how we handle KV cache memory
+/// management efficiently
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CacheConfig {
+    /// The device id
+    pub device_id: usize,
+    /// Model's Cache dtype
+    pub dtype: String,
+    /// Maximum (individual) sequence length
+    pub max_seq_len: usize,
+}
