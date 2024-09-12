@@ -327,5 +327,24 @@ mod tests {
         .unwrap();
 
         cache.update_sequence(0, kvs.as_slice(), 1024).unwrap();
+
+        for (cache_tensor, kv_tensor) in cache.gpu_cache.iter().zip(kvs.iter()) {
+            assert_eq!(
+                tensor
+                    .i((.., 0, .., .., ..))
+                    .to_dtype(DType::F32)
+                    .flatten_all()
+                    .unwrap()
+                    .to_vec::<f32>()
+                    .unwrap(),
+                kv_tensor
+                    .to_dtype(DType::F32)
+                    .unwrap()
+                    .flatten_all()
+                    .unwrap()
+                    .to_vec1::<f32>()
+                    .unwrap()
+            );
+        }
     }
 }

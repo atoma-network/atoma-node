@@ -284,6 +284,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            "".to_string(),
             prompt.clone(),
             temperature,
             random_seed,
@@ -291,7 +292,10 @@ mod tests {
             repeat_last_n,
             max_tokens,
             Some(top_k),
-            Some(top_p),
+            Some(top_p as f64),
+            false,
+            vec![],
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
 
@@ -372,6 +376,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            "".to_string(),
             prompt.clone(),
             temperature,
             random_seed,
@@ -379,7 +384,10 @@ mod tests {
             repeat_last_n,
             max_tokens,
             Some(top_k),
-            Some(top_p),
+            Some(top_p as f64),
+            false,
+            vec![],
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
 
