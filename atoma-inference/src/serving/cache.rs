@@ -301,7 +301,7 @@ mod tests {
             utils::compute_max_batch_size(dtype, MAX_SEQ_LEN, NUM_LAYERS, NUM_KV_HEADS, HEAD_DIM)
                 .unwrap();
         
-        assert_eq!(((1 - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize, should_be_max_batch_size);
+        assert_eq!(((1. - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize, should_be_max_batch_size);
 
         for i in 0..max_batch_size {
             cache.add_sequence(i as u64, 1024).unwrap();
