@@ -165,7 +165,7 @@ impl CacheEngine {
         }
         for kv in new_kv.iter() {
             let (t, n, h, d) = kv.dims4()?;
-            if t != 2 || n != new_len || h != self.num_kv_heads || d != self.head_dim {
+            if t != 2 || n != new_tokens || h != self.num_kv_heads || d != self.head_dim {
                 return Err(CacheEngineError::InvalidSequenceKvDims(t, n, h, d));
             }
         }
