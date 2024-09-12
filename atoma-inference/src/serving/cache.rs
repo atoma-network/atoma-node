@@ -338,7 +338,7 @@ mod tests {
                     .unwrap()
                     .flatten_all()
                     .unwrap()
-                    .to_vec::<f32>()
+                    .to_vec1::<f32>()
                     .unwrap(),
                 kv_tensor
                     .to_dtype(DType::F32)
