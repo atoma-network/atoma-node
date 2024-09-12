@@ -333,6 +333,7 @@ mod tests {
             assert_eq!(
                 cache_tensor
                     .i((.., 0, .., .., ..))
+                    .unwrap()
                     .to_dtype(DType::F32)
                     .flatten_all()
                     .unwrap()
