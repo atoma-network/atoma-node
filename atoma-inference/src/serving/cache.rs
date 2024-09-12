@@ -185,6 +185,10 @@ impl CacheEngine {
                 self.num_kv_heads,
                 self.head_dim,
             ))?;
+            // NOTE: reshaping should be a view to the original
+            // tensor contents, as the KV cache was allocated 
+            // as a contiguous tensor, and reshaping of a contiguous
+            // tensor is a view of its contents, and is always contiguous
             *layer = layer
                 .reshape((
                     2,
