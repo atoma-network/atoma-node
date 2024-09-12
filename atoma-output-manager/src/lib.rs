@@ -5,8 +5,9 @@ use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
 use gateway::GatewayOutputManager;
+use http::uri::Scheme;
 use ipfs::IpfsOutputManager;
-use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{error, info, instrument, trace};
@@ -51,7 +52,8 @@ impl AtomaOutputManager {
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
 
         info!("Building IPFS client...");
-        let client = IpfsClient::default();
+        let client = IpfsClient::from_host_and_port(Scheme::HTTP, "localhost", config.ipfs_port)
+            .map_err(|e| AtomaOutputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
 
         let ipfs_join_handle = match client.version().await {

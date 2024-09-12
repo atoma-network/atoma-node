@@ -132,7 +132,7 @@ impl AtomaNode {
                 let _enter = span.enter();
                 info!("Starting Atoma input manager service..");
                 let atoma_input_manager =
-                    AtomaInputManager::new(input_manager_rx, firebase).await?;
+                    AtomaInputManager::new(config_path, input_manager_rx, firebase).await?;
                 atoma_input_manager.run().await.map_err(|e| {
                     error!("Error with Atoma input manager: {e}");
                     AtomaNodeError::AtomaInputManagerError(e)
