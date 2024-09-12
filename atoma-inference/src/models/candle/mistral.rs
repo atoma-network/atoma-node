@@ -235,7 +235,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
@@ -327,7 +327,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
