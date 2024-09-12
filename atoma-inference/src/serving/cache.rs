@@ -26,8 +26,6 @@ pub struct CacheEngine {
     active_sequences: HashMap<u64, SequenceInfo>,
     /// Cache engine config
     config: CacheConfig,
-    /// The free batch indices
-    free_batch_indices: Vec<usize>,
     /// Maximum batch size
     max_batch_size: usize,
     /// Number of layers
@@ -90,7 +88,6 @@ impl CacheEngine {
         Ok(Self {
             active_sequences: HashMap::new(),
             config,
-            free_batch_indices: (0..max_batch_size).collect(),
             max_batch_size,
             num_layers,
             num_kv_heads,
@@ -146,10 +143,7 @@ impl CacheEngine {
     #[instrument(skip_all)]
     pub fn remove_sequence(&mut self, sequence_id: u64) -> Result<(), CacheEngineError> {
         info!("Removing sequence with sequence id = `{sequence_id}`");
-        if let Some(sequence_info) = self.active_sequences.remove(&sequence_id) {
-            let position_in_batch = sequence_info.position_in_batch;
-            self.free_batch_indices.push(position_in_batch);
-        }
+        self.active_sequences.remove(&sequence_id);
         Ok(())
     }
 
@@ -305,15 +299,14 @@ mod tests {
 
         for i in 0..max_batch_size {
             cache.add_sequence(i as u64, 1024).unwrap();
+            assert_eq!(cache.active_sequences.len(), i + 1);
         }
         assert_eq!(cache.active_sequences.len(), max_batch_size);
-        assert_eq!(cache.free_batch_indices.len(), 0);
 
         assert!(cache.add_sequence(max_batch_size as u64, 1024).is_err());
 
         cache.remove_sequence(max_batch_size as u64 - 1).unwrap();
         assert_eq!(cache.active_sequences.len(), max_batch_size - 1);
-        assert_eq!(cache.free_batch_indices.len(), 1);
 
         let kvs = std::iter::repeat_with(|| {
             Tensor::rand(
