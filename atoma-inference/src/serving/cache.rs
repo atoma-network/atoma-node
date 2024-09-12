@@ -147,6 +147,10 @@ impl CacheEngine {
         Ok(())
     }
 
+    fn num_active_sequences(&self) -> usize {
+        self.active_sequences.len()
+    }
+
     /// Updates the KV cache for a give allocated sequence
     #[instrument(skip_all)]
     pub fn update_sequence(
@@ -163,21 +167,43 @@ impl CacheEngine {
         if new_len > self.config.max_seq_len {
             return Err(CacheEngineError::MaxSequenceLengthExceeded);
         }
+
         for kv in new_kv.iter() {
             let (t, n, h, d) = kv.dims4()?;
             if t != 2 || n != new_tokens || h != self.num_kv_heads || d != self.head_dim {
                 return Err(CacheEngineError::InvalidSequenceKvDims(t, n, h, d));
             }
         }
+
         for (layer, new_kv_layer) in self.gpu_cache.iter_mut().zip(new_kv.iter()) {
             // Assigns the new KV tensors to the cache
             // on the right positions according to the sequence
             // length and its position index in the current batch
-            *layer = layer.slice_scatter(
-                new_kv_layer,
+            *layer = layer.reshape((
                 2,
-                seq_info.position_in_batch * self.config.max_seq_len + new_len,
-            )?;
+                self.max_batch_size * self.config.max_seq_len,
+                self.num_kv_heads,
+                self.head_dim,
+            ))?;
+            *layer = layer
+                .reshape((
+                    2,
+                    self.max_batch_size * self.config.max_seq_len,
+                    self.num_kv_heads,
+                    self.head_dim,
+                ))?
+                .slice_scatter(
+                    &new_kv_layer,
+                    1,
+                    seq_info.position_in_batch * self.config.max_seq_len + seq_info.current_len,
+                )?
+                .reshape((
+                    2,
+                    self.max_batch_size,
+                    self.config.max_seq_len,
+                    self.num_kv_heads,
+                    self.head_dim,
+                ))?;
         }
         seq_info.current_len = new_len;
         Ok(())
@@ -294,8 +320,11 @@ mod tests {
         let new_max_batch_size =
             utils::compute_max_batch_size(dtype, MAX_SEQ_LEN, NUM_LAYERS, NUM_KV_HEADS, HEAD_DIM)
                 .unwrap();
-        
-        assert_eq!(((1. - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize, new_max_batch_size);
+
+        assert_eq!(
+            ((1. - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize,
+            new_max_batch_size
+        );
 
         let sequence_token_len = 10;
         for i in 0..max_batch_size {
@@ -304,7 +333,9 @@ mod tests {
         }
         assert_eq!(cache.active_sequences.len(), max_batch_size);
 
-        assert!(cache.add_sequence(max_batch_size as u64, sequence_token_len).is_err());
+        assert!(cache
+            .add_sequence(max_batch_size as u64, sequence_token_len)
+            .is_err());
 
         cache.remove_sequence(max_batch_size as u64 - 1).unwrap();
         assert_eq!(cache.active_sequences.len(), max_batch_size - 1);
@@ -322,27 +353,31 @@ mod tests {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-        cache.update_sequence(0, kvs.as_slice(), sequence_token_len).unwrap();
+        for i in 0..max_batch_size - 1 {
+            cache
+                .update_sequence(i as u64, kvs.as_slice(), sequence_token_len)
+                .unwrap();
 
-        for (cache_tensor, kv_tensor) in cache.gpu_cache.iter().zip(kvs.iter()) {
-            assert_eq!(
-                cache_tensor
-                    .i((.., 0, .., .., ..))
-                    .unwrap()
-                    .to_dtype(DType::F32)
-                    .unwrap()
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap(),
-                kv_tensor
-                    .to_dtype(DType::F32)
-                    .unwrap()
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap()
-            );
+            for (cache_tensor, kv_tensor) in cache.gpu_cache.iter().zip(kvs.iter()) {
+                assert_eq!(
+                    cache_tensor
+                        .i((.., 0, sequence_token_len..2 * sequence_token_len, .., ..))
+                        .unwrap()
+                        .to_dtype(DType::F32)
+                        .unwrap()
+                        .flatten_all()
+                        .unwrap()
+                        .to_vec1::<f32>()
+                        .unwrap(),
+                    kv_tensor
+                        .to_dtype(DType::F32)
+                        .unwrap()
+                        .flatten_all()
+                        .unwrap()
+                        .to_vec1::<f32>()
+                        .unwrap()
+                );
+            }
         }
     }
 }
