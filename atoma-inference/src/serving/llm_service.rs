@@ -143,7 +143,7 @@ impl LlmService {
                     if let Some(request) = request {
                         info!("Received new request, with id = {}", request.request_id);
                         let sequence = self.handle_request(request).await?;
-                        self.atoma_engine_sender.send(sequence)?;
+                        self.atoma_engine_sender.send(sequence).map_err(|e| LlmServiceError::SendError(Box::new(e)))?;
                     }
                 },
                 _ = self.shutdown_signal.recv() => {
@@ -234,7 +234,7 @@ pub enum LlmServiceError {
     #[error("Sequence error: `{0}`")]
     SequenceError(#[from] SequenceError),
     #[error("Send error: `{0}`")]
-    SendError(#[from] SendError<Sequence>),
+    SendError(#[from] Box<SendError<Sequence>>),
 }
 
 #[cfg(test)]

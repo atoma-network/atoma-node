@@ -13,6 +13,7 @@ candle-transformers.workspace = true
 clap = { workspace = true }
 config.workspace = true
 cudarc = { workspace = true, optional = true }
+cuda-runtime-sys.workspace = true
 dotenv.workspace = true
 futures.workspace = true
 half = { workspace = true, optional = true }
