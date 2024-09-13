@@ -4,6 +4,7 @@ use candle::{
     utils::{cuda_is_available, metal_is_available},
     DType, Device, Tensor,
 };
+use image::ImageEncoder;
 use tracing::info;
 
 use crate::bail;
@@ -76,27 +77,25 @@ pub fn hub_load_safetensors(
 }
 
 /// Helper function that converts a `Tensor` to an actual image in byte format
-pub fn convert_to_image(img: &Tensor) -> Result<(Vec<u8>, usize, usize), ModelError> {
+pub fn convert_to_image(img: &Tensor) -> Result<Vec<u8>, ModelError> {
     let (channel, height, width) = img.dims3()?;
     if channel != 3 {
         bail!("save_image expects an input of shape (3, height, width)")
     }
     let img = img.permute((1, 2, 0))?.flatten_all()?;
     let pixels = img.to_vec1::<u8>()?;
-    Ok((pixels, width, height))
-}
-
-/// Saves a image, from a `Tensor`
-pub fn save_image<P: AsRef<std::path::Path>>(img: &Tensor, p: P) -> Result<(), ModelError> {
-    let p = p.as_ref();
-    let (pixels, width, height) = convert_to_image(img)?;
-    let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-        match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
-            Some(image) => image,
-            None => bail!("error saving image {p:?}"),
-        };
-    image.save(p).map_err(candle::Error::wrap)?;
-    Ok(())
+    let image_buffer: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+        image::ImageBuffer::from_raw(width as u32, height as u32, pixels)
+            .ok_or_else(|| ModelError::ImageBufferError)?;
+    let mut png_bytes = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    encoder.write_image(
+        &image_buffer,
+        width as u32,
+        height as u32,
+        image::ColorType::Rgb8.into(),
+    )?;
+    Ok(png_bytes)
 }
 
 /// Saves a given `Tensor` to a file, with `filename`

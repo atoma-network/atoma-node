@@ -84,10 +84,6 @@ pub struct FluxLoadData {
 pub struct FluxOutput {
     /// Data buffer of the image encoding
     pub image_data: Vec<u8>,
-    /// Height of the image
-    pub height: usize,
-    /// Width of the image
-    pub width: usize,
     /// Number of input tokens
     input_tokens: usize,
     /// Time to generate output
@@ -353,12 +349,10 @@ impl ModelTrait for Flux {
         let img = ((img.clamp(-1f32, 1f32)? + 1.0)? * 127.5)?
             .to_dtype(candle::DType::U8)?
             .squeeze(0)?;
-        let (img, width, height) = convert_to_image(&img)?;
+        let img = convert_to_image(&img)?;
 
         Ok(FluxOutput {
             image_data: img,
-            height,
-            width,
             input_tokens: input.prompt.len(),
             time_to_generate: start.elapsed().as_secs_f64(),
         })

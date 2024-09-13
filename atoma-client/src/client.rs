@@ -109,22 +109,10 @@ impl AtomaSuiClient {
                 .into_iter()
                 .map(|b| b as u8)
                 .collect::<Vec<_>>();
-            let height = data["height"]
-                .as_u64()
-                .ok_or(AtomaSuiClientError::MissingOutputData)?
-                .to_le_bytes();
-            let width = data["width"]
-                .as_u64()
-                .ok_or(AtomaSuiClientError::MissingOutputData)?
-                .to_le_bytes();
 
             info!("Image data length: {:?}", img.len());
 
-            let mut result = img;
-            result.extend_from_slice(&height);
-            result.extend_from_slice(&width);
-
-            Ok(result)
+            Ok(img)
         } else {
             error!("Invalid JSON structure for data extraction");
             return Err(AtomaSuiClientError::FailedResponseJsonParsing);
@@ -203,7 +191,7 @@ impl AtomaSuiClient {
                             .as_bytes()
                             .to_vec(),
                         OutputType::Image => {
-                            let mut image_data = {
+                            let image_data = {
                                 let img_pixels_u64 = output["image_data"]
                                     .as_array()
                                     .ok_or(AtomaSuiClientError::MissingOutputData)?
@@ -217,18 +205,6 @@ impl AtomaSuiClient {
                                     .map(|v| v as u8)
                                     .collect::<Vec<_>>()
                             };
-                            let height = (output["height"]
-                                .as_u64()
-                                .ok_or(AtomaSuiClientError::MissingOutputData)?
-                                as u32)
-                                .to_le_bytes();
-                            let width = (output["width"]
-                                .as_u64()
-                                .ok_or(AtomaSuiClientError::MissingOutputData)?
-                                as u32)
-                                .to_le_bytes();
-                            image_data.extend_from_slice(&height);
-                            image_data.extend_from_slice(&width);
                             image_data
                         }
                     };
@@ -268,7 +244,7 @@ impl AtomaSuiClient {
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
         while let Some(response) = self.response_rx.recv().await {
-            info!("Received new response: {:?}", response);
+            info!("Received new response");
             if let Err(e) = self.submit_response_commitment(response).await {
                 error!("Failed to submit response commitment: {:?}", e);
             }

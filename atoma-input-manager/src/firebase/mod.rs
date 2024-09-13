@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::AtomaInputManagerError;
 
-const NUMBER_OF_REQUESTS_TO_TRY: usize = 5;
+const NUMBER_OF_REQUESTS_TO_TRY: usize = 10;
 const SLEEP_BETWEEN_REQUESTS_SEC: u64 = 1;
 
 /// `FirebaseInputManager` - Responsible for getting the prompt from the user
@@ -24,7 +24,7 @@ impl FirebaseInputManager {
     pub fn new(firebase: Firebase) -> Self {
         Self {
             auth: firebase.get_auth(),
-            firebase_url: firebase.get_url(),
+            firebase_url: firebase.get_realtime_db_url(),
         }
     }
 

@@ -585,7 +585,7 @@ pub struct StableDiffusionInput {
     /// information.
     pub img2img_strength: f64,
     /// The seed to use when generating random samples.
-    pub random_seed: Option<u32>,
+    pub random_seed: Option<u64>,
 }
 
 impl TryFrom<(Digest, ModelParams)> for StableDiffusionInput {
@@ -595,7 +595,7 @@ impl TryFrom<(Digest, ModelParams)> for StableDiffusionInput {
         match value {
             ModelParams::Text2ImageModelParams(p) => Ok(Self {
                 prompt: p.get_input_text(),
-                uncond_prompt: p.uncond_prompt().unwrap_or_default(),
+                uncond_prompt: p.get_uncond_prompt_text(),
                 height: p.height().map(|t| t.try_into().unwrap()),
                 width: p.width().map(|t| t.try_into().unwrap()),
                 n_steps: p.n_steps().map(|t| t.try_into().unwrap()),
