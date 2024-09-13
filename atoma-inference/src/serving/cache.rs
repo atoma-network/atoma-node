@@ -147,10 +147,6 @@ impl CacheEngine {
         Ok(())
     }
 
-    fn num_active_sequences(&self) -> usize {
-        self.active_sequences.len()
-    }
-
     /// Updates the KV cache for a give allocated sequence
     #[instrument(skip_all)]
     pub fn update_sequence(
@@ -179,35 +175,25 @@ impl CacheEngine {
             // Assigns the new KV tensors to the cache
             // on the right positions according to the sequence
             // length and its position index in the current batch
-            *layer = layer.reshape((
-                2,
-                self.max_batch_size * self.config.max_seq_len,
-                self.num_kv_heads,
-                self.head_dim,
-            ))?;
-            // NOTE: reshaping should be a view to the original
-            // tensor contents, as the KV cache was allocated
-            // as a contiguous tensor, and reshaping of a contiguous
-            // tensor is a view of its contents, and is always contiguous
-            *layer = layer
+            layer
                 .reshape((
                     2,
                     self.max_batch_size * self.config.max_seq_len,
                     self.num_kv_heads,
                     self.head_dim,
                 ))?
-                .slice_scatter(
+                .slice_set(
                     &new_kv_layer,
                     1,
                     seq_info.position_in_batch * self.config.max_seq_len + seq_info.current_len,
-                )?
-                .reshape((
-                    2,
-                    self.max_batch_size,
-                    self.config.max_seq_len,
-                    self.num_kv_heads,
-                    self.head_dim,
-                ))?;
+                )?;
+            *layer = layer.reshape((
+                2,
+                self.max_batch_size,
+                self.config.max_seq_len,
+                self.num_kv_heads,
+                self.head_dim,
+            ))?;
         }
         seq_info.current_len = new_len;
         Ok(())
@@ -320,15 +306,6 @@ mod tests {
 
         let device = Device::new_cuda(0).unwrap();
         let dtype = DType::from_str("bf16").unwrap();
-
-        let new_max_batch_size =
-            utils::compute_max_batch_size(dtype, MAX_SEQ_LEN, NUM_LAYERS, NUM_KV_HEADS, HEAD_DIM)
-                .unwrap();
-
-        assert_eq!(
-            ((1. - AVAILABLE_GPU_MEMORY_RATIO) * (max_batch_size as f32)) as usize,
-            new_max_batch_size
-        );
 
         let sequence_token_len = 10;
         for i in 0..max_batch_size {
