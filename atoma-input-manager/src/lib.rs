@@ -1,8 +1,11 @@
 use atoma_helpers::Firebase;
 use atoma_types::{InputFormat, InputSource, ModelInput};
+use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
+use http::uri::Scheme;
 use ipfs::IpfsInputManager;
-use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
+use std::path::Path;
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, oneshot},
@@ -10,6 +13,7 @@ use tokio::{
 };
 use tracing::{error, info, instrument, trace};
 
+mod config;
 mod firebase;
 mod ipfs;
 
@@ -51,16 +55,22 @@ pub struct AtomaInputManager {
 impl AtomaInputManager {
     /// Constructor
     #[instrument(skip_all)]
-    pub async fn new(
+    pub async fn new<P: AsRef<Path>>(
+        config_file_path: P,
         input_manager_rx: InputManagerReceiver,
         firebase: Firebase,
     ) -> Result<Self, AtomaInputManagerError> {
+        let config = AtomaInputManagerConfig::from_file_path(config_file_path);
+
         info!("Starting Atoma Input Manager...");
         let start = std::time::Instant::now();
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
 
         info!("Building IPFS client...");
-        let client = IpfsClient::default();
+        let ipfs_host = config.ipfs_host.unwrap_or("localhost".to_string());
+        let ipfs_port = config.ipfs_port;
+        let client = IpfsClient::from_host_and_port(Scheme::HTTP, &ipfs_host, ipfs_port)
+            .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
 
         let ipfs_join_handle = match client.version().await {
             Ok(version) => {

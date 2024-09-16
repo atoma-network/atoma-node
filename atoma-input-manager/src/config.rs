@@ -6,17 +6,10 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 /// Atoma's Firebase configuration values
 pub struct AtomaInputManagerConfig {
-    /// The Atoma's Firebase authentication URL
-    pub firebase_url: String,
-    /// Currently we use email/password authentication for Firebase
-    /// Email
-    pub firebase_email: String,
-    /// Password
-    pub firebase_password: String,
-    /// The node's Firebase api key
-    pub firebase_api_key: String,
-    /// The small id of the node
-    pub small_id: u64,
+    /// The IPFS host
+    pub ipfs_host: Option<String>,
+    /// The IPFS port
+    pub ipfs_port: u16,
 }
 
 impl AtomaInputManagerConfig {
