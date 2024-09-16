@@ -52,7 +52,10 @@ impl AtomaOutputManager {
             GatewayOutputManager::new(&config.gateway_api_key, &config.gateway_bearer_token);
 
         info!("Building IPFS client...");
-        let client = IpfsClient::from_host_and_port(Scheme::HTTP, "localhost", config.ipfs_port)
+        let ipfs_host = config.ipfs_host.unwrap_or("localhost");
+        let ipfs_port = config.ipfs_port;
+
+        let client = IpfsClient::from_host_and_port(Scheme::HTTP, ipfs_host, ipfs_port)
             .map_err(|e| AtomaOutputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
 

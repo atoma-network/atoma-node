@@ -6,6 +6,8 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 /// Atoma's Firebase configuration values
 pub struct AtomaInputManagerConfig {
+    /// The IPFS host
+    pub ipfs_host: Option<String>,
     /// The IPFS port
     pub ipfs_port: u16,
 }

@@ -11,6 +11,8 @@ pub struct AtomaOutputManagerConfig {
     pub gateway_api_key: String,
     /// The node's Gateway's bearer token
     pub gateway_bearer_token: String,
+    /// The node's IPFS host
+    pub ipfs_host: Option<String>,
     /// The node's IPFS port
     pub ipfs_port: u16,
 }
