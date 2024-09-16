@@ -280,9 +280,7 @@ impl ModelParams {
     pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
         match self {
             Self::Text2TextModelParams(p) => p.set_preprompt_tokens(pre_prompt_tokens),
-            Self::Text2ImageModelParams(_) => {
-                info!("Setting pre prompt tokens for Text2ImageModelParams is not allowed")
-            }
+            Self::Text2ImageModelParams(_) => {}
         }
     }
 }
