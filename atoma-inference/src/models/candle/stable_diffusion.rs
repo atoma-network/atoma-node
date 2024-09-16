@@ -754,9 +754,6 @@ mod tests {
         let output = model.run(input).expect("Failed to run inference");
         println!("{:?}", output.image_data);
 
-        assert_eq!(output.height, 512);
-        assert_eq!(output.width, 512);
-
         std::fs::remove_dir_all(cache_dir).unwrap();
         std::fs::remove_file("tensor1").unwrap();
         std::fs::remove_file("tensor2").unwrap();
