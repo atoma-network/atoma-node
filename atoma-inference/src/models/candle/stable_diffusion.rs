@@ -251,7 +251,7 @@ impl ModelTrait for StableDiffusion {
             load_data.use_flash_attention,
             load_data.dtype,
         )?;
-        info!("Loaded.");
+        info!("Loaded Stable diffusion model.");
 
         Ok(Self {
             config,
