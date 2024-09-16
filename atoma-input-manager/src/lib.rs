@@ -67,9 +67,9 @@ impl AtomaInputManager {
         let (ipfs_request_tx, ipfs_request_rx) = mpsc::unbounded_channel();
 
         info!("Building IPFS client...");
-        let ipfs_host = config.ipfs_host.unwrap_or("localhost");
+        let ipfs_host = config.ipfs_host.unwrap_or("localhost".to_string());
         let ipfs_port = config.ipfs_port;
-        let client = IpfsClient::from_host_and_port(Scheme::HTTP, ipfs_port, ipfs_port)
+        let client = IpfsClient::from_host_and_port(Scheme::HTTP, &ipfs_host, ipfs_port)
             .map_err(|e| AtomaInputManagerError::FailedToBuildIpfsClient(e.to_string()))?;
 
         let ipfs_join_handle = match client.version().await {
