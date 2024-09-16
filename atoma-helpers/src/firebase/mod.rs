@@ -11,19 +11,21 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct Firebase {
     auth: Arc<Mutex<FirebaseAuth>>,
-    url: Url,
+    realtime_db_url: Url,
+    storage_url: Url,
 }
 
 impl Firebase {
     pub async fn new(
         api_key: String,
-        url: Url,
+        realtime_db_url: Url,
+        storage_url: Url,
         node_id: SmallId,
     ) -> Result<Self, FirebaseAuthError> {
         let mut auth = FirebaseAuth::new(api_key).await?;
         let client = Client::new();
         let token = auth.get_id_token().await?;
-        let mut add_node_url = url.clone();
+        let mut add_node_url = realtime_db_url.clone();
         {
             let mut path_segment = add_node_url.path_segments_mut().unwrap();
             path_segment.push("nodes");
@@ -37,7 +39,8 @@ impl Firebase {
 
         Ok(Self {
             auth: Arc::new(Mutex::new(auth)),
-            url,
+            realtime_db_url,
+            storage_url,
         })
     }
 
@@ -45,7 +48,11 @@ impl Firebase {
         Arc::clone(&self.auth)
     }
 
-    pub fn get_url(&self) -> Url {
-        self.url.clone()
+    pub fn get_realtime_db_url(&self) -> Url {
+        self.realtime_db_url.clone()
+    }
+
+    pub fn get_storage_url(&self) -> Url {
+        self.storage_url.clone()
     }
 }

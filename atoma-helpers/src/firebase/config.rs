@@ -11,18 +11,26 @@ use url::ParseError;
 pub struct FirebaseConfig {
     /// Firebase api key
     api_key: String,
-    /// Firebase url
-    url: String,
+    /// Firebase realtime db url
+    realtime_db_url: String,
+    /// Firebase storage url
+    storage_url: String,
     /// Small id
     small_id: SmallId,
 }
 
 impl FirebaseConfig {
     /// Constructor
-    pub fn new(api_key: String, url: String, small_id: SmallId) -> Self {
+    pub fn new(
+        api_key: String,
+        realtime_db_url: String,
+        storage_url: String,
+        small_id: SmallId,
+    ) -> Self {
         Self {
             api_key,
-            url,
+            realtime_db_url,
+            storage_url,
             small_id,
         }
     }
@@ -32,9 +40,14 @@ impl FirebaseConfig {
         self.api_key.clone()
     }
 
-    /// Get the firebase_url from the config
-    pub fn url(&self) -> Result<Url, ParseError> {
-        Url::parse(self.url.as_str())
+    /// Get the firebase realtime db url from the config
+    pub fn realtime_db_url(&self) -> Result<Url, ParseError> {
+        Url::parse(self.realtime_db_url.as_str())
+    }
+
+    /// Get the firebase storage url from the config
+    pub fn storage_url(&self) -> Result<Url, ParseError> {
+        Url::parse(self.storage_url.as_str())
     }
 
     pub fn small_id(&self) -> SmallId {
@@ -63,7 +76,11 @@ impl FirebaseConfig {
             .parse()
             .unwrap();
 
-        let url = std::env::var("FIREBASE_URL")
+        let realtime_db_url = std::env::var("FIREBASE_REALTIME_DB_URL")
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+        let storage_url = std::env::var("FIREBASE_STORAGE_URL")
             .unwrap_or_default()
             .parse()
             .unwrap();
@@ -74,7 +91,8 @@ impl FirebaseConfig {
 
         Self {
             api_key,
-            url,
+            realtime_db_url,
+            storage_url,
             small_id,
         }
     }

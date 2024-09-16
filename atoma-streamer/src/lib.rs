@@ -29,7 +29,7 @@ impl AtomaStreamer {
         firebase: Firebase,
     ) -> Result<Self, AtomaStreamerError> {
         Ok(Self {
-            firebase_url: firebase.get_url(),
+            firebase_url: firebase.get_realtime_db_url(),
             streamer_rx,
             last_streamed_index: HashMap::new(),
             auth: firebase.get_auth(),

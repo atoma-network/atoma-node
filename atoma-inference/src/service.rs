@@ -90,7 +90,7 @@ impl ModelService {
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
-                        info!("Received a new inference response: {:?}", response);
+                        info!("Received a new inference response");
                         if let Err(e) = self.atoma_node_resp_tx.send(response).await {
                             return Err(ModelServiceError::SendError(e.to_string()));
                         }

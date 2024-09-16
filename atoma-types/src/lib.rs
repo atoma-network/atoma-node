@@ -280,7 +280,7 @@ impl ModelParams {
     pub fn set_preprompt_tokens(&mut self, pre_prompt_tokens: Vec<u32>) {
         match self {
             Self::Text2TextModelParams(p) => p.set_preprompt_tokens(pre_prompt_tokens),
-            Self::Text2ImageModelParams(_) => unimplemented!("Preprompt tokens are not supported"),
+            Self::Text2ImageModelParams(_) => {}
         }
     }
 }
@@ -507,7 +507,7 @@ pub struct Text2ImageModelParams {
     /// Model to run the inference
     model: String,
     /// Unconditional prompt, used in stable diffusion models
-    uncond_prompt: Option<String>,
+    uncond_prompt: Option<InputSource>,
     /// Height of the final generated image
     height: Option<u64>,
     /// Width of the final generated image
@@ -525,7 +525,7 @@ pub struct Text2ImageModelParams {
     /// Image to image strength
     img2img_strength: f64,
     /// The random seed for inference sampling
-    random_seed: Option<u32>,
+    random_seed: Option<u64>,
     /// Only decode the image (applicable to Flux models)
     decode_only: Option<String>,
 }
@@ -536,7 +536,7 @@ impl Text2ImageModelParams {
     pub fn new(
         prompt: InputSource,
         model: String,
-        uncond_prompt: Option<String>,
+        uncond_prompt: Option<InputSource>,
         height: Option<u64>,
         width: Option<u64>,
         n_steps: Option<u64>,
@@ -545,7 +545,7 @@ impl Text2ImageModelParams {
         img2img: Option<Vec<u8>>,
         img2img_strength: f64,
         img_path: Option<String>,
-        random_seed: Option<u32>,
+        random_seed: Option<u64>,
         decode_only: Option<String>,
     ) -> Self {
         Self {
@@ -576,7 +576,7 @@ impl Text2ImageModelParams {
     }
 
     /// Getter for `uncond_prompt`
-    pub fn uncond_prompt(&self) -> Option<String> {
+    pub fn uncond_prompt(&self) -> Option<InputSource> {
         self.uncond_prompt.clone()
     }
 
@@ -616,7 +616,7 @@ impl Text2ImageModelParams {
     }
 
     /// Getter for `random_seed`
-    pub fn random_seed(&self) -> Option<u32> {
+    pub fn random_seed(&self) -> Option<u64> {
         self.random_seed
     }
 
@@ -635,6 +635,15 @@ impl Text2ImageModelParams {
                 unreachable!("IPFS request cid found when raw prompt was expected")
             }
             InputSource::Raw { prompt } => prompt.clone(),
+        }
+    }
+
+    pub fn get_uncond_prompt_text(&self) -> String {
+        match &self.uncond_prompt {
+            Some(InputSource::Raw {
+                prompt: uncond_prompt,
+            }) => uncond_prompt.clone(),
+            _ => "".to_string(),
         }
     }
 
@@ -663,8 +672,11 @@ impl TryFrom<Value> for Text2ImageModelParams {
                 serde_json::from_value::<Vec<u8>>(value["prompt"].clone())?.as_slice(),
             ))?,
             model: utils::parse_str(&value["model"])?,
-            uncond_prompt: utils::parse_optional_str(&value["uncond_prompt"]),
-            random_seed: Some(utils::parse_u32(&value["random_seed"])?),
+            uncond_prompt: Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
+                serde_json::from_value::<Vec<u8>>(value["uncond_prompt"].clone())?.as_slice(),
+            ))
+            .ok(),
+            random_seed: Some(utils::parse_u64(&value["random_seed"])?),
             height: Some(utils::parse_u64(&value["height"])?),
             width: Some(utils::parse_u64(&value["width"])?),
             n_steps: Some(utils::parse_u64(&value["n_steps"])?),
@@ -891,18 +903,6 @@ mod utils {
             .try_into()?;
         let f32_le_bytes = u32_value.to_le_bytes();
         Ok(f32::from_le_bytes(f32_le_bytes))
-    }
-
-    /// Parses an appropriate JSON value, representing a `u32` number, from a Sui
-    /// `Text2ImagePromptEvent` or `Text2TextPromptEvent` `u32` fields.
-    pub(crate) fn parse_u32(value: &Value) -> Result<u32> {
-        value
-            .as_u64()
-            .ok_or_else(|| anyhow!("Expected a u64 for u32 parsing, found none"))
-            .and_then(|v| {
-                v.try_into()
-                    .map_err(|_| anyhow!("u64 to u32 conversion failed"))
-            })
     }
 
     /// Parses an appropriate JSON value, representing a `u64` number, from a Sui

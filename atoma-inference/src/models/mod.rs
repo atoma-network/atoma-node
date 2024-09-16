@@ -4,6 +4,7 @@ use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{AtomaStreamingData, Digest, ModelParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
+use image::ImageError;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use types::{TextModelInput, TextModelOutput};
@@ -88,6 +89,8 @@ pub enum ModelError {
     SendErrorTextModelInput(#[from] Box<tokio::sync::broadcast::error::SendError<TextModelInput>>),
     #[error("Send error: `{0}`")]
     SendErrorTextModelOutput(#[from] tokio::sync::mpsc::error::SendError<TextModelOutput>),
+    #[error("Failed to create image buffer")]
+    ImageBufferError,
 }
 
 #[macro_export]

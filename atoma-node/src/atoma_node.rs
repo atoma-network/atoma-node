@@ -47,7 +47,8 @@ impl AtomaNode {
         let firebase_config = FirebaseConfig::from_file_path(config_path.clone());
         let firebase = Firebase::new(
             firebase_config.api_key(),
-            firebase_config.url()?,
+            firebase_config.realtime_db_url()?,
+            firebase_config.storage_url()?,
             firebase_config.small_id(),
         )
         .await?;
