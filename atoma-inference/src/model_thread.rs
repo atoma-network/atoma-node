@@ -105,7 +105,7 @@ where
             let output_id = match output_destination {
                 atoma_types::OutputDestination::Firebase { request_id } => request_id,
                 atoma_types::OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
-                atoma_types::OutputDestination::Ipfs => "ipfs".to_string(), // NOTE: this is just a placeholder as streaming is not supported for IPFS storage
+                atoma_types::OutputDestination::Ipfs { request_id } => request_id,
             };
             let model_input = M::Input::try_from((output_id, params))?;
             let model_output = self.model.run(model_input)?;

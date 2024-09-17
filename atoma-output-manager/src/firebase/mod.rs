@@ -38,10 +38,10 @@ impl FirebaseOutputManager {
         &mut self,
         output_metadata: &AtomaOutputMetadata,
         output: Vec<u8>,
+        ipfs_cid: Option<String>,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
         let token = self.auth.lock().await.get_id_token().await?;
-        let mut url = self.realtime_db_url.clone();
 
         match output_metadata.output_type {
             OutputType::Text => {
@@ -82,13 +82,44 @@ impl FirebaseOutputManager {
                 }
             }
             OutputType::Image => {
-                let mut url = self.storage_url.clone();
-                url.set_query(Some(&format!(
+                // First store the metadata
+                let mut realtime_db_url = self.realtime_db_url.clone();
+                {
+                    let mut path_segment = realtime_db_url.path_segments_mut().map_err(|_| {
+                        AtomaOutputManagerError::UrlError("URL is not valid".to_string())
+                    })?;
+                    path_segment.push("data");
+                    path_segment.push(&output_metadata.output_destination.request_id());
+                    path_segment.push("response.json");
+                }
+                realtime_db_url.set_query(Some(&format!("auth={token}")));
+                info!("Firebase's output url: {:?}", realtime_db_url);
+                debug!(
+                    "Submitting to Firebase's realtime database, with metadata: {:?}",
+                    output_metadata
+                );
+                let data = match ipfs_cid {
+                    Some(ipfs_cid) => {
+                        json!({
+                            "metadata": output_metadata,
+                            "ipfs": ipfs_cid,
+                        })
+                    }
+                    None => {
+                        json!({
+                            "metadata": output_metadata,
+                        })
+                    }
+                };
+                submit_put_request(&client, realtime_db_url, &data).await?;
+                // Then store the image
+                let mut storage_url = self.storage_url.clone();
+                storage_url.set_query(Some(&format!(
                     "name=images/{}.png",
                     output_metadata.output_destination.request_id()
                 )));
                 client
-                    .post(url)
+                    .post(storage_url)
                     .header("Content-Type", "image/png")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(output)
