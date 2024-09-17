@@ -102,8 +102,11 @@ impl ModelMetadata for LlamaModel {
         None
     }
 
-    fn eos_token_id(&self) -> Option<u32> {
-        self.config.eos_token_id
+    fn eos_token_ids(&self) -> Option<Vec<u32>> {
+        match self.config.eos_token_id {
+            LlamaEosToken::Single(id) => Some(vec![id]),
+            LlamaEosToken::Multiple(ids) => Some(ids)
+        }
     }
 
     fn hidden_size(&self) -> usize {

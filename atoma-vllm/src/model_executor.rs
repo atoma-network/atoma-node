@@ -63,7 +63,7 @@ pub trait ModelLoader {
 /// `ModelMetadata` - Metadata for a LLM model
 pub trait ModelMetadata: ModelLoader {
     fn alibi_slopes(&self) -> Option<&Tensor>;
-    fn eos_token_id(&self) -> Option<u32>;
+    fn eos_token_ids(&self) -> Option<Vec<u32>>;
     fn hidden_size(&self) -> usize;
     fn num_attention_heads(&self) -> usize;
     fn num_hidden_layers(&self) -> usize;

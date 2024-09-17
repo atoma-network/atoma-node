@@ -67,8 +67,8 @@ impl ModelMetadata for MockModel {
         None
     }
 
-    fn eos_token_id(&self) -> Option<u32> {
-        Some(EOS_TOKEN_ID)
+    fn eos_token_ids(&self) -> Option<Vec<u32>> {
+        Some(vec![EOS_TOKEN_ID])
     }
 
     fn hidden_size(&self) -> usize {
