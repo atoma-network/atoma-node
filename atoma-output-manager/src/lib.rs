@@ -9,7 +9,10 @@ use http::uri::Scheme;
 use ipfs::IpfsOutputManager;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
 use thiserror::Error;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use tracing::{error, info, instrument, trace};
 
 mod config;
@@ -17,7 +20,11 @@ mod firebase;
 mod gateway;
 mod ipfs;
 
-type IpfsSendRequestError = mpsc::error::SendError<(AtomaOutputMetadata, Vec<u8>)>;
+type IpfsSendRequestError = mpsc::error::SendError<(
+    AtomaOutputMetadata,
+    Vec<u8>,
+    oneshot::Sender<Option<String>>,
+)>;
 
 /// `AtomaOutputManager` - manages different output destination
 ///     requests, allowing for a flexible interaction between
@@ -31,7 +38,11 @@ pub struct AtomaOutputManager {
     /// IPFS's join handle related to the IPFS output manager background task.
     ipfs_join_handle: Option<JoinHandle<Result<(), AtomaOutputManagerError>>>,
     /// Request sender to the IPFS manager background task.
-    ipfs_request_tx: mpsc::UnboundedSender<(AtomaOutputMetadata, Vec<u8>)>,
+    ipfs_request_tx: mpsc::UnboundedSender<(
+        AtomaOutputMetadata,
+        Vec<u8>,
+        oneshot::Sender<Option<String>>,
+    )>,
     /// Gateway's output manager.
     gateway_output_manager: GatewayOutputManager,
     /// A mpsc receiver that receives tuples of `AtomaOutputMetadata` and
@@ -108,16 +119,24 @@ impl AtomaOutputManager {
             match output_metadata.output_destination {
                 OutputDestination::Firebase { .. } => {
                     self.firebase_output_manager
-                        .handle_post_request(&output_metadata, output)
+                        .handle_post_request(&output_metadata, output, None)
                         .await?
                 }
-                OutputDestination::Ipfs => {
+                OutputDestination::Ipfs { .. } => {
+                    let (sender, receiver) = oneshot::channel();
                     self.ipfs_request_tx
-                        .send((output_metadata, output))
+                        .send((output_metadata.clone(), output.clone(), sender))
                         .map_err(Box::new)?;
-                    // TODO: we need to handle the response CID
-                    // either by storing it in firebase, or submitting
-                    // an on-chain transaction
+                    let ipfs_cid = match receiver.await {
+                        Ok(response) => response,
+                        Err(e) => {
+                            error!("Failed to receive IPFS response: {:?}", e);
+                            None
+                        }
+                    };
+                    self.firebase_output_manager
+                        .handle_post_request(&output_metadata, output.clone(), ipfs_cid)
+                        .await?;
                 }
                 OutputDestination::Gateway { .. } => {
                     self.gateway_output_manager
@@ -185,4 +204,6 @@ pub enum AtomaOutputManagerError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("Firebase error: `{0}`")]
     FirebaseError(String),
+    #[error("Failed to send the ipfs result `{0:?}` back")]
+    SendError(Option<String>),
 }

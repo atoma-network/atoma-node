@@ -2,7 +2,7 @@ use atoma_types::AtomaOutputMetadata;
 use futures::{stream::FuturesUnordered, StreamExt};
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use serde_json::json;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, instrument, trace};
 
 use crate::AtomaOutputManagerError;
@@ -11,7 +11,8 @@ type Output = Vec<u8>;
 
 pub struct IpfsOutputManager {
     client: IpfsClient,
-    ipfs_request_rx: mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output)>,
+    ipfs_request_rx:
+        mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output, oneshot::Sender<Option<String>>)>,
 }
 
 impl IpfsOutputManager {
@@ -19,7 +20,11 @@ impl IpfsOutputManager {
     #[instrument(skip_all)]
     pub async fn new(
         client: IpfsClient,
-        ipfs_request_rx: mpsc::UnboundedReceiver<(AtomaOutputMetadata, Output)>,
+        ipfs_request_rx: mpsc::UnboundedReceiver<(
+            AtomaOutputMetadata,
+            Output,
+            oneshot::Sender<Option<String>>,
+        )>,
     ) -> Result<Self, AtomaOutputManagerError> {
         Ok(Self {
             client,
@@ -35,20 +40,18 @@ impl IpfsOutputManager {
         loop {
             tokio::select! {
                 output = self.ipfs_request_rx.recv() => {
-                    if let Some((output_metadata, output)) = output {
-                        let future = Self::handle_request(&self.client, output_metadata, output);
+                    if let Some((output_metadata, output, sender)) = output {
+                        let future = Self::handle_request(&self.client, output_metadata, output, sender);
                         futures_unordered.push(future);
                     }
                 },
-                result = futures_unordered.next() => {
-                    if let Some(result) = result {
-                        match result {
-                            Ok(()) => {
-                                trace!("Successfully stored output to IPFS");
-                            }
-                            Err(e) => {
-                                error!("Failed to store output to IPFS, with error: {e}");
-                            }
+                Some(result) = futures_unordered.next() => {
+                    match result {
+                        Ok(()) => {
+                            trace!("Successfully stored output to IPFS");
+                        }
+                        Err(e) => {
+                            error!("Failed to store output to IPFS, with error: {e}");
                         }
                     }
                 }
@@ -63,6 +66,7 @@ impl IpfsOutputManager {
         client: &IpfsClient,
         output_metadata: AtomaOutputMetadata,
         output: Vec<u8>,
+        sender: oneshot::Sender<Option<String>>,
     ) -> Result<(), AtomaOutputManagerError> {
         info!("Storing new data to IPFS for new request");
         let metadata_json = serde_json::to_value(output_metadata)?;
@@ -77,10 +81,18 @@ impl IpfsOutputManager {
                     "Data stored to IPFS successfully, with hash = {:?}",
                     response.hash
                 );
+                sender.send(Some(response.hash)).map_err(|e| {
+                    error!("Failed to send response to the sender: {e:?}");
+                    AtomaOutputManagerError::SendError(e)
+                })?;
                 Ok(())
             }
             Err(e) => {
                 error!("Failed to store data to IPFS: {e}");
+                sender.send(None).map_err(|e| {
+                    error!("Failed to send response to the sender: {e:?}");
+                    AtomaOutputManagerError::SendError(e)
+                })?;
                 Err(AtomaOutputManagerError::IpfsError(e))
             }
         }
