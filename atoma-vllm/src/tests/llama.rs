@@ -8,6 +8,7 @@ use crate::{
 use candle_core::{cuda::cudarc::driver::result::device, DType, Device};
 use std::path::PathBuf;
 use tokio::sync::oneshot;
+use tracing::info;
 
 const BLOCK_SIZE: usize = 16;
 const MAX_STOP_SEQUENCES: usize = 1;
