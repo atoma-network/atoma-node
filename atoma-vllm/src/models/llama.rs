@@ -1,6 +1,6 @@
 use atoma_paged_attention::{
     models::{
-        llama::{Config, LlamaConfig},
+        llama::{Config, LlamaConfig, LlamaEosToks},
         Llama,
     },
     FlashAttentionMetadata,
@@ -104,8 +104,8 @@ impl ModelMetadata for LlamaModel {
 
     fn eos_token_ids(&self) -> Option<Vec<u32>> {
         match self.config.eos_token_id {
-            LlamaEosToken::Single(id) => Some(vec![id]),
-            LlamaEosToken::Multiple(ids) => Some(ids)
+            LlamaEosToks::Single(id) => Some(vec![id]),
+            LlamaEosToks::Multiple(ids) => Some(ids)
         }
     }
 
