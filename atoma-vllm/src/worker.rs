@@ -176,7 +176,7 @@ where
             attention_metadata,
         )?;
 
-        let sampled_outputs = self.model.sample(&logits, &sequence_groups_metadata)?;
+        let sampled_outputs = self.model.sample(&logits.squeeze(0)?, &sequence_groups_metadata)?;
 
         Ok(sampled_outputs)
     }
@@ -331,7 +331,7 @@ where
                 //    (prompt or decode)
                 if is_prompt {
                     debug_assert_eq!(
-                        sequence_group_metadata.sequence_data.keys().len(),
+                        sequence_group_metadata.sequence_data.len(),
                         1,
                         "Prompt should have only one sequence ID"
                     );

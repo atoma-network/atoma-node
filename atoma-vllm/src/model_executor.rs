@@ -91,7 +91,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
     ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
         let total_num_sequences = sequence_groups_metadata
             .iter()
-            .map(|metadata| metadata.sequence_data.keys().len())
+            .map(|metadata| metadata.sequence_data.len())
             .sum::<usize>();
 
         // 1. Check if the logits zeroth dimension matches the total number of sequences

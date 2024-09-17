@@ -438,7 +438,7 @@ impl GenerateRequestOutput {
 }
 
 /// `InferenceOutput` - Output of running AI inference on a given sequence group
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InferenceOutput {
     /// The index of the output in the request
     pub index: usize,
