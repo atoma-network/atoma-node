@@ -107,6 +107,7 @@ async fn test_llama_model() {
     for _ in 0..prompts.len() {
         let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
             atoma_client_receiver.recv().await.unwrap();
+        info!("Received response: {responses:?}");
     }
 
     // Remove model cache folder

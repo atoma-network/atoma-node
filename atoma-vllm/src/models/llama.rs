@@ -20,10 +20,17 @@ use crate::{
     models::hub_load_safetensors,
 };
 
+/// Represents a Llama language model.
+///
+/// This struct encapsulates the configuration, device, data type, and the actual Llama model.
 pub struct LlamaModel {
+    /// The configuration for the Llama model.
     config: Config,
+    /// The device on which the model is loaded (e.g., CPU or GPU).
     device: Device,
+    /// The data type used for the model's parameters.
     dtype: DType,
+    /// The actual Llama model implementation.
     model: Llama,
 }
 
