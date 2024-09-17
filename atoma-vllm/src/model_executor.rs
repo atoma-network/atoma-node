@@ -154,8 +154,8 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                     .sample(&sequence_logits)?;
 
                 let is_stop_token = self
-                    .eos_token_id()
-                    .map(|eid| next_token == eid)
+                    .eos_token_ids()
+                    .map(|eid| eid.contains(&next_token))
                     .unwrap_or_default();
 
                 // 7. Update the logits index
