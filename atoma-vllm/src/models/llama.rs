@@ -103,9 +103,9 @@ impl ModelMetadata for LlamaModel {
     }
 
     fn eos_token_ids(&self) -> Option<Vec<u32>> {
-        match self.config.eos_token_id {
-            Some(LlamaEosToks::Single(id)) => Some(vec![id]),
-            Some(LlamaEosToks::Multiple(ids)) => Some(ids),
+        match self.config.eos_token_id.as_ref() {
+            Some(&LlamaEosToks::Single(id)) => Some(vec![id]),
+            Some(&LlamaEosToks::Multiple(ids)) => Some(ids),
             None => None,
         }
     }
