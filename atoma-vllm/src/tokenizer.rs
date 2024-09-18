@@ -11,6 +11,8 @@ use tracing::{error, info, info_span, instrument, Span};
 pub struct EncodeTokenizerRequest {
     /// Input string
     pub input: String,
+    /// Truncate the input to the given length
+    pub truncate: Option<usize>,
     /// `oneshot::Sender`` responsible to deliver the result of tokenization,
     /// which includes the actual `Encoding`, together with the original input
     /// in `String` format
@@ -81,11 +83,12 @@ fn start_tokenizer_task(
         info!("Received new `EncodeTokenizerRequest`");
         let EncodeTokenizerRequest {
             input,
+            truncate,
             sender,
             span,
         } = request;
         span.in_scope(|| {
-            let prepared_inputs = prepare_inputs(&tokenizer, input);
+            let prepared_inputs = prepare_inputs(&tokenizer, input, truncate);
             sender.send(prepared_inputs).unwrap_or(())
         });
     }
@@ -118,7 +121,18 @@ async fn round_robin_task(
 fn prepare_inputs(
     tokenizer: &Tokenizer,
     input: String,
+    truncate: Option<usize>,
 ) -> Result<(Encoding, String), TokenizerError> {
+    let input = if let Some(truncate) = truncate {
+        if truncate > input.chars().count(); {
+            input
+        } else {
+            let start = input.chars_indices().nth(input.chars().count() - truncate).map(|(idx, _)| idx).unwrap_or(0);
+            input[start..].to_string()
+        }
+    } else { 
+        input
+    };
     let encoding = tokenizer.encode(input.clone(), true)?;
     Ok((encoding, input))
 }

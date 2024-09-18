@@ -56,11 +56,13 @@ impl Validation {
     pub async fn tokenize(
         &self,
         input: String,
+        truncate: Option<usize>,
     ) -> Result<(Encoding, String), ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
         let request = EncodeTokenizerRequest {
             input,
+            truncate,
             sender: response_sender,
             span: Span::current(),
         };

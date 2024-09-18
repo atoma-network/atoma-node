@@ -93,8 +93,6 @@ impl ModelLoader for LlamaModel {
         Ok(Self {
             model,
             config,
-            device,
-            dtype,
         })
     }
 }

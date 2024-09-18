@@ -24,6 +24,7 @@ use crate::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
     },
+    validation::NextTokenChooserParameters,
     worker::{ModelWorker, ModelWorkerError},
 };
 
@@ -234,10 +235,10 @@ where
             };
             let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
             for o in output.iter_mut() {
-                o.sequence_group_metrics = Some(SequenceGroupMetrics {
+                o.sequence_group_metrics = SequenceGroupMetrics {
                     time_to_generate: Some(execution_elapsed_time),
                     num_tokens_generated: 1, // NOTE: without speculative decoding, we generate one token at a time for both prefill and decode sequences
-                });
+                };
             }
 
             // Send responses back to the engine

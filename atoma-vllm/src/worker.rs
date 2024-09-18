@@ -61,7 +61,6 @@ where
     #[instrument(skip_all)]
     pub fn new(
         block_size: usize,
-        cache_config: CacheConfig,
         device: Device,
         dtype: DType,
         model: M,
@@ -95,7 +94,6 @@ where
         Ok(Self {
             cache_engine,
             device,
-            cache_config,
             enable_chunked_prefill,
             model,
             initial_gpu_memory: 0, // TODO 2.
@@ -189,10 +187,10 @@ where
         blocks_to_swap_out: &HashMap<u32, u32>,
         blocks_to_copy: Option<Tensor>,
     ) -> Result<(), ModelWorkerError> {
-        if !blocks_to_swap_in.len().is_empty() {
+        if !blocks_to_swap_in.is_empty() {
             self.cache_engine.swap_in(blocks_to_swap_in)?
         }
-        if !blocks_to_swap_out.len().is_empty() {
+        if !blocks_to_swap_out.is_empty() {
             self.cache_engine.swap_out(blocks_to_swap_out)?
         }
         if let Some(bs) = blocks_to_copy {
