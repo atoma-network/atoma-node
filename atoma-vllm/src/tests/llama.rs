@@ -113,7 +113,7 @@ async fn test_llama_model() {
             let elapsed_time = finished_time.duration_since(start);
             for output in inference_outputs.inference_outputs {
                 let text = output.output_text;
-                info!("\n\nReceived response: {output:?}\n, within time: {elapsed_time:?}\n\n");
+                info!("\n\nReceived response: {text:?}\n, within time: {elapsed_time:?}\n\n");
             }
         }
     }

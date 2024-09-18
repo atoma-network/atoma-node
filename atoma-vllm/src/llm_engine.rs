@@ -391,7 +391,7 @@ pub struct GenerateRequestOutput {
 
 impl GenerateRequestOutput {
     /// Creates a new `Self` instance from a `SequenceGroup`
-    pub fn from_sequence_group(sequence_group: &mut SequenceGroup) -> Self {
+    pub fn from_sequence_group(sequence_group: &SequenceGroup) -> Self {
         let mut sequences = sequence_group.sequences.values().collect::<Vec<_>>();
 
         let top_n_sequences = if sequences.len() == 1 {
