@@ -1,6 +1,5 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -11,7 +10,7 @@ use atoma_paged_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
 use tokenizers::Tokenizer;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::{
@@ -21,13 +20,9 @@ use crate::{
         ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError,
         ModelMetadata,
     },
-    sequence::{
-        ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
-        SequenceOutput,
-    },
-    tokenizer::TokenizerWorker,
+    sequence::ExecuteModelRequest,
     types::{GenerateParameters, GenerateRequest},
-    validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
+    validation::Validation,
 };
 
 const BLOCK_SIZE: usize = 16;

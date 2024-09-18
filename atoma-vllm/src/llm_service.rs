@@ -19,9 +19,7 @@ use metrics::{counter, gauge};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
-    sync::{
-        mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
-    },
+    sync::mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
 use tracing::{error, info, info_span, instrument, Span};

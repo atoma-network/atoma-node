@@ -1755,7 +1755,6 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 4;
         const NUM_GPU_BLOCKS: usize = 4;
         const SWAP_SPACE: usize = 1;
-        const CACHE_DTYPE: &str = "auto";
 
         const MAX_NUM_BATCHED_TOKENS: usize = 100;
         const MAX_NUM_SEQUENCES: usize = 64;
@@ -1774,7 +1773,6 @@ mod tests {
             BLOCK_SIZE,
             GPU_MEMORY_UTILIZATION,
             SWAP_SPACE,
-            CACHE_DTYPE.into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -1801,7 +1799,6 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 4;
         const NUM_GPU_BLOCKS: usize = 4;
         const SWAP_SPACE: usize = 1;
-        const CACHE_DTYPE: &str = "auto";
 
         const MAX_NUM_BATCHED_TOKENS: usize = 100;
         const MAX_NUM_SEQUENCES: usize = 64;
@@ -1820,7 +1817,6 @@ mod tests {
             BLOCK_SIZE,
             GPU_MEMORY_UTILIZATION,
             SWAP_SPACE,
-            CACHE_DTYPE.into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -1854,7 +1850,6 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 8;
         const NUM_GPU_BLOCKS: usize = 8;
         const SWAP_SPACE: usize = 1;
-        const CACHE_DTYPE: &str = "auto";
 
         const MAX_NUM_BATCHED_TOKENS: usize = 100;
         const MAX_NUM_SEQUENCES: usize = 4;
@@ -1873,7 +1868,6 @@ mod tests {
             BLOCK_SIZE,
             GPU_MEMORY_UTILIZATION,
             SWAP_SPACE,
-            CACHE_DTYPE.into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -1986,7 +1980,6 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 2;
         const NUM_GPU_BLOCKS: usize = 2;
         const SWAP_SPACE: usize = 1;
-        const CACHE_DTYPE: &str = "auto";
 
         const MAX_NUM_BATCHED_TOKENS: usize = 30;
         const MAX_NUM_SEQUENCES: usize = 2;
@@ -2005,7 +1998,6 @@ mod tests {
             BLOCK_SIZE,
             GPU_MEMORY_UTILIZATION,
             SWAP_SPACE,
-            CACHE_DTYPE.into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -2121,7 +2113,6 @@ mod tests {
         const NUM_CPU_BLOCKS: usize = 2;
         const NUM_GPU_BLOCKS: usize = 2;
         const SWAP_SPACE: usize = 1;
-        const CACHE_DTYPE: &str = "auto";
 
         const MAX_NUM_BATCHED_TOKENS: usize = 64;
         const MAX_NUM_SEQUENCES: usize = 2;
@@ -2140,7 +2131,6 @@ mod tests {
             BLOCK_SIZE,
             GPU_MEMORY_UTILIZATION,
             SWAP_SPACE,
-            CACHE_DTYPE.into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -2317,7 +2307,6 @@ mod tests {
             BLOCK_SIZE,
             1.0,
             1,
-            "auto".into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -2385,7 +2374,6 @@ mod tests {
             BLOCK_SIZE,
             1.0,
             1,
-            "auto".into(),
             None,
             None,
             NUM_CPU_BLOCKS,
@@ -2473,7 +2461,7 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 30, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".into(), None, None, 8, 8)
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
             .expect("Failed to get cache config");
         let mut scheduler = Scheduler::<FcfsPolicy>::new(cache_config, scheduler_config)
             .expect("Failed to get scheduler");
@@ -2499,9 +2487,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2572,9 +2559,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2620,9 +2606,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2671,9 +2656,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2719,9 +2703,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2781,9 +2764,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2820,9 +2802,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2865,9 +2846,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2917,9 +2897,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -2967,9 +2946,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -3012,9 +2990,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");
@@ -3058,9 +3035,8 @@ mod tests {
         const BLOCK_SIZE: usize = 4;
         let scheduler_config = SchedulerConfig::new(1000, 1000, 1000, 0.0, false, 0)
             .expect("Failed to get scheduler config");
-        let cache_config =
-            CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 8, 8)
-                .expect("Failed to get cache config");
+        let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 8, 8)
+            .expect("Failed to get cache config");
         let mut scheduler =
             Scheduler::<FcfsPolicy>::new(cache_config.clone(), scheduler_config.clone())
                 .expect("Failed to get scheduler");

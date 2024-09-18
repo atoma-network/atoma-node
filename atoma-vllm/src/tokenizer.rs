@@ -42,7 +42,6 @@ impl TokenizerWorker {
         receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         workers: usize,
     ) -> Result<(), TokenizerError> {
-
         let mut senders = Vec::with_capacity(workers);
 
         for i in 0..workers {
@@ -127,10 +126,14 @@ fn prepare_inputs(
         if truncate > input.chars().count() {
             input
         } else {
-            let start = input.char_indices().nth(input.chars().count() - truncate).map(|(idx, _)| idx).unwrap_or(0);
+            let start = input
+                .char_indices()
+                .nth(input.chars().count() - truncate)
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
             input[start..].to_string()
         }
-    } else { 
+    } else {
         input
     };
     let encoding = tokenizer.encode(input.clone(), true)?;

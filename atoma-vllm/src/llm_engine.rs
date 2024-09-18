@@ -427,7 +427,7 @@ impl GenerateRequestOutput {
             .collect::<Vec<_>>();
 
         let is_finished = sequence_group.is_finished();
-        if is_finished { 
+        if is_finished {
             let mut metrics = sequence_group.metrics.write().unwrap();
             metrics.finished_time = Some(Instant::now());
         }

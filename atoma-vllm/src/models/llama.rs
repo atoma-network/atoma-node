@@ -90,10 +90,7 @@ impl ModelLoader for LlamaModel {
         };
         info!("Loaded Llama model in {:?}", start.elapsed());
 
-        Ok(Self {
-            model,
-            config,
-        })
+        Ok(Self { model, config })
     }
 }
 
