@@ -127,7 +127,7 @@ fn prepare_inputs(
         if truncate > input.chars().count() {
             input
         } else {
-            let start = input.chars_indices().nth(input.chars().count() - truncate).map(|(idx, _)| idx).unwrap_or(0);
+            let start = input.char_indices().nth(input.chars().count() - truncate).map(|(idx, _)| idx).unwrap_or(0);
             input[start..].to_string()
         }
     } else { 
