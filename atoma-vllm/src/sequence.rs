@@ -754,8 +754,7 @@ impl SequenceGroup {
     }
 
     /// Sets finished time
-    #[allow(dead_code)]
-    fn set_finished_time(&mut self, time: Instant) {
+    pub fn set_finished_time(&mut self, time: Instant) {
         self.metrics.write().unwrap().finished_time = Some(time);
     }
 

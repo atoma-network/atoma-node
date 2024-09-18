@@ -76,6 +76,7 @@ async fn test_llama_model() {
 
     let prompts = vec!["The capital of France is ".to_string()];
 
+    let start = Instant::now();
     for (i, prompt) in prompts.iter().enumerate() {
         atoma_event_subscriber_sender
             .send(GenerateRequest {
@@ -107,7 +108,14 @@ async fn test_llama_model() {
     for _ in 0..prompts.len() {
         let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
             atoma_client_receiver.recv().await.unwrap();
-        info!("Received response: {responses:?}");
+        for inference_outputs in responses {
+            for output in inference_outputs.inference_outputs {
+                let text = output.output_text;
+                let finished_time = output.metrics.read().unwrap().finished_time.unwrap();
+                let elapsed_time = finished_time.duration_since(start);
+                info!("\n\nReceived response: {output:?}\n, within time: {elapsed_time:?}\n\n");
+            }
+        }
     }
 
     // Remove model cache folder

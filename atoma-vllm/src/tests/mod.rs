@@ -9,7 +9,6 @@ mod llama;
 use atoma_paged_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
-use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -275,8 +274,6 @@ async fn test_llm_engine_with_enable_chunking() {
 
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, true, 0)
         .expect("Failed to create scheduler config");
-
-    // let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
 
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
