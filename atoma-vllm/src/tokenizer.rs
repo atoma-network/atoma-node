@@ -1,11 +1,10 @@
 use thiserror::Error;
 use tokenizers::{tokenizer::Tokenizer, Encoding, Error};
 use tokio::sync::{
-    broadcast::error,
     mpsc::{self, error::SendError},
     oneshot,
 };
-use tracing::{error, info, info_span, instrument, span, Span};
+use tracing::{error, info, info_span, instrument, Span};
 
 /// `EncodeTokenizerRequest` - A request for encoding a string input
 /// into a suite of tokens (expressed as a `u32` vector)
@@ -32,9 +31,7 @@ pub struct DecodeTokenizerRequest {
 
 /// `Tokenizer` - a tokenizer worker
 /// responsible for prepare input requests
-pub struct TokenizerWorker {
-    span: Span,
-}
+pub struct TokenizerWorker;
 
 impl TokenizerWorker {
     /// Starts the tokenizer workers
@@ -43,6 +40,7 @@ impl TokenizerWorker {
         receiver: mpsc::UnboundedReceiver<EncodeTokenizerRequest>,
         workers: usize,
     ) -> Result<(), TokenizerError> {
+
         let mut senders = Vec::with_capacity(workers);
 
         for i in 0..workers {

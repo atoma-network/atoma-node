@@ -1,4 +1,3 @@
-use candle_core::error;
 use thiserror::Error;
 use tokenizers::Encoding;
 use tokio::sync::{mpsc, oneshot};
@@ -15,6 +14,7 @@ const DEFAULT_RANDOM_SEED: u64 = 1_283_768_955;
 #[derive(Clone, Debug)]
 pub struct Validation {
     /// Validation of `best_of`
+    #[allow(dead_code)]
     best_of: usize,
     /// Validation of `max_stop_sequences`
     max_stop_sequences: usize,
@@ -56,7 +56,6 @@ impl Validation {
     pub async fn tokenize(
         &self,
         input: String,
-        truncate: Option<usize>,
     ) -> Result<(Encoding, String), ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
@@ -331,16 +330,19 @@ impl Validation {
 /// taken place
 pub(crate) struct ValidGenerateRequest {
     /// The request id
+    #[allow(dead_code)]
     pub request_id: String,
     /// Inputs, in the form of a `String`
     pub inputs: String,
     /// Input tokenizer encoding
     pub encoding: Encoding,
     /// Inputs token length
+    #[allow(dead_code)]
     pub input_token_len: usize,
     /// The truncation window of the input
     pub truncate: u32,
     /// Whether to return decoder input token logprobs and ids.
+    #[allow(dead_code)]
     pub decoder_input_details: bool,
     /// Set of parameters necessary for choosing the next token, after a
     /// LLM forward pass
@@ -348,6 +350,7 @@ pub(crate) struct ValidGenerateRequest {
     /// Stopping criteria parameters
     pub stopping_parameters: StoppingCriteriaParameters,
     /// Top `n` tokens
+    #[allow(dead_code)]
     pub top_n_tokens: u32,
     /// Whether to prepend the prompt to the generated text
     pub return_full_text: bool,

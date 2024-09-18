@@ -6,7 +6,6 @@ use std::{
 
 use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokenizers::Tokenizer;
@@ -25,7 +24,6 @@ use crate::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
     },
-    validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
     worker::{ModelWorker, ModelWorkerError},
 };
 
@@ -87,7 +85,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
     fn sample(
         &self,
         logits: &Tensor,
-        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: &[Arc<SequenceGroupMetadata>],
     ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
         let total_num_sequences = sequence_groups_metadata
             .iter()
@@ -108,13 +106,8 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
             // 2. Retrieve the next token chooser and stopping criteria parameters,
             //    from the `SequenceGroupMetadata`, to be used for sampling
             let NextTokenChooserParameters {
-                temperature,
                 repetition_penalty,
                 repeat_last_n,
-                top_k,
-                top_p,
-                do_sample,
-                random_seed,
                 ..
             } = sequence_group_metadata.next_token_chooser_params;
 
@@ -240,6 +233,12 @@ where
                 }
             };
             let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
+            for o in output.iter_mut() {
+                o.sequence_group_metrics = Some(SequenceGroupMetrics {
+                    time_to_generate: Some(execution_elapsed_time),
+                    num_tokens_generated: 1, // NOTE: without speculative decoding, we generate one token at a time for both prefill and decode sequences
+                });
+            }
 
             // Send responses back to the engine
             sender.send(output).ok();

@@ -9,7 +9,6 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::{path::Path, time::Instant};
-use tokenizers::Tokenizer;
 use tracing::info;
 
 use crate::{
@@ -26,10 +25,6 @@ use crate::{
 pub struct LlamaModel {
     /// The configuration for the Llama model.
     config: Config,
-    /// The device on which the model is loaded (e.g., CPU or GPU).
-    device: Device,
-    /// The data type used for the model's parameters.
-    dtype: DType,
     /// The actual Llama model implementation.
     model: Llama,
 }

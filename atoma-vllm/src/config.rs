@@ -40,7 +40,6 @@ impl CacheConfig {
         block_size: usize,
         gpu_memory_utilization: f32,
         swap_space: usize,
-        cache_dtype: String,
         num_gpu_blocks_override: Option<usize>,
         sliding_window: Option<usize>,
         num_cpu_blocks: usize,
@@ -224,18 +223,23 @@ pub enum SchedulerConfigError {
 #[derive(Clone, Debug)]
 pub struct ModelConfig {
     /// HuggingFace model identifier
+    #[allow(dead_code)]
     model_id: String,
     /// Dtype
+    #[allow(dead_code)]
     dtype: String,
     /// The model revision identifier
+    #[allow(dead_code)]
     revision: String,
     /// Maximum length of a sequence (including prompt and
     /// output). If None, will be derived from the model.
+    #[allow(dead_code)]
     max_model_len: usize,
     /// Whether to disable sliding window. If True,
     /// we will disable the sliding window functionality of the model.
     /// If the model does not support sliding window, this argument is
     /// ignored.
+    #[allow(dead_code)]
     disable_sliding_window: bool,
 }
 

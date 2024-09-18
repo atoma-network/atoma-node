@@ -426,12 +426,17 @@ impl GenerateRequestOutput {
             })
             .collect::<Vec<_>>();
 
+        let is_finished = sequence_group.is_finished();
+        if is_finished { 
+            let mut metrics = sequence_group.metrics.write().unwrap();
+            metrics.finished_time = Some(Instant::now());
+        }
         Self {
             request_id: sequence_group.request_id.clone(),
             inference_outputs,
             prompt: sequence_group.prompt(),
             prompt_token_ids: sequence_group.prompt_token_ids(),
-            is_finished: sequence_group.is_finished(),
+            is_finished,
             metrics: sequence_group.metrics.clone(),
         }
     }

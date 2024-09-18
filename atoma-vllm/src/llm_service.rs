@@ -20,13 +20,11 @@ use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
     sync::{
-        broadcast::error,
         mpsc::{self, error::SendError, UnboundedReceiver, UnboundedSender},
-        oneshot,
     },
     task::JoinHandle,
 };
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{error, info, info_span, instrument, Span};
 
 // TODO:
 // 1. We should have a configurable number of tokenizer workers

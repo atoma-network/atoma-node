@@ -4,7 +4,6 @@ use crate::{
     config::CacheConfig,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
-    tokenizer::TokenizerWorker,
 };
 use atoma_paged_attention::flash_attention::{FlashAttention, FlashAttentionMetadata};
 use candle_core::{DType, DTypeParseError, Device, Error as CandleError, Tensor};
@@ -23,8 +22,10 @@ pub struct ModelInput {
     /// Attention Metadata
     attention_metadata: FlashAttentionMetadata,
     /// Number of decoded tokens
+    #[allow(dead_code)]
     num_decode_tokens: usize,
     /// Number of prefills
+    #[allow(dead_code)]
     num_prefills: usize,
     /// Cumulative query lengths, of size `batch_size + 1`
     cu_query_lengths: Tensor,
@@ -41,13 +42,12 @@ pub struct ModelWorker<M: ModelExecutor> {
     cache_engine: CacheEngine,
     /// Device,
     device: Device,
-    /// Cache configuration
-    cache_config: CacheConfig,
     /// Enable chunked prefill (boolean)
     enable_chunked_prefill: bool,
     /// Model runner instance
     model: M,
     /// Initial GPU available memory
+    #[allow(dead_code)]
     initial_gpu_memory: usize,
     /// Tracing Span
     span: Span,
@@ -189,10 +189,10 @@ where
         blocks_to_swap_out: &HashMap<u32, u32>,
         blocks_to_copy: Option<Tensor>,
     ) -> Result<(), ModelWorkerError> {
-        if blocks_to_swap_in.len() > 0 {
+        if !blocks_to_swap_in.len().is_empty() {
             self.cache_engine.swap_in(blocks_to_swap_in)?
         }
-        if blocks_to_swap_out.len() > 0 {
+        if !blocks_to_swap_out.len().is_empty() {
             self.cache_engine.swap_out(blocks_to_swap_out)?
         }
         if let Some(bs) = blocks_to_copy {
@@ -215,7 +215,7 @@ where
     #[instrument(skip_all)]
     pub fn prepare_input_tensors(
         &self,
-        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: &[Arc<SequenceGroupMetadata>],
     ) -> Result<ModelInput, ModelWorkerError> {
         let _enter = self.span.enter();
         info!("Preparing input tensors for new inference request..");
@@ -372,7 +372,7 @@ where
                 let start_index = self
                     .model
                     .sliding_window()
-                    .map(|sw| query_length.checked_sub(sw).unwrap_or(0))
+                    .map(|sw| query_length.saturating_sub(sw))
                     .unwrap_or(0);
 
                 slot_mapping.extend((context_length..sequence_length).map(|i| {
@@ -390,7 +390,7 @@ where
 
         // 11. Build the required tensors for attention metadata
         let max_query_len = *query_lengths.iter().max().unwrap_or(&0) as usize;
-        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0) as usize;
+        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
@@ -552,7 +552,7 @@ impl CacheEngine {
         );
         let mut kv_caches = Vec::with_capacity(self.num_layers);
         for _ in 0..self.num_layers {
-            kv_caches.push(Tensor::zeros(kv_cache_shape.clone(), self.dtype, &device)?);
+            kv_caches.push(Tensor::zeros(kv_cache_shape.clone(), self.dtype, device)?);
         }
 
         Ok(kv_caches)
