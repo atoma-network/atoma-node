@@ -5,9 +5,8 @@ use crate::{
     types::{GenerateParameters, GenerateRequest},
     validation::Validation,
 };
-use candle_core::{cuda::cudarc::driver::result::device, DType, Device};
+use candle_core::{DType, Device};
 use std::path::PathBuf;
-use tokio::sync::oneshot;
 use tracing::info;
 
 const BLOCK_SIZE: usize = 16;
@@ -36,7 +35,7 @@ async fn test_llama_model() {
     let (tokenizer_sender, tokenizer_receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let cache_config =
-        CacheConfig::new(BLOCK_SIZE, 1.0, 1, "auto".to_string(), None, None, 100, 100)
+        CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 100, 100)
             .expect("Failed to create cache config");
 
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
