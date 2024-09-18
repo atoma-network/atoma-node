@@ -491,6 +491,7 @@ pub struct CacheEngine {
 impl CacheEngine {
     /// Constructor
     #[instrument(skip_all)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         block_size: usize,
         device: Device,

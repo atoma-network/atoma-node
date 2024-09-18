@@ -341,8 +341,6 @@ pub(crate) struct ValidGenerateRequest {
     /// Inputs token length
     #[allow(dead_code)]
     pub input_token_len: usize,
-    /// The truncation window of the input
-    pub truncate: u32,
     /// Whether to return decoder input token logprobs and ids.
     #[allow(dead_code)]
     pub decoder_input_details: bool,
