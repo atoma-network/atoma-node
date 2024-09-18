@@ -226,7 +226,7 @@ where
             let ModelThreadCommand { request, sender } = command;
 
             let execution_start_time = std::time::Instant::now();
-            let output = match self.worker.execute_model(request) {
+            let mut output = match self.worker.execute_model(request) {
                 Ok(output) => output,
                 Err(e) => {
                     error!("Failed to run forward pass on model, with error: {e}");
@@ -283,7 +283,6 @@ impl ModelThreadDispatcher {
             let num_gpu_blocks = cache_config.num_gpu_blocks();
             let model_worker = ModelWorker::<M>::new(
                 block_size,
-                cache_config,
                 device,
                 dtype,
                 model,
