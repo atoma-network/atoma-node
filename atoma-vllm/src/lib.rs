@@ -17,7 +17,6 @@ pub mod scheduler;
 pub mod sequence;
 #[cfg(test)]
 pub mod tests;
-pub mod token_output_stream;
 pub mod tokenizer;
 pub mod types;
 pub mod validation;
