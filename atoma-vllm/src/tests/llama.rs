@@ -27,7 +27,7 @@ async fn test_llama_model() {
     let dtype = DType::BF16;
     let num_tokenizer_workers = 2;
     let revision = "main".to_string();
-    let (shutdown_signal_sender, shutdown_signal_receiver) = tokio::sync::mpsc::channel(1);
+    let (_shutdown_signal_sender, shutdown_signal_receiver) = tokio::sync::mpsc::channel(1);
 
     let (atoma_event_subscriber_sender, atoma_event_subscriber_receiver) =
         tokio::sync::mpsc::unbounded_channel();

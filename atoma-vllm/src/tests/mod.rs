@@ -154,8 +154,6 @@ async fn test_llm_engine() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");
 
-    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
-
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
         1,
@@ -167,7 +165,7 @@ async fn test_llm_engine() {
     );
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel, PathBuf>(
+    let service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -291,7 +289,7 @@ async fn test_llm_engine_with_enable_chunking() {
     );
     let (_, shutdown_signal) = mpsc::channel(1);
 
-    let mut service = LlmService::start::<MockModel, PathBuf>(
+    let service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
