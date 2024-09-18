@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    config::CacheConfig,
     model_executor::{ModelExecutor, ModelExecutorError, ModelLoaderError},
     sequence::{ExecuteModelRequest, SequenceGroupMetadata, SequenceGroupOutput},
 };
@@ -22,8 +21,10 @@ pub struct ModelInput {
     /// Attention Metadata
     attention_metadata: FlashAttentionMetadata,
     /// Number of decoded tokens
+    #[allow(dead_code)]
     num_decode_tokens: usize,
     /// Number of prefills
+    #[allow(dead_code)]
     num_prefills: usize,
     /// Cumulative query lengths, of size `batch_size + 1`
     cu_query_lengths: Tensor,
@@ -40,13 +41,12 @@ pub struct ModelWorker<M: ModelExecutor> {
     cache_engine: CacheEngine,
     /// Device,
     device: Device,
-    /// Cache configuration
-    cache_config: CacheConfig,
     /// Enable chunked prefill (boolean)
     enable_chunked_prefill: bool,
     /// Model runner instance
     model: M,
     /// Initial GPU available memory
+    #[allow(dead_code)]
     initial_gpu_memory: usize,
     /// Tracing Span
     span: Span,
@@ -59,29 +59,27 @@ where
     /// Constructor
     #[instrument(skip_all)]
     pub fn new(
-        api_key: String,
         block_size: usize,
-        cache_config: CacheConfig,
         device: Device,
         dtype: DType,
-        model_name: String,
-        revision: String,
+        model: M,
         num_cpu_blocks: usize,
         num_gpu_blocks: usize,
         enable_chunked_prefill: bool,
     ) -> Result<Self, ModelWorkerError> {
+        let span = info_span!("model-worker");
+        let _span = span.clone();
+        let _enter = _span.enter();
+
         info!("Starting a new `ModelWorker` instance");
-        // NOTE: for now we use a synchronous model loader
-        let file_paths = M::fetch(api_key, model_name, revision)?;
-        let model = M::load(file_paths)?;
         let cache_engine = CacheEngine::new(
             block_size,
             device.clone(),
             dtype,
             model.alibi_slopes(),
-            model.head_size() / model.num_attention_heads(),
+            model.hidden_size() / model.num_attention_heads(),
             model.num_attention_heads(),
-            model.num_layers(),
+            model.num_attention_heads(),
             model.num_kv_heads(),
             num_cpu_blocks,
             num_gpu_blocks,
@@ -95,11 +93,10 @@ where
         Ok(Self {
             cache_engine,
             device,
-            cache_config,
             enable_chunked_prefill,
             model,
             initial_gpu_memory: 0, // TODO 2.
-            span: info_span!("model-worker"),
+            span,
         })
     }
 
@@ -176,7 +173,9 @@ where
             attention_metadata,
         )?;
 
-        let sampled_outputs = self.model.sample(&logits, &sequence_groups_metadata)?;
+        let sampled_outputs = self
+            .model
+            .sample(&logits.squeeze(0)?, &sequence_groups_metadata)?;
 
         Ok(sampled_outputs)
     }
@@ -189,10 +188,10 @@ where
         blocks_to_swap_out: &HashMap<u32, u32>,
         blocks_to_copy: Option<Tensor>,
     ) -> Result<(), ModelWorkerError> {
-        if blocks_to_swap_in.len() > 0 {
+        if !blocks_to_swap_in.is_empty() {
             self.cache_engine.swap_in(blocks_to_swap_in)?
         }
-        if blocks_to_swap_out.len() > 0 {
+        if !blocks_to_swap_out.is_empty() {
             self.cache_engine.swap_out(blocks_to_swap_out)?
         }
         if let Some(bs) = blocks_to_copy {
@@ -215,7 +214,7 @@ where
     #[instrument(skip_all)]
     pub fn prepare_input_tensors(
         &self,
-        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: &[Arc<SequenceGroupMetadata>],
     ) -> Result<ModelInput, ModelWorkerError> {
         let _enter = self.span.enter();
         info!("Preparing input tensors for new inference request..");
@@ -320,7 +319,7 @@ where
 
                 // 8. Update intermediate states
                 block_tables.push(block_table);
-                sequence_lengths.push(sliding_sequence_length as f32);
+                sequence_lengths.push(sliding_sequence_length as u32);
                 context_lengths.push(sliding_context_length as u32);
 
                 query_lengths.push(query_length as u32);
@@ -331,7 +330,7 @@ where
                 //    (prompt or decode)
                 if is_prompt {
                     debug_assert_eq!(
-                        sequence_group_metadata.sequence_data.keys().len(),
+                        sequence_group_metadata.sequence_data.len(),
                         1,
                         "Prompt should have only one sequence ID"
                     );
@@ -372,7 +371,7 @@ where
                 let start_index = self
                     .model
                     .sliding_window()
-                    .map(|sw| query_length.checked_sub(sw).unwrap_or(0))
+                    .map(|sw| query_length.saturating_sub(sw))
                     .unwrap_or(0);
 
                 slot_mapping.extend((context_length..sequence_length).map(|i| {
@@ -390,7 +389,7 @@ where
 
         // 11. Build the required tensors for attention metadata
         let max_query_len = *query_lengths.iter().max().unwrap_or(&0) as usize;
-        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0) as usize;
+        let max_prefill_seq_len = *prefill_sequence_lengths.iter().max().unwrap_or(&0);
         let max_decode_seq_len = *decode_sequence_lengths.iter().max().unwrap_or(&0);
 
         let max_block_table_len = block_tables.iter().map(|bt| bt.len()).max().unwrap();
@@ -401,11 +400,14 @@ where
         let mut seq_start_loc =
             Tensor::zeros(seq_lens_tensor.dims1()? + 1, DType::U32, &self.device)?;
 
-        let cumsum_seq_lens = seq_lens_tensor.cumsum(0)?.to_dtype(DType::U32)?;
+        let cumsum_seq_lens = seq_lens_tensor
+            .to_dtype(DType::F32)?
+            .cumsum(0)?
+            .to_dtype(DType::U32)?;
         seq_start_loc = seq_start_loc.slice_assign(&[1..], &cumsum_seq_lens)?;
 
-        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?;
-        let input_positions_tensor = Tensor::new(input_positions, &self.device)?;
+        let input_tokens_tensor = Tensor::new(input_tokens, &self.device)?.unsqueeze(0)?;
+        let input_positions_tensor = Tensor::new(input_positions, &self.device)?.unsqueeze(0)?;
         let slot_mapping_tensor = Tensor::new(slot_mapping, &self.device)?;
 
         let context_lens_tensor = Tensor::new(context_lengths, &self.device)?;
@@ -429,7 +431,7 @@ where
             seq_start_loc,
             seq_lens_tensor,
             block_tables_tensor,
-            false,
+            false, // TODO: this parameter should be configurable
         )?;
 
         Ok(ModelInput {
@@ -491,6 +493,7 @@ pub struct CacheEngine {
 impl CacheEngine {
     /// Constructor
     #[instrument(skip_all)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         block_size: usize,
         device: Device,
@@ -549,7 +552,7 @@ impl CacheEngine {
         );
         let mut kv_caches = Vec::with_capacity(self.num_layers);
         for _ in 0..self.num_layers {
-            kv_caches.push(Tensor::zeros(kv_cache_shape.clone(), self.dtype, &device)?);
+            kv_caches.push(Tensor::zeros(kv_cache_shape.clone(), self.dtype, device)?);
         }
 
         Ok(kv_caches)
@@ -622,7 +625,7 @@ pub(crate) mod utils {
         let mut padded_output = Vec::new();
         for mut x_i in x {
             x_i.extend([pad].repeat(max_length - x_i.len()));
-            let shape = (x_i.len(),);
+            let shape = (1, x_i.len());
             padded_output.push(Tensor::from_vec(x_i, shape, device)?);
         }
         Ok(Tensor::cat(&padded_output[..], 0)?)
@@ -642,49 +645,4 @@ pub(crate) mod utils {
         )?;
         Ok(cumulative_query_lengths.i(1..)?.sub(&ones)?)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use candle_core::{DType, Device};
-
-    use super::*;
-
-    struct MockModelExecuter {}
-
-    // fn create_model_worker() -> ModelWorker<MockModelExecuter> {
-    //     ModelWorker {
-    //         cache_engine: CacheEngine::new(
-    //             16,
-    //             Device::Cpu,
-    //             DType::BF16,
-    //             None,
-    //             64,
-    //             32,
-    //             16,
-    //             4,
-    //             128,
-    //             128,
-    //             1.,
-    //             None,
-    //         )
-    //         .unwrap(),
-    //         device: Device::Cpu,
-    //         cache_config: CacheConfig::new(
-    //             16,
-    //             0.8,
-    //             1_024,
-    //             String::from("bf16"),
-    //             None,
-    //             None,
-    //             128,
-    //             128,
-    //         )
-    //         .unwrap(),
-    //         enable_chunked_prefill: false,
-    //         model: MockModelExecuter {},
-    //         initial_gpu_memory: 1_024,
-    //         span: info_span!("mock-model-worker"),
-    //     }
-    // }
 }

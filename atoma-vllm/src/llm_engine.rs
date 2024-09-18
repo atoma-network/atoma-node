@@ -11,7 +11,7 @@ use tokio::sync::{
     mpsc::{error::SendError, UnboundedReceiver, UnboundedSender},
     oneshot::error::RecvError,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, info_span, instrument, trace, Span};
 
 use crate::{
     model_executor::ModelThreadDispatcher,
@@ -53,6 +53,8 @@ pub struct LlmEngine {
     scheduler: Scheduler<FcfsPolicy>,
     /// Tokenizer for decoding sequences
     tokenizer: Tokenizer,
+    /// Tracing span
+    span: Span,
 }
 
 impl LlmEngine {
@@ -72,6 +74,7 @@ impl LlmEngine {
             scheduler,
             tokenizer,
             request_receiver,
+            span: info_span!("llm-engine"),
         }
     }
 
@@ -85,9 +88,13 @@ impl LlmEngine {
     ///         service.
     #[instrument(skip(self))]
     pub async fn run(mut self) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         loop {
             tokio::select! {
                 Some(sequence_group) = self.request_receiver.recv() => {
+                    trace!("Received new sequence group, with id = {}", sequence_group.request_id);
                     // 1. Adds the received `SequenceGroup` to the `Scheduler` instance.
                     self.scheduler.add_sequence_group(sequence_group);
 
@@ -116,6 +123,9 @@ impl LlmEngine {
         &mut self,
         outputs: Result<Vec<SequenceGroupOutput>, EngineError>,
     ) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         match outputs {
             Ok(outputs) => {
                 // 1. Processes the newly AI generated outputs
@@ -152,6 +162,9 @@ impl LlmEngine {
     /// 2. It sends a new `ExecuteModelRequest` to the `ModelExecutor`'s thread.
     #[instrument(skip_all)]
     pub fn step(&mut self) -> Result<(), EngineError> {
+        let span = self.span.clone();
+        let _enter = span.enter();
+
         info!("`LlmEngine` new step..");
         // 1. Schedule new requests
         let (sequence_groups_metadata, scheduler_outputs) = self.scheduler.schedule()?;
@@ -293,13 +306,22 @@ impl LlmEngine {
                 .add_token_id(generated_token_id, sequence_output.logprob.clone())?;
 
             // 5. Decode the generated output token id.
-            let generated_token = self
+            let token_ids = sequence_guard_lock.sequence_data.get_token_ids();
+            let generated_text = self
                 .tokenizer
-                .decode(&[generated_token_id], true)
+                .decode(&token_ids, true)
                 .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
 
             // 6. Update the `output_text` with the newly generated token,
             //    if in decoding phase.
+            let generated_token = if sequence_guard_lock.tokens.last().is_some() {
+                let start = sequence_guard_lock.output_text.chars().count();
+                generated_text.chars().skip(start).collect::<String>()
+            } else {
+                let start = sequence_guard_lock.prompt.chars().count();
+                generated_text.chars().skip(start).collect()
+            };
+
             sequence_guard_lock.output_text.push_str(&generated_token);
 
             // 7. Check if the last generated token is a stop token.
@@ -335,7 +357,7 @@ impl LlmEngine {
             // 10. Check if the `Sequence`'s output length exceeds that of
             //     Request's `max_new_tokens`.
             let sequence_output_len = sequence_guard_lock.get_output_len();
-            if sequence_output_len > stopping_criteria_params.max_new_tokens as usize {
+            if sequence_output_len >= stopping_criteria_params.max_new_tokens as usize {
                 sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedLengthCapped)
             }
 
@@ -344,7 +366,8 @@ impl LlmEngine {
         } else {
             // NOTE: in this case, we are not sampling newly
             // generated tokens. That is, we are in prefill
-            // phase (possibly while chunking). For this reason,
+            // phase (possibly while chunking)
+            // without generating the next token. For this reason,
             // we do not have to add tokens to the current
             // `Sequence`'s state.
 
@@ -413,19 +436,23 @@ impl GenerateRequestOutput {
             })
             .collect::<Vec<_>>();
 
+        let is_finished = sequence_group.is_finished();
+        if is_finished {
+            sequence_group.set_finished_time(Instant::now());
+        }
         Self {
             request_id: sequence_group.request_id.clone(),
             inference_outputs,
             prompt: sequence_group.prompt(),
             prompt_token_ids: sequence_group.prompt_token_ids(),
-            is_finished: sequence_group.is_finished(),
+            is_finished,
             metrics: sequence_group.metrics.clone(),
         }
     }
 }
 
 /// `InferenceOutput` - Output of running AI inference on a given sequence group
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InferenceOutput {
     /// The index of the output in the request
     pub index: usize,

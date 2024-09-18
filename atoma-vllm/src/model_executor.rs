@@ -1,8 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_transformers::generation::{LogitsProcessor, Sampling};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use tokio::{
@@ -12,7 +15,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{error, info, instrument, trace};
+use tracing::{error, info, info_span, instrument, trace, Span};
 
 use crate::{
     config::{CacheConfig, SchedulerConfig},
@@ -20,35 +23,48 @@ use crate::{
         ExecuteModelRequest, LogProb, SequenceGroupMetadata, SequenceGroupMetrics,
         SequenceGroupOutput, SequenceOutput,
     },
-    validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
+    validation::NextTokenChooserParameters,
     worker::{ModelWorker, ModelWorkerError},
 };
+
+/// `FilePaths` - wrapper struct for the model's file paths
+pub struct ModelFilePaths {
+    /// Configuration file path
+    pub config_path: PathBuf,
+    /// Tokenizer file path
+    pub tokenizer_path: PathBuf,
+    /// Weights file path
+    pub weights_path: Vec<PathBuf>,
+}
 
 /// `ModelLoader` trait - interface for fetching
 /// and loading a LLM model weights. Also has a method
 /// providing the `eos_token_id` for the current model's
 /// tokenizer.
 pub trait ModelLoader {
-    type FilePaths;
-
-    fn fetch(
+    fn fetch<T: AsRef<Path>>(
         api_key: String,
-        model_name: String,
+        cache_dir: T,
+        model_id: String,
         revision: String,
-    ) -> Result<Self::FilePaths, ModelLoaderError>;
-    fn load(file_paths: Self::FilePaths) -> Result<Self, ModelLoaderError>
+    ) -> Result<ModelFilePaths, ModelLoaderError>;
+
+    fn load(
+        device: Device,
+        dtype: DType,
+        file_paths: &ModelFilePaths,
+    ) -> Result<Self, ModelLoaderError>
     where
         Self: Sized;
 }
 
 /// `ModelMetadata` - Metadata for a LLM model
-pub trait ModelMetadata {
+pub trait ModelMetadata: ModelLoader {
     fn alibi_slopes(&self) -> Option<&Tensor>;
-    fn cache_dir(&self) -> PathBuf;
-    fn eos_token_id(&self) -> Option<u32>;
-    fn head_size(&self) -> usize;
+    fn eos_token_ids(&self) -> Option<Vec<u32>>;
+    fn hidden_size(&self) -> usize;
     fn num_attention_heads(&self) -> usize;
-    fn num_layers(&self) -> usize;
+    fn num_hidden_layers(&self) -> usize;
     fn num_kv_heads(&self) -> usize;
     fn softmax_scale(&self) -> f32;
     fn sliding_window(&self) -> Option<usize>;
@@ -69,11 +85,11 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
     fn sample(
         &self,
         logits: &Tensor,
-        sequence_groups_metadata: &Vec<Arc<SequenceGroupMetadata>>,
+        sequence_groups_metadata: &[Arc<SequenceGroupMetadata>],
     ) -> Result<Vec<SequenceGroupOutput>, ModelExecutorError> {
         let total_num_sequences = sequence_groups_metadata
             .iter()
-            .map(|metadata| metadata.sequence_data.keys().len())
+            .map(|metadata| metadata.sequence_data.len())
             .sum::<usize>();
 
         // 1. Check if the logits zeroth dimension matches the total number of sequences
@@ -90,44 +106,12 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
             // 2. Retrieve the next token chooser and stopping criteria parameters,
             //    from the `SequenceGroupMetadata`, to be used for sampling
             let NextTokenChooserParameters {
-                temperature,
                 repetition_penalty,
                 repeat_last_n,
-                top_k,
-                top_p,
-                do_sample,
-                random_seed,
                 ..
             } = sequence_group_metadata.next_token_chooser_params;
 
-            let sampling = if !do_sample || temperature == 1.0 {
-                Sampling::ArgMax
-            } else if top_p == 1.0 && top_k == 0 {
-                Sampling::All {
-                    temperature: temperature as f64,
-                }
-            } else if top_k == 0 && top_p < 1.0 {
-                Sampling::TopP {
-                    p: top_p as f64,
-                    temperature: temperature as f64,
-                }
-            } else if top_k != 0 && top_p == 1.0 {
-                Sampling::TopK {
-                    k: top_k as usize,
-                    temperature: temperature as f64,
-                }
-            } else {
-                Sampling::TopKThenTopP {
-                    k: top_k as usize,
-                    p: top_p as f64,
-                    temperature: temperature as f64,
-                }
-            };
-
-            // 3. Create a `LogitsProcessor` instance, with the sampling strategy
-            let mut logits_processor = LogitsProcessor::from_sampling(random_seed, sampling);
-
-            // 4. Allocate a `HashMap` to store each of the sequence group's outputs
+            // 3. Allocate a `HashMap` to store each of the sequence group's outputs
             let mut sequence_outputs =
                 HashMap::with_capacity(sequence_group_metadata.sequence_data.len());
 
@@ -137,7 +121,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // 5. Select the given sequence logits, and apply a
                 // repetition penalty if necessary
                 let sequence_logits = if repetition_penalty == 1. {
-                    logits.i(logits_idx)?
+                    logits.i(logits_idx)?.squeeze(0)?
                 } else {
                     debug_assert!(repeat_last_n > 0, "repeat_last_n should be > 0");
                     let num_sequence_tokens = sequence_data.length();
@@ -146,7 +130,7 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                         .unwrap_or_default();
                     let context = sequence_data.get_token_ids();
                     candle_transformers::utils::apply_repeat_penalty(
-                        &logits.i(logits_idx)?,
+                        &logits.i(logits_idx)?.squeeze(0)?,
                         repetition_penalty,
                         &context[start_at..],
                     )?
@@ -156,11 +140,15 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
                 // TODO: we should be able to sample `best_of` sequences
                 //      simultaneously, so we can later generate multiple
                 //      sequences at once, in parallel.
-                let next_token = logits_processor.sample(&sequence_logits)?;
+                let next_token = sequence_group_metadata
+                    .logits_processor
+                    .write()
+                    .unwrap()
+                    .sample(&sequence_logits)?;
 
                 let is_stop_token = self
-                    .eos_token_id()
-                    .map(|eid| next_token == eid)
+                    .eos_token_ids()
+                    .map(|eid| eid.contains(&next_token))
                     .unwrap_or_default();
 
                 // 7. Update the logits index
@@ -217,6 +205,7 @@ pub struct ModelThreadCommand {
 pub struct ModelThread<M: ModelExecutor> {
     worker: ModelWorker<M>,
     receiver: mpsc::UnboundedReceiver<ModelThreadCommand>,
+    span: Span,
 }
 
 impl<M> ModelThread<M>
@@ -229,13 +218,14 @@ where
     /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
     #[instrument(skip(self))]
     pub fn run(mut self) -> Result<(), ModelThreadError> {
+        let _enter = self.span.enter();
         info!("Start Model thread");
 
         while let Some(command) = self.receiver.blocking_recv() {
             let ModelThreadCommand { request, sender } = command;
 
             let execution_start_time = std::time::Instant::now();
-            let output = match self.worker.execute_model(request) {
+            let mut output = match self.worker.execute_model(request) {
                 Ok(output) => output,
                 Err(e) => {
                     error!("Failed to run forward pass on model, with error: {e}");
@@ -243,6 +233,12 @@ where
                 }
             };
             let execution_elapsed_time = execution_start_time.elapsed().as_secs_f32();
+            for o in output.iter_mut() {
+                o.sequence_group_metrics = SequenceGroupMetrics {
+                    time_to_generate: Some(execution_elapsed_time),
+                    num_tokens_generated: 1, // NOTE: without speculative decoding, we generate one token at a time for both prefill and decode sequences
+                };
+            }
 
             // Send responses back to the engine
             sender.send(output).ok();
@@ -269,12 +265,10 @@ impl ModelThreadDispatcher {
     /// that continuously listens to incoming AI inference requests, and processes these.
     #[instrument(skip_all)]
     pub(crate) fn start<M>(
-        api_key: String,
         cache_config: CacheConfig,
         device: Device,
         dtype: DType,
-        model_name: String,
-        revision: String,
+        model: M,
         scheduler_config: SchedulerConfig,
     ) -> Result<Self, ModelThreadError>
     where
@@ -287,13 +281,10 @@ impl ModelThreadDispatcher {
             let num_cpu_blocks = cache_config.num_cpu_blocks();
             let num_gpu_blocks = cache_config.num_gpu_blocks();
             let model_worker = ModelWorker::<M>::new(
-                api_key,
                 block_size,
-                cache_config,
                 device,
                 dtype,
-                model_name,
-                revision,
+                model,
                 num_cpu_blocks,
                 num_gpu_blocks,
                 scheduler_config.enable_chunked_prefill(),
@@ -301,6 +292,7 @@ impl ModelThreadDispatcher {
             let model_thread = ModelThread {
                 worker: model_worker,
                 receiver,
+                span: info_span!("model-thread"),
             };
             if let Err(e) = model_thread.run() {
                 error!("Model thread error: {e}");
@@ -353,7 +345,16 @@ pub enum ModelThreadError {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelLoaderError {}
+pub enum ModelLoaderError {
+    #[error("Api error: `{0}`")]
+    ApiError(#[from] hf_hub::api::sync::ApiError),
+    #[error("Candle error: `{0}`")]
+    CandleError(#[from] candle_core::Error),
+    #[error("Io error: `{0}`")]
+    IoError(#[from] std::io::Error),
+    #[error("Serde json error: `{0}`")]
+    SerdeJsonError(#[from] serde_json::Error),
+}
 
 #[derive(Debug, Error)]
 pub enum ModelExecutorError {

@@ -6,6 +6,7 @@ use std::{
 };
 
 use candle_core::Tensor;
+use candle_transformers::generation::LogitsProcessor;
 use thiserror::Error;
 use tracing::{error, info, info_span, instrument, Span};
 
@@ -277,7 +278,7 @@ pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
     /// Prompt
-    prompt: String,
+    pub prompt: String,
     /// Prompt associated token ids
     pub prompt_token_ids: Vec<u32>,
     /// Sequence data
@@ -286,12 +287,6 @@ pub struct Sequence {
     block_size: usize,
     /// Logical token blocks
     pub logical_token_blocks: Vec<LogicalTokenBlock>,
-    /// Prefix offset, used for incremental detokenization
-    #[allow(dead_code)]
-    prefix_offset: usize,
-    /// Read offset, used for incremental detokenization
-    #[allow(dead_code)]
-    read_offset: usize,
     /// Output generated text
     pub output_text: String,
     /// List of all possible mappings from each generated output id to its `LogProb`
@@ -329,8 +324,6 @@ impl Sequence {
             sequence_data: SequenceData::new(prompt_token_ids.clone(), vec![]),
             logical_token_blocks: vec![],
             block_size,
-            prefix_offset: 0,
-            read_offset: 0,
             output_logprobs: vec![],
             output_text,
             sequence_status: SequenceStatus::Waiting,
@@ -619,7 +612,7 @@ pub struct MultiModalData {
 ///        for an embedding model.
 ///
 /// Warn: Our implementation does not consider LoRA and embeddings requests (contrary to vLLM).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SequenceGroup {
     /// Request Id
     pub request_id: String,
@@ -633,8 +626,8 @@ pub struct SequenceGroup {
     next_token_chooser_params: NextTokenChooserParameters,
     /// Stopping criteria
     stopping_criteria: StoppingCriteriaParameters,
-    /// State
-    state: SequenceGroupState,
+    /// Logits processor tied to this sequence group
+    pub logits_processor: Arc<RwLock<LogitsProcessor>>,
 }
 
 impl SequenceGroup {
@@ -645,6 +638,7 @@ impl SequenceGroup {
         arrival_time: Instant,
         next_token_chooser_params: NextTokenChooserParameters,
         stopping_criteria: StoppingCriteriaParameters,
+        logits_processor: LogitsProcessor,
     ) -> Result<Self, SequenceError> {
         if sequences.is_empty() {
             return Err(SequenceError::ConstructorError(
@@ -668,7 +662,7 @@ impl SequenceGroup {
             prompt_logprobs: None,
             next_token_chooser_params,
             stopping_criteria,
-            state: SequenceGroupState { generator: None },
+            logits_processor: Arc::new(RwLock::new(logits_processor)),
         })
     }
 
@@ -752,8 +746,7 @@ impl SequenceGroup {
     }
 
     /// Sets finished time
-    #[allow(dead_code)]
-    fn set_finished_time(&mut self, time: Instant) {
+    pub fn set_finished_time(&self, time: Instant) {
         self.metrics.write().unwrap().finished_time = Some(time);
     }
 
@@ -974,11 +967,6 @@ impl SequenceGroup {
             .all(|s| s.read().unwrap().is_finished())
     }
 
-    /// Getter for `state`
-    pub fn state(&self) -> SequenceGroupState {
-        self.state.clone()
-    }
-
     /// Getter for sampling next token chooser params
     pub fn next_token_chooser_params(&self) -> NextTokenChooserParameters {
         self.next_token_chooser_params.clone()
@@ -987,6 +975,19 @@ impl SequenceGroup {
     /// Getter for stopping parameters
     pub fn stopping_params(&self) -> StoppingCriteriaParameters {
         self.stopping_criteria.clone()
+    }
+}
+
+impl std::fmt::Debug for SequenceGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SequenceGroup")
+            .field("request_id", &self.request_id)
+            .field("sequences", &self.sequences)
+            .field("metrics", &self.metrics)
+            .field("prompt_logprobs", &self.prompt_logprobs)
+            .field("next_token_chooser_params", &self.next_token_chooser_params)
+            .field("stopping_criteria", &self.stopping_criteria)
+            .finish()
     }
 }
 
@@ -1007,7 +1008,6 @@ impl SequenceGroup {
 ///          used in prefix caching.
 ///     `state`: Internal state tied to this sequence group.
 ///     `multi_modal_data`: Multi modal data.
-#[derive(Debug)]
 pub struct SequenceGroupMetadata {
     /// Request id
     pub request_id: String,
@@ -1025,8 +1025,8 @@ pub struct SequenceGroupMetadata {
     pub token_chunk_size: usize,
     /// Sequence data
     pub sequence_data: HashMap<u64, SequenceData>,
-    /// Internal state tied to this sequence group
-    state: SequenceGroupState,
+    /// Logits processor tied to this sequence group`   `
+    pub logits_processor: Arc<RwLock<LogitsProcessor>>,
 }
 
 impl SequenceGroupMetadata {
@@ -1041,7 +1041,7 @@ impl SequenceGroupMetadata {
         block_tables: HashMap<u64, Vec<u32>>,
         do_sample: bool,
         token_chunk_size: Option<usize>,
-        state: SequenceGroupState,
+        logits_processor: Arc<RwLock<LogitsProcessor>>,
     ) -> Self {
         let token_chunk_size = if let Some(size) = token_chunk_size {
             size
@@ -1064,13 +1064,28 @@ impl SequenceGroupMetadata {
             block_tables,
             do_sample,
             token_chunk_size,
-            state,
+            logits_processor,
         }
     }
 
     /// Getter for `request_id`
     pub fn request_id(&self) -> String {
         self.request_id.clone()
+    }
+}
+
+impl std::fmt::Debug for SequenceGroupMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SequenceGroupMetadata")
+            .field("request_id", &self.request_id)
+            .field("is_prompt", &self.is_prompt)
+            .field("next_token_chooser_params", &self.next_token_chooser_params)
+            .field("stopping_criteria_params", &self.stopping_criteria_params)
+            .field("block_tables", &self.block_tables)
+            .field("do_sample", &self.do_sample)
+            .field("token_chunk_size", &self.token_chunk_size)
+            .field("sequence_data", &self.sequence_data)
+            .finish()
     }
 }
 
@@ -1308,6 +1323,7 @@ pub(crate) mod tests {
                 ..Default::default()
             },
             Default::default(),
+            LogitsProcessor::new(0, None, None),
         )
         .expect("Failed to construct a new sequence group");
 

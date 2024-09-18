@@ -18,6 +18,7 @@ members = [
     "atoma-storage",
     "atoma-streamer",
     "atoma-types",
+    "atoma-vllm",
 ]
 
 [workspace.package]

@@ -716,6 +716,8 @@ pub enum BlockSpaceManagerError {
 pub(crate) mod tests {
     use std::sync::{Arc, RwLock};
 
+    use candle_transformers::generation::LogitsProcessor;
+
     use crate::sequence::{tests::create_dummy_prompt, LogProb};
 
     use super::*;
@@ -828,6 +830,7 @@ pub(crate) mod tests {
             Instant::now(),
             Default::default(),
             Default::default(),
+            LogitsProcessor::new(0, None, None),
         )
         .expect("Failed to construct a new `SequenceGroup`");
 
@@ -1145,6 +1148,7 @@ pub(crate) mod tests {
             Instant::now(),
             Default::default(),
             Default::default(),
+            LogitsProcessor::new(0, None, None),
         )
         .expect("Failed to get `SequenceGroup`");
         let parent = seq_group.sequences.values().next().unwrap().clone();

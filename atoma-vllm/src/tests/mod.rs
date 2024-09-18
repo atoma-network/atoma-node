@@ -1,13 +1,14 @@
 use std::{
-    path::PathBuf,
-    sync::Arc,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+
+#[cfg(test)]
+mod llama;
 
 use atoma_paged_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, Tensor};
 use rand::Rng;
-use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -15,15 +16,12 @@ use crate::{
     config::{CacheConfig, SchedulerConfig},
     llm_service::LlmService,
     model_executor::{
-        ModelExecutor, ModelExecutorError, ModelLoader, ModelLoaderError, ModelMetadata,
+        ModelExecutor, ModelExecutorError, ModelFilePaths, ModelLoader, ModelLoaderError,
+        ModelMetadata,
     },
-    sequence::{
-        ExecuteModelRequest, SequenceGroup, SequenceGroupMetadata, SequenceGroupOutput,
-        SequenceOutput,
-    },
-    tokenizer::TokenizerWorker,
+    sequence::ExecuteModelRequest,
     types::{GenerateParameters, GenerateRequest},
-    validation::{NextTokenChooserParameters, StoppingCriteriaParameters, Validation},
+    validation::Validation,
 };
 
 const BLOCK_SIZE: usize = 16;
@@ -40,13 +38,20 @@ const VOCAB_SIZE: usize = 128;
 struct MockModel {}
 
 impl ModelLoader for MockModel {
-    type FilePaths = ();
-
-    fn fetch(_: String, _: String, _: String) -> Result<Self::FilePaths, ModelLoaderError> {
-        Ok(())
+    fn fetch<T: AsRef<Path>>(
+        _: String,
+        _: T,
+        _: String,
+        _: String,
+    ) -> Result<ModelFilePaths, ModelLoaderError> {
+        Ok(ModelFilePaths {
+            config_path: "".into(),
+            tokenizer_path: "".into(),
+            weights_path: vec![],
+        })
     }
 
-    fn load(_: Self::FilePaths) -> Result<Self, ModelLoaderError> {
+    fn load(_: Device, _: DType, _: &ModelFilePaths) -> Result<Self, ModelLoaderError> {
         Ok(Self {})
     }
 }
@@ -56,15 +61,11 @@ impl ModelMetadata for MockModel {
         None
     }
 
-    fn cache_dir(&self) -> PathBuf {
-        "./cache/".into()
+    fn eos_token_ids(&self) -> Option<Vec<u32>> {
+        Some(vec![EOS_TOKEN_ID])
     }
 
-    fn eos_token_id(&self) -> Option<u32> {
-        Some(EOS_TOKEN_ID)
-    }
-
-    fn head_size(&self) -> usize {
+    fn hidden_size(&self) -> usize {
         512
     }
 
@@ -72,7 +73,7 @@ impl ModelMetadata for MockModel {
         8
     }
 
-    fn num_layers(&self) -> usize {
+    fn num_hidden_layers(&self) -> usize {
         8
     }
 
@@ -142,7 +143,6 @@ async fn test_llm_engine() {
         BLOCK_SIZE,
         1.0,
         1,
-        "auto".to_string(),
         None,
         None,
         NUM_CPU_BLOCKS,
@@ -153,8 +153,6 @@ async fn test_llm_engine() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");
 
-    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
-
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
         1,
@@ -164,17 +162,9 @@ async fn test_llm_engine() {
         MAX_TOTAL_TOKENS,
         tokenizer_sender,
     );
+    let (_, shutdown_signal) = mpsc::channel(1);
 
-    let tokenizer_clone = tokenizer.clone();
-    let _tokenizer_handle = tokio::spawn(async move {
-        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
-            .await
-            .expect("Failed to start tokenizer");
-    });
-
-    let model = MockModel::load(()).expect("Failed to create mock model");
-
-    let mut service = LlmService::start::<MockModel>(
+    let service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -183,11 +173,13 @@ async fn test_llm_engine() {
         Device::Cpu,
         DType::F16,
         true,
-        "test_model".to_string(),
+        "anthony/tokenizers-test".to_string(),
+        4,
         "".to_string(),
         scheduler_config,
-        tokenizer,
+        tokenizer_receiver,
         validation,
+        shutdown_signal,
     )
     .await
     .expect("Failed to start LLM service");
@@ -273,7 +265,6 @@ async fn test_llm_engine_with_enable_chunking() {
         BLOCK_SIZE,
         1.0,
         1,
-        "auto".to_string(),
         None,
         None,
         NUM_CPU_BLOCKS,
@@ -284,8 +275,6 @@ async fn test_llm_engine_with_enable_chunking() {
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, true, 0)
         .expect("Failed to create scheduler config");
 
-    let tokenizer = Tokenizer::from_pretrained("anthony/tokenizers-test", None).unwrap();
-
     let (tokenizer_sender, tokenizer_receiver) = mpsc::unbounded_channel();
     let validation = Validation::new(
         1,
@@ -295,17 +284,9 @@ async fn test_llm_engine_with_enable_chunking() {
         MAX_TOTAL_TOKENS,
         tokenizer_sender,
     );
+    let (_, shutdown_signal) = mpsc::channel(1);
 
-    let tokenizer_clone = tokenizer.clone();
-    let _tokenizer_handle = tokio::spawn(async move {
-        TokenizerWorker::start(tokenizer_clone, tokenizer_receiver, 2)
-            .await
-            .expect("Failed to start tokenizer");
-    });
-
-    let model = MockModel::load(()).expect("Failed to create mock model");
-
-    let mut service = LlmService::start::<MockModel>(
+    let service = LlmService::start::<MockModel, PathBuf>(
         "".to_string(),
         atoma_event_subscriber_receiver,
         atoma_client_sender,
@@ -314,11 +295,13 @@ async fn test_llm_engine_with_enable_chunking() {
         Device::Cpu,
         DType::F16,
         true,
-        "test_model".to_string(),
+        "anthony/tokenizers-test".to_string(),
+        4,
         "".to_string(),
         scheduler_config,
-        tokenizer,
+        tokenizer_receiver,
         validation,
+        shutdown_signal,
     )
     .await
     .expect("Failed to start LLM service");

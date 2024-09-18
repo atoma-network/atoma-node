@@ -1,10 +1,10 @@
 use thiserror::Error;
 use tokenizers::Encoding;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{info_span, instrument, Span};
+use tracing::{error, info_span, instrument, Span};
 
 use crate::{
-    tokenizer::{TokenizerError, TokenizerRequest},
+    tokenizer::{EncodeTokenizerRequest, TokenizerError},
     types::{GenerateParameters, GenerateRequest},
 };
 
@@ -14,6 +14,7 @@ const DEFAULT_RANDOM_SEED: u64 = 1_283_768_955;
 #[derive(Clone, Debug)]
 pub struct Validation {
     /// Validation of `best_of`
+    #[allow(dead_code)]
     best_of: usize,
     /// Validation of `max_stop_sequences`
     max_stop_sequences: usize,
@@ -23,10 +24,10 @@ pub struct Validation {
     max_input_length: usize,
     /// Validation of `max_total_tokens`
     max_total_tokens: u32,
+    /// Channel to communicate with the background tokenizer task
+    sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
     /// Tracing span
     span: Span,
-    /// Channel to communicate with the background tokenizer task
-    sender: mpsc::UnboundedSender<TokenizerRequest>,
 }
 
 impl Validation {
@@ -37,7 +38,7 @@ impl Validation {
         max_top_n_tokens: u32,
         max_input_length: usize,
         max_total_tokens: u32,
-        sender: mpsc::UnboundedSender<TokenizerRequest>,
+        sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
     ) -> Self {
         Self {
             best_of,
@@ -51,7 +52,7 @@ impl Validation {
     }
 
     /// Tokenize inputs
-    #[instrument(skip(input))]
+    #[instrument(skip_all)]
     pub async fn tokenize(
         &self,
         input: String,
@@ -59,8 +60,9 @@ impl Validation {
     ) -> Result<(Encoding, String), ValidationError> {
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
-        let request = TokenizerRequest {
+        let request = EncodeTokenizerRequest {
             input,
+            truncate,
             sender: response_sender,
             span: Span::current(),
         };
@@ -80,6 +82,7 @@ impl Validation {
         truncate: Option<usize>,
         max_new_tokens: Option<u32>,
     ) -> Result<(String, Encoding, u32), ValidationError> {
+        let _enter = self.span.enter();
         let (encoding, input) = self.tokenize(input.clone(), truncate).await?;
         let input_len = if let Some(truncate) = truncate {
             std::cmp::min(truncate, encoding.len())
@@ -102,6 +105,7 @@ impl Validation {
 
         // Validate `total_tokens`
         if total_tokens > self.max_total_tokens {
+            error!("Max total tokens exceeded by request's total number of tokens ({total_tokens} > {})", self.max_total_tokens);
             return Err(ValidationError::MaxTotalTokens(
                 self.max_total_tokens,
                 input_len,
@@ -111,6 +115,10 @@ impl Validation {
 
         // Validate `input_len`
         if input_len > self.max_input_length {
+            error!(
+                "Input length exceeded by request's input length ({input_len} > {})",
+                self.max_input_length
+            );
             return Err(ValidationError::InputLength(
                 self.max_input_length,
                 input_len,
@@ -129,6 +137,8 @@ impl Validation {
         &self,
         request: GenerateRequest,
     ) -> Result<ValidGenerateRequest, ValidationError> {
+        let _enter = self.span.enter();
+
         let GenerateParameters {
             best_of,
             temperature,
@@ -158,27 +168,32 @@ impl Validation {
             || typical_p.is_some();
 
         if best_of > 1 && !sampling {
+            error!("Best of is only supported with sampling");
             return Err(ValidationError::BestOfSampling);
         }
 
         let temperature = temperature.unwrap_or(1.0);
         if temperature <= 0.0 {
+            error!("Temperature must be greater than 0");
             return Err(ValidationError::Temperature);
         }
 
         let repetition_penalty = repetition_penalty.unwrap_or(1.0);
         if repetition_penalty <= 0.0 {
+            error!("Repetition penalty must be greater than 0");
             return Err(ValidationError::RepetitionPenalty);
         }
 
         let frequency_penalty = frequency_penalty.unwrap_or(0.0);
         if !(-2.0..=2.0).contains(&frequency_penalty) {
+            error!("Frequency penalty must be between -2.0 and 2.0");
             return Err(ValidationError::FrequencyPenalty);
         }
 
         let top_p = top_p
             .map(|value| {
                 if value <= 0.0 || value >= 1.0 {
+                    error!("Top p must be between 0.0 and 1.0");
                     return Err(ValidationError::TopP);
                 }
                 Ok(value)
@@ -188,6 +203,7 @@ impl Validation {
         let typical_p = typical_p
             .map(|value| {
                 if value <= 0.0 || value >= 1.0 {
+                    error!("Typical p must be between 0.0 and 1.0");
                     return Err(ValidationError::TypicalP);
                 }
                 Ok(value)
@@ -197,6 +213,7 @@ impl Validation {
         let top_k = top_k
             .map(|value| {
                 if value == 0 {
+                    error!("Top k must be greater than 0");
                     return Err(ValidationError::TopK);
                 }
                 Ok(value)
@@ -204,10 +221,16 @@ impl Validation {
             .unwrap_or(Ok(0))?;
 
         if max_new_tokens == Some(0) {
+            error!("Max new tokens must be greater than 0");
             return Err(ValidationError::NegativeMaxNewTokens);
         }
 
         if stop_sequences.len() > self.max_stop_sequences {
+            error!(
+                "Stop sequences exceeded by request's stop sequences ({} > {})",
+                stop_sequences.len(),
+                self.max_stop_sequences
+            );
             return Err(ValidationError::StopSequence(
                 self.max_stop_sequences,
                 stop_sequences.len(),
@@ -221,6 +244,7 @@ impl Validation {
             None => DEFAULT_RANDOM_SEED,
             Some(seed) => {
                 if best_of > 1 {
+                    error!("Best of is not supported with sampling");
                     return Err(ValidationError::BestOfSampling);
                 }
                 seed
@@ -230,6 +254,7 @@ impl Validation {
         let top_n_tokens = top_n_tokens
             .map(|value| {
                 if value > self.max_top_n_tokens {
+                    error!("`Validation` instance top n tokens exceeded by request's top n tokens ({value} > {})", self.max_top_n_tokens);
                     return Err(ValidationError::TopNTokens(self.max_top_n_tokens, value));
                 }
                 Ok(value)
@@ -240,6 +265,7 @@ impl Validation {
 
         // Check if inputs is empty
         if request.inputs.is_empty() {
+            error!("Empty input");
             return Err(ValidationError::EmptyInput);
         }
 
@@ -247,6 +273,10 @@ impl Validation {
         let truncate = truncate
             .map(|value| {
                 if value == 0 || value > self.max_input_length {
+                    error!(
+                        "Truncate exceeded by request's truncate ({value} > {})",
+                        self.max_input_length
+                    );
                     return Err(ValidationError::Truncate(self.max_input_length, value));
                 }
                 Ok(Some(value))
@@ -302,16 +332,20 @@ impl Validation {
 /// taken place
 pub(crate) struct ValidGenerateRequest {
     /// The request id
+    #[allow(dead_code)]
     pub request_id: String,
     /// Inputs, in the form of a `String`
     pub inputs: String,
     /// Input tokenizer encoding
     pub encoding: Encoding,
     /// Inputs token length
+    #[allow(dead_code)]
     pub input_token_len: usize,
     /// The truncation window of the input
+    #[allow(dead_code)]
     pub truncate: u32,
     /// Whether to return decoder input token logprobs and ids.
+    #[allow(dead_code)]
     pub decoder_input_details: bool,
     /// Set of parameters necessary for choosing the next token, after a
     /// LLM forward pass
@@ -319,6 +353,7 @@ pub(crate) struct ValidGenerateRequest {
     /// Stopping criteria parameters
     pub stopping_parameters: StoppingCriteriaParameters,
     /// Top `n` tokens
+    #[allow(dead_code)]
     pub top_n_tokens: u32,
     /// Whether to prepend the prompt to the generated text
     pub return_full_text: bool,
