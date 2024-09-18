@@ -317,7 +317,8 @@ impl LlmEngine {
             // 6. Update the `output_text` with the newly generated token,
             //    if in decoding phase.
             let generated_token = if let Some(prev_token) = sequence_guard_lock.tokens.last() {
-                generated_text.split(prev_token).1
+                let start = prev_tokens.chars().count();
+                generated_text[start..].to_string()
             } else {
                 generated_text
             };
