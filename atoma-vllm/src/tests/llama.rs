@@ -6,7 +6,7 @@ use crate::{
     validation::Validation,
 };
 use candle_core::{DType, Device};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 use tracing::info;
 
 const BLOCK_SIZE: usize = 16;
@@ -109,10 +109,10 @@ async fn test_llama_model() {
         let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
             atoma_client_receiver.recv().await.unwrap();
         for inference_outputs in responses {
+            let finished_time = output.metrics.read().unwrap().finished_time.unwrap();
+            let elapsed_time = finished_time.duration_since(start);
             for output in inference_outputs.inference_outputs {
                 let text = output.output_text;
-                let finished_time = output.metrics.read().unwrap().finished_time.unwrap();
-                let elapsed_time = finished_time.duration_since(start);
                 info!("\n\nReceived response: {output:?}\n, within time: {elapsed_time:?}\n\n");
             }
         }
