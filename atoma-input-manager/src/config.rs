@@ -5,19 +5,14 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 /// Atoma's Firebase configuration values
-pub struct AtomaOutputManagerConfig {
-    /// The node's Firebase api key
-    /// The node's Gateway api key
-    pub gateway_api_key: String,
-    /// The node's Gateway's bearer token
-    pub gateway_bearer_token: String,
-    /// The node's IPFS host
+pub struct AtomaInputManagerConfig {
+    /// The IPFS host
     pub ipfs_host: Option<String>,
-    /// The node's IPFS port
+    /// The IPFS port
     pub ipfs_port: u16,
 }
 
-impl AtomaOutputManagerConfig {
+impl AtomaInputManagerConfig {
     /// Constructs a new instance of `Self` from a configuration file path
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(
@@ -25,9 +20,9 @@ impl AtomaOutputManagerConfig {
         ));
         let config = builder
             .build()
-            .expect("Failed to generate Atoma Sui output manager configuration file");
+            .expect("Failed to generate Atoma Sui input manager configuration file");
         config
-            .get::<Self>("output_manager")
-            .expect("Failed to generated Atoma output manager config file")
+            .get::<Self>("input_manager")
+            .expect("Failed to generated Atoma input manager config file")
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "atoma-output-manager"
+name = "atoma-input-manager"
 version.workspace = true
 edition.workspace = true
 
@@ -13,6 +13,7 @@ futures.workspace = true
 gql_client.workspace = true
 hex.workspace = true
 http.workspace = true
+image.workspace = true
 ipfs-api-backend-hyper = { workspace = true, features = ["with-send-sync"] }
 reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true

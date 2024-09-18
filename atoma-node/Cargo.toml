@@ -9,6 +9,7 @@ edition.workspace = true
 atoma-client.workspace = true
 atoma-helpers.workspace = true
 atoma-inference.workspace = true
+atoma-input-manager.workspace = true
 atoma-output-manager.workspace = true
 atoma-sui.workspace = true
 atoma-streamer.workspace = true
@@ -19,6 +20,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
 
 [features]
 accelerate = ["atoma-inference/accelerate"]

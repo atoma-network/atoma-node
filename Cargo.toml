@@ -2,21 +2,22 @@
 resolver = "2"
 
 members = [
-    "atoma-crypto",
     "atoma-client",
+    "atoma-crypto",
     "atoma-event-subscribe/arbitrum",
     "atoma-event-subscribe/solana",
     "atoma-event-subscribe/sui",
-    "atoma-inference",
     "atoma-helpers",
+    "atoma-helpers",
+    "atoma-inference",
+    "atoma-input-manager",
+    "atoma-json-rpc",
     "atoma-networking",
     "atoma-node",
-    "atoma-json-rpc",
-    "atoma-storage",
-    "atoma-types",
     "atoma-output-manager",
+    "atoma-storage",
     "atoma-streamer",
-    "atoma-helpers",
+    "atoma-types",
     "atoma-vllm",
 ]
 
@@ -31,10 +32,11 @@ atoma-client = { path = "./atoma-client/" }
 atoma-crypto = { path = "./atoma-crypto/" }
 atoma-helpers = { path = "./atoma-helpers/" }
 atoma-inference = { path = "./atoma-inference/" }
+atoma-input-manager = { path = "./atoma-input-manager/" }
 atoma-output-manager = { path = "./atoma-output-manager/" }
 atoma-paged-attention = { git = "https://github.com/atoma-network/atoma-paged-attention", branch = "main" }
-atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-streamer = { path = "./atoma-streamer" }
+atoma-sui = { path = "./atoma-event-subscribe/sui/" }
 atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 blake2 = "0.10.6"
@@ -44,7 +46,7 @@ candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-n
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", branch = "main" }
 clap = "4.5.4"
 config = "0.14.0"
-cudarc = { version = "0.11.6", features = [
+cudarc = { version = "0.12.0", features = [
     "std",
     "cublas",
     "cublaslt",
@@ -55,10 +57,12 @@ cudarc = { version = "0.11.6", features = [
     "cuda-version-from-build-system",
     "dynamic-linking",
 ], default-features = false }
+cuda-runtime-sys = "0.3.0-alpha.1"
 dotenv = "0.15.0"
 ethers = "2.0.14"
 futures = "0.3.30"
 futures-util = "0.3.30"
+http = "0.2"
 gql_client = "1.0.7"
 half = { version = "2.3.1", features = [
     "num-traits",
@@ -67,11 +71,12 @@ half = { version = "2.3.1", features = [
 ] }
 hex = "0.4.3"
 hf-hub = "0.3.2"
-image = { version = "0.25.0", default-features = false, features = [
+image = { version = "0.25.2", default-features = false, features = [
     "jpeg",
     "png",
 ] }
 indexmap = "2.2.6"
+ipfs-api-backend-hyper = "0.6.0"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.14.0"
 rand = "0.8.5"

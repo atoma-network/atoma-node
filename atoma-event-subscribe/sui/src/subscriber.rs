@@ -1,5 +1,6 @@
-use std::{fmt::Write, path::Path, str::FromStr, time::Duration};
+use std::{path::Path, str::FromStr, time::Duration};
 
+use atoma_input_manager::AtomaInputManagerError;
 use futures::StreamExt;
 use serde_json::Value;
 use sui_sdk::rpc_types::{EventFilter, SuiEvent};
@@ -7,15 +8,21 @@ use sui_sdk::types::base_types::{ObjectID, ObjectIDParseError};
 use sui_sdk::types::event::EventID;
 use sui_sdk::{SuiClient, SuiClientBuilder};
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::oneshot::error::RecvError;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, instrument};
 
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
-use atoma_types::{Request, SmallId, NON_SAMPLED_NODE_ERR};
 
-/// The size of a request id, expressed in hex format
-const REQUEST_ID_HEX_SIZE: usize = 64;
+use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
+
+type BoxedSenderError = Box<
+    mpsc::error::SendError<(
+        InputSource,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+    )>,
+>;
 
 /// `SuiSubscriber` - Responsible for listening to events emitted from the Atoma smart contract
 ///     on the Sui blockchain.
@@ -41,6 +48,11 @@ pub struct SuiSubscriber {
     request_timeout: Option<Duration>,
     /// The websocket address of a Sui RPC node
     ws_addr: Option<String>,
+    /// Input manager sender, responsible for sending the input metadata and a oneshot sender, to the input manager service to get back the user prompt.
+    input_manager_tx: mpsc::Sender<(
+        InputSource,
+        oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+    )>,
 }
 
 impl SuiSubscriber {
@@ -52,6 +64,10 @@ impl SuiSubscriber {
         package_id: ObjectID,
         event_sender: mpsc::Sender<Request>,
         request_timeout: Option<Duration>,
+        input_manager_tx: mpsc::Sender<(
+            InputSource,
+            oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+        )>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
@@ -62,6 +78,7 @@ impl SuiSubscriber {
             event_sender,
             request_timeout,
             last_event_id: None,
+            input_manager_tx,
         })
     }
 
@@ -86,6 +103,10 @@ impl SuiSubscriber {
     pub async fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         event_sender: mpsc::Sender<Request>,
+        input_manager_tx: mpsc::Sender<(
+            InputSource,
+            oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
+        )>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -100,6 +121,7 @@ impl SuiSubscriber {
             package_id,
             event_sender,
             Some(request_timeout),
+            input_manager_tx,
         )
         .await
     }
@@ -213,18 +235,35 @@ impl SuiSubscriber {
     #[instrument(skip(self, event_data))]
     async fn handle_prompt_event(&self, event_data: Value) -> Result<(), SuiSubscriberError> {
         debug!("event data: {}", event_data);
-        let request = Request::try_from((self.id, event_data))?;
+        let mut request = Request::try_from((self.id, event_data))?;
+
+        // Get the prompt and replace with the actual prompt.
+        let (oneshot_sender, oneshot_receiver) = tokio::sync::oneshot::channel();
+        self.input_manager_tx
+            .send((request.params().prompt(), oneshot_sender))
+            .await
+            .map_err(Box::new)?;
+        let result = oneshot_receiver.await??;
+        // Replace the prompt string to the real prompt instead of the firebase user id.
+        match result {
+            ModelInput::ImageBytes(bytes) => {
+                request.set_raw_image(bytes);
+            }
+            ModelInput::ImageFile(path) => {
+                request.set_image_path(path);
+            }
+            ModelInput::Text(text) => {
+                request.set_raw_prompt(text);
+            }
+            ModelInput::Chat((text, preprompts)) => {
+                request.set_raw_prompt(text);
+                request.set_preprompt_tokens(preprompts);
+            }
+        }
         info!("Received new request: {:?}", request);
-        let request_id =
-            request
-                .id()
-                .iter()
-                .fold(String::with_capacity(REQUEST_ID_HEX_SIZE), |mut acc, &b| {
-                    write!(acc, "{:02x}", b).expect("Failed to write to request_id");
-                    acc
-                });
+        let request_id = request.id();
         info!(
-            "Current node has been sampled for request with id: {}",
+            "Current node has been sampled for request with id: {:?}",
             request_id
         );
         self.event_sender.send(request).await.map_err(Box::new)?;
@@ -323,4 +362,14 @@ pub enum SuiSubscriberError {
     TypeConversionError(#[from] anyhow::Error),
     #[error("Malformed event: `{0}`")]
     MalformedEvent(String),
+    #[error("Input manager error : `{0}`")]
+    AtomaInputManagerError(#[from] AtomaInputManagerError),
+    #[error("Sending input to input manager error: `{0}`")]
+    SendInputError(#[from] BoxedSenderError),
+    #[error("Error while sending request to input manager: `{0}`")]
+    InputManagerError(#[from] Box<tokio::sync::oneshot::error::RecvError>),
+    #[error("Timeout error getting the input from the input manager")]
+    TimeoutError,
+    #[error("Request receive error {0}")]
+    RecvError(#[from] RecvError),
 }

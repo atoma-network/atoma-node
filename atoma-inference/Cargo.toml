@@ -13,6 +13,7 @@ candle-transformers.workspace = true
 clap = { workspace = true }
 config.workspace = true
 cudarc = { workspace = true, optional = true }
+cuda-runtime-sys.workspace = true
 dotenv.workspace = true
 futures.workspace = true
 half = { workspace = true, optional = true }
@@ -22,6 +23,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 image = { workspace = true }
 metrics.workspace = true
+rmp-serde.workspace = true
 thiserror.workspace = true
 tokenizers = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
@@ -32,6 +34,7 @@ tracing-subscriber.workspace = true
 rand.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 toml.workspace = true
+tokenizers = { workspace = true, features = ["http"] }
 
 [features]
 accelerate = [

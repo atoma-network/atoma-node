@@ -53,7 +53,7 @@ impl LlamaNcclWorker {
         model_weights_file_paths: &[PathBuf],
         tokenizer_file_path: &PathBuf,
         device_id: usize,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError> {
         let device = CudaDevice::new(rank)?;
         // Initialize the Communicator from Nvidia Collective Communication Library. This is for the inter gpu communication.
@@ -227,7 +227,7 @@ impl ModelTrait for LlamaNcclModel {
 
     fn load(
         load_data: Self::LoadData,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError> {
         info!("Loading Llama model ...");
         let start = Instant::now();

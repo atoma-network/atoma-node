@@ -3,14 +3,14 @@ use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrai
 use std::{path::PathBuf, time::Duration};
 
 mod prompts;
-use atoma_types::Digest;
-use atoma_types::Text2TextPromptParams;
+use atoma_types::Text2TextModelParams;
+use atoma_types::{AtomaStreamingData, Digest};
 use prompts::PROMPTS;
 use serde::Serialize;
 
 use std::{collections::HashMap, sync::mpsc};
 
-use atoma_types::{PromptParams, Request};
+use atoma_types::{ModelParams, Request};
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::Client;
 use serde_json::json;
@@ -45,12 +45,15 @@ impl LlmOutput for MockInputOutput {
     fn time_to_generate(&self) -> f64 {
         0.0
     }
+    fn tokens(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
-impl TryFrom<(Digest, PromptParams)> for MockInputOutput {
+impl TryFrom<(Digest, ModelParams)> for MockInputOutput {
     type Error = ModelError;
 
-    fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((_, value): (Digest, ModelParams)) -> Result<Self, Self::Error> {
         Ok(Self {
             id: value.into_text2text_prompt_params().unwrap().max_tokens(),
         })
@@ -72,7 +75,7 @@ impl ModelTrait for TestModel {
 
     fn load(
         duration: Self::LoadData,
-        _: tokio::sync::mpsc::Sender<(Digest, String)>,
+        _: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
@@ -95,7 +98,7 @@ impl ModelTrait for TestModel {
 }
 
 impl ModelThreadDispatcher {
-    fn test_start(stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>) -> Self {
+    fn test_start(stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>) -> Self {
         let duration_in_secs = vec![1, 2, 5, 10];
         let mut model_senders = HashMap::with_capacity(4);
 
@@ -144,8 +147,10 @@ async fn test_mock_model_thread() {
         for sender in model_thread_dispatcher.model_senders.values() {
             let (response_sender, response_receiver) = oneshot::channel();
             let max_tokens = i as u64;
-            let prompt_params = PromptParams::Text2TextPromptParams(Text2TextPromptParams::new(
-                "".to_string(),
+            let prompt_params = ModelParams::Text2TextModelParams(Text2TextModelParams::new(
+                atoma_types::InputSource::Raw {
+                    prompt: "".to_string(),
+                },
                 "".to_string(),
                 0.0,
                 1,

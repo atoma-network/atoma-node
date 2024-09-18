@@ -1,4 +1,4 @@
-use atoma_types::{Digest, Request, Response};
+use atoma_types::{AtomaStreamingData, Request, Response};
 use candle::Error as CandleError;
 use futures::StreamExt;
 use std::fmt::Debug;
@@ -49,7 +49,7 @@ impl ModelService {
         json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
-        stream_tx: Sender<(Digest, String)>,
+        stream_tx: Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -90,7 +90,7 @@ impl ModelService {
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
-                        info!("Received a new inference response: {:?}", response);
+                        info!("Received a new inference response");
                         if let Err(e) = self.atoma_node_resp_tx.send(response).await {
                             return Err(ModelServiceError::SendError(e.to_string()));
                         }
@@ -147,7 +147,7 @@ pub enum ModelServiceError {
 
 #[cfg(test)]
 mod tests {
-    use atoma_types::PromptParams;
+    use atoma_types::{Digest, ModelParams};
     use serde::Serialize;
     use std::io::Write;
     use toml::{toml, Value};
@@ -176,12 +176,15 @@ mod tests {
         fn time_to_generate(&self) -> f64 {
             0.0
         }
+        fn tokens(&self) -> Vec<u32> {
+            vec![]
+        }
     }
 
-    impl TryFrom<(Digest, PromptParams)> for MockInput {
+    impl TryFrom<(Digest, ModelParams)> for MockInput {
         type Error = ModelError;
 
-        fn try_from(_: (Digest, PromptParams)) -> Result<Self, Self::Error> {
+        fn try_from(_: (Digest, ModelParams)) -> Result<Self, Self::Error> {
             Ok(Self {})
         }
     }
@@ -197,7 +200,7 @@ mod tests {
 
         fn load(
             _: Self::LoadData,
-            _: tokio::sync::mpsc::Sender<(Digest, String)>,
+            _: tokio::sync::mpsc::Sender<AtomaStreamingData>,
         ) -> Result<Self, crate::models::ModelError> {
             Ok(Self {})
         }

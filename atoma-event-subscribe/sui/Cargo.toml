@@ -7,10 +7,12 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+atoma-input-manager.workspace = true
 atoma-types.workspace = true
 clap.workspace = true
 config.workspace = true
 futures.workspace = true
+hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sui-sdk.workspace = true

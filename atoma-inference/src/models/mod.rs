@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use atoma_types::{Digest, PromptParams};
+use atoma_types::{AtomaStreamingData, Digest, ModelParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
+use image::ImageError;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use types::{TextModelInput, TextModelOutput};
@@ -25,7 +26,7 @@ pub type ModelId = String;
 /// Such interface abstracts the fetching, loading and running of an LLM. Moreover, it
 /// indirectly expects that fetching is done through some API (most likely the HuggingFace api).
 pub trait ModelTrait {
-    type Input: TryFrom<(Digest, PromptParams), Error = ModelError>;
+    type Input: TryFrom<(Digest, ModelParams), Error = ModelError>;
     type Output: LlmOutput;
     type LoadData;
 
@@ -38,7 +39,7 @@ pub trait ModelTrait {
     /// Loading the model from a `LoadData`
     fn load(
         load_data: Self::LoadData,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized;
@@ -73,7 +74,9 @@ pub enum ModelError {
     #[error("Invalid model input")]
     InvalidModelInput,
     #[error("Send error: `{0}`")]
-    SendError(#[from] mpsc::error::SendError<(Digest, String)>),
+    SendError(#[from] mpsc::error::SendError<AtomaStreamingData>),
+    #[error("Invalid prompt params")]
+    InvalidModelParams,
     #[cfg(feature = "nccl")]
     #[error("Nccl error: `{}`", 0.0)]
     NcclError(NcclError),
@@ -86,6 +89,8 @@ pub enum ModelError {
     SendErrorTextModelInput(#[from] Box<tokio::sync::broadcast::error::SendError<TextModelInput>>),
     #[error("Send error: `{0}`")]
     SendErrorTextModelOutput(#[from] tokio::sync::mpsc::error::SendError<TextModelOutput>),
+    #[error("Failed to create image buffer")]
+    ImageBufferError,
 }
 
 #[macro_export]

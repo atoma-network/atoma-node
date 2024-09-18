@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -106,7 +106,7 @@ impl ModelTrait for MistralModel {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
@@ -235,7 +235,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
@@ -259,7 +259,8 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = MistralModel::load(load_data).expect("Failed to load model");
+        let (sender, _) = mpsc::channel(1);
+        let mut model = MistralModel::load(load_data, sender).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -284,6 +285,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            "".to_string(),
             prompt.clone(),
             temperature,
             random_seed,
@@ -291,7 +293,10 @@ mod tests {
             repeat_last_n,
             max_tokens,
             Some(top_k),
-            Some(top_p),
+            Some(top_p as f64),
+            false,
+            vec![],
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
 
@@ -323,7 +328,7 @@ mod tests {
             model_id,
             dtype.clone(),
             revision,
-            device_id,
+            vec![device_id],
             use_flash_attention,
         );
         let load_data = MistralModel::fetch(api_key, cache_dir.clone(), config)
@@ -347,7 +352,8 @@ mod tests {
 
         let should_be_dtype = DType::from_str(&dtype).unwrap();
         assert_eq!(load_data.dtype, should_be_dtype);
-        let mut model = MistralModel::load(load_data).expect("Failed to load model");
+        let (sender, _) = mpsc::channel(1);
+        let mut model = MistralModel::load(load_data, sender).expect("Failed to load model");
 
         if should_be_device.is_cpu() {
             assert!(model.device.is_cpu());
@@ -372,6 +378,7 @@ mod tests {
         let top_p = 0.6;
 
         let input = TextModelInput::new(
+            "".to_string(),
             prompt.clone(),
             temperature,
             random_seed,
@@ -379,7 +386,10 @@ mod tests {
             repeat_last_n,
             max_tokens,
             Some(top_k),
-            Some(top_p),
+            Some(top_p as f64),
+            false,
+            vec![],
+            false,
         );
         let output = model.run(input).expect("Failed to run inference");
 

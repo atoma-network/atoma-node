@@ -4,12 +4,25 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+atoma-types = { workspace = true, optional = true }
+config = { workspace = true, optional = true }
+dotenv = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["json"], optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
 
 [features]
 default = ["firebase"]
-firebase = ["reqwest", "serde", "serde_json", "tokio"]
+firebase = [
+  "atoma-types",
+  "config",
+  "dotenv",
+  "reqwest",
+  "serde_json",
+  "serde",
+  "tokio",
+  "url",
+]

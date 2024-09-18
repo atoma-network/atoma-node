@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
-use atoma_types::{Digest, PromptParams};
+use atoma_types::{Digest, ModelParams};
 use candle::{DType, Device};
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +33,8 @@ pub enum ModelType {
     Falcon7b,
     Falcon40b,
     Falcon180b,
+    FluxSchnell,
+    FluxDev,
     LlamaV1,
     LlamaV2,
     LlamaSolar10_7B,
@@ -103,6 +105,8 @@ impl FromStr for ModelType {
             "falcon_7b" => Ok(Self::Falcon7b),
             "falcon_40b" => Ok(Self::Falcon40b),
             "falcon_180b" => Ok(Self::Falcon180b),
+            "flux_dev" => Ok(Self::FluxDev),
+            "flux_schnell" => Ok(Self::FluxSchnell),
             "llama_v1" => Ok(Self::LlamaV1),
             "llama_v2" => Ok(Self::LlamaV2),
             "llama_solar_10_7b" => Ok(Self::LlamaSolar10_7B),
@@ -177,6 +181,8 @@ impl ModelType {
             Self::Falcon7b => "tiiuae/falcon-7b",
             Self::Falcon40b => "tiiuae/falcon-40b",
             Self::Falcon180b => "tiiuae/falcon-180b",
+            Self::FluxDev => "black-forest-labs/FLUX.1-dev",
+            Self::FluxSchnell => "black-forest-labs/FLUX.1-schnell",
             Self::LlamaV1 => "Narsil/amall-7b",
             Self::LlamaV2 => "meta-llama/Llama-2-7b-hf",
             Self::LlamaSolar10_7B => "upstage/SOLAR-10.7B-v1.0",
@@ -279,7 +285,9 @@ impl ModelType {
             Self::Mamba790m => "refs/pr/1",
             Self::Mamba1_4b => "refs/pr/1",
             Self::Mamba2_8b => "refs/pr/4",
-            Self::QuantizedL8b
+            Self::FluxDev
+            | Self::FluxSchnell
+            | Self::QuantizedL8b
             | Self::QuantizedLeo13b
             | Self::QuantizedLeo7b
             | Self::QuantizedLlama13b
@@ -314,6 +322,8 @@ impl Display for ModelType {
             Self::Falcon7b => write!(f, "falcon_7b"),
             Self::Falcon40b => write!(f, "falcon_40b"),
             Self::Falcon180b => write!(f, "falcon_180b"),
+            Self::FluxDev => write!(f, "flux_dev"),
+            Self::FluxSchnell => write!(f, "flux_schnell"),
             Self::LlamaV1 => write!(f, "llama_v1"),
             Self::LlamaV2 => write!(f, "llama_v2"),
             Self::LlamaSolar10_7B => write!(f, "llama_solar_10_7b"),
@@ -387,7 +397,7 @@ pub struct TextModelInput {
     /// the Atoma's smart contract (on some blockchain).
     /// In that case, is a unique identifier in 32-byte
     /// format
-    pub(crate) request_id: Digest,
+    pub(crate) request_id: String,
     /// The actual prompt text (to be used as input
     /// on the model's inference run)
     pub(crate) prompt: String,
@@ -458,14 +468,14 @@ impl TextModelInput {
     }
 }
 
-impl TryFrom<(Digest, PromptParams)> for TextModelInput {
+impl TryFrom<(String, ModelParams)> for TextModelInput {
     type Error = ModelError;
 
-    fn try_from((request_id, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((request_id, value): (String, ModelParams)) -> Result<Self, Self::Error> {
         match value {
-            PromptParams::Text2TextPromptParams(p) => Ok(Self {
+            ModelParams::Text2TextModelParams(p) => Ok(Self {
                 request_id,
-                prompt: p.prompt(),
+                prompt: p.get_input_text(),
                 temperature: p.temperature(),
                 random_seed: p.random_seed(),
                 repeat_penalty: p.repeat_penalty(),
@@ -477,7 +487,7 @@ impl TryFrom<(Digest, PromptParams)> for TextModelInput {
                 pre_prompt_tokens: p.pre_prompt_tokens(),
                 should_stream_output: p.should_stream_output(),
             }),
-            PromptParams::Text2ImagePromptParams(_) => Err(ModelError::InvalidModelInput),
+            ModelParams::Text2ImageModelParams(_) => Err(ModelError::InvalidModelInput),
         }
     }
 }
@@ -491,6 +501,8 @@ pub trait LlmOutput: Serialize {
     fn num_output_tokens(&self) -> Option<usize>;
     /// Time to generate the output
     fn time_to_generate(&self) -> f64;
+    /// The tokens generated
+    fn tokens(&self) -> Vec<u32>;
 }
 
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
@@ -536,6 +548,10 @@ impl LlmOutput for TextModelOutput {
     fn time_to_generate(&self) -> f64 {
         self.time
     }
+
+    fn tokens(&self) -> Vec<u32> {
+        self.tokens.clone()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -563,23 +579,23 @@ pub struct StableDiffusionInput {
     /// Image to image, to be used if one aims to
     /// transform the initial generated image in a given
     /// specific way
-    pub img2img: Option<String>,
+    pub img2img: Option<Vec<u8>>,
     /// The strength, indicates how much to transform the initial image. The
     /// value must be between 0 and 1, a value of 1 discards the initial image
     /// information.
     pub img2img_strength: f64,
     /// The seed to use when generating random samples.
-    pub random_seed: Option<u32>,
+    pub random_seed: Option<u64>,
 }
 
-impl TryFrom<(Digest, PromptParams)> for StableDiffusionInput {
+impl TryFrom<(Digest, ModelParams)> for StableDiffusionInput {
     type Error = ModelError;
 
-    fn try_from((_, value): (Digest, PromptParams)) -> Result<Self, Self::Error> {
+    fn try_from((_, value): (Digest, ModelParams)) -> Result<Self, Self::Error> {
         match value {
-            PromptParams::Text2ImagePromptParams(p) => Ok(Self {
-                prompt: p.prompt(),
-                uncond_prompt: p.uncond_prompt(),
+            ModelParams::Text2ImageModelParams(p) => Ok(Self {
+                prompt: p.get_input_text(),
+                uncond_prompt: p.get_uncond_prompt_text(),
                 height: p.height().map(|t| t.try_into().unwrap()),
                 width: p.width().map(|t| t.try_into().unwrap()),
                 n_steps: p.n_steps().map(|t| t.try_into().unwrap()),

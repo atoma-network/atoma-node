@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::{
@@ -86,7 +86,7 @@ impl ModelTrait for Phi3Model {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        stream_tx: mpsc::Sender<(Digest, String)>,
+        stream_tx: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,

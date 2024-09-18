@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::Digest;
+use atoma_types::AtomaStreamingData;
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -16,7 +16,6 @@ use tracing::{debug, info, instrument};
 use crate::{
     bail,
     models::{
-        candle::save_image,
         config::ModelConfig,
         types::{LlmOutput, ModelType, StableDiffusionInput},
         ModelError, ModelTrait,
@@ -81,10 +80,6 @@ pub struct StableDiffusion {
 pub struct StableDiffusionOutput {
     /// Data buffer of the image encoding
     pub image_data: Vec<u8>,
-    /// Height of the image
-    pub height: usize,
-    /// Width of the image
-    pub width: usize,
     /// Number of input tokens
     input_tokens: usize,
     /// Time to generate output
@@ -102,6 +97,10 @@ impl LlmOutput for StableDiffusionOutput {
 
     fn time_to_generate(&self) -> f64 {
         self.time_to_generate
+    }
+
+    fn tokens(&self) -> Vec<u32> {
+        panic!("Asking image models for the tokens is not supported")
     }
 }
 
@@ -182,7 +181,7 @@ impl ModelTrait for StableDiffusion {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        _: mpsc::Sender<(Digest, String)>,
+        _: mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError>
     where
         Self: Sized,
@@ -252,6 +251,7 @@ impl ModelTrait for StableDiffusion {
             load_data.use_flash_attention,
             load_data.dtype,
         )?;
+        info!("Loaded Stable diffusion model.");
 
         Ok(Self {
             config,
@@ -308,7 +308,7 @@ impl ModelTrait for StableDiffusion {
 
         let scheduler = self.config.build_scheduler(n_steps)?;
         if let Some(seed) = input.random_seed {
-            self.device.set_seed(seed as u64)?;
+            self.device.set_seed(seed)?;
         }
         let use_guide_scale = guidance_scale > 1.0;
 
@@ -372,7 +372,7 @@ impl ModelTrait for StableDiffusion {
             ModelType::StableDiffusionTurbo => 0.13025,
             _ => bail!("Invalid stable diffusion model type"),
         };
-        let mut res = (vec![], 0, 0);
+        let mut res = Vec::new();
 
         for idx in 0..input.num_samples {
             let timesteps = scheduler.timesteps();
@@ -437,16 +437,9 @@ impl ModelTrait for StableDiffusion {
                 input.num_samples
             );
 
-            save_tensor_to_file(&latents, "tensor1")?;
             let image = self.vae.decode(&(&latents / vae_scale)?)?;
-            save_tensor_to_file(&image, "tensor2")?;
             let image = ((image / 2.)? + 0.5)?.to_device(&Device::Cpu)?;
-            save_tensor_to_file(&image, "tensor3")?;
             let image = (image.clamp(0f32, 1.)? * 255.)?.to_dtype(DType::U8)?.i(0)?;
-            if idx == input.num_samples - 1 {
-                save_image(&image, "./image.png").unwrap();
-            }
-            save_tensor_to_file(&image, "tensor4")?;
 
             res = convert_to_image(&image)?;
         }
@@ -454,9 +447,7 @@ impl ModelTrait for StableDiffusion {
         let time_to_generate = start_gen.elapsed().as_secs_f64();
 
         Ok(StableDiffusionOutput {
-            image_data: res.0,
-            height: res.1,
-            width: res.2,
+            image_data: res,
             input_tokens: num_input_tokens,
             time_to_generate,
         })
@@ -662,8 +653,8 @@ impl StableDiffusion {
     }
 
     /// Pre-processes image
-    fn image_preprocess<T: AsRef<std::path::Path>>(path: T) -> Result<Tensor, ModelError> {
-        let img = image::io::Reader::open(path)?.decode()?;
+    fn image_preprocess(image_bytes: &[u8]) -> Result<Tensor, ModelError> {
+        let img = image::load_from_memory(image_bytes)?;
         let (height, width) = (img.height() as usize, img.width() as usize);
         let height = height - height % 32;
         let width = width - width % 32;
@@ -762,9 +753,6 @@ mod tests {
         println!("Running inference on input: {:?}", input);
         let output = model.run(input).expect("Failed to run inference");
         println!("{:?}", output.image_data);
-
-        assert_eq!(output.height, 512);
-        assert_eq!(output.width, 512);
 
         std::fs::remove_dir_all(cache_dir).unwrap();
         std::fs::remove_file("tensor1").unwrap();

@@ -73,7 +73,7 @@ impl MixtralNcclWorker {
         tokenizer_file_path: &PathBuf,
         model_type: ModelType,
         device_id: usize,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError> {
         let device = CudaDevice::new(rank)?;
         let comm =
@@ -245,7 +245,7 @@ impl ModelTrait for MixtralNcclModel {
     #[instrument(skip_all)]
     fn load(
         load_data: Self::LoadData,
-        stream_tx: tokio::sync::mpsc::Sender<(Digest, String)>,
+        stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
     ) -> Result<Self, ModelError> {
         info!("Loading Mixtral model ...");
         let start = Instant::now();
