@@ -306,7 +306,6 @@ impl LlmEngine {
                 .add_token_id(generated_token_id, sequence_output.logprob.clone())?;
 
             // 5. Decode the generated output token id.
-            let sequence_len = sequence_guard_lock.length();
             let token_ids = sequence_guard_lock.sequence_data.get_token_ids();
             let generated_text = self
                 .tokenizer
@@ -315,11 +314,12 @@ impl LlmEngine {
 
             // 6. Update the `output_text` with the newly generated token,
             //    if in decoding phase.
-            let generated_token = if let Some(prev_token) = sequence_guard_lock.tokens.last() {
+            let generated_token = if sequence_guard_lock.tokens.last().is_some() {
                 let start = sequence_guard_lock.output_text.chars().count();
-                generated_text.chars().skip(start).collect()
+                generated_text.chars().skip(start).collect::<String>()
             } else {
-                generated_text
+                let start = sequence_guard_lock.prompt.chars().count();
+                generated_text.chars().skip(start).collect()
             };
 
             sequence_guard_lock.output_text.push_str(&generated_token);
