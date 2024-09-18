@@ -8,7 +8,6 @@ use atoma_paged_attention::flash_attention::FlashAttentionMetadata;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use futures::stream::FuturesUnordered;
 use thiserror::Error;
-use tokenizers::Tokenizer;
 use tokio::{
     sync::{
         mpsc,

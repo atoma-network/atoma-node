@@ -124,7 +124,7 @@ fn prepare_inputs(
     truncate: Option<usize>,
 ) -> Result<(Encoding, String), TokenizerError> {
     let input = if let Some(truncate) = truncate {
-        if truncate > input.chars().count(); {
+        if truncate > input.chars().count() {
             input
         } else {
             let start = input.chars_indices().nth(input.chars().count() - truncate).map(|(idx, _)| idx).unwrap_or(0);
