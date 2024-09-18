@@ -278,7 +278,7 @@ pub struct Sequence {
     /// Sequence Id,
     sequence_id: u64,
     /// Prompt
-    prompt: String,
+    pub prompt: String,
     /// Prompt associated token ids
     pub prompt_token_ids: Vec<u32>,
     /// Sequence data
@@ -287,12 +287,6 @@ pub struct Sequence {
     block_size: usize,
     /// Logical token blocks
     pub logical_token_blocks: Vec<LogicalTokenBlock>,
-    /// Prefix offset, used for incremental detokenization
-    #[allow(dead_code)]
-    prefix_offset: usize,
-    /// Read offset, used for incremental detokenization
-    #[allow(dead_code)]
-    read_offset: usize,
     /// Output generated text
     pub output_text: String,
     /// List of all possible mappings from each generated output id to its `LogProb`
