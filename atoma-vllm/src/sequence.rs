@@ -324,8 +324,6 @@ impl Sequence {
             sequence_data: SequenceData::new(prompt_token_ids.clone(), vec![]),
             logical_token_blocks: vec![],
             block_size,
-            prefix_offset: 0,
-            read_offset: 0,
             output_logprobs: vec![],
             output_text,
             sequence_status: SequenceStatus::Waiting,
