@@ -109,7 +109,7 @@ async fn test_llama_model() {
         let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
             atoma_client_receiver.recv().await.unwrap();
         for inference_outputs in responses {
-            let finished_time = output.metrics.read().unwrap().finished_time.unwrap();
+            let finished_time = inference_outputs.metrics.read().unwrap().finished_time.unwrap();
             let elapsed_time = finished_time.duration_since(start);
             for output in inference_outputs.inference_outputs {
                 let text = output.output_text;
