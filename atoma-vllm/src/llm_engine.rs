@@ -306,14 +306,21 @@ impl LlmEngine {
                 .add_token_id(generated_token_id, sequence_output.logprob.clone())?;
 
             // 5. Decode the generated output token id.
-            let generated_token = self
+            let sequence_len = sequence_guard_lock.length();
+            let token_ids = sequence_guard_lock.sequence_data.get_token_ids();
+            let prev_token_id = token_ids[sequence_len - 2];
+            let generated_text = self
                 .tokenizer
-                .decode(&sequence_guard_lock.sequence_data.get_token_ids(), true)
+                .decode(&token_ids[sequence_len - 2..], true)
                 .map_err(|e| EngineError::TokenizerError(e.to_string()))?;
 
             // 6. Update the `output_text` with the newly generated token,
             //    if in decoding phase.
-            sequence_guard_lock.output_text.push_str(&generated_token);
+            if let Some(prev_token) = sequence_guard_lock.tokens.last() {
+                sequence_guard_lock.output_text.push_str(&generated_text.split(prev_token).1)
+            } else { 
+                sequence_guard_lock.output_text.push_str(&generated_text);
+            }
 
             // 7. Check if the last generated token is a stop token.
             //    If so, update the `Sequence`'s `SequenceState` and
@@ -357,7 +364,8 @@ impl LlmEngine {
         } else {
             // NOTE: in this case, we are not sampling newly
             // generated tokens. That is, we are in prefill
-            // phase (possibly while chunking). For this reason,
+            // phase (possibly while chunking)            
+            // without generating the next token. For this reason,
             // we do not have to add tokens to the current
             // `Sequence`'s state.
 
