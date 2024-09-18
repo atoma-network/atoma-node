@@ -2,6 +2,8 @@ use std::path::Path;
 
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_helpers::{Firebase, FirebaseConfig};
+#[cfg(feature = "supabase")]
+use atoma_helpers::{Supabase, SupabaseConfig};
 use atoma_inference::{
     models::config::ModelsConfig,
     service::{ModelService, ModelServiceError},
@@ -52,6 +54,11 @@ impl AtomaNode {
             firebase_config.small_id(),
         )
         .await?;
+        #[cfg(feature = "supabase")]
+        let supabase_config = SupabaseConfig::from_file_path(config_path.clone());
+        #[cfg(feature = "supabase")]
+        let supabase =
+            Supabase::new(supabase_config.url("https")?, supabase_config.anon_key()).await?;
 
         let span = Span::current();
         let model_service_handle = {
@@ -113,12 +120,20 @@ impl AtomaNode {
         let atoma_output_manager_handle = {
             let config_path = config_path.clone();
             let firebase = firebase.clone();
+            #[cfg(feature = "supabase")]
+            let supabase = supabase.clone();
             let span = span.clone();
             tokio::spawn(async move {
                 let _enter = span.enter();
                 info!("Starting Atoma output manager service..");
-                let atoma_output_manager =
-                    AtomaOutputManager::new(config_path, output_manager_rx, firebase).await?;
+                let atoma_output_manager = AtomaOutputManager::new(
+                    config_path,
+                    output_manager_rx,
+                    firebase,
+                    #[cfg(feature = "supabase")]
+                    supabase,
+                )
+                .await?;
                 atoma_output_manager.run().await.map_err(|e| {
                     error!("Error with Atoma output manager: {e}");
                     AtomaNodeError::AtomaOutputManagerError(e)
@@ -129,11 +144,19 @@ impl AtomaNode {
         let atoma_input_manager_handle = {
             let firebase = firebase.clone();
             let span = span.clone();
+            #[cfg(feature = "supabase")]
+            let supabase = supabase.clone();
             tokio::spawn(async move {
                 let _enter = span.enter();
                 info!("Starting Atoma input manager service..");
-                let atoma_input_manager =
-                    AtomaInputManager::new(config_path, input_manager_rx, firebase).await?;
+                let atoma_input_manager = AtomaInputManager::new(
+                    config_path,
+                    input_manager_rx,
+                    firebase,
+                    #[cfg(feature = "supabase")]
+                    supabase,
+                )
+                .await?;
                 atoma_input_manager.run().await.map_err(|e| {
                     error!("Error with Atoma input manager: {e}");
                     AtomaNodeError::AtomaInputManagerError(e)
@@ -144,7 +167,13 @@ impl AtomaNode {
         let atoma_streamer_handle = tokio::spawn(async move {
             let _enter = span.enter();
             info!("Starting Atoma streamer service..");
-            let atoma_streamer = AtomaStreamer::new(streamer_rx, firebase).await?;
+            let atoma_streamer = AtomaStreamer::new(
+                streamer_rx,
+                firebase,
+                #[cfg(feature = "supabase")]
+                supabase,
+            )
+            .await?;
             atoma_streamer.run().await.map_err(|e| {
                 error!("Error with Atoma streamer: {e}");
                 AtomaNodeError::AtomaStreamerError(e)
@@ -209,4 +238,7 @@ pub enum AtomaNodeError {
     UrlParseError(#[from] url::ParseError),
     #[error("Firebase authentication error: `{0}`")]
     FirebaseAuthError(#[from] atoma_helpers::FirebaseAuthError),
+    #[cfg(feature = "supabase")]
+    #[error("Supabase error: `{0}`")]
+    SupabaseError(#[from] atoma_helpers::SupabaseError),
 }

@@ -21,3 +21,6 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+
+[features]
+supabase = []

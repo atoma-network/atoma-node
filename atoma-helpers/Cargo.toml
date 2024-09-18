@@ -26,3 +26,4 @@ firebase = [
   "tokio",
   "url",
 ]
+supabase = ["url", "reqwest", "dotenv", "config", "serde_json", "serde"]

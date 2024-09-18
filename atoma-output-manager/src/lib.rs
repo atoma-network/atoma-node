@@ -1,6 +1,8 @@
 use std::{path::Path, string::FromUtf8Error};
 
 use atoma_helpers::Firebase;
+#[cfg(feature = "supabase")]
+use atoma_helpers::Supabase;
 use atoma_types::{AtomaOutputMetadata, OutputDestination};
 use config::AtomaOutputManagerConfig;
 use firebase::FirebaseOutputManager;
@@ -19,6 +21,10 @@ mod config;
 mod firebase;
 mod gateway;
 mod ipfs;
+#[cfg(feature = "supabase")]
+mod supabase;
+#[cfg(feature = "supabase")]
+use supabase::SupabaseOutputManager;
 
 type IpfsSendRequestError = mpsc::error::SendError<(
     AtomaOutputMetadata,
@@ -48,6 +54,8 @@ pub struct AtomaOutputManager {
     /// A mpsc receiver that receives tuples of `AtomaOutputMetadata` and
     /// the actual AI generated output, in JSON format.
     output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
+    #[cfg(feature = "supabase")]
+    supabase_output_manager: SupabaseOutputManager,
 }
 
 impl AtomaOutputManager {
@@ -56,6 +64,7 @@ impl AtomaOutputManager {
         config_file_path: P,
         output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
         firebase: Firebase,
+        #[cfg(feature = "supabase")] supabase: Supabase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
         let firebase_output_manager = FirebaseOutputManager::new(firebase);
@@ -96,6 +105,8 @@ impl AtomaOutputManager {
                 None
             }
         };
+        #[cfg(feature = "supabase")]
+        let supabase_output_manager = SupabaseOutputManager::new(supabase);
 
         Ok(Self {
             firebase_output_manager,
@@ -103,6 +114,8 @@ impl AtomaOutputManager {
             ipfs_request_tx,
             gateway_output_manager,
             output_manager_rx,
+            #[cfg(feature = "supabase")]
+            supabase_output_manager,
         })
     }
 
@@ -141,6 +154,12 @@ impl AtomaOutputManager {
                 OutputDestination::Gateway { .. } => {
                     self.gateway_output_manager
                         .handle_request(&output_metadata, output)
+                        .await?
+                }
+                #[cfg(feature = "supabase")]
+                OutputDestination::Supabase { .. } => {
+                    self.supabase_output_manager
+                        .handle_post_request(&output_metadata, output)
                         .await?
                 }
             }
@@ -206,4 +225,7 @@ pub enum AtomaOutputManagerError {
     FirebaseError(String),
     #[error("Failed to send the ipfs result `{0:?}` back")]
     SendError(Option<String>),
+    #[cfg(feature = "supabase")]
+    #[error("Supabase error: `{0}`")]
+    SupabaseError(#[from] atoma_helpers::SupabaseError),
 }

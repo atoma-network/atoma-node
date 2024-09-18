@@ -22,7 +22,7 @@ use crate::{
     },
 };
 
-use super::{convert_to_image, device, save_tensor_to_file};
+use super::{convert_to_image, device};
 
 /// Stable diffusion load data
 pub struct StableDiffusionLoadData {

@@ -53,3 +53,5 @@ nccl = [
   "dep:candle-flash-attn",
   "dep:half",
 ]
+
+supabase = []
