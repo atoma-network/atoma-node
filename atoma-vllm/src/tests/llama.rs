@@ -34,9 +34,8 @@ async fn test_llama_model() {
     let (atoma_client_sender, mut atoma_client_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (tokenizer_sender, tokenizer_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    let cache_config =
-        CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 100, 100)
-            .expect("Failed to create cache config");
+    let cache_config = CacheConfig::new(BLOCK_SIZE, 1.0, 1, None, None, 100, 100)
+        .expect("Failed to create cache config");
 
     let scheduler_config = SchedulerConfig::new(512, MAX_NUM_SEQUENCES, 512, 0.0, false, 0)
         .expect("Failed to create scheduler config");
@@ -109,7 +108,12 @@ async fn test_llama_model() {
         let responses: Vec<crate::llm_engine::GenerateRequestOutput> =
             atoma_client_receiver.recv().await.unwrap();
         for inference_outputs in responses {
-            let finished_time = inference_outputs.metrics.read().unwrap().finished_time.unwrap();
+            let finished_time = inference_outputs
+                .metrics
+                .read()
+                .unwrap()
+                .finished_time
+                .unwrap();
             let elapsed_time = finished_time.duration_since(start);
             for output in inference_outputs.inference_outputs {
                 let text = output.output_text;
