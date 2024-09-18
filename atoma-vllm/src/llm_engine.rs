@@ -348,7 +348,7 @@ impl LlmEngine {
             // 10. Check if the `Sequence`'s output length exceeds that of
             //     Request's `max_new_tokens`.
             let sequence_output_len = sequence_guard_lock.get_output_len();
-            if sequence_output_len > stopping_criteria_params.max_new_tokens as usize {
+            if sequence_output_len >= stopping_criteria_params.max_new_tokens as usize {
                 sequence_guard_lock.set_sequence_status(SequenceStatus::FinishedLengthCapped)
             }
 
