@@ -16,19 +16,13 @@ use crate::AtomaOutputManagerError;
 ///     tech stack, it is fine for applications such as chat applications.
 pub struct FirebaseOutputManager {
     /// The Atoma's firebase URL
-    realtime_db_url: Url,
-    storage_url: Url,
-    auth: Arc<Mutex<FirebaseAuth>>,
+    firebase: Firebase,
 }
 
 impl FirebaseOutputManager {
     /// Constructor
     pub fn new(firebase: Firebase) -> Self {
-        Self {
-            auth: firebase.get_auth(),
-            realtime_db_url: firebase.get_realtime_db_url(),
-            storage_url: firebase.get_storage_url(),
-        }
+        Self { firebase }
     }
 
     /// Handles  a new post request. Encapsulates the logic necessary
@@ -41,11 +35,11 @@ impl FirebaseOutputManager {
         ipfs_cid: Option<String>,
     ) -> Result<(), AtomaOutputManagerError> {
         let client = Client::new();
-        let token = self.auth.lock().await.get_id_token().await?;
+        let token = self.firebase.get_id_token().await?;
 
         match output_metadata.output_type {
             OutputType::Text => {
-                let mut url = self.realtime_db_url.clone();
+                let mut url = self.firebase.get_realtime_db_url();
                 {
                     let mut path_segment = url.path_segments_mut().map_err(|_| {
                         AtomaOutputManagerError::UrlError("URL is not valid".to_string())
@@ -67,7 +61,7 @@ impl FirebaseOutputManager {
                 });
                 submit_put_request(&client, url, &data).await?;
                 if !output_metadata.tokens.is_empty() {
-                    let mut url = self.realtime_db_url.clone();
+                    let mut url = self.firebase.get_realtime_db_url();
                     {
                         let mut path_segment = url.path_segments_mut().map_err(|_| {
                             AtomaOutputManagerError::UrlError("URL is not valid".to_string())
@@ -83,7 +77,7 @@ impl FirebaseOutputManager {
             }
             OutputType::Image => {
                 // First store the metadata
-                let mut realtime_db_url = self.realtime_db_url.clone();
+                let mut realtime_db_url = self.firebase.get_realtime_db_url();
                 {
                     let mut path_segment = realtime_db_url.path_segments_mut().map_err(|_| {
                         AtomaOutputManagerError::UrlError("URL is not valid".to_string())
@@ -113,7 +107,7 @@ impl FirebaseOutputManager {
                 };
                 submit_put_request(&client, realtime_db_url, &data).await?;
                 // Then store the image
-                let mut storage_url = self.storage_url.clone();
+                let mut storage_url = self.firebase.get_storage_url();
                 storage_url.set_query(Some(&format!(
                     "name=images/{}.png",
                     output_metadata.output_destination.request_id()

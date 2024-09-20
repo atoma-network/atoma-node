@@ -59,6 +59,22 @@ pub struct SignInResponse {
     local_id: String,
 }
 
+enum Response {
+    SignIn(SignInResponse),
+    Refresh(RefreshResponse),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RefreshResponse {
+    /// These are not all the fields returned, but these are all the fields we need
+    #[serde(rename = "id_token")]
+    id_token: String,
+    #[serde(rename = "refresh_token")]
+    refresh_token: String,
+    #[serde(rename = "expires_in")]
+    expires_in: String,
+}
+
 impl FirebaseAuth {
     pub(crate) async fn new(api_key: String) -> Result<Self, FirebaseAuthError> {
         let mut res = Self {
@@ -76,7 +92,7 @@ impl FirebaseAuth {
     }
 
     /// Sign up with email and password
-    pub async fn sign_up(&self) -> Result<SignInResponse, FirebaseAuthError> {
+    async fn sign_up(&self) -> Result<Response, FirebaseAuthError> {
         let client = Client::new();
         let url = SIGN_UP_URL(&self.api_key);
         let res = client
@@ -84,11 +100,11 @@ impl FirebaseAuth {
             .json(&json!({"returnSecureToken": true}))
             .send()
             .await?;
-        Ok(res.json::<SignInResponse>().await?)
+        Ok(Response::SignIn(res.json::<SignInResponse>().await?))
     }
 
     // The token is about to expire (or it already has), refresh it
-    pub async fn refresh(&mut self) -> Result<(), FirebaseAuthError> {
+    async fn refresh(&mut self) -> Result<(), FirebaseAuthError> {
         let client = Client::new();
         let url = REFRESH_URL(&self.api_key);
         let res = client
@@ -97,27 +113,38 @@ impl FirebaseAuth {
             .send()
             .await?;
         let response = if res.status().is_success() {
-            res.json::<SignInResponse>().await?
+            Response::Refresh(res.json::<RefreshResponse>().await?)
         } else {
             // In rare occasions, the refresh token may expire, in which case we need to sign in again
             self.sign_up().await?
         };
+
         self.set_from_response(response)?;
         Ok(())
     }
 
     /// Set the fields from a firebase response
-    pub fn set_from_response(&mut self, response: SignInResponse) -> Result<(), FirebaseAuthError> {
-        self.expires_in = Some(response.expires_in.parse()?);
-        self.id_token = Some(response.id_token);
-        self.refresh_token = Some(response.refresh_token);
-        self.requested_at = Some(Instant::now());
-        self.local_id = Some(response.local_id);
+    fn set_from_response(&mut self, response: Response) -> Result<(), FirebaseAuthError> {
+        match response {
+            Response::SignIn(response) => {
+                self.expires_in = Some(response.expires_in.parse()?);
+                self.id_token = Some(response.id_token);
+                self.refresh_token = Some(response.refresh_token);
+                self.requested_at = Some(Instant::now());
+                self.local_id = Some(response.local_id);
+            }
+            Response::Refresh(response) => {
+                self.expires_in = Some(response.expires_in.parse()?);
+                self.id_token = Some(response.id_token);
+                self.refresh_token = Some(response.refresh_token);
+                self.requested_at = Some(Instant::now());
+            }
+        };
         Ok(())
     }
 
     /// Get the id_token
-    pub async fn get_id_token(&mut self) -> Result<String, FirebaseAuthError> {
+    pub(crate) async fn get_id_token(&mut self) -> Result<String, FirebaseAuthError> {
         // If the id_token is None, we need to sign in
         if self.id_token.is_none() {
             let response = self.sign_up().await?;
@@ -127,8 +154,7 @@ impl FirebaseAuth {
         if self.requested_at.unwrap().elapsed().as_secs() as usize
             >= self.expires_in.unwrap() - EXPIRATION_DELTA
         {
-            let response = self.sign_up().await.unwrap();
-            self.set_from_response(response)?;
+            self.refresh().await?;
         }
         // Return the id_token that is valid at least `EXPIRATION_DELTA` seconds
         Ok(self.id_token.clone().unwrap())

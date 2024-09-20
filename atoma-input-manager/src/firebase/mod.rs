@@ -15,17 +15,13 @@ const SLEEP_BETWEEN_REQUESTS_SEC: u64 = 1;
 /// `FirebaseInputManager` - Responsible for getting the prompt from the user
 pub struct FirebaseInputManager {
     /// The Atoma's firebase URL
-    firebase_url: Url,
-    auth: Arc<Mutex<FirebaseAuth>>,
+    firebase: Firebase,
 }
 
 impl FirebaseInputManager {
     /// Constructor
     pub fn new(firebase: Firebase) -> Self {
-        Self {
-            auth: firebase.get_auth(),
-            firebase_url: firebase.get_realtime_db_url(),
-        }
+        Self { firebase }
     }
 
     /// Handles  a new chat request. Encapsulates the logic necessary
@@ -36,8 +32,8 @@ impl FirebaseInputManager {
         request_id: String,
     ) -> Result<ModelInput, AtomaInputManagerError> {
         let client = Client::new();
-        let token = self.auth.lock().await.get_id_token().await?;
-        let mut url = self.firebase_url.clone();
+        let token = self.firebase.get_id_token().await?;
+        let mut url = self.firebase.get_realtime_db_url().clone();
         {
             let mut path_segment = url
                 .path_segments_mut()
@@ -57,7 +53,7 @@ impl FirebaseInputManager {
                 if let Some(previous_transaction) = json.get("previous_transaction") {
                     let previous_transaction = previous_transaction.as_str().unwrap();
                     // There is a previous transaction from which we can get the context tokens
-                    let mut url = self.firebase_url.clone();
+                    let mut url = self.firebase.get_realtime_db_url().clone();
                     {
                         let mut path_segment = url.path_segments_mut().map_err(|_| {
                             AtomaInputManagerError::UrlError("URL is not valid".to_string())

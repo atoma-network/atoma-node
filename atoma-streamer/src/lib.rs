@@ -1,11 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_helpers::Firebase;
 use atoma_types::AtomaStreamingData;
-use reqwest::{Client, Url};
+use reqwest::Client;
 use serde_json::json;
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, instrument};
 
 #[cfg(feature = "supabase")]
@@ -13,16 +13,15 @@ mod supabase;
 
 /// `AtomaStreamer` instance
 pub struct AtomaStreamer {
-    /// Firebase url
-    firebase_url: Url,
+    /// Firebase
+    firebase: Firebase,
     /// A `mpsc::Receiver` channel, listening to newly
     /// AI generated outputs
     streamer_rx: mpsc::Receiver<AtomaStreamingData>,
     /// Last streamed index mapping, for each
     /// `Digest`
     last_streamed_index: HashMap<String, usize>,
-    /// Firebase authentication
-    auth: Arc<Mutex<FirebaseAuth>>,
+    /// Supabase streamer
     #[cfg(feature = "supabase")]
     supabase_streamer: supabase::Streamer,
 }
@@ -35,10 +34,9 @@ impl AtomaStreamer {
         #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
     ) -> Result<Self, AtomaStreamerError> {
         Ok(Self {
-            firebase_url: firebase.get_realtime_db_url(),
+            firebase,
             streamer_rx,
             last_streamed_index: HashMap::new(),
-            auth: firebase.get_auth(),
             #[cfg(feature = "supabase")]
             supabase_streamer: supabase::Streamer::new(supabase),
         })
@@ -77,8 +75,8 @@ impl AtomaStreamer {
         data: String,
     ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
-        let mut url = self.firebase_url.clone();
-        let token = self.auth.lock().await.get_id_token().await?;
+        let mut url = self.firebase.get_realtime_db_url().clone();
+        let token = self.firebase.get_id_token().await?;
         {
             let mut path_segment = url
                 .path_segments_mut()
