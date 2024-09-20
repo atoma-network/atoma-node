@@ -10,16 +10,14 @@ use tracing::{debug, error, info, instrument};
 
 /// `AtomaStreamer` instance
 pub struct AtomaStreamer {
-    /// Firebase url
-    firebase_url: Url,
+    /// Firebase
+    firebase: Firebase,
     /// A `mpsc::Receiver` channel, listening to newly
     /// AI generated outputs
     streamer_rx: mpsc::Receiver<AtomaStreamingData>,
     /// Last streamed index mapping, for each
     /// `Digest`
     last_streamed_index: HashMap<String, usize>,
-    /// Firebase authentication
-    auth: Arc<Mutex<FirebaseAuth>>,
 }
 
 impl AtomaStreamer {
@@ -29,10 +27,9 @@ impl AtomaStreamer {
         firebase: Firebase,
     ) -> Result<Self, AtomaStreamerError> {
         Ok(Self {
-            firebase_url: firebase.get_realtime_db_url(),
+            firebase,
             streamer_rx,
             last_streamed_index: HashMap::new(),
-            auth: firebase.get_auth(),
         })
     }
 
@@ -62,8 +59,8 @@ impl AtomaStreamer {
         data: String,
     ) -> Result<(), AtomaStreamerError> {
         let client = Client::new();
-        let mut url = self.firebase_url.clone();
-        let token = self.auth.lock().await.get_id_token().await?;
+        let mut url = self.firebase.get_realtime_db_url().clone();
+        let token = self.firebase.get_id_token().await?;
         {
             let mut path_segment = url
                 .path_segments_mut()
