@@ -1,7 +1,7 @@
 use thiserror::Error;
 use tokenizers::Encoding;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, info_span, instrument, Span};
+use tracing::{error, info_span, instrument, trace, Span};
 
 use crate::{
     tokenizer::{EncodeTokenizerRequest, TokenizerError},
@@ -10,23 +10,23 @@ use crate::{
 
 const DEFAULT_RANDOM_SEED: u64 = 1_283_768_955;
 
-/// `Validator` - Responsible for `Request`/`Response` validation
+/// `Validation` - Responsible for validating `Request`/`Response` parameters
 #[derive(Clone, Debug)]
 pub struct Validation {
-    /// Validation of `best_of`
+    /// Maximum number of sequences to generate for ranking (currently unused)
     #[allow(dead_code)]
     best_of: usize,
-    /// Validation of `max_stop_sequences`
+    /// Maximum number of stop sequences allowed in a request
     max_stop_sequences: usize,
-    /// Validation of `max_top_n_tokens`
+    /// Maximum number of top tokens to return in the response
     max_top_n_tokens: u32,
-    /// Validation of `max_input_length`
+    /// Maximum allowed length of the input text in tokens
     max_input_length: usize,
-    /// Validation of `max_total_tokens`
+    /// Maximum total number of tokens (input + generated) allowed
     max_total_tokens: u32,
-    /// Channel to communicate with the background tokenizer task
+    /// Channel to send tokenization requests to the background tokenizer task
     sender: mpsc::UnboundedSender<EncodeTokenizerRequest>,
-    /// Tracing span
+    /// Tracing span for logging and diagnostics
     span: Span,
 }
 
@@ -51,13 +51,28 @@ impl Validation {
         }
     }
 
-    /// Tokenize inputs
+    /// Tokenize the input string
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to tokenize
+    /// * `truncate` - Optional maximum number of tokens to keep
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the `Encoding` and the potentially truncated input string
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ValidationError` if tokenization fails
     #[instrument(skip_all)]
     pub async fn tokenize(
         &self,
         input: String,
         truncate: Option<usize>,
     ) -> Result<(Encoding, String), ValidationError> {
+        let _enter = self.span.enter();
+        trace!("Tokenizing input: {input}");
         // Response channel
         let (response_sender, response_receiver) = oneshot::channel();
         let request = EncodeTokenizerRequest {
@@ -73,9 +88,28 @@ impl Validation {
         Ok(response?)
     }
 
-    #[instrument(skip(self, input))]
-    /// Validates the input of a received `Request`. Returns the input, the input token length and number
-    /// of maximum new tokens to generate
+    /// Validates the input of a received `Request`.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to be validated and tokenized.
+    /// * `truncate` - Optional maximum number of tokens to keep.
+    /// * `max_new_tokens` - Optional maximum number of new tokens to generate.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * The validated input string
+    /// * The tokenized encoding of the input
+    /// * The maximum number of new tokens to generate
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ValidationError` if:
+    /// * Tokenization fails
+    /// * The total number of tokens (input + new) exceeds the maximum allowed
+    /// * The input length exceeds the maximum allowed
+    #[instrument(skip_all)]
     async fn validate_input(
         &self,
         input: String,
@@ -132,6 +166,23 @@ impl Validation {
     }
 
     /// Validates a payload and gets the number of tokens in the input
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The `GenerateRequest` to validate
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing either a `ValidGenerateRequest` or a `ValidationError`
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if any of the request parameters are invalid,
+    /// including but not limited to:
+    /// - Invalid sampling parameters (temperature, top_k, top_p, etc.)
+    /// - Invalid token limits (max_new_tokens, truncate)
+    /// - Empty input
+    /// - Too many stop sequences
     #[instrument(skip_all)]
     pub(crate) async fn validate(
         &self,
@@ -326,78 +377,75 @@ impl Validation {
     }
 }
 
+/// `ValidGenerateRequest` - A validated and processed version of a `GenerateRequest`.
+///
+/// This struct is created after input validation has taken place, ensuring that all
+/// parameters are within acceptable ranges and the input is properly tokenized.
 #[derive(Clone, Debug)]
-/// `ValidGenerateRequest` - Obtained from a
-/// `GenerateRequest`, after input validation has
-/// taken place
 pub(crate) struct ValidGenerateRequest {
-    /// The request id
+    /// Unique identifier for the request
     #[allow(dead_code)]
     pub request_id: String,
-    /// Inputs, in the form of a `String`
+    /// The input text to be processed
     pub inputs: String,
-    /// Input tokenizer encoding
+    /// Tokenized representation of the input
     pub encoding: Encoding,
-    /// Inputs token length
+    /// Number of tokens in the input
     #[allow(dead_code)]
     pub input_token_len: usize,
-    /// The truncation window of the input
+    /// Maximum number of tokens to consider from the input
     #[allow(dead_code)]
     pub truncate: u32,
-    /// Whether to return decoder input token logprobs and ids.
+    /// Flag to include detailed information about decoder input tokens
     #[allow(dead_code)]
     pub decoder_input_details: bool,
-    /// Set of parameters necessary for choosing the next token, after a
-    /// LLM forward pass
+    /// Parameters for the next token selection algorithm
     pub parameters: NextTokenChooserParameters,
-    /// Stopping criteria parameters
+    /// Criteria for when to stop generating tokens
     pub stopping_parameters: StoppingCriteriaParameters,
-    /// Top `n` tokens
+    /// Number of top tokens to return in the response
     #[allow(dead_code)]
     pub top_n_tokens: u32,
-    /// Whether to prepend the prompt to the generated text
+    /// Whether to include the original prompt in the generated text
     pub return_full_text: bool,
 }
 
-/// `NextTokenChooseParameters` - Set of parameters which
-/// are necessary for choosing the next token, after a single
-/// forward pass of a LLM
+/// Parameters for controlling the next token selection process in language model generation.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NextTokenChooserParameters {
-    /// Top n sequences
+    /// Number of alternative sequences to generate
     pub n: usize,
-    /// best of sequences
+    /// Number of sequences to generate and select the best from
     pub best_of: usize,
-    /// exponential scaling output probability distribution
+    /// Temperature for controlling randomness in sampling (higher values increase diversity)
     pub temperature: f32,
-    /// restricting to the k highest probability elements
+    /// Limits sampling to the k most likely next tokens
     pub top_k: u32,
-    /// restricting to top tokens summing to prob_cut_off <= prob_cut_off
+    /// Limits sampling to the smallest set of most probable tokens with probabilities that add up to top_p or higher
     pub top_p: f32,
-    /// restricting to top tokens summing to prob_cut_off <= prob_cut_off
+    /// Selects tokens whose probability is close to the expected probability of tokens in a uniform distribution
     pub typical_p: f32,
-    /// apply sampling on the logits
+    /// Whether to use sampling instead of greedy selection
     pub do_sample: bool,
-    /// random seed for sampling
+    /// Seed for reproducible random sampling
     pub random_seed: u64,
-    /// repetition penalty
+    /// Penalizes repeated tokens
     pub repetition_penalty: f32,
-    /// repeat last n tokens
+    /// Number of previous tokens to consider for repetition penalty
     pub repeat_last_n: u32,
-    /// frequency penalty
+    /// Decreases the model's likelihood to repeat the same line verbatim
     pub frequency_penalty: f32,
 }
 
-/// `StoppingCriteriaParameters` - Criteria for stopping
-/// LLM next token generation
+/// Criteria for stopping token generation in language models.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StoppingCriteriaParameters {
-    /// Maximum number of generated tokens
+    /// Maximum number of new tokens to generate.
     pub max_new_tokens: u32,
-    /// Optional stopping sequences
+    /// List of sequences that, if generated, will cause the model to stop.
     pub stop_sequences: Vec<String>,
-    /// Ignore end of sequence token
-    /// used for benchmarking
+    /// If true, the model will ignore the end-of-sequence token and continue generating.
+    /// This is primarily used for benchmarking purposes.
     pub ignore_eos_token: bool,
 }
 

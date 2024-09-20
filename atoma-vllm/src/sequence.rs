@@ -8,7 +8,7 @@ use std::{
 use candle_core::Tensor;
 use candle_transformers::generation::LogitsProcessor;
 use thiserror::Error;
-use tracing::{error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, info_span, instrument, trace, Span};
 
 use crate::{
     block::{BlockError, LogicalTokenBlock},
@@ -16,14 +16,14 @@ use crate::{
     validation::{NextTokenChooserParameters, StoppingCriteriaParameters},
 };
 
-/// `LogProb` - log probabilities and token ranks.
+/// Represents log probabilities, token ranks, and decoded tokens for a given token.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogProb {
-    /// Log probability
+    /// The log probability of the token.
     logprob: f32,
-    /// Token rank, in vocab
+    /// The rank of the token in the model's vocabulary, if available.
     rank: Option<u32>,
-    /// Token decoding
+    /// The decoded string representation of the token, if available.
     decoded_token: Option<String>,
 }
 
@@ -53,7 +53,15 @@ impl LogProb {
     }
 }
 
-/// `SequenceStatus` Status of a `Sequence`
+/// `SequenceStatus` represents the current status of a `Sequence` in the generation process.
+///
+/// `Waiting:` The sequence is waiting to be processed.
+/// `Running:` The sequence is currently being processed.
+/// `Swapped:` The sequence has been temporarily swapped out of memory.
+/// `FinishedStopped:` The sequence has finished processing generation due to meeting a stopping criterion.
+/// `FinishedLengthCapped:` The sequence has finished generation due to reaching the maximum length.
+/// `FinishedAborted:` The sequence has been aborted due to an error or user intervention.
+/// `FinishedIgnored:` The sequence has been ignored and will not be processed further.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SequenceStatus {
     Waiting,
@@ -66,7 +74,19 @@ pub enum SequenceStatus {
 }
 
 impl SequenceStatus {
-    /// Checks if `Sequence` is finished
+    /// Checks if the sequence has finished processing.
+    ///
+    /// Returns `true` if the sequence has reached a terminal state (aborted, ignored, length capped, or stopped),
+    /// and `false` if it's still in progress (waiting, running, or swapped).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atoma_vllm::sequence::SequenceStatus;
+    ///
+    /// assert!(SequenceStatus::FinishedStopped.is_finished());
+    /// assert!(!SequenceStatus::Running.is_finished());
+    /// ```
     pub fn is_finished(&self) -> bool {
         match self {
             Self::FinishedAborted
@@ -77,7 +97,20 @@ impl SequenceStatus {
         }
     }
 
-    /// Finished reason
+    /// Returns the reason why the sequence finished, if applicable.
+    ///
+    /// # Returns
+    /// - `Some(String)`: A string describing the reason for finishing, if the sequence has finished.
+    /// - `None`: If the sequence has not finished (i.e., it's still waiting, running, or swapped).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atoma_vllm::sequence::SequenceStatus;
+    ///
+    /// assert_eq!(SequenceStatus::FinishedStopped.finished_reason(), Some("stopped".to_string()));
+    /// assert_eq!(SequenceStatus::Running.finished_reason(), None);
+    /// ```
     pub fn finished_reason(&self) -> Option<String> {
         match self {
             Self::FinishedAborted => Some("aborted".into()),
@@ -89,47 +122,56 @@ impl SequenceStatus {
     }
 }
 
-/// State of a `Sequence`
+/// Represents the current stage of processing for a `Sequence`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SequenceStage {
+    /// The initial stage where the prompt is being processed.
+    /// During this stage, the model computes attention for all input tokens simultaneously.
     Prefill,
+    /// The stage where new tokens are generated one at a time.
+    /// This stage follows the Prefill stage and uses cached attention from previous tokens.
     Decode,
 }
 
-/// Request metrics
+/// Metrics tracking various time points and durations for a request's lifecycle.
 #[derive(Clone, Debug)]
 pub struct RequestMetrics {
-    /// Time of request arrival to service
+    /// The time when the request was received by the service.
     pub arrival_time: Instant,
-    /// Time to which last token was generated
+    /// The time when the most recent token was generated.
     pub last_token_time: Instant,
-    /// Time that request was first scheduled
+    /// The time when the request was first scheduled for processing.
+    /// This is None if the request hasn't been scheduled yet.
     pub first_scheduled_time: Option<Instant>,
-    /// Time to which first token was generated
+    /// The time when the first token was generated for this request.
+    /// This is None if no tokens have been generated yet.
     pub first_token_time: Option<Instant>,
-    /// Duration of request in 'waiting' queue
+    /// The duration the request spent waiting in the queue before being processed.
+    /// This is None if the request hasn't been scheduled yet.
     pub time_in_queue: Option<Duration>,
-    /// Time to which generation finished for request
+    /// The time when token generation for this request was completed.
+    /// This is None if the request is still in progress.
     pub finished_time: Option<Instant>,
 }
 
-/// `SequenceData` - data associated with a `Sequence`
+/// `SequenceData` - Represents the data associated with a `Sequence`
 ///
-/// Args:
-///    `prompt_token_ids``: The token IDs of the prompt.
-///    `output_token_ids``: The token IDs of the output. Set to an empty list if None.
+/// This struct holds information about the prompt and generated output tokens,
+/// as well as metadata about the sequence's processing state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SequenceData {
-    /// Prompt token ids
+    /// The token IDs of the initial prompt
     prompt_token_ids: Vec<u32>,
-    /// Output generated token ids
+    /// The token IDs of the generated output
     output_token_ids: Vec<u32>,
-    /// Cumulative log probability
+    /// The cumulative log probability of the generated tokens
     cumulative_logprob: f32,
-    /// Number of computed tokens
+    /// The number of tokens that have been processed so far
     num_computed_tokens: usize,
-    /// Stage of Sequence
+    /// The current processing stage of the sequence
     stage: SequenceStage,
+    /// Tracing span
+    span: Span,
 }
 
 impl SequenceData {
@@ -141,41 +183,114 @@ impl SequenceData {
             cumulative_logprob: 0.0,
             num_computed_tokens: 0,
             stage: SequenceStage::Prefill,
+            span: info_span!("sequence-data"),
         }
     }
 
-    /// Adds a new generated output token id
-    #[instrument(skip(self))]
+    /// Adds a new generated output token id to the sequence data.
+    ///
+    /// This method appends the given token ID to the output tokens and updates
+    /// the cumulative log probability.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_id` - The ID of the new token to add.
+    /// * `logprob` - The log probability of the new token.
+    ///
+    /// # Effects
+    ///
+    /// * Appends `token_id` to `output_token_ids`.
+    /// * Adds `logprob` to `cumulative_logprob`.
+    #[instrument(skip_all)]
     pub fn add_token_id(&mut self, token_id: u32, logprob: f32) {
-        info!("Adding token id to `SequenceData`..");
+        let _enter = self.span.enter();
+        trace!("Adding token id to `SequenceData`..");
         self.output_token_ids.push(token_id);
         self.cumulative_logprob += logprob;
     }
 
-    /// Get length of total number of token ids (including prompt token ids)
+    /// Returns the total number of tokens in the sequence.
+    ///
+    /// This method calculates the sum of prompt tokens and generated output tokens.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The total number of tokens in the sequence.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let sequence_data = SequenceData::new(vec![1, 2, 3], vec![4, 5]);
+    /// assert_eq!(sequence_data.length(), 5);
+    /// ```
     pub fn length(&self) -> usize {
         self.prompt_token_ids.len() + self.output_token_ids.len()
     }
 
-    /// Get prompt token ids length
+    /// Returns the length of the prompt token ids.
+    ///
+    /// This method returns the number of tokens in the initial prompt.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of tokens in the prompt.
     pub fn get_prompt_len(&self) -> usize {
         self.prompt_token_ids.len()
     }
 
-    /// Get output token ids length
+    /// Returns the length of the output token ids.
+    ///
+    /// This method returns the number of tokens that have been generated as output.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of tokens in the output.
     pub fn get_output_len(&self) -> usize {
         self.output_token_ids.len()
     }
 
-    /// Get all token ids
+    /// Returns all token ids, including both prompt and output.
+    ///
+    /// This method combines the prompt token ids and the output token ids into a single vector.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u32>` - A vector containing all token ids, with prompt tokens followed by output tokens.
     pub fn get_token_ids(&self) -> Vec<u32> {
         let mut output = Vec::with_capacity(self.length());
-        output.extend(self.prompt_token_ids.iter());
-        output.extend(self.output_token_ids.iter());
+        output.extend(&self.prompt_token_ids);
+        output.extend(&self.output_token_ids);
         output
     }
 
-    /// Get prefix token ids
+    /// Get prefix token IDs for the sequence.
+    ///
+    /// This function returns a tuple containing two vectors:
+    /// 1. Prefix tokens from the prompt
+    /// 2. Prefix tokens from the generated output (if any)
+    ///
+    /// The total number of tokens returned will be equal to `num_tokens`,
+    /// unless `num_tokens` exceeds the total number of tokens in the sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_tokens` - The number of prefix tokens to return
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(prompt_prefix, output_prefix)`, where:
+    /// - `prompt_prefix` is a vector of token IDs from the prompt
+    /// - `output_prefix` is a vector of token IDs from the generated output
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let sequence_data = SequenceData::new(vec![1, 2, 3], vec![4, 5, 6]);
+    ///
+    /// assert_eq!(sequence_data.get_prefix_token_ids(2), (vec![1, 2], vec![]));
+    /// assert_eq!(sequence_data.get_prefix_token_ids(4), (vec![1, 2, 3], vec![4]));
+    /// assert_eq!(sequence_data.get_prefix_token_ids(10), (vec![1, 2, 3], vec![4, 5, 6]));
+    /// ```
     pub fn get_prefix_token_ids(&self, num_tokens: usize) -> (Vec<u32>, Vec<u32>) {
         let prompt_len = self.get_prompt_len();
         if num_tokens > prompt_len {
@@ -188,12 +303,32 @@ impl SequenceData {
         }
     }
 
-    /// Getter for `num_computed_tokens`. Return the number of prefill tokens that are already computed.
+    /// Returns the number of tokens that have been computed so far.
+    ///
+    /// This includes both prefill tokens and any generated tokens that have been processed.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The total number of computed tokens.
     pub fn get_num_computed_tokens(&self) -> usize {
         self.num_computed_tokens
     }
 
-    /// Computes the number of 'uncomputed' tokens
+    /// Computes the number of tokens that have not yet been processed.
+    ///
+    /// This method calculates the difference between the total length of the sequence
+    /// (including both prompt and generated output tokens) and the number of tokens
+    /// that have already been computed.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of uncomputed tokens.
+    ///
+    /// # Note
+    ///
+    /// This method uses `length()` which includes both `prompt_len` and `output_len`
+    /// instead of just `prompt_len`. This is necessary because during recomputation,
+    /// we need to prefill for both the prompt and any previously generated output.
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         // NOTE: we use `length()` which includes `prompt_len + output_len` instead
         // of `prompt_len` here. This is because during recompute we need to
@@ -201,18 +336,43 @@ impl SequenceData {
         self.length() - self.get_num_computed_tokens()
     }
 
-    /// Updates the number of computed tokens, so far
+    /// Updates the number of computed tokens for this sequence.
+    ///
+    /// This method is called after processing a batch of tokens to update the sequence's state.
+    /// It transitions the sequence from the Prefill stage to the Decode stage when all tokens
+    /// (including both prompt and any generated output) have been computed.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_new_computed_tokens` - The number of new tokens that have been computed in the current batch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the update was successful.
+    /// * `Err(SequenceError::InvalidNumberGeneratedTokens)` if the update would result in more computed tokens than the total sequence length.
+    ///
+    /// # Effects
+    ///
+    /// * Increments `num_computed_tokens` by `num_new_computed_tokens`.
+    /// * May change `stage` from `Prefill` to `Decode` if all tokens have been computed.
+    ///
+    /// # Logging
+    ///
+    /// * Traces the update operation.
+    /// * Logs debug information about the sequence state.
+    /// * Logs an error if the update would exceed the total sequence length.
     #[instrument(skip(self))]
     pub fn update_num_computed_tokens(
         &mut self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
-        info!(
+        trace!(
             "Update number of computed tokens {} by {}",
-            self.num_computed_tokens, num_new_computed_tokens
+            self.num_computed_tokens,
+            num_new_computed_tokens
         );
 
-        info!(
+        debug!(
             "Parameters: self.num_computed_tokens = {}, self.length() = {}, num_new_computed_tokens = {}, self.get_num_uncomputed_tokens() = {}", 
             self.num_computed_tokens,
             self.length(),
@@ -232,14 +392,25 @@ impl SequenceData {
         Err(SequenceError::InvalidNumberGeneratedTokens)
     }
 
-    /// Reset state for recomputation.  It is supposed to be called when a sequence
-    /// needs to be started from the beginning again (e.g., sequence is preempted).
+    /// Resets the state for recomputation.
+    ///
+    /// This method should be called when a sequence needs to be restarted from the beginning,
+    /// for example, when a sequence is preempted.
+    ///
+    /// # Effects
+    /// - Sets `num_computed_tokens` to 0.
+    /// - Sets `stage` to `SequenceStage::Prefill`.
     pub fn reset_state_for_recompute(&mut self) {
         self.num_computed_tokens = 0;
         self.stage = SequenceStage::Prefill
     }
 
-    /// Get last generated token id
+    /// Returns the ID of the last generated token.
+    ///
+    /// # Returns
+    /// - `Some(u32)`: The ID of the last generated token if any tokens have been generated.
+    /// - `Some(u32)`: The ID of the last prompt token if no tokens have been generated.
+    /// - `None`: If there are no prompt tokens and no generated tokens.
     pub fn get_last_token_id(&self) -> Option<u32> {
         if self.output_token_ids.is_empty() {
             return self.prompt_token_ids.last().copied();
@@ -247,58 +418,57 @@ impl SequenceData {
         self.output_token_ids.last().copied()
     }
 
-    /// Getter for `prompt_token_ids`
+    /// Returns a clone of the prompt token IDs.
+    ///
+    /// # Returns
+    /// A `Vec<u32>` containing the token IDs of the prompt.
     pub fn prompt_token_ids(&self) -> Vec<u32> {
         self.prompt_token_ids.clone()
     }
 
-    /// Getter for `output_token_ids`
+    /// Returns a clone of the output token IDs.
+    ///
+    /// # Returns
+    /// A `Vec<u32>` containing the token IDs of the generated output.
     pub fn output_token_ids(&self) -> Vec<u32> {
         self.output_token_ids.clone()
     }
 
-    /// Getter for `stage`
+    /// Returns the current processing stage of the sequence.
+    ///
+    /// # Returns
+    /// The `SequenceStage` enum value representing the current stage (Prefill or Decode).
     pub fn stage(&self) -> SequenceStage {
         self.stage
     }
 }
 
-/// `Sequence` - Stores the data, status, and block information of a sequence.
-///
-/// Args:
-///    `seq_id`: The ID of the sequence.
-///    `prompt`: The prompt of the sequence.
-///    `prompt_token_ids`: The token IDs of the prompt.
-///    `block_size`: The block size of the sequence. Should be the same as the
-///        block size used by the block manager and cache engine.
-///
-/// Warn: Contrary to vLLM, we are not dealing with LoRA requests
+/// `Sequence` - Represents a single sequence in the generation process, storing its data, status, and block information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sequence {
-    /// Sequence Id,
+    /// Unique identifier for the sequence.
     sequence_id: u64,
-    /// Prompt
+    /// The initial input text for the sequence.
     pub prompt: String,
-    /// Prompt associated token ids
+    /// Token IDs corresponding to the prompt.
     pub prompt_token_ids: Vec<u32>,
-    /// Sequence data
+    /// Detailed data about the sequence's tokens and processing state.
     pub sequence_data: SequenceData,
-    /// Block size
+    /// Size of each logical token block. Should match the block size used by the block manager and cache engine.
     block_size: usize,
-    /// Logical token blocks
+    /// Vector of logical token blocks representing the sequence's tokens.
     pub logical_token_blocks: Vec<LogicalTokenBlock>,
-    /// Output generated text
+    /// The generated text output.
     pub output_text: String,
-    /// List of all possible mappings from each generated output id to its `LogProb`
+    /// Log probabilities for each generated token, mapping token IDs to their `LogProb`.
     pub output_logprobs: Vec<HashMap<u32, LogProb>>,
-    /// Sequence status
+    /// Current status of the sequence (e.g., waiting, running, finished).
     sequence_status: SequenceStatus,
-    /// Stop reason:
+    /// Reason for stopping generation, if applicable.
     pub stop_reason: Option<u32>,
-    /// Generated tokens
+    /// Vector of generated token strings.
     pub tokens: Vec<String>,
-    /// Span
-    #[allow(dead_code)]
+    /// Tracing span for the sequence.
     span: Span,
 }
 
@@ -343,6 +513,24 @@ impl Sequence {
     }
 
     /// Computes the hash of a block given its logical index.
+    ///
+    /// This function calculates a hash based on the prefix tokens up to the given logical block index.
+    /// The hash is used to uniquely identify the content of a block for caching purposes.
+    ///
+    /// # Arguments
+    ///
+    /// * `logical_idx` - The logical index of the block to hash.
+    ///
+    /// # Returns
+    ///
+    /// A 64-bit hash value representing the content of the block.
+    ///
+    /// # Note
+    ///
+    /// This implementation may produce incorrect hashes when the block size is greater than the prompt size.
+    /// A more robust implementation should be considered for such cases.
+    ///
+    /// NOTE: This is especially relevant for prefix caching
     pub fn hash_of_block(&self, logical_idx: usize) -> u64 {
         // TODO: This can produce incorrect hash when block size > prompt size
         let num_tokens = self.num_hashed_tokens_of_block(logical_idx);
@@ -354,26 +542,72 @@ impl Sequence {
         hasher.finish()
     }
 
-    /// Number of hashed tokens of a block
+    /// Calculates the number of tokens that should be hashed for a given logical block index.
+    ///
+    /// This method is used to determine how many tokens should be considered when computing
+    /// the hash of a block, which is important for caching and identifying unique block states.
+    ///
+    /// # Arguments
+    ///
+    /// * `logical_idx` - The logical index of the block.
+    ///
+    /// # Returns
+    ///
+    /// The number of tokens that should be hashed for the given logical block index.
     pub fn num_hashed_tokens_of_block(&self, logical_idx: usize) -> usize {
         self.block_size * (logical_idx + 1)
     }
 
-    /// Reset state for recomputation
+    /// Resets the internal state of the sequence for recomputation.
+    ///
+    /// This method is called when the sequence needs to be reprocessed from the beginning,
+    /// such as when handling preemption or when restarting generation. It delegates the
+    /// reset operation to the underlying `sequence_data`.
     pub fn reset_state_for_recompute(&mut self) {
         self.sequence_data.reset_state_for_recompute()
     }
 
-    /// Appends a new logical block to the `Sequence`
+    /// Appends a new logical block to the sequence.
+    ///
+    /// This method creates a new `LogicalTokenBlock` and adds it to the `logical_token_blocks` vector.
+    /// It's used when the sequence needs to expand to accommodate more tokens.
+    ///
+    /// # Effects
+    ///
+    /// * Creates a new `LogicalTokenBlock` with the next available index and the sequence's block size.
+    /// * Appends the new block to the `logical_token_blocks` vector.
     fn append_logical_block(&mut self) {
         let block = LogicalTokenBlock::new(self.logical_token_blocks.len(), self.block_size);
         self.logical_token_blocks.push(block)
     }
 
-    /// Appends tokens to last block in `Sequence`. If the last `logical_block` is full or `self.logical_token_blocks.is_empty()`,
-    /// we allocate a new logical block to accommodate a new `logical_block`, for this purpose. If `token_ids.len()` exceeds
-    /// the number of free slots in a `logical_block`, we allocate consecutively more `logical_blocks` to accommodate for the
-    /// whole sequence of `token_ids`.
+    /// Appends tokens to the logical blocks of the `Sequence`.
+    ///
+    /// This method iterates through the given token IDs and appends them to the logical blocks.
+    /// If necessary, it creates new logical blocks to accommodate all tokens.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_ids` - A slice of token IDs to be appended.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the operation is successful.
+    /// * `Err(SequenceError)` if there's an error appending tokens to a block.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Initialize a cursor at the start of `token_ids`.
+    /// 2. While there are tokens to process:
+    ///    a. If there are no logical blocks, create a new one.
+    ///    b. Get the last block (creating a new one if the last is full).
+    ///    c. Determine how many tokens can fit in the current block.
+    ///    d. Append as many tokens as possible to the current block.
+    ///    e. Move the cursor forward.
+    ///
+    /// # Note
+    ///
+    /// This method ensures that all tokens are appended, even if multiple new blocks need to be created.
     fn append_tokens_to_blocks(&mut self, token_ids: &[u32]) -> Result<(), SequenceError> {
         let mut cursor = 0;
         while cursor < token_ids.len() {
@@ -399,7 +633,17 @@ impl Sequence {
         Ok(())
     }
 
-    /// Checks if last block in `Sequence` is full
+    /// Checks if the last logical token block in the `Sequence` is full.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if the last block exists and is full.
+    /// - `false` if the last block exists and is not full, or if there are no blocks.
+    ///
+    /// # Note
+    ///
+    /// This method is used to determine if a new block needs to be appended
+    /// when adding more tokens to the sequence.
     fn is_last_block_full(&self) -> bool {
         self.logical_token_blocks
             .last()
@@ -407,12 +651,39 @@ impl Sequence {
             .unwrap_or(false)
     }
 
-    /// Get the total number of logical blocks for this sequence
+    /// Gets the total number of logical token blocks in this sequence.
+    ///
+    /// # Returns
+    ///
+    /// The number of `LogicalTokenBlock`s in the `logical_token_blocks` vector.
+    ///
+    /// # Note
+    ///
+    /// This count includes all blocks, regardless of whether they are full or partially filled.
+    /// It's useful for understanding the current memory usage and structure of the sequence.
     pub fn get_num_total_logical_token_blocks(&self) -> usize {
         self.logical_token_blocks.len()
     }
 
     /// Appends a single token to the `Sequence`
+    ///
+    /// # Arguments
+    ///
+    /// * `token_id` - The ID of the token to be added
+    /// * `logprobs` - A HashMap containing log probabilities for tokens, where the key is the token ID
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the token was successfully added
+    /// * `Err(SequenceError)` if there was an error appending the token to the blocks
+    ///
+    /// # Effects
+    ///
+    /// If the `token_id` exists in `logprobs`:
+    /// * Appends the token to the logical blocks
+    /// * Adds the token and its log probability to the sequence data
+    /// * Pushes the entire `logprobs` HashMap to `output_logprobs`
+    #[instrument(skip_all)]
     pub fn add_token_id(
         &mut self,
         token_id: u32,
@@ -428,7 +699,11 @@ impl Sequence {
         Ok(())
     }
 
-    /// Length of the underlying `Sequence`'s `SequenceData`
+    /// Returns the total length of the sequence, including both prompt and generated tokens
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The total number of tokens in the sequence
     pub fn length(&self) -> usize {
         self.sequence_data.length()
     }
@@ -438,52 +713,102 @@ impl Sequence {
         self.block_size
     }
 
-    /// Length of the underlying `Sequence`'s `SequenceData` prompt length
+    /// Returns the length of the prompt in the underlying `SequenceData`.
+    ///
+    /// This method provides the number of tokens in the initial prompt.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of tokens in the prompt.
     pub fn get_prompt_len(&self) -> usize {
         self.sequence_data.get_prompt_len()
     }
 
-    /// Length of the output tokens in `SequenceData`
+    /// Returns the length of the generated output in the underlying `SequenceData`.
+    ///
+    /// This method provides the number of tokens that have been generated as output.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of tokens in the generated output.
     pub fn get_output_len(&self) -> usize {
         self.sequence_data.get_output_len()
     }
 
-    /// Getter for `SequenceData`'s prompt ids
+    /// Retrieves the prompt token IDs from the underlying `SequenceData`.
+    ///
+    /// This method returns a vector of token IDs representing the initial prompt.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u32>` - A vector containing the token IDs of the prompt.
     pub fn prompt_token_ids(&self) -> Vec<u32> {
         self.sequence_data.prompt_token_ids()
     }
 
-    /// Get `last_token_id` in `SequenceData`
+    /// Retrieves the ID of the last token in the sequence.
+    ///
+    /// This method returns the ID of the most recently generated token, or the last token of the prompt if no tokens have been generated yet.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<u32>` - The ID of the last token, or `None` if the sequence is empty.
     pub fn get_last_token_id(&self) -> Option<u32> {
         self.sequence_data.get_last_token_id()
     }
 
-    /// Getter for `SequenceData`'s output token ids
+    /// Retrieves the output token IDs from the underlying `SequenceData`.
+    ///
+    /// This method returns a vector of token IDs representing the generated output.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u32>` - A vector containing the token IDs of the generated output.
     pub fn output_token_ids(&self) -> Vec<u32> {
         self.sequence_data.output_token_ids()
     }
 
-    /// Get `SequenceData`'s token ids
+    /// Returns all token IDs in the sequence, including both prompt and generated tokens.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u32>` - A vector containing all token IDs in the sequence.
     pub fn get_token_ids(&self) -> Vec<u32> {
         self.sequence_data.get_token_ids()
     }
 
-    /// Get `SequenceData`'s cumulative log probabilities
+    /// Returns the cumulative log probability of all generated tokens in the sequence.
+    ///
+    /// # Returns
+    ///
+    /// * `f32` - The sum of log probabilities for all generated tokens.
     pub fn cumulative_logprob(&self) -> f32 {
         self.sequence_data.cumulative_logprob
     }
 
-    /// Get `SequenceStatus` of `Sequence`
+    /// Returns the current status of the sequence.
+    ///
+    /// # Returns
+    ///
+    /// * `SequenceStatus` - The current status of the sequence (e.g., Waiting, Running, Finished).
     pub fn get_sequence_status(&self) -> SequenceStatus {
         self.sequence_status
     }
 
-    /// Set `SequenceStatus` of `Sequence`
+    /// Updates the status of the sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_status` - The new `SequenceStatus` to set.
     pub fn set_sequence_status(&mut self, sequence_status: SequenceStatus) {
         self.sequence_status = sequence_status
     }
 
-    /// Checks if a `Sequence` is finished
+    /// Checks if the sequence has finished processing.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - `true` if the sequence has reached a terminal state, `false` otherwise.
     pub fn is_finished(&self) -> bool {
         self.sequence_status.is_finished()
     }
@@ -508,22 +833,60 @@ impl Sequence {
                 sequence_length = sequence_length.map(|l| l - 1);
             }
         }
-        self.cumulative_logprob() / (sequence_length.unwrap() as f32 * length_penalty)
         // DON'T PANIC: sequence length already enforced to be non null
+        self.cumulative_logprob() / (sequence_length.unwrap() as f32 * length_penalty)
     }
 
-    /// Fork a `Sequence`
+    /// Creates a new `Sequence` by forking the current one.
+    ///
+    /// This method creates a deep copy of the current `Sequence` with a new sequence ID.
+    /// It's typically used in beam search or other scenarios where multiple sequence
+    /// variations need to be explored.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_sequence_id` - The ID to assign to the new forked sequence.
+    ///
+    /// # Returns
+    ///
+    /// A new `Sequence` instance that is a clone of the current one, but with a new ID.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let original_sequence = Sequence::new(/* ... */);
+    /// let forked_sequence = original_sequence.fork(new_sequence_id);
+    /// assert_ne!(original_sequence.sequence_id(), forked_sequence.sequence_id());
+    /// ```
+    #[instrument(skip_all)]
     pub fn fork(&self, new_sequence_id: u64) -> Self {
+        let _enter = self.span.enter();
+        trace!("Forking sequence..");
         let mut new_seq = self.clone();
         new_seq.sequence_id = new_sequence_id;
         new_seq
     }
 
-    /// Get the number of new tokens to be computed.
+    /// Get the number of new tokens to be computed in the next iteration.
     ///
-    /// Returns:
-    /// The new number of tokens to be computed, i.e., 1 for decode, or
-    /// the remaining prompt size for prefill.
+    /// This method determines how many tokens should be processed in the upcoming
+    /// computation step, based on the current stage of the sequence.
+    ///
+    /// # Returns
+    /// - For the Decode stage: Always returns 1, as we generate one new token at a time.
+    /// - For the Prefill stage: Returns the number of remaining uncomputed tokens in the prompt.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let sequence = Sequence::new(/* ... */);
+    ///
+    /// // During prefill stage with 5 uncomputed tokens
+    /// assert_eq!(sequence.get_num_new_tokens(), 5);
+    ///
+    /// // After transitioning to decode stage
+    /// assert_eq!(sequence.get_num_new_tokens(), 1);
+    /// ```
     pub fn get_num_new_tokens(&self) -> usize {
         if self.sequence_data.stage == SequenceStage::Decode {
             return 1;
@@ -531,17 +894,58 @@ impl Sequence {
         self.sequence_data.get_num_uncomputed_tokens()
     }
 
-    /// Checks if we are in `Prefill` phase
+    /// Checks if the sequence is in the `Prefill` stage.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the sequence is in the Prefill stage, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let sequence = Sequence::new(/* ... */);
+    /// assert!(sequence.is_prefill());
+    /// // After processing some tokens...
+    /// assert!(!sequence.is_prefill());
+    /// ```
     pub fn is_prefill(&self) -> bool {
         self.sequence_data.stage == SequenceStage::Prefill
     }
 
-    /// Getter for `sequence_id`
+    /// Returns the unique identifier of the sequence.
+    ///
+    /// # Returns
+    ///
+    /// The `u64` sequence ID.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let sequence = Sequence::new(42, /* ... */);
+    /// assert_eq!(sequence.sequence_id(), 42);
+    /// ```
     pub fn sequence_id(&self) -> u64 {
         self.sequence_id
     }
 
-    /// Getter for internal `SequenceData`
+    /// Returns a clone of the internal `SequenceData`.
+    ///
+    /// # Returns
+    ///
+    /// A cloned `SequenceData` instance.
+    ///
+    /// # Note
+    ///
+    /// This method performs a deep copy of the `SequenceData`. Consider using
+    /// a reference if you don't need ownership of the data.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let sequence = Sequence::new(/* ... */);
+    /// let data = sequence.sequence_data();
+    /// assert_eq!(data.length(), sequence.length());
+    /// ```
     pub fn sequence_data(&self) -> SequenceData {
         self.sequence_data.clone()
     }
@@ -569,65 +973,51 @@ impl WriteLock for SyncSequence {
     }
 }
 
-/// `SequenceGroupState` - Mutable state tied to a specific sequence group
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SequenceGroupState {
-    /// Generator used in seeded sampling
-    pub generator: Option<usize>,
-}
-
-/// `MultiModalType` - The type of a multi-modal request
+/// Represents the type of multi-modal data in a request.
 #[derive(Clone, Debug)]
 pub enum MultiModalType {
+    /// Audio data, such as speech or music.
     Audio,
+    /// Image data, including photographs, diagrams, or other visual content.
     Image,
+    /// Video data, which may include both visual and audio components.
     Video,
 }
 
-/// `MultiModalData` - Used for multi-modal requests.
+/// Represents multi-modal data for requests that involve multiple types of input.
 ///
-/// Args:
-///    `type`: The data type.
-///    `data`: The actual data.
-///    
-/// The required shape and semantic meaning of it depends on the vision
-/// language config of the hosted model.
+/// This struct is used to encapsulate different types of data (such as images, audio, or video)
+/// that can be processed alongside text in multi-modal language models.
 #[derive(Clone, Debug)]
 pub struct MultiModalData {
-    /// Type
+    /// The type of multi-modal data (e.g., audio, image, video).
     pub r#type: MultiModalType,
-    /// Data
+    /// The actual multi-modal data as a tensor.
     pub data: Tensor,
 }
 
-/// `SequenceGroup` - A group of sequences that are generated from the same prompt.
+/// Represents a group of sequences generated from the same prompt.
 ///
-/// Args:
-///    `request_id`: The ID of the request.
-///    `sequences`: The list of sequences.
-///    `sampling_params`: The sampling parameters used to generate the outputs.
-///    `arrival_time`: The arrival time of the request.
-///    `multi_modal_data`: Multi modal data associated with the request.
-///    `embeddings`: The embeddings vectors of the prompt of the sequence group
-///        for an embedding model.
-///
-/// Warn: Our implementation does not consider LoRA and embeddings requests (contrary to vLLM).
+/// This struct manages multiple related sequences, their generation parameters,
+/// and associated metrics for a single request.
 #[derive(Clone)]
 pub struct SequenceGroup {
-    /// Request Id
+    /// Unique identifier for the request.
     pub request_id: String,
-    /// Sequences
+    /// Map of sequence IDs to their corresponding `Sequence` instances.
     pub sequences: HashMap<u64, Arc<RwLock<Sequence>>>,
-    /// Request metrics
+    /// Metrics tracking various time points and durations for the request.
     pub metrics: Arc<RwLock<RequestMetrics>>,
-    /// Prompt log probabilities
+    /// Log probabilities for the prompt tokens, if available.
     pub prompt_logprobs: Option<LogProb>,
-    /// Next token
+    /// Parameters for choosing the next token in the sequence.
     next_token_chooser_params: NextTokenChooserParameters,
-    /// Stopping criteria
+    /// Criteria for stopping sequence generation.
     stopping_criteria: StoppingCriteriaParameters,
-    /// Logits processor tied to this sequence group
+    /// Processor for modifying logits during token generation.
     pub logits_processor: Arc<RwLock<LogitsProcessor>>,
+    /// Span for tracing and logging
+    pub span: Span,
 }
 
 impl SequenceGroup {
@@ -663,10 +1053,30 @@ impl SequenceGroup {
             next_token_chooser_params,
             stopping_criteria,
             logits_processor: Arc::new(RwLock::new(logits_processor)),
+            span: info_span!("sequence_group"),
         })
     }
 
-    /// Prompt of the `SequenceGroup`, all the sequences should have the same prompt
+    /// Returns the prompt of the `SequenceGroup`.
+    ///
+    /// This function retrieves the prompt from the first sequence in the group.
+    /// All sequences in a `SequenceGroup` should have the same prompt.
+    ///
+    /// # Returns
+    ///
+    /// - `String`: The prompt text of the sequence group.
+    ///
+    /// # Note
+    ///
+    /// If the `SequenceGroup` is empty, this function returns an empty string.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let prompt = seq_group.prompt();
+    /// println!("Prompt: {}", prompt);
+    /// ```
     pub fn prompt(&self) -> String {
         self.sequences
             .iter()
@@ -675,7 +1085,33 @@ impl SequenceGroup {
             .unwrap_or_default()
     }
 
-    /// Adds a `token_id` to a `Sequence` in `SequenceGroup` in place
+    /// Adds a token ID to a specific `Sequence` within this `SequenceGroup`.
+    ///
+    /// This method attempts to add a new token to the sequence identified by `sequence_id`.
+    /// It also updates the associated log probabilities for the token.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_id` - The unique identifier of the target sequence.
+    /// * `token_id` - The ID of the token to be added.
+    /// * `logprobs` - A map of token IDs to their log probabilities.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the token was successfully added.
+    /// * `Err(SequenceError::MissingSequence)` if no sequence with the given ID was found.
+    ///
+    /// # Errors
+    ///
+    /// This method can return an error if:
+    /// - The specified sequence is not found in the group.
+    /// - There's an issue acquiring the write lock for the sequence.
+    /// - The `add_token_id` operation on the sequence fails.
+    ///
+    /// # Tracing
+    ///
+    /// This method is instrumented with tracing. It logs a trace event when adding the token
+    /// and an error event if the sequence is not found.
     #[instrument(skip(self))]
     pub fn add_token_id_to_seq(
         &self,
@@ -683,6 +1119,8 @@ impl SequenceGroup {
         token_id: u32,
         logprobs: HashMap<u32, LogProb>,
     ) -> Result<(), SequenceError> {
+        let _enter = self.span.enter();
+        trace!("Adding token id to sequence in sequence group...");
         if let Some(sequence) = self.sequences.get(&sequence_id) {
             sequence.write_lock()?.add_token_id(token_id, logprobs)?;
             return Ok(());
@@ -691,7 +1129,26 @@ impl SequenceGroup {
         Err(SequenceError::MissingSequence(sequence_id))
     }
 
-    /// Prompt token ids, all the sequences in the `SequenceGroup` should have the same prompt (thus same prompt token ids)
+    /// Returns the prompt token IDs for the `SequenceGroup`.
+    ///
+    /// All sequences in a `SequenceGroup` share the same prompt, so this method
+    /// retrieves the prompt token IDs from the first sequence in the group.
+    ///
+    /// # Returns
+    ///
+    /// - `Vec<u32>`: A vector containing the token IDs of the prompt.
+    ///
+    /// # Note
+    ///
+    /// If the `SequenceGroup` is empty, this function returns an empty vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let prompt_tokens = seq_group.prompt_token_ids();
+    /// println!("Prompt tokens: {:?}", prompt_tokens);
+    /// ```
     pub fn prompt_token_ids(&self) -> Vec<u32> {
         self.sequences
             .iter()
@@ -700,7 +1157,41 @@ impl SequenceGroup {
             .unwrap_or_default()
     }
 
-    /// Sets the last token time for Request level timings and outputs the latency between `now` and `last_token_time`
+    /// Calculates the latency since the last token generation and updates the last token time.
+    ///
+    /// This method performs two main tasks:
+    /// 1. It calculates the duration between the current time (`now`) and the last token generation time.
+    /// 2. It updates the `last_token_time` in the sequence group's metrics to the current time.
+    ///
+    /// # Arguments
+    ///
+    /// * `now` - An `Instant` representing the current time.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Duration)` - The time elapsed since the last token was generated.
+    /// * `Err(SequenceError::WhileInPrefix)` - If the sequence group is still in the prefill stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if called during the prefill stage, as latency is only meaningful
+    /// for token-by-token generation after the initial prompt processing.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses read and write locks on the internal metrics. Ensure proper
+    /// synchronization when used in a multi-threaded context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut seq_group = SequenceGroup::new(/* ... */);
+    /// // ... after some token generation ...
+    /// match seq_group.get_last_latency(Instant::now()) {
+    ///     Ok(latency) => println!("Latency since last token: {:?}", latency),
+    ///     Err(e) => eprintln!("Error: {:?}", e),
+    /// }
+    /// ```
     pub fn get_last_latency(&mut self, now: Instant) -> Result<Duration, SequenceError> {
         if self.is_prefill() {
             return Err(SequenceError::WhileInPrefix);
@@ -712,7 +1203,31 @@ impl SequenceGroup {
         Ok(latency)
     }
 
-    /// Sets the first token time for Request level timings.
+    /// Sets the first token time for request-level timings.
+    ///
+    /// This function attempts to set the time when the first token was generated
+    /// for this request. It only sets the time if it hasn't been set before and
+    /// if the first token has just been generated.
+    ///
+    /// # Arguments
+    ///
+    /// * `time` - The current time to potentially set as the first token time.
+    ///
+    /// # Behavior
+    ///
+    /// - If the first token time has already been set, this function does nothing.
+    /// - If the output length of the first sequence is exactly 1 (indicating the first
+    ///   token has just been generated), it sets the first token time.
+    /// - In cases where a sequence group is swapped and recomputed, the time between
+    ///   iterations is counted in the total processing time, rather than recalculating
+    ///   the time to first token. This is because from the user's perspective, there
+    ///   is simply a longer generation delay.
+    ///
+    /// # Note
+    ///
+    /// This function is currently marked as `#[allow(dead_code)]` as it may not be
+    /// used in the current implementation but is kept for potential future use or
+    /// for debugging purposes.
     #[allow(dead_code)]
     fn maybe_set_first_token_time(&mut self, time: Instant) {
         // NOTE: in a case where a sequence_group is swapped and
@@ -732,7 +1247,29 @@ impl SequenceGroup {
         }
     }
 
-    /// Sets the first scheduled time and time in queue for Request level timings.
+    /// Sets the first scheduled time and calculates the time spent in queue for request-level timings.
+    ///
+    /// This method updates the request metrics with the time when the request was first scheduled
+    /// for processing and calculates how long the request spent waiting in the queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `time` - The current time, typically when the request is first scheduled for processing.
+    ///
+    /// # Effects
+    ///
+    /// If the `first_scheduled_time` hasn't been set yet:
+    /// - Sets `first_scheduled_time` to the provided `time`.
+    /// - Calculates and sets `time_in_queue` as the duration between `arrival_time` and `time`.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses a write lock on the metrics. Ensure proper synchronization when used in a multi-threaded context.
+    ///
+    /// # Note
+    ///
+    /// This method is idempotent; subsequent calls will not change the first scheduled time
+    /// or time in queue if they have already been set.
     pub fn maybe_set_first_scheduled_time(&self, time: Instant) {
         let mut metrics_guard = self.metrics.write().unwrap();
         let (arrival_time, first_scheduled_time) = (
@@ -745,17 +1282,57 @@ impl SequenceGroup {
         }
     }
 
-    /// Sets finished time
+    /// Sets the finished time for the sequence group.
+    ///
+    /// This method updates the `finished_time` in the group's metrics to mark when
+    /// the sequence group completed processing.
+    ///
+    /// # Arguments
+    ///
+    /// * `time` - An `Instant` representing the completion time of the sequence group.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses a write lock on the internal metrics. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn set_finished_time(&self, time: Instant) {
         self.metrics.write().unwrap().finished_time = Some(time);
     }
 
-    /// Get `SequenceGroup`'s arrival time
+    /// Retrieves the arrival time of the `SequenceGroup`.
+    ///
+    /// This method returns the time when the sequence group was initially received
+    /// or created.
+    ///
+    /// # Returns
+    ///
+    /// An `Instant` representing the arrival time of the sequence group.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses a read lock on the internal metrics. It's safe to call
+    /// concurrently, but be aware of potential contention in high-concurrency scenarios.
     pub fn arrival_time(&self) -> Instant {
         self.metrics.read().unwrap().arrival_time
     }
 
-    /// Gets the maximum number of sequences running in parallel, in the remaining lifetime of the request
+    /// Returns the maximum number of sequences that could be running in parallel for this request.
+    ///
+    /// This method determines the upper bound of concurrent sequences based on the generation parameters:
+    ///
+    /// - For beam search (when `best_of` > 1), it returns the `best_of` value, as this is the maximum
+    ///   number of beam candidates that could be explored simultaneously.
+    /// - For other sampling methods, it returns the current number of unfinished sequences, as this
+    ///   represents the actual number of sequences that still need processing.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The maximum number of sequences that could be running concurrently.
+    ///
+    /// # Note
+    ///
+    /// This method is useful for resource allocation and scheduling, as it provides an upper bound
+    /// on the parallelism required for this sequence group.
     pub fn get_max_num_running_seqs(&self) -> usize {
         if self.next_token_chooser_params.best_of > 1 {
             // For beam search, maximally there will always be `best_of` beam
@@ -767,7 +1344,37 @@ impl SequenceGroup {
         self.num_unfinished_sequences()
     }
 
-    /// Get sequences from `SequenceGroup`
+    /// Retrieves sequences from the `SequenceGroup` based on their status.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - An optional `SequenceStatus` to filter the sequences.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `Arc<RwLock<Sequence>>` containing the filtered sequences.
+    ///
+    /// # Details
+    ///
+    /// - If `status` is `Some(status)`, returns only sequences matching that status.
+    /// - If `status` is `None`, returns all sequences in the group.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    ///
+    /// // Get all sequences
+    /// let all_seqs = seq_group.get_seqs(None);
+    ///
+    /// // Get only running sequences
+    /// let running_seqs = seq_group.get_seqs(Some(SequenceStatus::Running));
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<Arc<RwLock<Sequence>>> {
         match status {
             Some(status) => self
@@ -785,7 +1392,32 @@ impl SequenceGroup {
         }
     }
 
-    /// Get sequence ids from `SequenceGroup` with given id
+    /// Retrieves sequence IDs from the `SequenceGroup`, optionally filtered by status.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - An optional `SequenceStatus` to filter the sequences.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `u64` containing the IDs of the filtered sequences.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    ///
+    /// // Get all sequence IDs
+    /// let all_ids = seq_group.get_sequences_ids(None);
+    ///
+    /// // Get only running sequence IDs
+    /// let running_ids = seq_group.get_sequences_ids(Some(SequenceStatus::Running));
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn get_sequences_ids(&self, status: Option<SequenceStatus>) -> Vec<u64> {
         match status {
             Some(status) => self
@@ -807,7 +1439,32 @@ impl SequenceGroup {
         }
     }
 
-    /// Gets first sequence as a reference
+    /// Retrieves a reference to the first sequence in the group, optionally filtered by status.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - An optional `SequenceStatus` to filter the sequences.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<&Arc<RwLock<Sequence>>>` - A reference to the first matching sequence, if any.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    ///
+    /// // Get the first sequence regardless of status
+    /// let first_seq = seq_group.get_first_sequence(None);
+    ///
+    /// // Get the first running sequence
+    /// let first_running_seq = seq_group.get_first_sequence(Some(SequenceStatus::Running));
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn get_first_sequence(
         &self,
         status: Option<SequenceStatus>,
@@ -821,23 +1478,70 @@ impl SequenceGroup {
         }
     }
 
-    /// Gets a shared reference to `Sequence` with `sequence_id`
+    /// Retrieves a shared reference to a `Sequence` with the specified `sequence_id`.
+    ///
+    /// This method searches through the sequences in the group and returns a reference
+    /// to the `Arc<RwLock<Sequence>>` that matches the given `sequence_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_id` - The unique identifier of the sequence to retrieve.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<&Arc<RwLock<Sequence>>>` - A reference to the matching sequence if found,
+    ///   or `None` if no sequence with the given ID exists in the group.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence during the search.
+    /// Ensure proper synchronization when used in a multi-threaded context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let sequence_id = 42;
+    /// if let Some(sequence) = seq_group.get_sequence_from_id(sequence_id) {
+    ///     println!("Found sequence with ID: {}", sequence_id);
+    /// } else {
+    ///     println!("No sequence found with ID: {}", sequence_id);
+    /// }
+    /// ```
     pub fn get_sequence_from_id(&self, sequence_id: u64) -> Option<&Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
             .find(|s| s.read().unwrap().sequence_id() == sequence_id)
     }
 
-    // TODO: remove this code if not necessary anymore
-    // /// Gets a mutable reference to a `Sequence` with `sequence_id`
-    // pub fn get_sequence_mut_from_id(&mut self, sequence_id: u64) -> Option<&mut Sequence> {
-    //     self.sequences
-    //         .values_mut()
-    //         .filter(|s| s.sequence_id() == sequence_id)
-    //         .next()
-    // }
-
-    /// Get a vector of unfinished sequences
+    /// Retrieves all unfinished sequences from the `SequenceGroup`.
+    ///
+    /// This method filters and returns a vector of all sequences that have not yet
+    /// finished processing. A sequence is considered unfinished if its status is not
+    /// in a terminal state (e.g., not FinishedStopped, FinishedLengthCapped, etc.).
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<Arc<RwLock<Sequence>>>` containing cloned references to all unfinished sequences.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
+    ///
+    /// # Performance Considerations
+    ///
+    /// - This method clones `Arc` pointers, which is a relatively cheap operation.
+    /// - However, it does iterate over all sequences in the group, which could be
+    ///   expensive for very large sequence groups.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let unfinished_seqs = seq_group.get_unfinished_sequences();
+    /// println!("Number of unfinished sequences: {}", unfinished_seqs.len());
+    /// ```
     pub fn get_unfinished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
@@ -846,7 +1550,34 @@ impl SequenceGroup {
             .collect()
     }
 
-    /// Get a vector of finished sequences
+    /// Retrieves all finished sequences from the `SequenceGroup`.
+    ///
+    /// This method filters and returns a vector of all sequences that have completed processing.
+    /// A sequence is considered finished if its status is in a terminal state
+    /// (e.g., FinishedStopped, FinishedLengthCapped, etc.).
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<Arc<RwLock<Sequence>>>` containing cloned references to all finished sequences.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
+    ///
+    /// # Performance Considerations
+    ///
+    /// - This method clones `Arc` pointers, which is a relatively cheap operation.
+    /// - However, it does iterate over all sequences in the group, which could be
+    ///   expensive for very large sequence groups.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let finished_seqs = seq_group.get_finished_sequences();
+    /// println!("Number of finished sequences: {}", finished_seqs.len());
+    /// ```
     pub fn get_finished_sequences(&self) -> Vec<Arc<RwLock<Sequence>>> {
         self.sequences
             .values()
@@ -855,12 +1586,38 @@ impl SequenceGroup {
             .collect()
     }
 
-    /// Updates the number of computed tokens
-    #[instrument(skip(self))]
+    /// Updates the number of computed tokens for all unfinished sequences in the group.
+    ///
+    /// This method iterates through all sequences in the group and updates their
+    /// computed token count, but only for sequences that are not yet finished.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_new_computed_tokens` - The number of new tokens that have been computed
+    ///   in the current batch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the update was successful for all sequences.
+    /// * `Err(SequenceError)` if there was an error updating any sequence.
+    ///
+    /// # Errors
+    ///
+    /// This method can return an error if:
+    /// - There's an issue acquiring read or write locks on any sequence.
+    /// - The `update_num_computed_tokens` operation fails for any sequence.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses read and write locks on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
+    #[instrument(skip_all)]
     pub fn update_num_computed_tokens(
         &self,
         num_new_computed_tokens: usize,
     ) -> Result<(), SequenceError> {
+        let _enter = self.span.enter();
+        trace!("Updating number of computed tokens");
         for sequence in self.sequences.values() {
             let is_finished = { sequence.read_lock()?.is_finished() };
             if !is_finished {
@@ -875,7 +1632,35 @@ impl SequenceGroup {
         Ok(())
     }
 
-    /// Get number of uncomputed tokens
+    /// Calculates the total number of uncomputed tokens across all unfinished sequences in the group.
+    ///
+    /// This method iterates through all sequences in the group, and for each unfinished sequence,
+    /// it sums up the number of uncomputed tokens. This is useful for determining how much
+    /// computation is left to be done for the entire sequence group.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The total number of uncomputed tokens across all unfinished sequences.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper synchronization
+    /// when used in a multi-threaded context.
+    ///
+    /// # Performance Considerations
+    ///
+    /// - This method iterates over all sequences in the group, which could be expensive
+    ///   for very large sequence groups.
+    /// - It acquires and releases a read lock for each sequence, which may impact
+    ///   performance in high-contention scenarios.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    /// let uncomputed_tokens = seq_group.get_num_uncomputed_tokens();
+    /// println!("Number of uncomputed tokens: {}", uncomputed_tokens);
+    /// ```
     pub fn get_num_uncomputed_tokens(&self) -> usize {
         let mut num_uncomputed_tokens = 0;
         for sequence in self.sequences.values() {
@@ -890,7 +1675,32 @@ impl SequenceGroup {
         num_uncomputed_tokens
     }
 
-    /// Number of sequences, which optionally are in current `SequenceStatus`
+    /// Returns the number of sequences in the group, optionally filtered by a specific status.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - An optional `SequenceStatus` to filter the sequences.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The number of sequences matching the given status, or the total number of sequences if no status is specified.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let seq_group = SequenceGroup::new(/* ... */);
+    ///
+    /// // Get total number of sequences
+    /// let total = seq_group.get_num_sequences(None);
+    ///
+    /// // Get number of running sequences
+    /// let running = seq_group.get_num_sequences(Some(SequenceStatus::Running));
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn get_num_sequences(&self, status: Option<SequenceStatus>) -> usize {
         if let Some(status) = status {
             let mut len = 0;
@@ -905,7 +1715,25 @@ impl SequenceGroup {
         }
     }
 
-    /// Get the total number of logical blocks needed to be allocated for this `SequenceGroup`,
+    /// Get the total number of logical blocks needed to be allocated for this `SequenceGroup`.
+    ///
+    /// This function returns the number of logical token blocks for the first sequence
+    /// in the group that matches the given status. Since all sequences in a `SequenceGroup`
+    /// share the same initial prompt, checking one sequence is sufficient.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - The `SequenceStatus` to filter sequences by.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(usize)` - The number of logical token blocks if a matching sequence is found.
+    /// * `None` - If no sequence with the given status is found.
+    ///
+    /// # Note
+    ///
+    /// This method acquires a read lock on each sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn get_num_total_logical_token_blocks(&self, status: SequenceStatus) -> Option<usize> {
         // NOTE: All `Sequence`s in `SequenceGroup` share the same initial prompt, therefore
         // it is sufficient to check how many logical token blocks are contained in the first `Sequence` with `status`
@@ -922,17 +1750,60 @@ impl SequenceGroup {
         None
     }
 
-    /// Number of unfinished sequences
+    /// Returns the number of unfinished sequences in the group.
+    ///
+    /// An unfinished sequence is one that has not yet reached a terminal state
+    /// (e.g., not stopped, length capped, or aborted).
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The count of unfinished sequences.
+    ///
+    /// # Performance Note
+    ///
+    /// This method calls `get_unfinished_sequences()`, which iterates over all sequences.
+    /// For frequent checks on large sequence groups, consider caching this value if possible.
     pub fn num_unfinished_sequences(&self) -> usize {
         self.get_unfinished_sequences().len()
     }
 
-    /// Number of finished sequences
+    /// Returns the number of finished sequences in the group.
+    ///
+    /// A finished sequence is one that has reached a terminal state
+    /// (e.g., stopped, length capped, or aborted).
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The count of finished sequences.
+    ///
+    /// # Performance Note
+    ///
+    /// This method calls `get_finished_sequences()`, which iterates over all sequences.
+    /// For frequent checks on large sequence groups, consider caching this value if possible.
     pub fn num_finished_sequences(&self) -> usize {
         self.get_finished_sequences().len()
     }
 
-    /// Checks if it is in prefill phase, all sequences should either be or not in prefix phase, simultaneously
+    /// Checks if the sequence group is in the prefill phase.
+    ///
+    /// This method determines if the sequence group is still in the prefill stage
+    /// by checking the first sequence in the group. All sequences in a group
+    /// should be in the same phase (either all in prefill or all in decode).
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the sequence group is in the prefill phase.
+    /// * `false` if the sequence group is in the decode phase or if there are no sequences.
+    ///
+    /// # Note
+    ///
+    /// This method assumes that all sequences in the group are in the same phase.
+    /// It only checks the first sequence for efficiency.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on the first sequence. Ensure proper
+    /// synchronization when used in a multi-threaded context.
     pub fn is_prefill(&self) -> bool {
         self.sequences
             .iter()
@@ -941,12 +1812,31 @@ impl SequenceGroup {
             .unwrap_or(false)
     }
 
-    /// Finds a `Sequence` with a given `sequence_id`
+    /// Finds a `Sequence` with the given `sequence_id` in this `SequenceGroup`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_id` - The unique identifier of the sequence to find.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Arc<RwLock<Sequence>>)` if a sequence with the given ID is found.
+    /// * `None` if no sequence with the given ID exists in this group.
     pub fn find(&self, sequence_id: u64) -> Option<Arc<RwLock<Sequence>>> {
         self.sequences.get(&sequence_id).cloned()
     }
 
-    /// Adds a new `Sequence` to the `SequenceGroup`
+    /// Adds a new `Sequence` to this `SequenceGroup`.
+    ///
+    /// If a sequence with the same ID already exists in the group, this method does nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence` - The new sequence to add, wrapped in an `Arc<RwLock<>>`.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on the sequence to get its ID.
     pub fn add(&mut self, sequence: Arc<RwLock<Sequence>>) {
         let sequence_id = { sequence.read().unwrap().sequence_id };
         if self.sequences.contains_key(&sequence_id) {
@@ -955,24 +1845,51 @@ impl SequenceGroup {
         self.sequences.insert(sequence_id, sequence);
     }
 
-    /// Removes a `Sequence` from the `SequenceGroup`, as an idempotent
+    /// Removes a `Sequence` from this `SequenceGroup`.
+    ///
+    /// This method is idempotent - if no sequence with the given ID exists,
+    /// this method does nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_id` - The unique identifier of the sequence to remove.
     pub fn remove(&mut self, sequence_id: u64) {
         self.sequences.remove(&sequence_id);
     }
 
-    /// Checks if generation is finished for all `Sequence`'s in `SequenceGroup`
+    /// Checks if generation is finished for all `Sequence`s in this `SequenceGroup`.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if all sequences in the group have finished processing.
+    /// * `false` if any sequence in the group is still in progress.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires a read lock on each sequence in the group.
     pub fn is_finished(&self) -> bool {
         self.sequences
             .values()
             .all(|s| s.read().unwrap().is_finished())
     }
 
-    /// Getter for sampling next token chooser params
+    /// Returns the next token chooser parameters for this `SequenceGroup`.
+    ///
+    /// # Returns
+    ///
+    /// A clone of the `NextTokenChooserParameters` associated with this group.
     pub fn next_token_chooser_params(&self) -> NextTokenChooserParameters {
         self.next_token_chooser_params.clone()
     }
 
-    /// Getter for stopping parameters
+    /// Returns the stopping criteria parameters for this `SequenceGroup`.
+    ///
+    /// This method provides access to the stopping criteria used to determine
+    /// when to halt the generation process for sequences in this group.
+    ///
+    /// # Returns
+    ///
+    /// A clone of the `StoppingCriteriaParameters` associated with this group.
     pub fn stopping_params(&self) -> StoppingCriteriaParameters {
         self.stopping_criteria.clone()
     }
@@ -991,41 +1908,31 @@ impl std::fmt::Debug for SequenceGroup {
     }
 }
 
-/// `SequenceGroupMetadata` - Metadata for a sequence group. Used to create `AttentionMetadata`
+/// Metadata for a sequence group, used to create `AttentionMetadata`.
 ///
-/// Args:
-///     `request_id`: The ID of the request.
-///     `is_prompt`: Whether the request is at prompt stage.
-///     `sampling_params`: The sampling parameters used to generate the outputs.
-///     `block_tables`: The block tables. (sequence id -> vector of physical block
-///         numbers)
-///     `do_sample`: True if sampling is required. Sampling is not required when
-///          e.g., prefill is chunked, and the current iteration only computes
-///          query tokens for prefill, we don't need sampling.
-///     `token_chunk_size`: The number of tokens to be processed (per sequence).
-///          None if chunking is not required.
-///     `computed_block_nums`: The block numbers that are already computed,
-///          used in prefix caching.
-///     `state`: Internal state tied to this sequence group.
-///     `multi_modal_data`: Multi modal data.
+/// This struct encapsulates various parameters and data structures related to a group of sequences
+/// being processed together, typically for batched inference in language models.
 pub struct SequenceGroupMetadata {
-    /// Request id
+    /// Unique identifier for the request associated with this sequence group.
     pub request_id: String,
-    /// Is prompt (bool)
+    /// Indicates whether the current processing stage is for the initial prompt (true) or for token generation (false).
     pub is_prompt: bool,
-    /// Next token chooser parameters
+    /// Parameters controlling the selection of the next token in the sequence.
     pub next_token_chooser_params: NextTokenChooserParameters,
-    /// Stopping criteria parameters
+    /// Criteria for determining when to stop sequence generation.
     pub stopping_criteria_params: StoppingCriteriaParameters,
-    /// Block tables
+    /// Mapping of sequence IDs to their corresponding block numbers in physical memory.
+    /// This is used for efficient memory management of token sequences.
     pub block_tables: HashMap<u64, Vec<u32>>,
-    /// Do sample (bool)
+    /// Indicates whether sampling should be performed during token generation.
+    /// Set to false for certain operations like chunked prefill where sampling isn't needed.
     pub do_sample: bool,
-    /// Token chunk size
+    /// Number of tokens to be processed per sequence in the current batch.
+    /// This is used for chunked processing of long sequences.
     pub token_chunk_size: usize,
-    /// Sequence data
+    /// Detailed data for each sequence in the group, keyed by sequence ID.
     pub sequence_data: HashMap<u64, SequenceData>,
-    /// Logits processor tied to this sequence group`   `
+    /// Processor for modifying logits during token generation, shared across the sequence group.
     pub logits_processor: Arc<RwLock<LogitsProcessor>>,
 }
 
@@ -1089,53 +1996,67 @@ impl std::fmt::Debug for SequenceGroupMetadata {
     }
 }
 
-/// `SequenceOutput` - The model output associated with a sequence.
+/// Represents the output of a language model for a single sequence step.
 ///
-/// Args:
-///     `parent_seq_id`: The ID of the parent sequence (for forking in beam
-///         search).
-///     `output_token`: The output token ID.
-///     `logprobs`: The logprobs of the output token.
-///         (Token id -> logP(x_i+1 | x_0, ..., x_i))
+/// This struct encapsulates the information produced by the model for a single token
+/// generation step, including the generated token, its log probabilities, and metadata
+/// for beam search and stopping conditions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SequenceOutput {
-    /// Parent sequence id
+    /// The ID of the parent sequence. Used for tracking lineage in beam search.
     pub parent_sequence_id: u64,
-    /// Output token
+    /// The ID of the token generated in this step.
     pub output_token: u32,
-    /// Log probabilities
+    /// A mapping of token IDs to their log probabilities.
+    ///
+    /// For each token ID, this map contains LogP(x_i+1 | x_0, ..., x_i),
+    /// where x_i+1 is the potential next token and x_0, ..., x_i is the current sequence.
     pub logprob: HashMap<u32, LogProb>,
-    /// Is stop token
+    /// Indicates whether this token is a stop token, signaling the end of generation.
     pub is_stop_token: bool,
 }
 
-/// `SequenceGroupMetrics` - Metrics for a sequence group token generation
+/// Metrics for token generation in a sequence group.
+///
+/// This struct captures performance metrics related to the token generation process
+/// for a group of sequences processed together.
 #[derive(Clone, Debug, Default)]
 pub struct SequenceGroupMetrics {
-    /// Time taken to generate the batched output
+    /// Time taken to generate the batched output, in seconds.
+    ///
+    /// This field represents the total time spent generating tokens for all sequences
+    /// in the group during a single batch processing step.
+    ///
+    /// `None` if the time measurement is not available or hasn't been set.
     pub time_to_generate: Option<f32>,
-    /// Number of batched tokens generated
+    /// Number of tokens generated in the current batch.
+    ///
+    /// This field represents the total count of new tokens produced across all
+    /// sequences in the group during a single batch processing step.
     pub num_tokens_generated: usize,
 }
 
-/// `SequenceGroupOutput` - For each sequence group, we generate a list of SequenceOutput object,
-///     each of which contains one possible candidate for the next token.
+/// Represents the output for a group of sequences after a single generation step.
 ///
-/// This data structure implements methods, so it can be used like a list, but
-///     also has optional fields for device tensors.
+/// This struct encapsulates the results of token generation for multiple sequences
+/// processed together, typically in a batched inference operation. It includes
+/// individual sequence outputs, optional tensor data, and performance metrics.
 #[derive(Debug, Default)]
 pub struct SequenceGroupOutput {
-    /// Outputs, in the form of a mapping from `sequence_id` -> `CompletionSequenceGroupOutput`
+    /// Mapping of sequence IDs to their corresponding output for this generation step.
     pub outputs: HashMap<u64, SequenceOutput>,
-    /// Sampled token probabilities
+    /// Optional tensor of probabilities for the sampled tokens.
+    /// Shape: [num_sequences, vocab_size]
     pub sampled_token_probs: Option<Tensor>,
-    /// Log probabilities
+    /// Optional tensor of log probabilities for all tokens in the vocabulary.
+    /// Shape: [num_sequences, vocab_size]
     pub logprobs: Option<Tensor>,
-    /// Sampled token ids
+    /// Optional tensor of sampled token IDs.
+    /// Shape: [num_sequences]
     pub sampled_token_ids: Option<Tensor>,
-    /// Spec decoder worker metrics
+    /// Optional metrics from speculative decoding, if applicable.
     pub spec_decode_worker_metrics: Option<SpecDecodeWorkerMetrics>,
-    /// Sequence group metrics
+    /// Performance metrics for this generation step across all sequences in the group.
     pub sequence_group_metrics: SequenceGroupMetrics,
 }
 
