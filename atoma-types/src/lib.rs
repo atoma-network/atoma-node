@@ -246,6 +246,10 @@ impl ModelParams {
                 unreachable!("IPFS request id found when raw prompt was expected")
             }
             InputSource::Raw { prompt } => prompt,
+            #[cfg(feature = "supabase")]
+            InputSource::Supabase { .. } => {
+                unreachable!("Supabase request id found when raw prompt was expected")
+            }
         }
     }
 
@@ -449,6 +453,10 @@ impl Text2TextModelParams {
                 unreachable!("IPFS request cid found when raw prompt was expected")
             }
             InputSource::Raw { prompt } => prompt.clone(),
+            #[cfg(feature = "supabase")]
+            InputSource::Supabase { .. } => {
+                unreachable!("Supabase request id found when raw prompt was expected")
+            }
         }
     }
 }
@@ -635,6 +643,10 @@ impl Text2ImageModelParams {
                 unreachable!("IPFS request cid found when raw prompt was expected")
             }
             InputSource::Raw { prompt } => prompt.clone(),
+            #[cfg(feature = "supabase")]
+            InputSource::Supabase { .. } => {
+                unreachable!("Supabase request id found when raw prompt was expected")
+            }
         }
     }
 
@@ -810,17 +822,39 @@ pub enum ModelInput {
 /// `InputSource` - Enum describing available input sources
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InputSource {
-    Firebase { request_id: String },
-    Ipfs { cid: String, format: InputFormat },
-    Raw { prompt: String }, // This means that the prompt is stored in the request
+    Firebase {
+        request_id: String,
+    },
+    Ipfs {
+        cid: String,
+        format: InputFormat,
+    },
+    Raw {
+        // This means that the prompt is stored in the request
+        prompt: String,
+    },
+    #[cfg(feature = "supabase")]
+    Supabase {
+        request_id: String,
+    },
 }
 
 /// `OutputDestination` - enum encapsulating the output's destination
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum OutputDestination {
-    Firebase { request_id: String },
-    Ipfs { request_id: String },
-    Gateway { gateway_user_id: String },
+    Firebase {
+        request_id: String,
+    },
+    Ipfs {
+        request_id: String,
+    },
+    Gateway {
+        gateway_user_id: String,
+    },
+    #[cfg(feature = "supabase")]
+    Supabase {
+        request_id: String,
+    },
 }
 
 impl OutputDestination {
@@ -830,6 +864,8 @@ impl OutputDestination {
             Self::Firebase { request_id } => request_id.clone(),
             Self::Ipfs { request_id } => request_id.clone(),
             Self::Gateway { .. } => unimplemented!("Gateway user id not implemented"),
+            #[cfg(feature = "supabase")]
+            Self::Supabase { request_id } => request_id.clone(),
         }
     }
 }

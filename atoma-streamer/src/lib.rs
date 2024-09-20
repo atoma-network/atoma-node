@@ -1,12 +1,15 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_helpers::Firebase;
 use atoma_types::AtomaStreamingData;
-use reqwest::{Client, Url};
+use reqwest::Client;
 use serde_json::json;
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, instrument};
+
+#[cfg(feature = "supabase")]
+mod supabase;
 
 /// `AtomaStreamer` instance
 pub struct AtomaStreamer {
@@ -18,6 +21,9 @@ pub struct AtomaStreamer {
     /// Last streamed index mapping, for each
     /// `Digest`
     last_streamed_index: HashMap<String, usize>,
+    /// Supabase streamer
+    #[cfg(feature = "supabase")]
+    supabase_streamer: supabase::Streamer,
 }
 
 impl AtomaStreamer {
@@ -25,11 +31,14 @@ impl AtomaStreamer {
     pub async fn new(
         streamer_rx: mpsc::Receiver<AtomaStreamingData>,
         firebase: Firebase,
+        #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
     ) -> Result<Self, AtomaStreamerError> {
         Ok(Self {
             firebase,
             streamer_rx,
             last_streamed_index: HashMap::new(),
+            #[cfg(feature = "supabase")]
+            supabase_streamer: supabase::Streamer::new(supabase),
         })
     }
 
@@ -44,6 +53,13 @@ impl AtomaStreamer {
                 streaming_data.data().clone(),
             )
             .await?;
+            #[cfg(feature = "supabase")]
+            self.supabase_streamer
+                .handle_streaming_request(
+                    streaming_data.output_source_id().clone(),
+                    streaming_data.data().clone(),
+                )
+                .await?;
         }
 
         Ok(())
@@ -105,4 +121,7 @@ pub enum AtomaStreamerError {
     UrlError(String),
     #[error("Url parse error: `{0}`")]
     UrlParseError(#[from] url::ParseError),
+    #[cfg(feature = "supabase")]
+    #[error("Supabase streamer error: `{0}`")]
+    SupabaseStreamerError(#[from] supabase::StreamerError),
 }
