@@ -16,6 +16,8 @@ use tracing::{error, info, instrument, trace};
 mod config;
 mod firebase;
 mod ipfs;
+#[cfg(feature = "supabase")]
+mod supabase;
 
 type SendRequestError = mpsc::error::SendError<(
     String,
@@ -43,6 +45,8 @@ type InputManagerReceiver = mpsc::Receiver<(
 pub struct AtomaInputManager {
     /// Firebase's input manager instance.
     firebase_input_manager: FirebaseInputManager,
+    #[cfg(feature = "supabase")]
+    supabase_input_manager: supabase::SupabaseInputManager,
     /// A mpsc receiver that receives tuples of `InputSource` and
     /// the actual user prompt, in JSON format.
     input_manager_rx: InputManagerReceiver,
@@ -59,6 +63,7 @@ impl AtomaInputManager {
         config_file_path: P,
         input_manager_rx: InputManagerReceiver,
         firebase: Firebase,
+        #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
     ) -> Result<Self, AtomaInputManagerError> {
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
 
@@ -90,9 +95,13 @@ impl AtomaInputManager {
             }
         };
         let firebase_input_manager = FirebaseInputManager::new(firebase);
+        #[cfg(feature = "supabase")]
+        let supabase_input_manager = supabase::SupabaseInputManager::new(supabase);
         info!("Atoma Input Manager started in {:?}", start.elapsed());
         Ok(Self {
             firebase_input_manager,
+            #[cfg(feature = "supabase")]
+            supabase_input_manager,
             input_manager_rx,
             ipfs_request_tx,
             ipfs_join_handle,
@@ -126,6 +135,16 @@ impl AtomaInputManager {
                 InputSource::Raw { prompt } => {
                     oneshot
                         .send(Ok(ModelInput::Text(prompt)))
+                        .map_err(|_| AtomaInputManagerError::SendPromptError)?;
+                }
+                #[cfg(feature = "supabase")]
+                InputSource::Supabase { request_id } => {
+                    let model_input_result = self
+                        .supabase_input_manager
+                        .handle_chat_request(request_id)
+                        .await;
+                    oneshot
+                        .send(model_input_result)
                         .map_err(|_| AtomaInputManagerError::SendPromptError)?;
                 }
             }
@@ -188,4 +207,7 @@ pub enum AtomaInputManagerError {
     SendRequestError(#[from] SendRequestError),
     #[error("Join error: `{0}`")]
     JoinError(#[from] tokio::task::JoinError),
+    #[cfg(feature = "supabase")]
+    #[error("Supabase error: `{0}`")]
+    SupabaseError(#[from] atoma_helpers::SupabaseError),
 }

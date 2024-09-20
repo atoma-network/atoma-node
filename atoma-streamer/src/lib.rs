@@ -8,6 +8,9 @@ use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, instrument};
 
+#[cfg(feature = "supabase")]
+mod supabase;
+
 /// `AtomaStreamer` instance
 pub struct AtomaStreamer {
     /// Firebase url
@@ -20,6 +23,8 @@ pub struct AtomaStreamer {
     last_streamed_index: HashMap<String, usize>,
     /// Firebase authentication
     auth: Arc<Mutex<FirebaseAuth>>,
+    #[cfg(feature = "supabase")]
+    supabase_streamer: supabase::Streamer,
 }
 
 impl AtomaStreamer {
@@ -27,12 +32,15 @@ impl AtomaStreamer {
     pub async fn new(
         streamer_rx: mpsc::Receiver<AtomaStreamingData>,
         firebase: Firebase,
+        #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
     ) -> Result<Self, AtomaStreamerError> {
         Ok(Self {
             firebase_url: firebase.get_realtime_db_url(),
             streamer_rx,
             last_streamed_index: HashMap::new(),
             auth: firebase.get_auth(),
+            #[cfg(feature = "supabase")]
+            supabase_streamer: supabase::Streamer::new(supabase),
         })
     }
 
@@ -47,6 +55,13 @@ impl AtomaStreamer {
                 streaming_data.data().clone(),
             )
             .await?;
+            #[cfg(feature = "supabase")]
+            self.supabase_streamer
+                .handle_streaming_request(
+                    streaming_data.output_source_id().clone(),
+                    streaming_data.data().clone(),
+                )
+                .await?;
         }
 
         Ok(())
@@ -108,4 +123,7 @@ pub enum AtomaStreamerError {
     UrlError(String),
     #[error("Url parse error: `{0}`")]
     UrlParseError(#[from] url::ParseError),
+    #[cfg(feature = "supabase")]
+    #[error("Supabase streamer error: `{0}`")]
+    SupabaseStreamerError(#[from] supabase::StreamerError),
 }

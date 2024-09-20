@@ -4,7 +4,6 @@ use ::candle::{DTypeParseError, Error as CandleError};
 use atoma_types::{AtomaStreamingData, Digest, ModelParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
-use image::ImageError;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use types::{TextModelInput, TextModelOutput};
