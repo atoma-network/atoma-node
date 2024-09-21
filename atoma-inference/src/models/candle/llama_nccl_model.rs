@@ -4,6 +4,7 @@ use candle_nn::var_builder::ShardedVarBuilder as VarBuilder;
 use candle_nn::{Embedding, Linear, Module, RmsNorm};
 use cudarc::nccl::safe::{Comm, ReduceOp};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 const MAX_SEQ_LEN: usize = 2048;
 
