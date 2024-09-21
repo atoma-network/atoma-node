@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::helper::{TensorParallelColumnLinear, TensorParallelRowLinear};
+use super::helper::nccl::{TensorParallelColumnLinear, TensorParallelRowLinear};
 use candle::{
     backend::BackendStorage, op::ReduceOp, CpuStorage, CustomOp1, DType, Device, IndexOp, Layout,
     Module, Result, Shape, Tensor, D,

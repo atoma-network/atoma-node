@@ -1,7 +1,7 @@
 use atoma_types::AtomaStreamingData;
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
-use candle_transformers::{generation::LogitsProcessor, models::llama as model};
+use candle_transformers::{generation::LogitsProcessor, models::LlamaEosToks};
 use cudarc::{driver::safe::CudaDevice, nccl::result::NcclError};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
@@ -98,7 +98,7 @@ impl LlamaNcclWorker {
             self.tokenizer
                 .tokenizer()
                 .token_to_id(EOS_TOKEN)
-                .map(model::LlamaEosToks::Single)
+                .map(LlamaEosToks::Single)
         });
         let prompt_ids = self
             .tokenizer
@@ -131,12 +131,10 @@ impl LlamaNcclWorker {
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
             match eos_token_id {
-                Some(model::LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
+                Some(LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
                     break;
                 }
-                Some(model::LlamaEosToks::Multiple(ref eos_ids))
-                    if eos_ids.contains(&next_token) =>
-                {
+                Some(LlamaEosToks::Multiple(ref eos_ids)) if eos_ids.contains(&next_token) => {
                     break;
                 }
                 _ => (),
