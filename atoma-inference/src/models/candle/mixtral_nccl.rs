@@ -1,4 +1,3 @@
-use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_transformers::{generation::LogitsProcessor, utils::apply_repeat_penalty};
 use cudarc::{driver::safe::CudaDevice, nccl::result::NcclError};

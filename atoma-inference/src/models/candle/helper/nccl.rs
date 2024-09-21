@@ -1,3 +1,9 @@
+use candle::{CpuStorage, CustomOp1, DType, Layout, Result, Shape, Tensor};
+use candle_nn::var_builder::ShardedVarBuilder as VarBuilder;
+use candle_nn::{Linear, Module};
+use cudarc::nccl::Comm;
+use std::rc::Rc;
+
 pub struct TensorParallelColumnLinear {
     pub linear: Linear,
 }
@@ -50,7 +56,7 @@ impl TensorParallelRowLinear {
 }
 
 pub struct AllGather {
-    comm: Rc<Comm>,
+    pub comm: Rc<Comm>,
 }
 
 unsafe impl Sync for AllGather {}

@@ -1,7 +1,6 @@
 use atoma_types::AtomaStreamingData;
-use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
-use candle_transformers::{generation::LogitsProcessor, models::LlamaEosToks};
+use candle_transformers::{generation::LogitsProcessor, models::llama::LlamaEosToks};
 use cudarc::{driver::safe::CudaDevice, nccl::result::NcclError};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
