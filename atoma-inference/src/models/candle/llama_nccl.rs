@@ -1,3 +1,4 @@
+use atoma_types::AtomaStreamingData;
 use atoma_types::Digest;
 use candle::{DType, Device, Tensor};
 use candle_transformers::generation::LogitsProcessor;
@@ -93,10 +94,12 @@ impl LlamaNcclWorker {
             .bos_token_id
             .or_else(|| self.tokenizer.tokenizer().token_to_id(BOS_TOKEN))
             .unwrap();
-        let eos_token_id = self
-            .config
-            .eos_token_id
-            .or_else(|| self.tokenizer.tokenizer().token_to_id(EOS_TOKEN));
+        let eos_token_id = self.config.eos_token_id.clone().or_else(|| {
+            self.tokenizer
+                .tokenizer()
+                .token_to_id(EOS_TOKEN)
+                .map(model::LlamaEosToks::Single)
+        });
         let prompt_ids = self
             .tokenizer
             .tokenizer()
@@ -127,8 +130,16 @@ impl LlamaNcclWorker {
 
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
-            if Some(next_token) == eos_token_id {
-                break;
+            match eos_token_id {
+                Some(model::LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
+                    break;
+                }
+                Some(model::LlamaEosToks::Multiple(ref eos_ids))
+                    if eos_ids.contains(&next_token) =>
+                {
+                    break;
+                }
+                _ => (),
             }
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 res += &t;

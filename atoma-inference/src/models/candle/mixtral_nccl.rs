@@ -5,6 +5,7 @@ use cudarc::{driver::safe::CudaDevice, nccl::result::NcclError};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::{path::PathBuf, rc::Rc, str::FromStr, thread, time::Instant};
 
+use atoma_types::AtomaStreamingData;
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{broadcast, mpsc};
