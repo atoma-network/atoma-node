@@ -1,11 +1,12 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use candle::{
-    CpuStorage, CustomOp1, DType, Device, IndexOp, Layout, Module, Result, Shape, Tensor, D,
+use crate::models::candle::helper::{
+    shard, AllGather, TensorParallelColumnLinear, TensorParallelRowLinear,
 };
+use candle::{DType, Device, IndexOp, Module, Result, Tensor, D};
 use candle_nn::var_builder::ShardedVarBuilder as VarBuilder;
-use candle_nn::{Activation, Embedding, Linear, RmsNorm};
+use candle_nn::{Activation, Embedding, RmsNorm};
 use cudarc::nccl::Comm;
 use serde::Deserialize;
 
@@ -123,12 +124,9 @@ struct Attention {
     o_proj: TensorParallelRowLinear,
     num_heads: usize,
     num_kv_heads: usize,
-    num_kv_groups: usize,
     head_dim: usize,
-    hidden_size: usize,
     rotary_emb: Arc<RotaryEmbedding>,
     kv_cache: Option<(Tensor, Tensor)>,
-    use_flash_attn: bool,
 }
 
 impl Attention {
@@ -141,7 +139,6 @@ impl Attention {
         let hidden_sz = cfg.hidden_size;
         let num_heads = cfg.num_attention_heads;
         let num_kv_heads = cfg.num_key_value_heads;
-        let num_kv_groups = num_heads / num_kv_heads;
         let head_dim = hidden_sz / num_heads;
         let qkv_proj = TensorParallelColumnLinear::load_multi(
             vb.clone(),
@@ -154,12 +151,9 @@ impl Attention {
             o_proj,
             num_heads: num_heads / comm.world_size(),
             num_kv_heads: num_kv_heads / comm.world_size(),
-            num_kv_groups,
             head_dim,
-            hidden_size: hidden_sz,
             rotary_emb,
             kv_cache: None,
-            use_flash_attn: cfg.use_flash_attn,
         })
     }
 
@@ -171,7 +165,7 @@ impl Attention {
     fn forward(
         &mut self,
         xs: &Tensor,
-        attention_mask: Option<&Tensor>,
+        _attention_mask: Option<&Tensor>,
         seqlen_offset: usize,
     ) -> Result<Tensor> {
         let (b_sz, q_len, _) = xs.dims3()?;
@@ -243,20 +237,14 @@ struct BlockSparseTop2MLP {
     w1: TensorParallelColumnLinear,
     w2: TensorParallelRowLinear,
     w3: TensorParallelColumnLinear,
-    act_fn: Activation,
 }
 
 impl BlockSparseTop2MLP {
-    fn new(cfg: &Config, vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
+    fn new(vb: VarBuilder, comm: &Rc<Comm>) -> Result<Self> {
         let w1 = TensorParallelColumnLinear::load(vb.pp("w1"), comm.clone())?;
         let w2 = TensorParallelRowLinear::load(vb.pp("w2"), comm.clone())?;
         let w3 = TensorParallelColumnLinear::load(vb.pp("w3"), comm.clone())?;
-        Ok(Self {
-            w1,
-            w2,
-            w3,
-            act_fn: cfg.hidden_act,
-        })
+        Ok(Self { w1, w2, w3 })
     }
 }
 
@@ -285,7 +273,7 @@ impl SparseMoeBlock {
         let mut experts = Vec::with_capacity(cfg.num_local_experts);
         let vb = vb.pp("experts");
         for idx in 0..cfg.num_local_experts {
-            let expert = BlockSparseTop2MLP::new(cfg, vb.pp(idx), &comm.clone())?;
+            let expert = BlockSparseTop2MLP::new(vb.pp(idx), &comm.clone())?;
             experts.push(expert)
         }
         let all_gather = AllGather { comm: comm.clone() };

@@ -1,8 +1,8 @@
-use candle::backend::BackendStorage;
-use candle::{CpuStorage, CustomOp1, DType, Device, IndexOp, Layout, Result, Shape, Tensor, D};
+use crate::models::candle::helper::{shard, TensorParallelColumnLinear, TensorParallelRowLinear};
+use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::var_builder::ShardedVarBuilder as VarBuilder;
 use candle_nn::{Embedding, Linear, Module, RmsNorm};
-use cudarc::nccl::safe::{Comm, ReduceOp};
+use cudarc::nccl::safe::Comm;
 use std::rc::Rc;
 
 const MAX_SEQ_LEN: usize = 2048;

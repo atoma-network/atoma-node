@@ -1,22 +1,28 @@
-struct TensorParallelColumnLinear {
+use candle::{CpuStorage, CustomOp1, DType, Layout, Result, Shape, Tensor};
+use candle_nn::var_builder::ShardedVarBuilder as VarBuilder;
+use candle_nn::{Linear, Module};
+use cudarc::nccl::Comm;
+use std::rc::Rc;
+
+pub struct TensorParallelColumnLinear {
     pub linear: Linear,
 }
 
 impl TensorParallelColumnLinear {
-    fn new(linear: Linear) -> Self {
+    pub fn new(linear: Linear) -> Self {
         Self { linear }
     }
-    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+    pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         self.linear.forward(x)
     }
-    fn load(vb: VarBuilder, comm: Rc<Comm>) -> Result<Self> {
+    pub fn load(vb: VarBuilder, comm: Rc<Comm>) -> Result<Self> {
         let rank = comm.rank();
         let size = comm.world_size();
         let weight = vb.get_with_hints((), "weight", shard(0, rank, size))?;
         Ok(Self::new(Linear::new(weight, None)))
     }
 
-    fn load_multi(vb: VarBuilder, prefixes: &[&str], comm: Rc<Comm>) -> Result<Self> {
+    pub fn load_multi(vb: VarBuilder, prefixes: &[&str], comm: Rc<Comm>) -> Result<Self> {
         let rank = comm.rank();
         let size = comm.world_size();
         let weights: Vec<_> = prefixes
@@ -28,20 +34,20 @@ impl TensorParallelColumnLinear {
     }
 }
 
-struct TensorParallelRowLinear {
+pub struct TensorParallelRowLinear {
     linear: Linear,
     all_reduce: AllReduce,
 }
 
 impl TensorParallelRowLinear {
-    fn new(linear: Linear, comm: Rc<Comm>) -> Self {
+    pub fn new(linear: Linear, comm: Rc<Comm>) -> Self {
         let all_reduce = AllReduce { comm };
         Self { linear, all_reduce }
     }
-    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+    pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         self.linear.forward(x)?.apply_op1_no_bwd(&self.all_reduce)
     }
-    fn load(vb: VarBuilder, comm: Rc<Comm>) -> Result<Self> {
+    pub fn load(vb: VarBuilder, comm: Rc<Comm>) -> Result<Self> {
         let rank = comm.rank();
         let size = comm.world_size();
         let weight = vb.get_with_hints((), "weight", shard(1, rank, size))?;
@@ -49,8 +55,8 @@ impl TensorParallelRowLinear {
     }
 }
 
-struct AllGather {
-    comm: Rc<Comm>,
+pub struct AllGather {
+    pub comm: Rc<Comm>,
 }
 
 unsafe impl Sync for AllGather {}
@@ -115,7 +121,7 @@ impl CustomOp1 for AllGather {
     }
 }
 
-struct AllReduce {
+pub struct AllReduce {
     comm: Rc<Comm>,
 }
 
@@ -176,7 +182,7 @@ impl CustomOp1 for AllReduce {
     }
 }
 
-fn shard(dim: usize, rank: usize, world_size: usize) -> candle_nn::var_builder::Shard {
+pub fn shard(dim: usize, rank: usize, world_size: usize) -> candle_nn::var_builder::Shard {
     candle_nn::var_builder::Shard {
         dim,
         rank,
