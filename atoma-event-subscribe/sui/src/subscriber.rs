@@ -15,7 +15,9 @@ use tracing::{debug, error, info, instrument};
 use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 
-use atoma_types::{InputSource, ModelInput, Request, SmallId, NON_SAMPLED_NODE_ERR};
+use atoma_types::{
+    InputSource, ModelInput, Request, SmallId, StartChatRequest, NON_SAMPLED_NODE_ERR,
+};
 
 type BoxedSenderError = Box<
     mpsc::error::SendError<(
@@ -53,6 +55,8 @@ pub struct SuiSubscriber {
         InputSource,
         oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
     )>,
+    /// Start chat event sender, responsible for sending the start chat event to the chat service.
+    start_chat_event_sender: mpsc::Sender<StartChatRequest>,
 }
 
 impl SuiSubscriber {
@@ -68,6 +72,7 @@ impl SuiSubscriber {
             InputSource,
             oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
         )>,
+        start_chat_event_sender: mpsc::Sender<StartChatRequest>,
     ) -> Result<Self, SuiSubscriberError> {
         let filter = EventFilter::Package(package_id);
         Ok(Self {
@@ -79,6 +84,7 @@ impl SuiSubscriber {
             request_timeout,
             last_event_id: None,
             input_manager_tx,
+            start_chat_event_sender,
         })
     }
 
@@ -107,6 +113,7 @@ impl SuiSubscriber {
             InputSource,
             oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
         )>,
+        start_chat_event_sender: mpsc::Sender<StartChatRequest>,
     ) -> Result<Self, SuiSubscriberError> {
         let config = SuiSubscriberConfig::from_file_path(config_path);
         let small_id = config.small_id();
@@ -122,6 +129,7 @@ impl SuiSubscriber {
             event_sender,
             Some(request_timeout),
             input_manager_tx,
+            start_chat_event_sender,
         )
         .await
     }
@@ -227,6 +235,16 @@ impl SuiSubscriber {
                     }
                 }
             }
+            AtomaEvent::ChatSessionEvent => {
+                let event_data = event.parsed_json;
+                let user_pk = event.sender.to_string();
+                match self.handle_chat_session_event(event_data, user_pk).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        error!("Failed to process request, with error: {err}")
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -312,6 +330,22 @@ impl SuiSubscriber {
 
         Ok(())
     }
+
+    /// Handles a chat session event (which contains a request for a new chat session).
+    #[instrument(skip_all)]
+    async fn handle_chat_session_event(
+        &self,
+        event_data: Value,
+        user_pk: String,
+    ) -> Result<(), SuiSubscriberError> {
+        debug!("event data: {}", event_data);
+        let start_chat_request = StartChatRequest::try_from((event_data, user_pk))?;
+        self.start_chat_event_sender
+            .send(start_chat_request)
+            .await
+            .map_err(Box::new)?;
+        Ok(())
+    }
 }
 
 /// Helper function, used to extract which nodes have been sampled by the Atoma smart contract
@@ -372,4 +406,6 @@ pub enum SuiSubscriberError {
     TimeoutError,
     #[error("Request receive error {0}")]
     RecvError(#[from] RecvError),
+    #[error("Failed to send start chat event to chat service")]
+    SendStartChatEventError(#[from] Box<mpsc::error::SendError<StartChatRequest>>),
 }

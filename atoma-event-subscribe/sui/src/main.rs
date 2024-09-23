@@ -35,7 +35,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
         InputSource,
         oneshot::Sender<Result<ModelInput, AtomaInputManagerError>>,
     )>(32);
-
+    let (chat_request_sender, _) = tokio::sync::mpsc::channel(32);
     // Spawn a task to discard messages
     tokio::spawn(async move {
         while let Some((input_source, oneshot)) = input_manager_rx.recv().await {
@@ -59,6 +59,7 @@ async fn main() -> Result<(), SuiSubscriberError> {
         event_sender,
         Some(Duration::from_secs(5 * 60)),
         input_manager_tx,
+        chat_request_sender,
     )
     .await?;
 

@@ -215,7 +215,6 @@ impl ModelTrait for QuantizedModel {
         // }
 
         let prompt_tokens = [&input.pre_prompt_tokens, tokens.get_ids()].concat();
-        let input_tokens = prompt_tokens.len();
         let to_sample = input.max_tokens.saturating_sub(1);
         let prompt_tokens = if prompt_tokens.len() + to_sample > model::MAX_SEQ_LEN - 10 {
             let to_remove = prompt_tokens.len() + to_sample + 10 - model::MAX_SEQ_LEN;
@@ -224,6 +223,9 @@ impl ModelTrait for QuantizedModel {
             prompt_tokens
         };
         let mut all_tokens = vec![];
+        let input_tokens = prompt_tokens.clone();
+        let mut output_tokens = vec![];
+        let num_input_tokens = prompt_tokens.len();
         let mut logits_processor = {
             let temperature = input.temperature;
             let sampling = if temperature <= 0. {
@@ -286,6 +288,7 @@ impl ModelTrait for QuantizedModel {
             };
             next_token = logits_processor.sample(&logits)?;
             all_tokens.push(next_token);
+            output_tokens.push(next_token);
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(t.as_str());
             }
@@ -299,6 +302,13 @@ impl ModelTrait for QuantizedModel {
             .map_err(candle::Error::msg)?
         {
             output.push_str(rest.as_str());
+            output_tokens.extend(
+                self.tokenizer
+                    .tokenizer()
+                    .encode(rest, true)?
+                    .get_ids()
+                    .to_vec(),
+            );
         }
         let dt = start_post_prompt.elapsed();
         let generated_tokens = self.tokenizer.get_num_generated_tokens();
@@ -317,11 +327,8 @@ impl ModelTrait for QuantizedModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: if input.chat {
-                [prompt_tokens.as_slice(), all_tokens.as_slice()].concat()
-            } else {
-                vec![]
-            },
+            output_tokens,
+            num_input_tokens,
         })
     }
 }

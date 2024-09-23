@@ -26,11 +26,13 @@ mod supabase;
 #[cfg(feature = "supabase")]
 use supabase::SupabaseOutputManager;
 
+type ChatId = String;
 type IpfsSendRequestError = mpsc::error::SendError<(
     AtomaOutputMetadata,
     Vec<u8>,
     oneshot::Sender<Option<String>>,
 )>;
+type OutputData = (ChatId, String, usize, usize, f64);
 
 /// `AtomaOutputManager` - manages different output destination
 ///     requests, allowing for a flexible interaction between
@@ -53,7 +55,9 @@ pub struct AtomaOutputManager {
     gateway_output_manager: GatewayOutputManager,
     /// A mpsc receiver that receives tuples of `AtomaOutputMetadata` and
     /// the actual AI generated output, in JSON format.
-    output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
+    output_manager_receiver: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
+    /// Chat session data receiver
+    chat_message_receiver: mpsc::Receiver<OutputData>,
     #[cfg(feature = "supabase")]
     supabase_output_manager: SupabaseOutputManager,
 }
@@ -62,8 +66,9 @@ impl AtomaOutputManager {
     /// Constructor
     pub async fn new<P: AsRef<Path>>(
         config_file_path: P,
-        output_manager_rx: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
+        output_manager_receiver: mpsc::Receiver<(AtomaOutputMetadata, Vec<u8>)>,
         firebase: Firebase,
+        chat_message_receiver: mpsc::Receiver<OutputData>,
         #[cfg(feature = "supabase")] supabase: Supabase,
     ) -> Result<Self, AtomaOutputManagerError> {
         let config = AtomaOutputManagerConfig::from_file_path(config_file_path);
@@ -113,7 +118,8 @@ impl AtomaOutputManager {
             ipfs_join_handle,
             ipfs_request_tx,
             gateway_output_manager,
-            output_manager_rx,
+            output_manager_receiver,
+            chat_message_receiver,
             #[cfg(feature = "supabase")]
             supabase_output_manager,
         })
@@ -123,49 +129,68 @@ impl AtomaOutputManager {
     /// AI generated outputs, together with corresponding metadata
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaOutputManagerError> {
-        info!("Starting firebase service..");
-        while let Some((output_metadata, output)) = self.output_manager_rx.recv().await {
-            info!(
-                "Received a new output to be submitted to a data storage {:?}..",
-                output_metadata.output_destination
-            );
-            match output_metadata.output_destination {
-                OutputDestination::Firebase { .. } => {
-                    self.firebase_output_manager
-                        .handle_post_request(&output_metadata, output, None)
-                        .await?
-                }
-                OutputDestination::Ipfs { .. } => {
-                    let (sender, receiver) = oneshot::channel();
-                    self.ipfs_request_tx
-                        .send((output_metadata.clone(), output.clone(), sender))
-                        .map_err(Box::new)?;
-                    let ipfs_cid = match receiver.await {
-                        Ok(response) => response,
-                        Err(e) => {
-                            error!("Failed to receive IPFS response: {:?}", e);
-                            None
+        trace!("Starting firebase service..");
+        loop {
+            tokio::select! {
+                Some((output_metadata, output)) = self.output_manager_receiver.recv() => {
+                    match output_metadata.output_destination {
+                        OutputDestination::Firebase { .. } => {
+                            self.firebase_output_manager
+                                .handle_post_request(&output_metadata, output, None)
+                                .await?
                         }
-                    };
-                    self.firebase_output_manager
-                        .handle_post_request(&output_metadata, output.clone(), ipfs_cid)
+                        OutputDestination::Ipfs { .. } => {
+                            let (sender, receiver) = oneshot::channel();
+                            self.ipfs_request_tx
+                                .send((output_metadata.clone(), output.clone(), sender))
+                                .map_err(Box::new)?;
+                            let ipfs_cid = match receiver.await {
+                                Ok(response) => response,
+                                Err(e) => {
+                                    error!("Failed to receive IPFS response: {:?}", e);
+                                    None
+                                }
+                            };
+                            self.firebase_output_manager
+                                .handle_post_request(&output_metadata, output.clone(), ipfs_cid)
+                                .await?;
+                        }
+                        OutputDestination::Gateway { .. } => {
+                            self.gateway_output_manager
+                                .handle_request(&output_metadata, output)
+                                .await?
+                        }
+                        #[cfg(feature = "supabase")]
+                        OutputDestination::Supabase { .. } => {
+                            self.supabase_output_manager
+                                .handle_post_request(&output_metadata, output)
+                                .await?
+                        }
+                    }
+                },
+                Some((chat_id, message, num_input_tokens, num_output_tokens, elapsed_time)) = self.chat_message_receiver.recv() => {
+                    #[cfg(feature = "supabase")]
+                    {
+                        trace!("Handling chat message on Supabase, for chat_id = {chat_id}...");
+                        self.supabase_output_manager.handle_chat_message(
+                            &chat_id,
+                            message,
+                            num_input_tokens,
+                            num_output_tokens,
+                            elapsed_time
+                        )
                         .await?;
-                }
-                OutputDestination::Gateway { .. } => {
-                    self.gateway_output_manager
-                        .handle_request(&output_metadata, output)
-                        .await?
-                }
-                #[cfg(feature = "supabase")]
-                OutputDestination::Supabase { .. } => {
-                    self.supabase_output_manager
-                        .handle_post_request(&output_metadata, output)
-                        .await?
+                    }
+                    #[cfg(not(feature = "supabase"))]
+                    {
+                        error!(
+                            "Supabase is not enabled, but chat message was received with values: chat_id = {}, message = {}, num_input_tokens = {}, num_output_tokens = {}, elapsed_time = {}",
+                            chat_id, message, num_input_tokens, num_output_tokens, elapsed_time
+                        );
+                    }
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Graceful shutdown
@@ -189,7 +214,7 @@ impl AtomaOutputManager {
         }
 
         trace!("Dropping output manager receiver...");
-        drop(self.output_manager_rx);
+        drop(self.output_manager_receiver);
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use ::candle::{DTypeParseError, Error as CandleError};
-use atoma_types::{AtomaStreamingData, Digest, ModelParams};
+use atoma_types::{AtomaStreamingData, Digest, GenerateParameters, ModelParams};
 #[cfg(feature = "nccl")]
 use cudarc::{driver::DriverError, nccl::result::NcclError};
 use thiserror::Error;
@@ -46,6 +46,8 @@ pub trait ModelTrait {
     fn model_type(&self) -> ModelType;
     /// Responsible for running inference on a prompt request
     fn run(&mut self, input: Self::Input) -> Result<Self::Output, ModelError>;
+    /// Responsible for running inference on a chat request
+    fn run_chat_prompt(&mut self, chat_id: String, prompt: &String, input: &GenerateParameters) -> Result<Self::Output, ModelError>;
 }
 
 #[derive(Debug, Error)]

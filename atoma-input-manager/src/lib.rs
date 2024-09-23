@@ -1,5 +1,5 @@
 use atoma_helpers::Firebase;
-use atoma_types::{InputFormat, InputSource, ModelInput};
+use atoma_types::{ChatInferenceRequest, InputFormat, InputSource, ModelInput};
 use config::AtomaInputManagerConfig;
 use firebase::FirebaseInputManager;
 use http::uri::Scheme;
@@ -54,6 +54,10 @@ pub struct AtomaInputManager {
     ipfs_request_tx: IpfsRequestSender,
     /// The join handle to the IPFS input manager background task.
     ipfs_join_handle: Option<JoinHandle<Result<(), AtomaInputManagerError>>>,
+    /// A mpsc sender that sends requests to the chat service.
+    /// TODO: This sender should be used when we have a realtime notification system for chat requests
+    /// and supabse.
+    _chat_request_sender: mpsc::Sender<ChatInferenceRequest>,
 }
 
 impl AtomaInputManager {
@@ -64,6 +68,7 @@ impl AtomaInputManager {
         input_manager_rx: InputManagerReceiver,
         firebase: Firebase,
         #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
+        _chat_request_sender: mpsc::Sender<ChatInferenceRequest>,
     ) -> Result<Self, AtomaInputManagerError> {
         let config = AtomaInputManagerConfig::from_file_path(config_file_path);
 
@@ -105,6 +110,7 @@ impl AtomaInputManager {
             input_manager_rx,
             ipfs_request_tx,
             ipfs_join_handle,
+            _chat_request_sender,
         })
     }
 

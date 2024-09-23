@@ -19,7 +19,10 @@ use tokio::sync::oneshot;
 
 use crate::{
     jrpc_server,
-    model_thread::{spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher},
+    model_thread::{
+        spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher, ThreadRequest,
+        ThreadResponse,
+    },
     models::config::ModelsConfig,
     service::ModelService,
 };
@@ -45,8 +48,17 @@ impl LlmOutput for MockInputOutput {
     fn time_to_generate(&self) -> f64 {
         0.0
     }
-    fn tokens(&self) -> Vec<u32> {
+
+    fn output_tokens(&self) -> Vec<u32> {
         vec![]
+    }
+
+    fn input_tokens(&self) -> Vec<u32> {
+        vec![]
+    }
+
+    fn text_output(&self) -> String {
+        "".to_string()
     }
 }
 
@@ -165,7 +177,7 @@ async fn test_mock_model_thread() {
             ));
             let request = Request::new(vec![], 0, 1, prompt_params, vec![]);
             let command = ModelThreadCommand {
-                request: request.clone(),
+                request: ThreadRequest::Inference(request.clone()),
                 sender: response_sender,
             };
             sender.send(command).expect("Failed to send command");
@@ -181,7 +193,14 @@ async fn test_mock_model_thread() {
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
         if let Ok(value) = response {
-            received_responses.push(value.response().as_u64().unwrap());
+            match value {
+                ThreadResponse::Inference(response) => {
+                    received_responses.push(response.response().as_u64().unwrap());
+                }
+                ThreadResponse::ChatInference(_) => {
+                    unreachable!();
+                }
+            }
         }
     }
 
@@ -233,14 +252,16 @@ async fn test_inference_service() {
     let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (stream_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
-
+    let (_, chat_request_receiver) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     println!("Starting model service..");
+
     let mut service = ModelService::start(
         config.clone(),
         json_server_req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
         stream_tx,
+        chat_request_receiver,
     )
     .unwrap();
 

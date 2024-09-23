@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use atoma_crypto::{calculate_commitment, Blake2b};
-use atoma_types::{AtomaOutputMetadata, Digest, OutputType, Response};
+use atoma_crypto::{calculate_chat_session_commitment, calculate_event_commitment, Blake2b};
+use atoma_types::{AtomaOutputMetadata, Digest, Hash, OutputType, Response};
 use rmp_serde::Deserializer;
 use serde::Deserialize;
 use serde_json::Value;
@@ -15,14 +15,15 @@ use sui_sdk::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, trace};
 
 use crate::config::AtomaSuiClientConfig;
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
 const MODULE_ID: &str = "settlement";
-const METHOD: &str = "submit_commitment";
+const SUBMIT_COMMITMENT_METHOD: &str = "submit_commitment";
+const SUBMIT_CHAT_SESSION_DATA_COMMITMENT_METHOD: &str = "submit_chat_session_data_commitment";
 
 /// `AtomaSuiClient` - The interface responsible for a node to commit to a generated output, on the Sui blockchain.
 pub struct AtomaSuiClient {
@@ -35,6 +36,9 @@ pub struct AtomaSuiClient {
     /// A mpsc receiver, which is responsible to receive new `Response`'s, so that the node
     /// can then commit to these.
     response_rx: mpsc::Receiver<Response>,
+    /// A mpsc receiver, which is responsible to receive new `ChatSessionData`'s and a commitment to it
+    /// and publish it on the blockchain
+    chat_session_data_rx: mpsc::Receiver<(String, usize, usize, Vec<Hash>, Vec<Hash>)>,
     /// A mpsc sender, responsible to send the actual output to the `OutputManager` service (for being shared with an end user or protocol)
     /// It sends a tuple, containing the output's metadata and the actual output (in JSON format).
     output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
@@ -51,6 +55,7 @@ impl AtomaSuiClient {
     pub fn new_from_config(
         config: AtomaSuiClientConfig,
         response_rx: mpsc::Receiver<Response>,
+        chat_session_data_rx: mpsc::Receiver<(String, usize, usize, Vec<Hash>, Vec<Hash>)>,
         output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
     ) -> Result<Self, AtomaSuiClientError> {
         info!("Initializing Sui wallet..");
@@ -66,6 +71,7 @@ impl AtomaSuiClient {
             config,
             wallet_ctx,
             response_rx,
+            chat_session_data_rx,
             output_manager_tx,
         })
     }
@@ -80,10 +86,11 @@ impl AtomaSuiClient {
     pub fn new_from_config_file<P: AsRef<Path>>(
         config_path: P,
         response_rx: mpsc::Receiver<Response>,
+        chat_session_data_rx: mpsc::Receiver<(String, usize, usize, Vec<Hash>, Vec<Hash>)>,
         output_manager_tx: mpsc::Sender<(AtomaOutputMetadata, Vec<u8>)>,
     ) -> Result<Self, AtomaSuiClientError> {
         let config = AtomaSuiClientConfig::from_file_path(config_path);
-        Self::new_from_config(config, response_rx, output_manager_tx)
+        Self::new_from_config(config, response_rx, chat_session_data_rx, output_manager_tx)
     }
 
     /// Extracts and processes data from a JSON response to generate a byte vector.
@@ -136,7 +143,8 @@ impl AtomaSuiClient {
         let request_id = response.id();
         let data = self.get_data(response.response().clone())?;
         let (index, num_leaves) = (response.sampled_node_index(), response.num_sampled_nodes());
-        let (root, pre_image) = calculate_commitment::<Blake2b<_>, _>(data, index, num_leaves);
+        let (root, pre_image) =
+            calculate_event_commitment::<Blake2b<_>, _>(data, index, num_leaves);
 
         let num_input_tokens = response.input_tokens();
         let num_output_tokens = response.tokens_count();
@@ -148,7 +156,7 @@ impl AtomaSuiClient {
                 self.address,
                 self.config.package_id(),
                 MODULE_ID,
-                METHOD,
+                SUBMIT_COMMITMENT_METHOD,
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db_id()),
@@ -236,6 +244,52 @@ impl AtomaSuiClient {
         Ok(tx_digest)
     }
 
+    #[instrument(skip_all)]
+    pub async fn submit_chat_session_data_commitment(
+        &self,
+        chat_id: String,
+        num_input_tokens: usize,
+        num_output_tokens: usize,
+        input_prompt_hashes: Vec<Hash>,
+        output_prompt_hashes: Vec<Hash>,
+    ) -> Result<Digest, AtomaSuiClientError> {
+        let client = self.wallet_ctx.get_client().await?;
+        let commitment = calculate_chat_session_commitment::<Blake2b<_>>(
+            &input_prompt_hashes,
+            &output_prompt_hashes,
+        );
+        let tx = client
+            .transaction_builder()
+            .move_call(
+                self.address,
+                self.config.package_id(),
+                MODULE_ID,
+                SUBMIT_CHAT_SESSION_DATA_COMMITMENT_METHOD,
+                vec![],
+                vec![
+                    SuiJsonValue::from_object_id(self.config.atoma_db_id()),
+                    SuiJsonValue::from_object_id(self.config.node_badge_id()),
+                    SuiJsonValue::new(chat_id.clone().into())?,
+                    SuiJsonValue::new(num_input_tokens.to_string().into())?,
+                    SuiJsonValue::new(num_output_tokens.to_string().into())?,
+                    SuiJsonValue::new(commitment.as_ref().into())?,
+                    SuiJsonValue::from_object_id(SUI_RANDOMNESS_STATE_OBJECT_ID),
+                ],
+                None,
+                GAS_BUDGET,
+                None,
+            )
+            .await?;
+
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let tx_response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+
+        trace!("Submitted transaction with response: {:?}", tx_response);
+        let tx_digest = tx_response.digest.base58_encode();
+
+        Ok(tx_digest)
+    }
+
     /// Responsible for running the `AtomaSuiClient` main loop.
     ///
     /// It listens to new incoming `Response`'s from the `AtomaInference` service. Once it gets
@@ -243,13 +297,22 @@ impl AtomaSuiClient {
     /// on the Atoma smart contract, on the Sui blockchain.
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<(), AtomaSuiClientError> {
-        while let Some(response) = self.response_rx.recv().await {
-            info!("Received new response");
-            if let Err(e) = self.submit_response_commitment(response).await {
-                error!("Failed to submit response commitment: {:?}", e);
+        loop {
+            tokio::select! {
+                Some(response) = self.response_rx.recv() => {
+                    info!("Received new response");
+                    if let Err(e) = self.submit_response_commitment(response).await {
+                        error!("Failed to submit response commitment: {:?}", e);
+                    }
+                },
+                Some((chat_id, num_input_tokens, num_output_tokens, input_prompt_hashes, output_prompt_hashes)) = self.chat_session_data_rx.recv() => {
+                    info!("Received new chat session data");
+                    if let Err(e) = self.submit_chat_session_data_commitment(chat_id, num_input_tokens, num_output_tokens, input_prompt_hashes, output_prompt_hashes).await {
+                        error!("Failed to submit chat session data commitment: {:?}", e);
+                    }
+                },
             }
         }
-        Ok(())
     }
 }
 

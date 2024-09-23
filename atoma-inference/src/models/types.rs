@@ -501,8 +501,12 @@ pub trait LlmOutput: Serialize {
     fn num_output_tokens(&self) -> Option<usize>;
     /// Time to generate the output
     fn time_to_generate(&self) -> f64;
-    /// The tokens generated
-    fn tokens(&self) -> Vec<u32>;
+    /// The generated output tokens
+    fn output_tokens(&self) -> Vec<u32>;
+    /// The prompt input tokens
+    fn input_tokens(&self) -> Vec<u32>;
+    /// Generated text output
+    fn text_output(&self) -> String;
 }
 
 /// `TextModelOutput` - Encapsulates the actual AI generated output, for a given
@@ -512,12 +516,13 @@ pub trait LlmOutput: Serialize {
 #[derive(Debug, Serialize)]
 pub struct TextModelOutput {
     /// Number of input tokens for the request
-    pub input_tokens: usize,
+    pub num_input_tokens: usize,
     /// The actual AI generated text output
     pub text: String,
-    /// The token identifiers, corresponding to the
-    /// generated text
-    pub tokens: Vec<u32>,
+    /// The input text corresponding token ids
+    pub input_tokens: Vec<u32>,
+    /// The generated text corresponding token ids
+    pub output_tokens: Vec<u32>,
     /// The duration, in seconds, of the entire inference
     /// run
     pub time: f64,
@@ -531,14 +536,14 @@ impl Display for TextModelOutput {
         write!(
             f,
             "Output: {}\nInput tokens: {}\nTime: {}\nTokens count: {}",
-            self.text, self.input_tokens, self.time, self.tokens_count
+            self.text, self.num_input_tokens, self.time, self.tokens_count
         )
     }
 }
 
 impl LlmOutput for TextModelOutput {
     fn num_input_tokens(&self) -> usize {
-        self.input_tokens
+        self.num_input_tokens
     }
 
     fn num_output_tokens(&self) -> Option<usize> {
@@ -549,8 +554,16 @@ impl LlmOutput for TextModelOutput {
         self.time
     }
 
-    fn tokens(&self) -> Vec<u32> {
-        self.tokens.clone()
+    fn output_tokens(&self) -> Vec<u32> {
+        self.output_tokens.clone()
+    }
+
+    fn input_tokens(&self) -> Vec<u32> {
+        self.input_tokens.clone()
+    }
+
+    fn text_output(&self) -> String {
+        self.text.clone()
     }
 }
 

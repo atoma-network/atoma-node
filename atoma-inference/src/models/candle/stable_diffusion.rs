@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr, time::Instant};
 
-use atoma_types::AtomaStreamingData;
+use atoma_types::{AtomaStreamingData, GenerateParameters};
 use candle_transformers::models::stable_diffusion::{
     self, clip::ClipTextTransformer, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL,
     StableDiffusionConfig,
@@ -99,8 +99,16 @@ impl LlmOutput for StableDiffusionOutput {
         self.time_to_generate
     }
 
-    fn tokens(&self) -> Vec<u32> {
-        panic!("Asking image models for the tokens is not supported")
+    fn output_tokens(&self) -> Vec<u32> {
+        unimplemented!("Asking image models for the tokens is not supported")
+    }
+
+    fn input_tokens(&self) -> Vec<u32> {
+        unimplemented!("Asking image models for the tokens is not supported")
+    }
+
+    fn text_output(&self) -> String {
+        unimplemented!("Asking image models for the tokens is not supported")
     }
 }
 
@@ -451,6 +459,10 @@ impl ModelTrait for StableDiffusion {
             input_tokens: num_input_tokens,
             time_to_generate,
         })
+    }
+
+    fn run_chat_prompt(&mut self, _: String, _: &String, _: u64, _: &GenerateParameters) -> Result<Self::Output, ModelError> {
+        unimplemented!("Stable diffusion does not support chat mode")
     }
 }
 

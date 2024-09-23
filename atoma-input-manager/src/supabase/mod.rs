@@ -1,5 +1,6 @@
 use atoma_helpers::{PromptsRow, Supabase, TokensRow};
-use atoma_types::ModelInput;
+use atoma_types::{ChatInferenceRequest, ModelInput};
+use tokio::sync::mpsc;
 use tracing::instrument;
 
 use crate::AtomaInputManagerError;

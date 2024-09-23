@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
-use atoma_types::{Request, Response};
+use atoma_types::Request;
 use axum::{http::StatusCode, routing::post, Extension, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, instrument};
 
-pub type RequestSender = mpsc::Sender<(Request, oneshot::Sender<Response>)>;
+use crate::model_thread::{ThreadRequest, ThreadResponse};
+
+pub type RequestSender = mpsc::Sender<(ThreadRequest, oneshot::Sender<ThreadResponse>)>;
 
 pub async fn run(sender: RequestSender, port: u64) {
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel::<()>(1);
@@ -71,14 +73,17 @@ async fn inner_jrpc_call(
                 }
             };
             sender
-                .send((request.clone(), one_sender))
+                .send((ThreadRequest::Inference(request), one_sender))
                 .await
                 .map_err(|e| {
                     error!("Failed to send request to Model Service");
                     e.to_string()
                 })?;
             match one_receiver.await {
-                Ok(response) => Ok(response.response()),
+                Ok(response) => match response {
+                    ThreadResponse::Inference(response) => Ok(response.response()),
+                    _ => Err("The request failed".to_string()),
+                },
                 Err(e) => {
                     error!("Failed to generate response, with error: {e}");
                     Err("The request failed".to_string())

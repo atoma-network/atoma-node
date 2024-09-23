@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
-use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_helpers::Firebase;
 use atoma_types::{AtomaOutputMetadata, OutputType};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
-use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument};
 use url::Url;
 

@@ -2,8 +2,10 @@ use std::time::Instant;
 
 use atoma_types::{GenerateParameters, OutputDestination};
 
+pub const DIGEST_BYTE_SIZE: usize = 32;
+
 /// A digest is a 32-byte buffer used for cryptographic hashing.
-pub type Digest = Vec<u8>;
+pub type Digest = [u8; DIGEST_BYTE_SIZE];
 
 /// Metadata for a chat session, containing various parameters and identifiers
 /// relevant to the session, including user information, session limits, and

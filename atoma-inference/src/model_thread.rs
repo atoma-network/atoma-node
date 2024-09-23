@@ -3,7 +3,8 @@ use std::{
 };
 
 use atoma_types::{
-    AtomaStreamingData, ModelParams, OutputDestination, OutputType, Request, Response,
+    AtomaStreamingData, ChatInferenceRequest, ChatInferenceResponse, ModelParams,
+    OutputDestination, OutputType, Request, Response,
 };
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
@@ -27,15 +28,33 @@ use crate::models::{
     ModelError, ModelId, ModelTrait,
 };
 
+/// `ThreadRequest` - Wrapper around an AI inference request to be
+///     processed in the corresponding model thread.
+pub enum ThreadRequest {
+    /// An inference request
+    Inference(Request),
+    /// A chat inference request
+    ChatInference(ChatInferenceRequest),
+}
+
+/// `ThreadResponse` - Wrapper around an AI inference response that was
+///     processed in the corresponding model thread.
+pub enum ThreadResponse {
+    /// An inference response
+    Inference(Response),
+    /// A chat inference response
+    ChatInference(ChatInferenceResponse),
+}
+
 /// `ModelThreadCommand` - Wrapper around an AI inference request to be
 ///     processed in the corresponding model thread. It also encapsulates
 ///     a `oneshot` `Sender` that is used to send the `Response` back to
 ///     the main thread worker.
 pub struct ModelThreadCommand {
     /// The `Request` body
-    pub(crate) request: Request,
+    pub(crate) request: ThreadRequest,
     /// A `oneshot` `Sender` used to send the AI generated `Response`
-    pub(crate) sender: oneshot::Sender<Response>,
+    pub(crate) sender: oneshot::Sender<ThreadResponse>,
 }
 
 #[derive(Debug, Error)]
@@ -91,41 +110,75 @@ where
 
         while let Ok(command) = self.receiver.recv() {
             let ModelThreadCommand { request, sender } = command;
-            let request_id = request.id();
-            info!("Received model thread command, with id = {request_id:?}");
-            let sampled_node_index = request.sampled_node_index();
-            let num_sampled_nodes = request.num_sampled_nodes();
-            let params = request.params();
-            let output_type = match params {
-                ModelParams::Text2ImageModelParams(_) => OutputType::Image,
-                ModelParams::Text2TextModelParams(_) => OutputType::Text,
+            let (response, time_to_generate, num_input_tokens, num_output_tokens) = match request {
+                ThreadRequest::Inference(request) => {
+                    let request_id = request.id();
+                    let sampled_node_index = request.sampled_node_index();
+                    let num_sampled_nodes = request.num_sampled_nodes();
+                    let params = request.params();
+                    let output_type = match params {
+                        ModelParams::Text2ImageModelParams(_) => OutputType::Image,
+                        ModelParams::Text2TextModelParams(_) => OutputType::Text,
+                    };
+                    let output_destination = Deserialize::deserialize(
+                        &mut rmp_serde::Deserializer::new(request.output_destination().as_slice()),
+                    )
+                    .unwrap();
+                    let output_id = match output_destination {
+                        OutputDestination::Firebase { request_id } => request_id,
+                        OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
+                        OutputDestination::Ipfs { request_id } => request_id,
+                        #[cfg(feature = "supabase")]
+                        OutputDestination::Supabase { request_id } => request_id,
+                    };
+                    let model_input = M::Input::try_from((output_id, params))?;
+                    let model_output = self.model.run(model_input)?;
+                    let time_to_generate = model_output.time_to_generate();
+                    let num_input_tokens = model_output.num_input_tokens();
+                    let num_output_tokens = model_output.num_output_tokens();
+                    let output = serde_json::to_value(model_output)?;
+                    let output_destination = request.output_destination();
+                    let response = Response::new(
+                        request_id,
+                        sampled_node_index,
+                        num_sampled_nodes,
+                        output,
+                        output_destination,
+                        output_type,
+                    );
+                    (
+                        ThreadResponse::Inference(response),
+                        time_to_generate,
+                        num_input_tokens,
+                        num_output_tokens,
+                    )
+                }
+                ThreadRequest::ChatInference(request) => {
+                    let chat_id = request.chat_id;
+                    let params = request.params;
+
+                    let model_output = self.model.run_chat_prompt(&request.prompt, &params)?;
+                    let time_to_generate = model_output.time_to_generate();
+                    let num_input_tokens = model_output.num_input_tokens();
+                    let num_output_tokens = model_output.num_output_tokens();
+                    let input_tokens = model_output.input_tokens();
+                    let output_tokens = model_output.output_tokens();
+                    let output = model_output.text_output();
+                    (
+                        ThreadResponse::ChatInference(ChatInferenceResponse {
+                            chat_id,
+                            output,
+                            input_tokens,
+                            output_tokens,
+                            time_to_generate,
+                        }),
+                        time_to_generate,
+                        num_input_tokens,
+                        num_output_tokens,
+                    )
+                }
             };
-            let output_destination = Deserialize::deserialize(&mut rmp_serde::Deserializer::new(
-                request.output_destination().as_slice(),
-            ))
-            .unwrap();
-            let output_id = match output_destination {
-                OutputDestination::Firebase { request_id } => request_id,
-                OutputDestination::Gateway { gateway_user_id } => gateway_user_id,
-                OutputDestination::Ipfs { request_id } => request_id,
-                #[cfg(feature = "supabase")]
-                OutputDestination::Supabase { request_id } => request_id,
-            };
-            let model_input = M::Input::try_from((output_id, params))?;
-            let model_output = self.model.run(model_input)?;
-            let time_to_generate = model_output.time_to_generate();
-            let num_input_tokens = model_output.num_input_tokens();
-            let num_output_tokens = model_output.num_output_tokens();
-            let output = serde_json::to_value(model_output)?;
-            let output_destination = request.output_destination();
-            let response = Response::new(
-                request_id,
-                sampled_node_index,
-                num_sampled_nodes,
-                output,
-                output_destination,
-                output_type,
-            );
+
             sender.send(response).ok();
 
             // set metrics
@@ -150,7 +203,7 @@ pub struct ModelThreadDispatcher {
     pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
     /// A `FuturesUnordered` containing each generated `Response`'s oneshot receiver.
     /// It should yield everyime a new AI inference output is generated.
-    pub(crate) responses: FuturesUnordered<oneshot::Receiver<Response>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<ThreadResponse>>,
 }
 
 impl ModelThreadDispatcher {
@@ -204,8 +257,10 @@ impl ModelThreadDispatcher {
     /// `Model`'s thread, to be processed by the `Model` itself.
     #[instrument(skip_all)]
     fn send(&self, command: ModelThreadCommand) {
-        let model_id = command.request.model();
-
+        let model_id = match &command.request {
+            ThreadRequest::Inference(request) => request.model(),
+            ThreadRequest::ChatInference(request) => request.model_id.clone(),
+        };
         info!("sending new request with model_id: {model_id}");
 
         let sender = self
@@ -224,9 +279,12 @@ impl ModelThreadDispatcher {
     #[instrument(skip_all)]
     pub(crate) fn run_json_inference(
         &self,
-        (request, sender): (Request, oneshot::Sender<Response>),
+        (request, sender): (ThreadRequest, oneshot::Sender<ThreadResponse>),
     ) {
-        self.send(ModelThreadCommand { request, sender });
+        self.send(ModelThreadCommand {
+            request,
+            sender,
+        });
     }
 
     /// Responsible for handling requests from the node's event listener service.
@@ -234,7 +292,21 @@ impl ModelThreadDispatcher {
     #[instrument(skip_all)]
     pub(crate) fn run_subscriber_inference(&self, request: Request) {
         let (sender, receiver) = oneshot::channel();
-        self.send(ModelThreadCommand { request, sender });
+        self.send(ModelThreadCommand {
+            request: ThreadRequest::Inference(request),
+            sender,
+        });
+        self.responses.push(receiver);
+    }
+
+    /// Responsible for handling requests from the chat service.
+    #[instrument(skip_all)]
+    pub(crate) fn run_chat_inference(&self, request: ChatInferenceRequest) {
+        let (sender, receiver) = oneshot::channel();
+        self.send(ModelThreadCommand {
+            request: ThreadRequest::ChatInference(request),
+            sender,
+        });
         self.responses.push(receiver);
     }
 }
