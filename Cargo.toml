@@ -46,7 +46,7 @@ candle-nn = { git = "https://github.com/huggingface/candle", package = "candle-n
 candle-transformers = { git = "https://github.com/huggingface/candle", package = "candle-transformers", branch = "main" }
 clap = "4.5.4"
 config = "0.14.0"
-cudarc = { version = "0.12.0", features = [
+cudarc = { version = "0.12.1", features = [
     "std",
     "cublas",
     "cublaslt",
