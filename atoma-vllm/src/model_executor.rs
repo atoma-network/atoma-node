@@ -37,11 +37,18 @@ pub struct ModelFilePaths {
     pub weights_path: Vec<PathBuf>,
 }
 
-/// `ModelLoader` trait - interface for fetching
-/// and loading a LLM model weights. Also has a method
-/// providing the `eos_token_id` for the current model's
-/// tokenizer.
+/// `ModelLoader` trait - interface for fetching and loading a LLM model weights.
 pub trait ModelLoader {
+    /// Fetches model files from a remote source.
+    ///
+    /// # Arguments
+    /// * `api_key` - Authentication key for the API.
+    /// * `cache_dir` - Directory to store downloaded files.
+    /// * `model_id` - Identifier for the model to fetch.
+    /// * `revision` - Specific version or revision of the model.
+    ///
+    /// # Returns
+    /// `Result<ModelFilePaths, ModelLoaderError>` containing paths to the fetched files.
     fn fetch<T: AsRef<Path>>(
         api_key: String,
         cache_dir: T,
@@ -49,6 +56,15 @@ pub trait ModelLoader {
         revision: String,
     ) -> Result<ModelFilePaths, ModelLoaderError>;
 
+    /// Loads the model into memory.
+    ///
+    /// # Arguments
+    /// * `device` - The device to load the model onto (e.g., CPU, GPU).
+    /// * `dtype` - The data type for the model's parameters.
+    /// * `file_paths` - Paths to the model files.
+    ///
+    /// # Returns
+    /// `Result<Self, ModelLoaderError>` containing the loaded model.
     fn load(
         device: Device,
         dtype: DType,
@@ -60,19 +76,38 @@ pub trait ModelLoader {
 
 /// `ModelMetadata` - Metadata for a LLM model
 pub trait ModelMetadata: ModelLoader {
+    /// Returns the ALiBi (Attention with Linear Biases) slopes, if applicable
     fn alibi_slopes(&self) -> Option<&Tensor>;
+    /// Returns the End-of-Sequence (EOS) token IDs, if defined
     fn eos_token_ids(&self) -> Option<Vec<u32>>;
+    /// Returns the size of the hidden layers in the model
     fn hidden_size(&self) -> usize;
+    /// Returns the number of attention heads in the model
     fn num_attention_heads(&self) -> usize;
+    /// Returns the number of hidden layers in the model
     fn num_hidden_layers(&self) -> usize;
+    /// Returns the number of key-value heads in the model
     fn num_kv_heads(&self) -> usize;
+    /// Returns the softmax scale, if applicable
     fn softmax_scale(&self) -> f32;
+    /// Returns the sliding window size for sliding window attention, if applicable
     fn sliding_window(&self) -> Option<usize>;
 }
 
 /// `ModelExecutor` trait - interface for running AI inference
 /// from a LLM
 pub trait ModelExecutor: ModelLoader + ModelMetadata {
+    /// Performs a forward pass through the model
+    ///
+    /// # Arguments
+    /// * `input_tensor` - The input token IDs
+    /// * `input_positions` - The positions of the input tokens
+    /// * `selected_token_positions` - The positions of tokens to generate logits for
+    /// * `kv_cache` - The key-value cache for attention layers
+    /// * `attention_metadata` - Metadata for flash attention optimization
+    ///
+    /// # Returns
+    /// A tensor of logits for the selected token positions
     fn forward(
         &mut self,
         input_tensor: &Tensor,
@@ -82,6 +117,14 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
         attention_metadata: FlashAttentionMetadata,
     ) -> Result<Tensor, ModelExecutorError>;
 
+    /// Samples next tokens for a batch of sequence groups
+    ///
+    /// # Arguments
+    /// * `logits` - The output logits from the forward pass
+    /// * `sequence_groups_metadata` - Metadata for each sequence group
+    ///
+    /// # Returns
+    /// A vector of `SequenceGroupOutput` containing the sampled tokens and related information
     fn sample(
         &self,
         logits: &Tensor,
@@ -189,22 +232,22 @@ pub trait ModelExecutor: ModelLoader + ModelMetadata {
     }
 }
 
-/// `ModelThreadCommand` - encapsulates a `ValidGenerateRequest`
-/// to run AI inference on, together with a oneshot::Sender
-/// channel to communicate the AI generated output with the
-/// main task
+/// `ModelThreadCommand` - Encapsulates an AI inference request and a channel for sending the result
 pub struct ModelThreadCommand {
+    /// The AI inference request to be executed
     request: ExecuteModelRequest,
+    /// A one-shot channel sender for communicating the generated output back to the main task
     sender: oneshot::Sender<Vec<SequenceGroupOutput>>,
 }
 
-/// `ModelThread` - encapsulates the logic
-/// to run a model thread/task in the background.
-/// It receives new coming requests and start processing
-/// AI inference on it.
+/// `ModelThread` - Encapsulates the logic for running a model thread/task in the background.
+/// It receives incoming requests and processes AI inference on them.
 pub struct ModelThread<M: ModelExecutor> {
+    /// The worker responsible for executing the model
     worker: ModelWorker<M>,
+    /// Receiver for incoming model execution requests
     receiver: mpsc::UnboundedReceiver<ModelThreadCommand>,
+    /// Tracing span for logging and diagnostics
     span: Span,
 }
 
@@ -212,10 +255,19 @@ impl<M> ModelThread<M>
 where
     M: ModelExecutor + Send + Sync,
 {
-    /// Main loop, it listenings to incoming requests, in the form `ModelThreadCommand`.
-    /// When a new request is received, it starts a new inference loop for the encapsulated
-    /// AI model `M`. Once the AI generated output is ready, it sends it back using the corresponding
-    /// `oneshot` `Sender` encapsulated in the `ModelThreadCommand`.
+    /// Main loop for processing incoming model execution requests.
+    ///
+    /// This method continuously listens for incoming `ModelThreadCommand`s. For each command:
+    /// 1. It executes the model inference using the encapsulated request.
+    /// 2. Measures the execution time.
+    /// 3. Updates the output with execution metrics.
+    /// 4. Sends the generated output back to the caller via the provided channel.
+    ///
+    /// The loop continues until the receiver channel is closed.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the loop completes normally (receiver closed)
+    /// - `Err(ModelThreadError)` if there's an error during model execution
     #[instrument(skip(self))]
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         let _enter = self.span.enter();
@@ -248,21 +300,35 @@ where
     }
 }
 
-/// `ModelThreadDispatcher` - Responsible for managing incoming requests to
-/// different the background LLM inference task
+/// `ModelThreadDispatcher` - Manages incoming requests for background LLM inference tasks
 pub struct ModelThreadDispatcher {
-    /// Mapping from each model id to the remove `Sender`'s `ModelThreadCommand`
+    /// Sender for `ModelThreadCommand`s to the model execution thread
     pub sender: mpsc::UnboundedSender<ModelThreadCommand>,
-    /// A `FuturesUnordered` containing each generated `Response`'s oneshot receiver.
-    /// It should yield everytime a new AI inference output is generated.
+    /// Collection of receivers for AI inference outputs
+    /// Yields when a new output is generated
     pub responses: FuturesUnordered<oneshot::Receiver<Vec<SequenceGroupOutput>>>,
-    /// The model's thread join handle
+    /// Join handle for the model execution thread
     pub join_handle: JoinHandle<Result<(), ModelThreadError>>,
 }
 
 impl ModelThreadDispatcher {
-    /// Starts a new instance of a `ModelThreadDispatcher`. It further spawns a new thread model
-    /// that continuously listens to incoming AI inference requests, and processes these.
+    /// Starts a new instance of a `ModelThreadDispatcher`.
+    ///
+    /// This function initializes and spawns a new model thread that continuously
+    /// listens for incoming AI inference requests and processes them.
+    ///
+    /// # Arguments
+    /// * `cache_config` - Configuration for the cache
+    /// * `device` - The device (CPU/GPU) to run the model on
+    /// * `dtype` - The data type for model computations
+    /// * `model` - The model instance implementing `ModelExecutor`
+    /// * `scheduler_config` - Configuration for the scheduler
+    ///
+    /// # Returns
+    /// * `Result<Self, ModelThreadError>` - A new `ModelThreadDispatcher` instance or an error
+    ///
+    /// # Type Parameters
+    /// * `M` - A type that implements `ModelExecutor + Send + Sync + 'static`
     #[instrument(skip_all)]
     pub(crate) fn start<M>(
         cache_config: CacheConfig,
@@ -313,8 +379,21 @@ impl ModelThreadDispatcher {
         Ok(model_dispatcher)
     }
 
-    /// Sends a `ModelThreadCommand` instance into the corresponding
-    /// `Model`'s thread, to be processed by the `Model` itself.
+    /// Sends an `ExecuteModelRequest` to the model execution thread for processing.
+    ///
+    /// This method creates a `ModelThreadCommand` with the given request and a channel
+    /// for receiving the result. It then sends this command to the model thread and
+    /// adds the receiver to the `responses` queue for later retrieval.
+    ///
+    /// # Arguments
+    /// * `request` - The `ExecuteModelRequest` to be processed by the model.
+    ///
+    /// # Effects
+    /// * Sends a command to the model execution thread.
+    /// * Adds a receiver to the `responses` queue.
+    ///
+    /// # Errors
+    /// * Logs an error if the command cannot be sent, which may indicate that the model thread is shutting down.
     #[instrument(skip_all)]
     pub fn send(&self, request: ExecuteModelRequest) {
         trace!("Sending new `ExecuteModelRequest` to model executor task");

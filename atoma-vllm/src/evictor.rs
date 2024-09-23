@@ -4,18 +4,61 @@ use thiserror::Error;
 use crate::block::PhysicalTokenBlock;
 
 pub trait Evictor {
+    /// Checks if the evictor contains a block with the given block number.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number to check for.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the block is present, `false` otherwise.
     fn contains(&self, block_number: u32) -> bool;
+
+    /// Evicts a block based on the eviction policy.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(PhysicalTokenBlock)` if a block was successfully evicted, or
+    /// `Err(EvictorError)` if the free table is empty.
     fn evict(&mut self) -> Result<PhysicalTokenBlock, EvictorError>;
+
+    /// Adds a new block to the evictor.
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - The block to add.
     fn add(&mut self, block: PhysicalTokenBlock);
+
+    /// Removes a block with the given block number, if it exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number of the block to remove.
+    ///
+    /// # Returns
+    ///
+    /// `Some(PhysicalTokenBlock)` if the block was found and removed, or
+    /// `None` if the block was not found.
     fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock>;
+
+    /// Gets the number of blocks currently in the evictor.
+    ///
+    /// # Returns
+    ///
+    /// The number of blocks.
     fn num_blocks(&self) -> usize;
 }
 
-/// The `LRUEvictor` struct evicts cached blocks based on their last_accessed timestamp, which represents the last time the block was accessed.
-/// If there are multiple blocks with the same `last_accessed` time, the block with the largest `num_hashed_tokens` will be evicted.
-/// If multiple blocks have the same `last_accessed` time and the highest `num_hashed_tokens` value, one of them will be chosen arbitrarily.
+/// The `LRUEvictor` struct implements an eviction policy based on the Least Recently Used (LRU) algorithm.
+/// It maintains a cache of blocks, where each block has a `last_accessed` timestamp indicating the last time it was accessed.
+///
+/// When the cache needs to evict a block, the block with the oldest `last_accessed` timestamp is chosen.
+/// If there are multiple blocks with the same `last_accessed` timestamp, the block with the highest `num_hashed_tokens` is evicted.
+/// If multiple blocks have the same `last_accessed` timestamp and the highest `num_hashed_tokens` value, one of them is chosen arbitrarily.
 #[derive(Debug)]
 pub struct LRUEvictor {
+    /// An `IndexMap` that stores the cached blocks, where the key is the block number and the value is the `PhysicalTokenBlock`.
     pub free_table: IndexMap<u32, PhysicalTokenBlock>,
 }
 
@@ -35,12 +78,10 @@ impl Default for LRUEvictor {
 }
 
 impl Evictor for LRUEvictor {
-    /// Checks if `LRUEvictor` contains a block for the corresponding `block_number`
     fn contains(&self, block_number: u32) -> bool {
         self.free_table.contains_key(&block_number)
     }
 
-    /// Evicts a cached block, based on the eviction policy
     fn evict(&mut self) -> Result<PhysicalTokenBlock, EvictorError> {
         if self.free_table.is_empty() {
             return Err(EvictorError::EmptyFreeTable);
@@ -78,17 +119,14 @@ impl Evictor for LRUEvictor {
         Err(EvictorError::EmptyFreeTable)
     }
 
-    /// Adds a new block to `free_table`
     fn add(&mut self, block: PhysicalTokenBlock) {
         self.free_table.insert(block.block_number(), block);
     }
 
-    /// Removes, if possible, a block with `block_number`
     fn remove(&mut self, block_number: u32) -> Option<PhysicalTokenBlock> {
         self.free_table.shift_remove(&block_number)
     }
 
-    /// Gets the number of blocks in `free_table`
     fn num_blocks(&self) -> usize {
         self.free_table.len()
     }

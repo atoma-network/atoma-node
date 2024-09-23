@@ -8,19 +8,14 @@ use crate::{
     types::{ReadLock, WriteLock},
 };
 
-/// `BlockAllocator` Manages free physical token blocks for a device, without cache.
+/// `BlockAllocator` Manages free physical token blocks for a device, without
+/// any caching support.
 ///
 /// The allocator maintains a list of free blocks and allocates a block when
 /// requested. When a block is freed, its reference count is decremented. If
 /// the reference count becomes zero, the block is added back to the free list.
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct BlockAllocator {
-    /// Block size
-    #[allow(dead_code)]
-    block_size: usize,
-    /// Device
-    device: BlockDevice,
     /// Number of blocks
     num_blocks: usize,
     /// Free blocks available
@@ -33,6 +28,7 @@ impl BlockAllocator {
     /// Constructor
     pub fn new(block_size: usize, device: BlockDevice, num_blocks: usize) -> Self {
         let free_blocks = (0..(num_blocks as u32))
+            .rev()
             .map(|i| {
                 Arc::new(RwLock::new(PhysicalTokenBlock::new(
                     i,
@@ -43,8 +39,6 @@ impl BlockAllocator {
             .collect();
 
         Self {
-            block_size,
-            device,
             num_blocks,
             free_blocks,
             span: info_span!("uncached-block-allocator"),
@@ -54,7 +48,16 @@ impl BlockAllocator {
 
 impl BlockAllocator {
     #[instrument(skip(self))]
-    /// Allocates a new physical block
+    /// Allocates a new physical block from the pool of free blocks.
+    ///
+    /// # Returns
+    /// - `Ok(SyncPhysicalTokenBlock)`: A newly allocated block if one is available.
+    /// - `Err(BlockAllocatorError::OutOfMemory)`: If there are no free blocks left.
+    ///
+    /// # Error Handling
+    /// This method may also return other `BlockAllocatorError` variants if there are issues
+    /// with acquiring locks or incrementing reference counts.
+    #[instrument(skip_all)]
     pub fn allocate(&mut self) -> Result<SyncPhysicalTokenBlock, BlockAllocatorError> {
         if let Some(block) = self.free_blocks.pop() {
             block.write_lock()?.increment_ref_count();
@@ -66,7 +69,25 @@ impl BlockAllocator {
     }
 
     /// Frees a given (already allocated) block
-    #[instrument(skip(self))]
+    ///
+    /// # Arguments
+    /// * `block` - The `SyncPhysicalTokenBlock` to be freed
+    ///
+    /// # Returns
+    /// * `Ok(())` if the block was successfully freed
+    /// * `Err(BlockAllocatorError)` if an error occurred
+    ///
+    /// # Errors
+    /// This method can return the following errors:
+    /// * `BlockAllocatorError::CannotDoubleFree` if the block is already freed (ref count is 0)
+    /// * `BlockAllocatorError::BlockError` if there's an issue with decreasing the ref count
+    /// * `BlockAllocatorError::PoisonError` if there's an issue acquiring read or write locks
+    ///
+    /// # Behavior
+    /// 1. Checks if the block is already freed (ref count is 0)
+    /// 2. Decreases the block's reference count
+    /// 3. If the reference count becomes 0, adds the block back to the free list
+    #[instrument(skip_all)]
     pub fn free(&mut self, block: SyncPhysicalTokenBlock) -> Result<(), BlockAllocatorError> {
         {
             let block_guard = block.read_lock()?;

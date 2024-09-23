@@ -4,35 +4,38 @@ use tokio::sync::{
     mpsc::{self, error::SendError},
     oneshot,
 };
-use tracing::{error, info, info_span, instrument, Span};
+use tracing::{error, info, info_span, instrument, trace, Span};
 
-/// `EncodeTokenizerRequest` - A request for encoding a string input
-/// into a suite of tokens (expressed as a `u32` vector)
+/// Represents a request to encode a string input into tokens.
 pub struct EncodeTokenizerRequest {
-    /// Input string
+    /// The input string to be tokenized.
     pub input: String,
-    /// Truncate the input to the given length
+    /// Optional maximum length to truncate the input. If provided, the input will be
+    /// truncated to this number of characters from the end.
     pub truncate: Option<usize>,
-    /// `oneshot::Sender`` responsible to deliver the result of tokenization,
-    /// which includes the actual `Encoding`, together with the original input
-    /// in `String` format
+    /// Channel for sending the tokenization result, which includes:
+    /// - The `Encoding` containing the tokenized output
+    /// - The original (potentially truncated) input string
     pub sender: oneshot::Sender<Result<(Encoding, String), TokenizerError>>,
-    /// The current tracing span
+    /// The current tracing span for context propagation and logging.
     pub span: Span,
 }
 
-/// `DecodeTokenizerRequest` - A request to decode a given token id into an actual text
+/// `DecodeTokenizerRequest` - A request to decode a single token ID into text
 pub struct DecodeTokenizerRequest {
-    /// The token id to be decoded
+    /// The token ID to be decoded
     pub token_id: u32,
-    /// `oneshot::Sender` responsible to deliver the result of detokenization
+    /// Channel for sending the decoding result
     pub sender: oneshot::Sender<Result<String, TokenizerError>>,
-    /// The current tracing span
+    /// The current tracing span for context propagation
     pub span: Span,
 }
 
-/// `Tokenizer` - a tokenizer worker
-/// responsible for prepare input requests
+/// `TokenizerWorker` - A struct responsible for managing tokenization tasks
+///
+/// This struct provides functionality to start and manage multiple tokenizer
+/// workers, which handle encoding requests in parallel. It uses a round-robin
+/// approach to distribute tasks among workers for efficient processing.
 pub struct TokenizerWorker;
 
 impl TokenizerWorker {
@@ -67,7 +70,27 @@ impl TokenizerWorker {
     }
 }
 
-/// Starts a new tokenizer tokio task
+/// Starts a new tokenizer task that processes encoding requests.
+///
+/// This function runs in a loop, continuously receiving and processing
+/// `EncodeTokenizerRequest`s. It uses the provided tokenizer to encode
+/// input strings and sends the results back through a oneshot channel.
+///
+/// # Arguments
+///
+/// * `tokenizer` - The tokenizer used for encoding input strings.
+/// * `receiver` - An unbounded receiver for `EncodeTokenizerRequest`s.
+/// * `span` - A tracing span for logging and debugging purposes.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the task completes successfully, or a `TokenizerError`
+/// if there's an error during processing.
+///
+/// # Note
+///
+/// This function is designed to be run in a blocking task, as it uses
+/// `blocking_recv()` to receive requests.
 #[instrument(skip_all)]
 fn start_tokenizer_task(
     tokenizer: Tokenizer,
@@ -75,7 +98,7 @@ fn start_tokenizer_task(
     span: Span,
 ) -> Result<(), TokenizerError> {
     let _enter = span.enter();
-    info!("Starting tokenizer task..");
+    trace!("Starting tokenizer task..");
 
     // Loops over requests
     while let Some(request) = receiver.blocking_recv() {
@@ -94,7 +117,31 @@ fn start_tokenizer_task(
     Ok(())
 }
 
-/// A round robin algo for tokenization tasks.
+/// Distributes tokenization requests among multiple workers using a round-robin algorithm.
+///
+/// This function implements a simple round-robin scheduling strategy to balance the workload
+/// across multiple tokenizer workers. It continuously receives requests from a central receiver
+/// and distributes them to the workers in a circular order.
+///
+/// # Arguments
+///
+/// * `receiver` - An unbounded receiver for `EncodeTokenizerRequest`s.
+/// * `senders` - A vector of unbounded senders, each corresponding to a tokenizer worker.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the task completes successfully, or a `TokenizerError` if there's an error
+/// sending a request to a worker.
+///
+/// # Behavior
+///
+/// The function runs in an infinite loop, cycling through the list of senders. For each sender:
+/// 1. It attempts to receive a request from the central receiver.
+/// 2. If a request is received, it's forwarded to the current worker.
+/// 3. If `None` is received (indicating the channel was closed), the function logs an error and exits.
+///
+/// This ensures that requests are distributed evenly among all available workers.
+///
 /// Check https://en.wikipedia.org/wiki/Round-robin_scheduling
 /// for more details.
 async fn round_robin_task(
@@ -109,7 +156,7 @@ async fn round_robin_task(
                     return Ok(());
                 }
                 Some(request) => {
-                    info!("Received a new request from the tokenizer receiver");
+                    trace!("Received a new request from the tokenizer receiver");
                     sender.send(request)?;
                 }
             }
@@ -117,6 +164,23 @@ async fn round_robin_task(
     }
 }
 
+/// Prepares and tokenizes the input string, optionally truncating it.
+///
+/// # Arguments
+///
+/// * `tokenizer` - The tokenizer to use for encoding the input.
+/// * `input` - The input string to be tokenized.
+/// * `truncate` - Optional maximum number of characters to keep from the end of the input.
+///
+/// # Returns
+///
+/// A Result containing a tuple of:
+/// - The tokenized `Encoding`
+/// - The (potentially truncated) input string
+///
+/// # Errors
+///
+/// Returns a `TokenizerError` if the tokenization process fails.
 fn prepare_inputs(
     tokenizer: &Tokenizer,
     input: String,

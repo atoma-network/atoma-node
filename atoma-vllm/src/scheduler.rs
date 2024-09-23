@@ -14,7 +14,7 @@ use crate::{
     types::{ReadLock, WriteLock},
 };
 use thiserror::Error;
-use tracing::{error, info, info_span, instrument, warn, Span};
+use tracing::{debug, error, info, info_span, instrument, trace, warn, Span};
 
 /// Preemption modes.
 ///
@@ -39,9 +39,9 @@ pub enum PreemptionMode {
 ///  feature from the API when chunked prefill is enabled by default.
 #[derive(Debug)]
 struct SchedulingBudget {
-    /// Token budget
+    /// Maximum number of tokens that can be scheduled
     pub token_budget: usize,
-    /// Maximum number of sequences
+    /// Maximum number of sequences that can be scheduled
     pub max_num_sequences: usize,
     /// Set of request IDs that have updated num_batched_tokens.
     request_ids_num_batched_tokens: HashSet<String>,
@@ -49,10 +49,9 @@ struct SchedulingBudget {
     request_ids_num_curr_seqs: HashSet<String>,
     /// Number of batched tokens currently used.
     num_batched_tokens: usize,
-    /// Number of current sequences.
+    /// Number of current scheduled sequences.
     num_curr_seqs: usize,
     /// Tracing span
-    #[allow(dead_code)]
     pub span: Span,
 }
 
@@ -77,6 +76,7 @@ impl SchedulingBudget {
         num_new_tokens: usize,
         num_new_sequences: usize,
     ) -> Result<bool, SchedulerError> {
+        let _enter = self.span.enter();
         if num_new_sequences == 0 || num_new_tokens == 0 {
             error!("Empty scheduling, either `num_new_sequences` == 0 or `num_new_tokens` == 0");
             return Err(SchedulerError::EmptyScheduling);
@@ -96,7 +96,8 @@ impl SchedulingBudget {
     /// Adds number of batched tokens
     #[instrument(skip_all)]
     pub fn add_num_batched_tokens(&mut self, request_id: String, num_batched_tokens: usize) {
-        info!("Adding number of batched tokens");
+        let _enter = self.span.enter();
+        trace!("Adding number of batched tokens");
         // If request has already been batched, simply return
         if self.request_ids_num_batched_tokens.contains(&request_id) {
             return;
@@ -109,7 +110,8 @@ impl SchedulingBudget {
     /// Subtracts number of batched tokens
     #[instrument(skip_all)]
     pub fn subtract_num_batched_tokens(&mut self, request_id: &str, num_batched_tokens: usize) {
-        info!("Subtracting number of batched tokens..");
+        let _enter = self.span.enter();
+        trace!("Subtracting number of batched tokens..");
         // Only performs an action, if request with `request_id` has been already batched
         if self.request_ids_num_batched_tokens.contains(request_id) {
             self.request_ids_num_batched_tokens.remove(request_id);
@@ -120,7 +122,8 @@ impl SchedulingBudget {
     /// Adds number sequences
     #[instrument(skip_all)]
     pub fn add_number_sequences(&mut self, request_id: String, num_current_sequences: usize) {
-        info!("Adding number of sequences..");
+        let _enter = self.span.enter();
+        trace!("Adding number of sequences..");
         // If request has already been added, simply return
         if self.request_ids_num_curr_seqs.contains(&request_id) {
             return;
@@ -133,7 +136,8 @@ impl SchedulingBudget {
     /// Subtracts number sequences
     #[instrument(skip_all)]
     pub fn subtracts_number_sequences(&mut self, request_id: &str, num_current_sequences: usize) {
-        info!("Subtracting number of sequences..");
+        let _enter = self.span.enter();
+        trace!("Subtracting number of sequences..");
         // Only performs an action, if request with `request_id` has been already added
         if self.request_ids_num_curr_seqs.contains(request_id) {
             self.request_ids_num_curr_seqs.remove(request_id);
@@ -244,10 +248,8 @@ pub struct SchedulerOutputs {
     /// Scheduled sequence groups.
     pub scheduled_sequence_groups: Vec<ScheduledSequenceGroup>,
     /// Number of prefill groups scheduled.
-    #[allow(dead_code)]
     number_prefill_groups: usize,
     /// Total number of batched tokens.
-    #[allow(dead_code)]
     num_batched_tokens: usize,
     /// Blocks to swap in. List of CPU -> GPU block number.
     pub blocks_to_swap_in: HashMap<u32, u32>,
@@ -259,11 +261,9 @@ pub struct SchedulerOutputs {
     pub ignored_seq_groups: Vec<SequenceGroup>,
     /// The number of requests in the running queue
     pub running_queue_size: usize,
-    /// Number of preempted sequnce groups
-    #[allow(dead_code)]
+    /// Number of preempted sequence groups
     preempted: usize,
     /// Tracing span
-    #[allow(dead_code)]
     span: Span,
 }
 
@@ -271,6 +271,7 @@ impl SchedulerOutputs {
     /// Validate that `SchedulerOutputs` is well formed
     #[instrument(skip_all)]
     fn validate(&self) -> Result<(), SchedulerError> {
+        let _enter = self.span.enter();
         if !self.blocks_to_swap_in.is_empty() && !self.blocks_to_swap_out.is_empty() {
             error!("Swap in and swap out should never happen at the same time.");
             return Err(SchedulerError::InvalidSchedulerOutput(
@@ -305,37 +306,42 @@ impl SchedulerOutputs {
     }
 }
 
-/// `Scheduler` - Responsible for managing the schedule of incoming inference `SequenceGroup` requests
+/// `Scheduler` - Responsible for managing the scheduling and execution of inference requests
 ///
-/// It handles processing multiple sequences, including tasks such as prefill (initial setup), decoding and swapping blocks from CPU <-> GPU.
-/// It relies on `BlockSpaceManager` to efficiently allocate resources, schedule tasks, and handle preemption and swapping.
+/// The Scheduler handles the lifecycle of multiple `SequenceGroup` requests, including:
+/// - Queueing new requests
+/// - Allocating GPU/CPU memory resources
+/// - Scheduling prefill (initial prompt processing) and decoding steps
+/// - Managing preemption and swapping of sequences between GPU and CPU
+/// - Optimizing throughput and latency based on configured policies
+///
+/// It relies on the `BlockSpaceManager` to efficiently allocate and manage GPU/CPU memory blocks.
 #[derive(Debug)]
 pub struct Scheduler<P> {
     /// Cache configuration
-    #[allow(dead_code)]
     pub(crate) cache_config: CacheConfig,
     /// `Scheduler` configuration
     pub(crate) scheduler_config: SchedulerConfig,
     /// `BlockSpaceManager` to handle block resources efficiently
     block_manager: BlockSpaceManager,
-    /// Waiting `SequenceGroup` queue
+    /// Queue of SequenceGroups waiting to be scheduled
     waiting: VecDeque<SequenceGroup>,
-    /// Running `SequenceGroup` queue
+    /// Queue of SequenceGroups currently executing on the GPU
     running: VecDeque<SequenceGroup>,
-    /// Swapped `SequenceGroup` queue
+    /// Queue of SequenceGroups that have been swapped out to CPU memory
     swapped: VecDeque<SequenceGroup>,
     /// Time at previous scheduling step
     previous_time: Instant,
-    /// Checks if we scheduled a prompt at previous steps
+    /// Tracks if a prompt was scheduled in the previous step, used for latency calculations
     previous_prompt: bool,
-    /// Last prompt latency duration
+    /// Duration of the last prompt processing, used for scheduling heuristics
     last_prompt_latency: f32,
-    /// Cumulative preemption
+    /// Total number of times sequences have been preempted, used for logging/monitoring
     num_cumulative_preemption: usize,
-    /// Tracing span
-    pub span: Span,
-    /// Phantom data
+    /// Generic parameter for the scheduling policy
     _phantom: PhantomData<P>,
+    /// Tracing span
+    span: Span,
 }
 
 impl<P> Scheduler<P> {
@@ -365,21 +371,37 @@ impl<P> Scheduler<P> {
         })
     }
 
-    /// Number of new tokens, for each inference pass
-    pub fn num_decoding_tokens_per_second(&self) -> usize {
-        1
-    }
-
     /// Aborts a sequence group with the given ID.
     ///
-    /// Check if the sequence group with the given ID
-    ///     is present in any of the state queue.
-    /// If present, remove the sequence group from the state queue.
-    /// Also, if any of the sequences in the sequence group is not finished,
-    ///     free the sequence with status `FINISHED_ABORTED`.
-    /// Otherwise, do nothing.
+    /// This method searches for the sequence group with the specified ID in all state queues
+    /// (waiting, running, and swapped). If found:
+    ///
+    /// 1. It removes the sequence group from its current queue.
+    /// 2. For any unfinished sequences in the group, it:
+    ///    a. Sets their status to `FinishedAborted`.
+    ///    b. Frees the associated resources.
+    ///
+    /// If no matching sequence group is found, this method does nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - The ID of the sequence group to abort.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` which is:
+    /// - `Ok(())` if the operation was successful (even if no matching group was found).
+    /// - `Err(SchedulerError)` if an error occurred during the process.
+    ///
+    /// # Errors
+    ///
+    /// This method can return a `SchedulerError` if there are issues with:
+    /// - Acquiring locks on sequences
+    /// - Freeing sequence resources
+    #[instrument(skip_all)]
     pub fn abort_sequence_group(&mut self, request_id: String) -> Result<(), SchedulerError> {
-        info!("Aborting sequence group..");
+        let _enter = self.span.enter();
+        debug!("Aborting sequence group..");
 
         let mut queue_identifier = 'w';
         let waiting_length = self.waiting.len();
@@ -399,6 +421,7 @@ impl<P> Scheduler<P> {
                         sequence_guard_lock.sequence_id(),
                         sequence_guard_lock.is_finished(),
                     );
+                    debug!("Sequence ID: {}, is finished: {}", sequence_id, is_finished);
                     if is_finished {
                         continue;
                     }
@@ -432,19 +455,81 @@ impl<P> Scheduler<P> {
         Ok(())
     }
 
-    /// Aborts multiple `SequenceGroup`'s at once
+    /// Aborts multiple sequence groups at once.
+    ///
+    /// This method iterates through the provided request IDs and aborts each corresponding
+    /// sequence group. It's a convenient way to abort multiple sequence groups in a single call.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_ids` - An iterator of String values, where each string is a request ID
+    ///                   corresponding to a sequence group to be aborted.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if all sequence groups were successfully aborted, or an error
+    /// if any abortion failed.
+    ///
+    /// # Errors
+    ///
+    /// This method can return a `SchedulerError` if there are issues with:
+    /// - Acquiring locks on sequences
+    /// - Freeing sequence resources
+    /// - Any other error that might occur during the abortion of individual sequence groups
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let request_ids = vec!["req1".to_string(), "req2".to_string()];
+    /// scheduler.abort_sequence_groups(request_ids.into_iter())?;
+    /// ```
     pub fn abort_sequence_groups(
         &mut self,
         request_ids: impl Iterator<Item = String>,
     ) -> Result<(), SchedulerError> {
+        let _enter = self.span.enter();
         for request_id in request_ids {
+            debug!("Aborting sequence group: {}", request_id);
             self.abort_sequence_group(request_id)?;
         }
 
         Ok(())
     }
 
-    /// Frees blocks from a given `SequenceGroup`
+    /// Frees blocks associated with sequences in a given `SequenceGroup` and removes the group from its current queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - The ID of the `SequenceGroup` to free.
+    /// * `sequences_ids` - A slice of sequence IDs within the group to free blocks for.
+    /// * `sequence_status` - The current status of the `SequenceGroup`, determining which queue to remove it from.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if successful, or a `SchedulerError` if there was an issue freeing the blocks.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There is an issue freeing blocks in the `BlockManager`
+    /// - An invalid `SequenceStatus` is provided
+    /// Frees blocks associated with sequences in a given `SequenceGroup` and removes the group from its current queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - The ID of the `SequenceGroup` to free.
+    /// * `sequences_ids` - A slice of sequence IDs within the group to free blocks for.
+    /// * `sequence_status` - The current status of the `SequenceGroup`, determining which queue to remove it from.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if successful, or a `SchedulerError` if there was an issue freeing the blocks.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There is an issue freeing blocks in the `BlockManager`
+    /// - An invalid `SequenceStatus` is provided
     #[allow(dead_code)]
     fn free_sequences(
         &mut self,
@@ -469,40 +554,85 @@ impl<P> Scheduler<P> {
         Ok(())
     }
 
-    /// Frees blocks from a given `Sequence` with `sequence_id`
+    /// Frees blocks associated with a given sequence.
+    ///
+    /// This method releases the memory blocks allocated to a specific sequence,
+    /// making them available for reuse by other sequences.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_id` - The unique identifier of the sequence to free.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the operation was successful, or a `SchedulerError`
+    /// if there was an issue freeing the blocks.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There is an issue freeing blocks in the `BlockManager`
+    /// - The specified `sequence_id` does not exist or is invalid
     fn free_sequence(&mut self, sequence_id: u64) -> Result<(), SchedulerError> {
         Ok(self.block_manager.free(sequence_id)?)
     }
 
-    /// Gets number of unfinished sequences
+    /// Returns the total number of unfinished sequences across all queues.
+    ///
+    /// This method counts the sequences in the waiting, running, and swapped queues.
+    ///
+    /// # Returns
+    ///
+    /// The total number of unfinished sequences.
     pub fn num_unfinished_sequeces(&self) -> usize {
         self.waiting.len() + self.running.len() + self.swapped.len()
     }
 }
 
 impl<P: Policy> Scheduler<P> {
-    /// Has unfinished sequences
+    /// Checks if there are any unfinished sequences in the scheduler.
+    ///
+    /// This method returns true if any of the scheduler's queues (waiting, running, or swapped)
+    /// contain sequence groups. It provides a quick way to determine if there is still work
+    /// to be done by the scheduler.
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are any unfinished sequences, `false` otherwise.
     pub fn has_unfinished_sequences(&self) -> bool {
         !self.waiting.is_empty() || !self.running.is_empty() || !self.swapped.is_empty()
     }
 
-    /// Schedule sequence groups that are running.
+    /// Schedules sequence groups that are currently running.
     ///
-    /// Running queue should include decode and chunked prefill requests.
+    /// This method processes the running queue, which includes both decode and chunked prefill requests.
+    /// It handles scheduling, preemption, and swapping of sequence groups based on available resources.
     ///
-    /// Args:
-    ///     running_queue - The queue that contains running requests (i.e.,
-    ///         decodes). The given arguments are NOT in-place modified.
-    ///     budget - The scheduling budget. The argument is in-place updated
-    ///             when any decodes are preempted.
-    ///     enable_chunking - If true, seq group can be chunked and only a
-    ///             chunked number of tokens are scheduled  if
-    ///             budget.num_batched_tokens has not enough capacity to schedule
-    ///             all tokens.
+    /// # Arguments
     ///
-    /// Returns:
-    ///     A tuple of remaining running queue (should be always 0) after
-    ///         scheduling and SchedulerRunningOutputs.
+    /// * `running_queue` - A queue containing running requests (e.g., decodes). This argument is not modified in-place.
+    /// * `budget` - The scheduling budget, which is updated in-place when decodes are preempted.
+    /// * `enable_chunking` - If true, allows sequence groups to be chunked. Only a portion of tokens will be scheduled
+    ///                       if the budget's `num_batched_tokens` doesn't have enough capacity for all tokens.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - The remaining running queue (should always be empty after scheduling)
+    /// - `SchedulerRunningOutputs` containing the scheduling results
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SchedulerError` if any scheduling operations fail.
+    ///
+    /// # Implementation Details
+    ///
+    /// - Sorts the running queue by priority
+    /// - Processes each sequence group:
+    ///   - Attempts to append slots and schedule for execution
+    ///   - If resources are insufficient, performs preemption or swapping
+    /// - Handles both prefill and decoding computations
+    /// - Updates the scheduling budget accordingly
     #[instrument(skip_all)]
     fn schedule_running(
         &mut self,
@@ -510,7 +640,8 @@ impl<P: Policy> Scheduler<P> {
         budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerRunningOutputs), SchedulerError> {
-        info!("Schedule running..");
+        let _enter = self.span.enter();
+        trace!("Schedule running..");
         // Blocks that need to be swapped or copied before model execution
         let mut blocks_to_swap_out = HashMap::<u32, u32>::new();
         let mut blocks_to_copy = HashMap::<u32, u32>::new();
@@ -631,22 +762,38 @@ impl<P: Policy> Scheduler<P> {
         Ok((running_queue, scheduler_running_outputs))
     }
 
-    /// Schedule sequence groups that are swapped out.
+    /// Schedules sequence groups that were previously swapped out to CPU memory.
     ///
-    /// It schedules swapped requests as long as it fits `budget`. The input arguments
-    /// `budget` and are updated based on scheduled sequence_groups.
+    /// This method attempts to bring swapped-out sequence groups back into GPU memory
+    /// and schedule them for execution, subject to the available scheduling budget.
     ///
-    /// Args:
-    ///     swapped_queue: The queue that contains swapped out requests. The given arguments are NOT in-place modified.
-    ///     budget: The scheduling budget. The argument is in-place updated
-    ///         when any requests are swapped in.
-    ///     policy: The sorting policy to sort swapped_queue.
-    ///     enable_chunking: If true, seq group can be chunked and only a
-    ///         chunked number of tokens are scheduled  if budget.num_batched_tokens has not enough capacity to schedule all tokens.
+    /// # Arguments
     ///
-    /// Returns:
-    ///     A tuple of remaining `swapped_queue` after scheduling and
-    ///     SchedulerSwappedInOutputs.
+    /// * `swapped_queue` - A queue of sequence groups that are currently swapped out to CPU memory.
+    ///                     This queue is not modified in-place.
+    /// * `budget` - The current scheduling budget, which is updated as sequences are scheduled.
+    /// * `enable_chunking` - If true, allows scheduling partial prefill computations when the budget
+    ///                       doesn't have enough capacity for all tokens in a sequence group.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - The remaining `swapped_queue` after scheduling attempts
+    /// - A `SchedulerSwappedInOutputs` struct with the scheduling results
+    ///
+    /// # Behavior
+    ///
+    /// 1. Sorts the swapped queue based on the scheduling policy's priority.
+    /// 2. Attempts to swap in and schedule each sequence group:
+    ///    - Checks if the group can be swapped in (enough GPU memory available)
+    ///    - Verifies if the scheduling budget allows for the group's execution
+    ///    - If successful, swaps in the group and prepares it for execution
+    /// 3. Updates the scheduling budget for each successfully scheduled group
+    /// 4. Handles cases where groups cannot be scheduled due to resource constraints
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SchedulerError` if any scheduling operations fail.
     #[instrument(skip_all)]
     fn schedule_swapped(
         &mut self,
@@ -654,7 +801,8 @@ impl<P: Policy> Scheduler<P> {
         budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerSwappedInOutputs), SchedulerError> {
-        info!("Schedule swapped..");
+        let _enter = self.span.enter();
+        trace!("Schedule swapped..");
         // Blocks that need to be swapped or copied before model execution.
         let mut blocks_to_swap_in = HashMap::<u32, u32>::new();
         let mut blocks_to_copy = HashMap::<u32, u32>::new();
@@ -696,7 +844,7 @@ impl<P: Policy> Scheduler<P> {
             )?;
 
             if num_new_tokens == 0 || !budget.can_schedule(num_new_tokens, num_new_sequences)? {
-                info!("Either no new tokens to be swapped or no available budget to swap tokens");
+                trace!("Either no new tokens to be swapped or no available budget to swap tokens");
                 // push the sequence group back to `swapped_queue`
                 swapped_queue.push_front(sequence_group);
                 break;
@@ -733,25 +881,43 @@ impl<P: Policy> Scheduler<P> {
         ))
     }
 
-    /// Schedule sequence groups that are in prefill stage.
+    /// Schedule sequence groups that are in the prefill stage.
     ///
-    /// Note that the current scheduler treats PREEMPTED_FOR_RECOMPUTE
-    /// as a new prefill (that starts from beginning -> most recently generated
-    ///    tokens).
+    /// This function processes the waiting queue, which contains prefill requests (initial prompts)
+    /// and preempted requests that need to be recomputed from the beginning.
     ///
-    /// Args:
-    ///     waiting_queue: The queue that contains prefill requests.
-    ///         The given arguments are NOT in-place modified.
-    ///     budget: The scheduling budget. The argument is in-place updated
-    ///         when any requests are scheduled.
-    ///     enable_chunking: If True, seq group can be chunked and only a
-    ///         chunked number of tokens are scheduled  if
-    ///         budget.num_batched_tokens has not enough capacity to schedule
-    ///         all tokens.
+    /// # Arguments
     ///
-    /// Returns:
-    ///     A tuple of remaining waiting_queue after scheduling and
-    ///         SchedulerSwappedInOutputs,
+    /// * `waiting_queue` - A queue containing prefill requests. This argument is not modified in-place.
+    /// * `budget` - The scheduling budget, which is updated in-place when requests are scheduled.
+    /// * `enable_chunking` - If true, allows sequence groups to be chunked. Only a portion of tokens
+    ///                       will be scheduled if the budget's capacity is insufficient for all tokens.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - The remaining `waiting_queue` after scheduling attempts
+    /// - A `SchedulerPrefillOutputs` struct with the scheduling results
+    ///
+    /// # Behavior
+    ///
+    /// 1. Processes each sequence group in the waiting queue:
+    ///    - Checks if the group can be allocated (enough GPU memory available)
+    ///    - Verifies if the prompt length is within limits
+    ///    - Ensures the scheduling budget allows for the group's execution
+    /// 2. If a group can be scheduled:
+    ///    - Allocates resources and sets the sequence status to Running
+    ///    - Updates the scheduling budget
+    /// 3. Handles cases where groups cannot be scheduled:
+    ///    - Due to resource constraints (pushed back to waiting queue)
+    ///    - Due to exceeding limits (marked as ignored)
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SchedulerError` if:
+    /// - There's an invalid number of waiting sequences in a group
+    /// - The number of new tokens doesn't match the prompt length (when chunking is disabled)
+    /// - Any scheduling operations fail
     #[instrument(skip_all)]
     fn schedule_prefills(
         &mut self,
@@ -759,7 +925,8 @@ impl<P: Policy> Scheduler<P> {
         budget: &mut SchedulingBudget,
         enable_chunking: bool,
     ) -> Result<(VecDeque<SequenceGroup>, SchedulerPrefillOutputs), SchedulerError> {
-        info!("Schedulig prefills..");
+        let _enter = self.span.enter();
+        trace!("Schedulig prefills..");
 
         let mut ignored_sequence_groups = Vec::<SequenceGroup>::new();
         let mut sequence_groups = Vec::<ScheduledSequenceGroup>::new();
@@ -873,15 +1040,48 @@ impl<P: Policy> Scheduler<P> {
         ))
     }
 
-    /// Schedule queued requests.
+    /// Schedule queued requests using the default policy.
     ///
-    /// The current policy is designed to optimize the throughput. First,
-    /// it batches as many prefill requests as possible. And it schedules
-    /// decodes. If there's a pressure on GPU memory, decode requests can
-    /// be swapped or preempted.
+    /// This method implements a scheduling policy designed to optimize throughput:
+    /// 1. It first attempts to batch as many prefill requests as possible.
+    /// 2. If no prefills are scheduled, it then schedules decode requests.
+    /// 3. If there's pressure on GPU memory, decode requests may be swapped out or preempted.
+    ///
+    /// # Algorithm
+    /// 1. Initialize a budget based on max tokens and sequences.
+    /// 2. Account for currently running sequences in the budget.
+    /// 3. If no requests are swapped:
+    ///    - Schedule prefill requests first.
+    /// 4. If no prefills were scheduled:
+    ///    - Schedule running (decode) requests.
+    ///    - If no preemptions occurred, attempt to swap in requests.
+    /// 5. Update internal queues (waiting, running, swapped) based on scheduling results.
+    /// 6. Collect and return scheduling results.
+    ///
+    /// # Returns
+    /// Returns a `Result<SchedulerOutputs, SchedulerError>` containing:
+    /// - Scheduled sequence groups
+    /// - Number of batched tokens
+    /// - Number of prefill groups
+    /// - Block swap and copy information
+    /// - Ignored sequence groups
+    /// - Running queue size
+    /// - Number of preempted requests
+    ///
+    /// # Errors
+    /// Returns a `SchedulerError` if:
+    /// - The number of batched tokens exceeds the configured maximum.
+    /// - The number of sequences exceeds the configured maximum.
+    /// - Chunked prefills are detected (which are not allowed in this policy).
+    ///
+    /// # Performance Considerations
+    /// - Prioritizes prefill requests over decode requests for better throughput.
+    /// - Implements preemption and swapping to manage GPU memory pressure.
+    /// - Maintains ordering of preempted requests for fairness.
     #[instrument(skip_all)]
     fn schedule_default(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
-        info!("Scheduling default..");
+        let _enter = self.span.enter();
+        trace!("Scheduling default..");
         // Include running requests to the budget.
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
@@ -1043,21 +1243,47 @@ impl<P: Policy> Scheduler<P> {
         })
     }
 
-    /// Schedule queued requests.
+    /// Schedule queued requests using a chunked prefill approach.
     ///
-    /// Chunked prefill allows to chunk prefill requests, batch them together
-    /// with decode requests. This policy 1. schedule as many decoding requests
-    /// as possible. 2. schedule chunked prefill requests that are not
-    /// finished. 3. schedule swapped request. 4. schedule new prefill
-    /// requests.
+    /// This method implements an optimized scheduling policy that allows batching
+    /// prefill (prompt processing) and decode (token generation) requests together.
+    /// The chunked prefill approach can improve GPU utilization and reduce inter-token
+    /// latency by preventing decode requests from being blocked by long prefill requests.
     ///
-    /// The policy can sustain the high GPU utilization because it can put
-    /// prefill and decodes requests to the same batch, while it improves
-    /// inter token latency because decodes requests don't need to blocked
-    /// by prefill requests.
+    /// # Algorithm
+    /// 1. Initialize a scheduling budget based on max tokens and sequences.
+    /// 2. Schedule as many decoding requests as possible from the running queue.
+    /// 3. If no preemptions occurred, attempt to schedule swapped-out requests.
+    /// 4. Schedule new prefill requests, potentially in chunks.
+    /// 5. Update internal queues (waiting, running, swapped) based on scheduling results.
+    /// 6. Collect and return scheduling results.
+    ///
+    /// # Key Concepts
+    /// - Budget: Tracks available resources for scheduling (tokens and sequences).
+    /// - Preemption: Interrupting running requests when resources are constrained.
+    /// - Swapping: Moving requests between GPU and CPU memory to manage resources.
+    ///
+    /// # Queue Updates
+    /// - Waiting: Updated with remaining and preempted requests.
+    /// - Running: Updated with newly scheduled prefill and decode requests.
+    /// - Swapped: Updated with requests that couldn't fit in GPU memory.
+    ///
+    /// # Output Ordering
+    /// Scheduled sequence groups are ordered as follows:
+    /// 1. New prefill requests
+    /// 2. Chunked prefill requests from running queue
+    /// 3. Prefill requests from swapped-in queue
+    /// 4. Decode requests from running queue
+    /// 5. Decode requests from swapped-in queue
+    ///
+    /// # Errors
+    /// Returns a `SchedulerError` if:
+    /// - The number of batched tokens exceeds the configured maximum.
+    /// - The number of sequences exceeds the configured maximum.
     #[instrument(skip_all)]
     fn schedule_chunked_prefill(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
-        info!("Scheduling chunked prefill..");
+        let _enter = self.span.enter();
+        trace!("Scheduling chunked prefill..");
         let mut budget = SchedulingBudget::new(
             self.scheduler_config.max_num_batched_tokens(),
             self.scheduler_config.max_num_sequences(),
@@ -1181,7 +1407,31 @@ impl<P: Policy> Scheduler<P> {
         })
     }
 
-    /// Schedule queued requests.
+    /// Schedule queued requests based on the configured scheduling policy.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok(SchedulerOutputs)`: The scheduling results if successful.
+    /// - `Err(SchedulerError)`: An error if scheduling fails.
+    ///
+    /// # Behavior
+    ///
+    /// This method chooses between two scheduling algorithms:
+    ///
+    /// 1. If chunked prefill is enabled (via `scheduler_config.enable_chunked_prefill()`):
+    ///    - Calls `self.schedule_chunked_prefill()`, which allows batching prefill and decode requests together.
+    ///    - This can improve GPU utilization for long prompts by processing them in chunks.
+    ///
+    /// 2. Otherwise:
+    ///    - Calls `self.schedule_default()`, which prioritizes completing full prefills before scheduling decodes.
+    ///    - This approach may be more suitable for shorter prompts or when strict ordering is required.
+    ///
+    /// # Notes
+    ///
+    /// - The choice between chunked and default scheduling can significantly impact performance and latency.
+    /// - Chunked prefill is generally more efficient for longer prompts or when dealing with a mix of long and short requests.
+    /// - The default scheduling may be preferable for simpler workloads or when you need to ensure all prefills complete before any decoding starts.
     #[instrument(skip_all)]
     fn schedule_(&mut self) -> Result<SchedulerOutputs, SchedulerError> {
         if self.scheduler_config.enable_chunked_prefill() {
@@ -1191,12 +1441,45 @@ impl<P: Policy> Scheduler<P> {
         }
     }
 
-    /// Schedule queued requests, in the form of `SequenceGroup`'s.
-    /// This function calls the internal state of the `Scheduler`
+    /// Schedule queued requests and prepare metadata for execution.
+    ///
+    /// This method processes the internal state of the `Scheduler` to determine which
+    /// sequence groups should be executed next. It prepares detailed metadata for each
+    /// scheduled sequence group, including block allocations and sampling parameters.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - A vector of `Arc<SequenceGroupMetadata>`: Metadata for each scheduled sequence group,
+    ///   ready for model execution.
+    /// - `SchedulerOutputs`: Detailed scheduling results, including block management information.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SchedulerError` if:
+    /// - The internal scheduling process fails.
+    /// - There's an invalid state in prefill sequences.
+    /// - Block table information is missing for a sequence.
+    ///
+    /// # Implementation Details
+    ///
+    /// 1. Calls the internal scheduling method to determine which sequence groups to run.
+    /// 2. For each scheduled sequence group:
+    ///    - Prepares sequence data and block table information.
+    ///    - Determines if sampling should occur (based on prefill status and token counts).
+    ///    - Creates a `SequenceGroupMetadata` object with all necessary execution information.
+    /// 3. Updates block access times in the block manager.
+    ///
+    /// # Note
+    ///
+    /// This method is the main entry point for the scheduling process and should be called
+    /// each time new work needs to be scheduled for the model.
     #[instrument(skip_all)]
     pub fn schedule(
         &mut self,
     ) -> Result<(Vec<Arc<SequenceGroupMetadata>>, SchedulerOutputs), SchedulerError> {
+        let _enter = self.span.enter();
+        trace!("Scheduling..");
         let scheduler_outputs = self.schedule_()?;
         let now = Instant::now();
 
@@ -1293,16 +1576,37 @@ impl<P: Policy> Scheduler<P> {
 }
 
 impl<P: Debug> Scheduler<P> {
-    /// Get the next new tokens to compute for a given sequence group
-    /// that's in a given `status`.
+    /// Calculates the number of new tokens to compute for a given sequence group.
     ///
-    /// The API could chunk the number of tokens to compute based on `budget`
-    /// if `enable_chunking` is true. If a sequence group has multiple
-    /// sequences (e.g., running beam search), it means it is in the decoding
-    /// phase, so chunking doesn't happen.
+    /// This function determines how many new tokens should be processed for a sequence group
+    /// based on its current status and the available scheduling budget. It supports token
+    /// chunking for efficient processing of long sequences.
     ///
-    /// Returns 0 if the new token cannot be computed due to token budget.
-    #[instrument(skip(self, sequence_group, budget))]
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The sequence group to evaluate.
+    /// * `sequence_status` - The status of sequences to consider (e.g., Running, Waiting).
+    /// * `enable_chunking` - If true, allows processing a subset of available tokens to fit within budget.
+    /// * `budget` - The current scheduling budget, used to limit token processing when chunking is enabled.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok(usize)`: The number of new tokens to compute.
+    /// - `Err(SchedulerError)`: If there are no new tokens to schedule.
+    ///
+    /// # Behavior
+    ///
+    /// - Sums up new tokens across all sequences in the group with the specified status.
+    /// - If chunking is enabled and there's only one sequence, limits tokens to fit the budget.
+    /// - For multiple sequences (e.g., beam search), chunking is not applied.
+    /// - Returns an error if no new tokens are available to schedule.
+    ///
+    /// # Note
+    ///
+    /// This function is crucial for balancing processing efficiency and resource utilization,
+    /// especially for long sequences or when dealing with limited computational budgets.
+    #[instrument(skip_all)]
     fn get_num_tokens(
         &self,
         sequence_group: &SequenceGroup,
@@ -1310,6 +1614,10 @@ impl<P: Debug> Scheduler<P> {
         enable_chunking: bool,
         budget: &mut SchedulingBudget,
     ) -> Result<usize, SchedulerError> {
+        let trace!(
+            "Get number of tokens for sequence group with id = {}",
+            sequence_group.request_id
+        );
         let mut num_new_tokens = 0;
         let mut num_sequences_in_status = 0;
 
@@ -1336,27 +1644,70 @@ impl<P: Debug> Scheduler<P> {
         Ok(num_new_tokens)
     }
 
-    /// Determine whether or not we have enough space in the KV cache to
-    /// continue generation of the sequence group.
+    /// Checks if there is sufficient space in the KV cache to continue generation for the given sequence group.
+    ///
+    /// This method delegates to the `BlockManager` to determine if there are enough
+    /// free blocks available to accommodate the next token for all running sequences
+    /// in the group.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The `SequenceGroup` to check for space availability.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if there is enough space to append slots for all running
+    /// sequences in the group, `false` otherwise.
+    ///
+    /// # Note
+    ///
+    /// This method is crucial for preventing out-of-memory errors and ensuring
+    /// efficient use of the KV cache. It's typically called before attempting
+    /// to generate the next token for a sequence group.
+    #[instrument(skip_all)]
     fn can_append_slots(&self, sequence_group: &SequenceGroup) -> bool {
+        let _enter = self.span.enter();
+        trace!(
+            "Can append slots for sequence group with id = {}",
+            sequence_group.request_id
+        );
         self.block_manager.can_append_slots(sequence_group)
     }
 
-    /// Appends new slots to the sequences in the given sequence group.
+    /// Appends new slots to the running sequences in the given sequence group.
     ///
-    /// Args:
-    /// `sequence_group`: The sequence group containing the
-    /// sequences to append slots to.
-    /// `blocks_to_copy`: Mapping of source block index to destination block index.
-    ///     It is updated with the new source and destination block indices for the appended
-    ///     slots.
+    /// This method allocates new KV cache blocks for each running sequence in the group
+    /// and updates the `blocks_to_copy` map with any copy-on-write operations needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The sequence group containing the sequences to append slots to.
+    /// * `blocks_to_copy` - A mutable map that will be updated with any new copy-on-write operations.
+    ///                      Keys are source block indices, values are destination block indices.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if slots were successfully appended, or a `SchedulerError` if an error occurred.
+    ///
+    /// # Effects
+    ///
+    /// - Allocates new KV cache blocks for running sequences
+    /// - Updates `blocks_to_copy` with any necessary copy-on-write operations
+    /// - Logs information about the operation
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There's an issue accessing sequence data
+    /// - The block manager fails to append slots
     #[instrument(skip_all)]
     fn append_slots(
         &mut self,
         sequence_group: &SequenceGroup,
         blocks_to_copy: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
-        info!(
+        let _enter = self.span.enter();
+        trace!(
             "Appending slot to sequence group with id = {}",
             sequence_group.request_id
         );
@@ -1379,12 +1730,70 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Adds new `SequenceGroup`'s to the end of the `waiting` queue
+    /// Adds a new `SequenceGroup` to the end of the `waiting` queue.
+    ///
+    /// This method is used to enqueue new sequence groups for processing by the scheduler.
+    /// The sequence group is added to the end of the waiting queue, maintaining a
+    /// first-in-first-out (FIFO) order for newly added requests.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The `SequenceGroup` to be added to the waiting queue.
+    ///
+    /// # Effects
+    ///
+    /// - The provided `sequence_group` is appended to the end of the `self.waiting` queue.
+    /// - The total number of unfinished sequences in the scheduler increases.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut scheduler = Scheduler::new(/* ... */);
+    /// let new_sequence_group = SequenceGroup::new(/* ... */);
+    /// scheduler.add_sequence_group(new_sequence_group);
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method does not immediately schedule the added sequence group for processing.
+    /// The actual scheduling occurs when the `schedule` method is called on the scheduler.
+    #[instrument(skip_all)]
     pub fn add_sequence_group(&mut self, sequence_group: SequenceGroup) {
+        let _enter = self.span.enter();
+        trace!(
+            "Adding sequence group with id = {}",
+            sequence_group.request_id
+        );
         self.waiting.push_back(sequence_group)
     }
 
-    /// Allows for preemption of `SequenceGroup`
+    /// Preempts a sequence group, either by recomputation or swapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The sequence group to preempt.
+    /// * `blocks_to_swap_out` - A map to track blocks that need to be swapped out.
+    /// * `preemption_mode` - Optional preemption mode. If None, the mode is determined automatically.
+    ///
+    /// # Returns
+    ///
+    /// The preemption mode that was used.
+    ///
+    /// # Details
+    ///
+    /// If preemption mode is not specified, it is determined as follows:
+    /// - Recomputation is used by default for single-sequence groups, as it has lower overhead.
+    /// - Swapping is used for multi-sequence groups (e.g., beam search), as recomputation is not currently supported.
+    ///
+    /// # Notes
+    ///
+    /// - FIXME: The current policy implicitly prioritizes multi-sequence groups over single-sequence groups,
+    ///   as swapped sequences are prioritized over waiting sequences.
+    /// - TODO: Implement recomputation support for multi-sequence groups.
+    ///
+    /// # Warnings
+    ///
+    /// Logs a warning every 50 preemptions about potential performance impact and suggests solutions.
     #[instrument(skip_all)]
     fn preempt(
         &mut self,
@@ -1392,6 +1801,11 @@ impl<P: Debug> Scheduler<P> {
         blocks_to_swap_out: &mut HashMap<u32, u32>,
         preemption_mode: Option<PreemptionMode>,
     ) -> Result<PreemptionMode, SchedulerError> {
+        let _enter = self.span.enter();
+        trace!(
+            "Preempting sequence group with id = {}",
+            sequence_group.request_id
+        );
         // If preemption mode is not specified, we determine the mode as follows:
         // We use recomputation by default since it incurs lower overhead than
         // swapping. However, when the sequence group has multiple sequences
@@ -1432,13 +1846,43 @@ impl<P: Debug> Scheduler<P> {
         Ok(preemption_mode)
     }
 
-    /// Preempts a `SequenceGroup` by `Recomputation` mode
+    /// Preempts a `SequenceGroup` by resetting it for recomputation.
+    ///
+    /// This method handles preemption by resetting the state of the sequence group
+    /// to allow for recomputation from the beginning. It is typically used when
+    /// there are not enough resources to continue processing the sequence group.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - A mutable reference to the `SequenceGroup` to be preempted.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if preemption is successful, or a `SchedulerError` if an error occurs.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There is not exactly one running sequence in the group (only single sequences can be recomputed).
+    /// - There are issues accessing or modifying sequence data.
+    ///
+    /// # Effects
+    ///
+    /// - Sets the status of the running sequence to `Waiting`.
+    /// - Frees the resources associated with the sequence.
+    /// - Resets the sequence state to allow for recomputation.
+    ///
+    /// # Notes
+    ///
+    /// This method is part of the preemption strategy and should be used carefully
+    /// as it affects the execution flow of the sequence group.
     #[instrument(skip_all)]
     fn preempt_by_recompute(
         &mut self,
         sequence_group: &mut SequenceGroup,
     ) -> Result<(), SchedulerError> {
-        info!(
+        let _enter = self.span.enter();
+        trace!(
             "Preemption by recomputation for sequence group with id = {}",
             sequence_group.request_id
         );
@@ -1472,14 +1916,47 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Preempts a `SequenceGroup` by `Swap` mode
+    /// Preempts a `SequenceGroup` by swapping it out of GPU memory.
+    ///
+    /// This method handles preemption by moving the sequence group's data from GPU
+    /// memory to CPU memory, allowing other sequences to use the freed GPU resources.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - A mutable reference to the `SequenceGroup` to be preempted.
+    /// * `blocks_to_swap_out` - A mutable reference to a HashMap that will be updated
+    ///   with the blocks that need to be swapped out. Keys are the GPU block IDs,
+    ///   and values are the corresponding CPU block IDs.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if preemption is successful, or a `SchedulerError` if an error occurs.
+    ///
+    /// # Effects
+    ///
+    /// - Calls `self.swap_out()` to move the sequence group's data to CPU memory.
+    /// - Updates `blocks_to_swap_out` with the blocks that need to be transferred.
+    /// - Changes the status of affected sequences to `Swapped`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - There is not enough CPU memory to accommodate the swapped-out data.
+    /// - The swap-out operation fails for any reason.
+    ///
+    /// # Note
+    ///
+    /// This method is part of the preemption strategy and should be used when GPU
+    /// resources need to be freed for higher-priority tasks. It allows for efficient
+    /// management of limited GPU memory by temporarily moving less critical data to CPU.
     #[instrument(skip_all)]
     fn preempt_by_swap(
         &mut self,
         sequence_group: &mut SequenceGroup,
         blocks_to_swap_out: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
-        info!(
+        let _enter = self.span.enter();
+        trace!(
             "Preemption by swap for sequence group with id = {}..",
             sequence_group.request_id
         );
@@ -1489,14 +1966,42 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Swaps out GPU blocks to CPU blocks
+    /// Swaps out GPU blocks to CPU blocks for a given sequence group.
+    ///
+    /// This method is used to free up GPU memory by moving data for a sequence group
+    /// from GPU to CPU memory. It's typically called when GPU memory is constrained
+    /// and lower-priority sequences need to be temporarily moved to make room for
+    /// higher-priority work.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The sequence group to swap out.
+    /// * `blocks_to_swap_out` - A mutable map that will be updated with the block mappings
+    ///                          from GPU to CPU. Keys are GPU block IDs, values are CPU block IDs.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the swap out was successful, or a `SchedulerError` if there
+    /// was an issue (e.g., not enough CPU swap space).
+    ///
+    /// # Effects
+    ///
+    /// - Updates the `blocks_to_swap_out` map with new GPU to CPU block mappings.
+    /// - Changes the status of affected sequences in the group from `Running` to `Swapped`.
+    /// - Frees up GPU memory by moving data to CPU memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SchedulerError::NotEnoughBlockSpaceForSwapOut` if there isn't sufficient
+    /// CPU swap space available to perform the operation.
     #[instrument(skip_all)]
     fn swap_out(
         &mut self,
         sequence_group: &mut SequenceGroup,
         blocks_to_swap_out: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
-        info!(
+        let _enter = self.span.enter();
+        trace!(
             "Swapping out for sequence group with id = {}",
             sequence_group.request_id
         );
@@ -1519,13 +2024,44 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Swaps in CPU blocks to GPU blocks
+    /// Swaps in blocks from CPU memory to GPU memory for a given sequence group.
+    ///
+    /// This method moves data from CPU memory back to GPU memory for sequences that were
+    /// previously swapped out. It updates the block mappings and sequence statuses accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - The sequence group to swap in.
+    /// * `blocks_to_swap_in` - A mutable map that will be updated with the block mappings
+    ///                         from CPU to GPU. Keys are CPU block IDs, values are GPU block IDs.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the swap in was successful, or a `SchedulerError` if there
+    /// was an issue (e.g., not enough GPU memory).
+    ///
+    /// # Effects
+    ///
+    /// - Updates the `blocks_to_swap_in` map with new CPU to GPU block mappings.
+    /// - Changes the status of affected sequences in the group from `Swapped` to `Running`.
+    /// - Moves data from CPU memory to GPU memory.
+    ///
+    /// # Errors
+    ///
+    /// May return a `SchedulerError` if:
+    /// - There's insufficient GPU memory to accommodate the swapped-in data.
+    /// - The block manager encounters an error during the swap-in process.
     #[instrument(skip_all)]
     fn swap_in(
         &mut self,
         sequence_group: &mut SequenceGroup,
         blocks_to_swap_in: &mut HashMap<u32, u32>,
     ) -> Result<(), SchedulerError> {
+        let _enter = self.span.enter();
+        trace!(
+            "Swapping in for sequence group with id = {}",
+            sequence_group.request_id
+        );
         let mapping = self.block_manager.swap_in(sequence_group)?;
         blocks_to_swap_in.extend(mapping.iter());
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
@@ -1539,8 +2075,32 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Computes if duration change has been greater than scheduled delay
+    /// Determines if enough time has passed to schedule the next prompt.
+    ///
+    /// This function implements a delay mechanism to potentially improve batching efficiency
+    /// by allowing the waiting queue to accumulate more requests before scheduling.
+    ///
+    /// # Arguments
+    ///
+    /// * `now` - The current timestamp.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if enough time has passed to schedule the next prompt, `false` otherwise.
+    ///
+    /// # Behavior
+    ///
+    /// 1. Updates the last prompt latency if the previous operation was a prompt.
+    /// 2. Always updates the previous time and resets the prompt flag.
+    /// 3. If delay factor is set and there are waiting requests:
+    ///    - Calculates the earliest arrival time of waiting requests.
+    ///    - Returns true if either:
+    ///      a) The time since the earliest arrival exceeds the delay factor * last prompt latency.
+    ///      b) There are no currently running requests.
+    /// 4. If delay factor is not set or there are no waiting requests, always returns true.
     fn passed_delay(&mut self, now: Instant) -> bool {
+        let _enter = self.span.enter();
+        trace!("Checking if enough time has passed to schedule the next prompt");
         if self.previous_prompt {
             self.last_prompt_latency = (now - self.previous_time).as_secs_f32();
         }
@@ -1561,7 +2121,23 @@ impl<P: Debug> Scheduler<P> {
         }
     }
 
-    /// Get prompt limit
+    /// Determines the maximum allowed length for prompts based on the scheduler configuration.
+    ///
+    /// # Returns
+    ///
+    /// - If chunked prefill is enabled: Returns `max_model_len`.
+    /// - If chunked prefill is disabled: Returns the minimum of `max_model_len` and `max_num_batched_tokens`.
+    ///
+    /// # Behavior
+    ///
+    /// This function helps enforce limits on prompt lengths to ensure efficient scheduling:
+    ///
+    /// - With chunked prefill: Allows longer prompts up to the model's maximum length, as they can be processed in chunks.
+    /// - Without chunked prefill: Restricts prompts to fit within a single batch, balancing between model capacity and scheduling efficiency.
+    ///
+    /// # Note
+    ///
+    /// The returned limit affects how prompts are handled during scheduling, potentially leading to truncation or rejection of overly long prompts.
     fn get_prompt_limit(&self) -> usize {
         if self.scheduler_config.enable_chunked_prefill() {
             self.scheduler_config.max_model_len()
@@ -1572,11 +2148,50 @@ impl<P: Debug> Scheduler<P> {
         }
     }
 
-    /// Allocates blocks to `SequenceGroup` and set sequences status to `Running`
+    /// Allocates blocks to a `SequenceGroup` and sets its sequences' status to `Running`.
+    ///
+    /// This function performs two main tasks:
+    /// 1. Allocates memory blocks for the given sequence group using the block manager.
+    /// 2. Updates the status of all waiting sequences in the group to running.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_group` - A mutable reference to the `SequenceGroup` to be allocated and updated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the allocation and status update are successful, or a `SchedulerError` if there's an issue with block allocation.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The block manager fails to allocate blocks for the sequence group.
+    ///
+    /// # Side Effects
+    ///
+    /// - Modifies the internal state of the block manager by allocating blocks.
+    /// - Updates the status of sequences within the given `sequence_group`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut scheduler = Scheduler::new(/* ... */);
+    /// let mut sequence_group = SequenceGroup::new(/* ... */);
+    ///
+    /// match scheduler.allocate_and_set_running(&mut sequence_group) {
+    ///     Ok(()) => println!("Allocation successful and sequences set to running"),
+    ///     Err(e) => eprintln!("Failed to allocate: {}", e),
+    /// }
+    /// ```
     fn allocate_and_set_running(
         &mut self,
         sequence_group: &mut SequenceGroup,
     ) -> Result<(), SchedulerError> {
+        let _enter = self.span.enter();
+        trace!(
+            "Allocating blocks for sequence group with id = {}",
+            sequence_group.request_id
+        );
         self.block_manager.allocate(sequence_group)?;
         sequence_group.sequences.iter_mut().for_each(|(_, s)| {
             let mut sequence_guard_lock = s.write().unwrap();
@@ -1588,9 +2203,27 @@ impl<P: Debug> Scheduler<P> {
         Ok(())
     }
 
-    /// Frees a sequence from a block table
+    /// Removes finished sequences from the running queue.
+    ///
+    /// This method filters out any sequence groups that have completed their
+    /// generation (i.e., are marked as finished) from the `running` queue.
+    /// This helps to free up resources and maintain an accurate list of
+    /// actively running sequences.
+    ///
+    /// # Effects
+    ///
+    /// - Modifies `self.running` to only contain unfinished sequence groups.
+    /// - Does not directly free block table resources; this should be handled
+    ///   separately by the block manager.
+    ///
+    /// # Note
+    ///
+    /// This method should be called periodically to clean up the running queue,
+    /// typically after each generation step or when checking for completed sequences.
     #[instrument(skip(self))]
     pub fn free_finished_sequence(&mut self) {
+        let _enter = self.span.enter();
+        trace!("Freeing finished sequence");
         self.running = self
             .running
             .iter()
@@ -1608,11 +2241,14 @@ impl<P: Debug> Scheduler<P> {
 /// A `SequenceGroup` that has been scheduled
 #[derive(Clone, Debug)]
 pub struct ScheduledSequenceGroup {
-    /// Sequence group
+    /// The `SequenceGroup` that has been scheduled
     pub scheduled_group: SequenceGroup,
-    /// The total chunk size (number of tokens) to process for next iteration.
-    /// 1 for decoding. Same as prompt tokens for prefill, but if prefill is
-    /// chunked, it can be smaller than that.
+    /// The number of tokens to process in the next iteration
+    ///
+    /// This value is:
+    /// - 1 for decoding (generating a single new token)
+    /// - Equal to the number of prompt tokens for a full prefill
+    /// - Smaller than the total prompt tokens if prefill is chunked
     pub token_chunk_size: usize,
 }
 

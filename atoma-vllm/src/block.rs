@@ -8,30 +8,40 @@ use tracing::{error, info_span, instrument, Span};
 
 use crate::types::{ReadLock, WriteLock};
 
-/// `BlockTable` corresponds to a mapping between logical and physical KV blocks of each request. Each block table entry
-/// records the corresponding physical blocks of a logical block and the number of filled positions.
+/// A mapping between logical and physical KV (Key-Value) blocks for each request.
+///
+/// Each entry in the `BlockTable` represents:
+/// - The corresponding physical block for a logical block
+/// - The number of filled positions in that block
 pub type BlockTable = Vec<SyncPhysicalTokenBlock>;
 
-/// Block device (either CPU or GPU)
+/// Represents the device on which a block is allocated.
+///
+/// `Cpu`: The block is allocated on the CPU
+///
+/// `Gpu`: The block is allocated on the GPU
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BlockDevice {
     Cpu,
     Gpu,
 }
 
-/// A block that stores a contiguous chunk of tokens from left to right. Logical blocks are used to represent the states of the corresponding
-/// physical blocks in the KV cache (allocated on the GPU).
+/// Represents a contiguous chunk of tokens in the logical space.
+///
+/// `LogicalTokenBlock` is used to track the state of corresponding physical blocks
+/// in the KV cache (typically allocated on the GPU). It stores tokens sequentially
+/// from left to right.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogicalTokenBlock {
-    /// Block number
+    /// Unique identifier for this block
     block_number: usize,
-    /// Block size
+    /// Maximum number of tokens this block can hold
     block_size: usize,
-    /// Token IDs, of maximum size `block_size`
+    /// Sequence of token IDs, with a maximum length of `block_size`
     token_ids: Vec<u32>,
-    /// Number of tokens already allocated
+    /// Current number of tokens stored in this block
     num_tokens: usize,
-    /// Tracing span
+    /// Tracing span for observability
     span: Span,
 }
 
@@ -72,8 +82,24 @@ impl LogicalTokenBlock {
         self.block_size - self.num_tokens
     }
 
-    /// Appends a new set of token ids, if there are enough empty slots in the current `LogicalTokenBlock`
-    #[instrument(skip_all)]
+    /// Appends a new set of token ids to the current `LogicalTokenBlock`.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_ids` - A slice of u32 values representing the token IDs to be appended.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if the tokens were successfully appended.
+    /// * `Err(BlockError::AllocationError)` if there isn't enough space in the block.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut block = LogicalTokenBlock::new(0, 10);
+    /// assert!(block.append_tokens(&[1, 2, 3]).is_ok());
+    /// assert!(block.append_tokens(&[4, 5, 6, 7, 8, 9, 10]).is_err());
+    /// ```    #[instrument(skip_all)]
     pub fn append_tokens(&mut self, token_ids: &[u32]) -> Result<(), BlockError> {
         if token_ids.len() <= self.get_num_empty_slots() {
             self.token_ids.extend(token_ids);
@@ -99,22 +125,25 @@ impl LogicalTokenBlock {
 
 impl Eq for LogicalTokenBlock {}
 
-/// A physical block structure. It represents a contiguous memory KV cache block, usually allocated on the 'physical' GPU.
+/// Represents a contiguous memory block in the KV cache, typically allocated on a GPU device.
+///
+/// This structure is used to manage physical memory allocation and track the state
+/// of each block in the KV cache.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicalTokenBlock {
-    /// Block number
+    /// Unique identifier for this block
     block_number: u32,
-    /// Block size (representing number of KV vectors for contiguous input tokens)
+    /// Maximum number of KV vectors this block can hold
     block_size: usize,
-    /// Block has been computed
+    /// Indicates whether the block's content has been computed
     computed: bool,
-    /// Device to which the physical block is allocated
+    /// The device (CPU or GPU) on which this block is allocated
     device: BlockDevice,
-    /// Last instant in which the block has been accessed
+    /// Timestamp of the most recent access to this block
     last_accessed: Option<Instant>,
-    /// Number of hashed tokens
+    /// Number of tokens that have been hashed and stored in this block
     num_hashed_tokens: usize,
-    /// Reference counter, used for CoW operations involved in more involved decoding techniques (e.g. ParallelSampling)
+    /// Reference count for Copy-on-Write operations in advanced decoding techniques
     ref_count: usize,
 }
 
@@ -197,19 +226,35 @@ impl PhysicalTokenBlock {
         self.ref_count = value;
     }
 
-    /// Decreases the `ref_count` variable by -1, if possible
+    /// Decreases the reference count by 1.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the reference count was successfully decreased.
+    /// - `Err(BlockError::ReferenceCountError)` if the reference count is already zero.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the reference count is already zero,
+    /// as it's not possible to decrease it further.
     pub fn decrease_ref_count(&mut self) -> Result<(), BlockError> {
         if self.ref_count > 0 {
             self.ref_count -= 1;
             Ok(())
         } else {
-            error!("Reference counter is already zero, trying to dereference once more which should not be possible..");
+            error!(
+                "Reference counter is already zero, trying to dereference once more which should not be possible.."
+            );
             Err(BlockError::ReferenceCountError)
         }
     }
 }
 
-/// Sync and Send shared access physical block
+/// A thread-safe, shared-ownership wrapper for `PhysicalTokenBlock`.
+///
+/// This type provides synchronized read and write access to a `PhysicalTokenBlock`
+/// across multiple threads. It combines `Arc` for shared ownership and `RwLock`
+/// for interior mutability with multiple reader / single writer access.
 pub type SyncPhysicalTokenBlock = Arc<RwLock<PhysicalTokenBlock>>;
 
 impl ReadLock for SyncPhysicalTokenBlock {
