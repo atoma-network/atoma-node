@@ -1,0 +1,13 @@
+[package]
+name = "atoma-chat"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+atoma-types = { workspace = true }
+futures = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
