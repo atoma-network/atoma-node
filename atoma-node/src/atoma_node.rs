@@ -49,7 +49,6 @@ impl AtomaNode {
         let (input_manager_tx, input_manager_rx) = mpsc::channel(CHANNEL_SIZE);
         let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
         let (chat_request_sender, chat_request_receiver) = mpsc::channel(CHANNEL_SIZE);
-        let (start_chat_event_sender, start_chat_event_receiver) = mpsc::channel(CHANNEL_SIZE);
         let (chat_client_sender, chat_client_receiver) = mpsc::channel(CHANNEL_SIZE);
         let (inference_sender, inference_receiver) = mpsc::channel(CHANNEL_SIZE);
         let (output_destination_sender, output_destination_receiver) = mpsc::channel(CHANNEL_SIZE);
@@ -80,6 +79,7 @@ impl AtomaNode {
                     subscriber_req_rx,
                     atoma_node_resp_tx,
                     streamer_tx,
+                    inference_receiver,
                 )?;
                 model_service
                     .run()
@@ -96,7 +96,6 @@ impl AtomaNode {
                 let chat_service = ChatService::new(
                     model_ids,
                     NUM_RETRIES_PER_CHAT_MESSAGE,
-                    start_chat_event_receiver,
                     chat_request_receiver,
                     chat_client_sender,
                     inference_sender,
@@ -119,7 +118,7 @@ impl AtomaNode {
                     config_path,
                     subscriber_req_tx,
                     input_manager_tx,
-                    start_chat_event_sender,
+                    chat_request_sender,
                 )
                 .await?;
                 sui_event_subscriber
@@ -187,7 +186,6 @@ impl AtomaNode {
                     firebase,
                     #[cfg(feature = "supabase")]
                     supabase,
-                    chat_request_sender,
                 )
                 .await?;
                 atoma_input_manager.run().await.map_err(|e| {

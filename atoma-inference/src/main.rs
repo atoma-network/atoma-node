@@ -19,7 +19,7 @@ async fn main() -> Result<(), ModelServiceError> {
     let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(32);
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(32);
     let (stream_tx, _) = tokio::sync::mpsc::channel(32);
-    let (chat_service_req_tx, _) = tokio::sync::mpsc::channel(32);
+    let (_, chat_service_receiver) = tokio::sync::mpsc::channel(32);
 
     let args = Args::parse();
     let config_path = args.config_path;
@@ -33,7 +33,7 @@ async fn main() -> Result<(), ModelServiceError> {
         subscriber_req_rx,
         atoma_node_resp_tx,
         stream_tx,
-        chat_service_req_tx,
+        chat_service_receiver,
     )
     .expect("Failed to start inference service");
 

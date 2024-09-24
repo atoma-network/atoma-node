@@ -1,4 +1,5 @@
 pub mod service;
+pub mod types;
 
 use std::{collections::HashMap, sync::LazyLock};
 

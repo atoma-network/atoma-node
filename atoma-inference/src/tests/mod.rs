@@ -1,3 +1,4 @@
+use crate::model_thread::ThreadCommand;
 use crate::models::types::LlmOutput;
 use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait};
 use std::{path::PathBuf, time::Duration};
@@ -19,10 +20,7 @@ use tokio::sync::oneshot;
 
 use crate::{
     jrpc_server,
-    model_thread::{
-        spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher, ThreadRequest,
-        ThreadResponse,
-    },
+    model_thread::{spawn_model_thread, ModelThreadCommand, ModelThreadDispatcher},
     models::config::ModelsConfig,
     service::ModelService,
 };
@@ -117,7 +115,7 @@ impl ModelThreadDispatcher {
         for i in duration_in_secs {
             let model_name = format!("test_model_{:?}", i);
 
-            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
+            let (model_sender, model_receiver) = mpsc::channel::<ThreadCommand>();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let duration = format!("{i}");
@@ -177,10 +175,12 @@ async fn test_mock_model_thread() {
             ));
             let request = Request::new(vec![], 0, 1, prompt_params, vec![]);
             let command = ModelThreadCommand {
-                request: ThreadRequest::Inference(request.clone()),
+                request: request.clone(),
                 sender: response_sender,
             };
-            sender.send(command).expect("Failed to send command");
+            sender
+                .send(ThreadCommand::Model(command))
+                .expect("Failed to send command");
             responses.push(response_receiver);
             should_be_received_responses.push(
                 MockInputOutput::try_from((String::new(), request.params()))
@@ -192,15 +192,8 @@ async fn test_mock_model_thread() {
 
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
-        if let Ok(value) = response {
-            match value {
-                ThreadResponse::Inference(response) => {
-                    received_responses.push(response.response().as_u64().unwrap());
-                }
-                ThreadResponse::ChatInference(_) => {
-                    unreachable!();
-                }
-            }
+        if let Ok(response) = response {
+            received_responses.push(response.response().as_u64().unwrap());
         }
     }
 

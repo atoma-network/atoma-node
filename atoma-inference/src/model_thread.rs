@@ -4,7 +4,7 @@ use std::{
 
 use atoma_types::{
     AtomaStreamingData, ChatInferenceRequest, ChatInferenceResponse, ModelParams,
-    OutputDestination, OutputType, Request, Response,
+    OutputDestination, OutputType, Request, Response, Text2TextModelParams,
 };
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
@@ -28,22 +28,15 @@ use crate::models::{
     ModelError, ModelId, ModelTrait,
 };
 
-/// `ThreadRequest` - Wrapper around an AI inference request to be
-///     processed in the corresponding model thread.
-pub enum ThreadRequest {
-    /// An inference request
-    Inference(Request),
-    /// A chat inference request
-    ChatInference(ChatInferenceRequest),
-}
-
-/// `ThreadResponse` - Wrapper around an AI inference response that was
-///     processed in the corresponding model thread.
-pub enum ThreadResponse {
-    /// An inference response
-    Inference(Response),
-    /// A chat inference response
-    ChatInference(ChatInferenceResponse),
+/// `ChatThreadCommand` - Wrapper around a chat inference request to be
+///     processed in the corresponding chat thread. It also encapsulates
+///     a `oneshot` `Sender` that is used to send the `Response` back to
+///     the main thread worker.
+pub struct ChatThreadCommand {
+    /// The `ChatInferenceRequest` body
+    pub(crate) request: ChatInferenceRequest,
+    /// A `oneshot` `Sender` used to send the AI generated `Response`
+    pub(crate) sender: oneshot::Sender<ChatInferenceResponse>,
 }
 
 /// `ModelThreadCommand` - Wrapper around an AI inference request to be
@@ -52,9 +45,18 @@ pub enum ThreadResponse {
 ///     the main thread worker.
 pub struct ModelThreadCommand {
     /// The `Request` body
-    pub(crate) request: ThreadRequest,
+    pub(crate) request: Request,
     /// A `oneshot` `Sender` used to send the AI generated `Response`
-    pub(crate) sender: oneshot::Sender<ThreadResponse>,
+    pub(crate) sender: oneshot::Sender<Response>,
+}
+
+/// `ThreadCommand` - Wrapper around an AI inference request to be
+///     processed in the corresponding model thread. It also encapsulates
+///     a `oneshot` `Sender` that is used to send the `Response` back to
+///     the main thread worker.
+pub enum ThreadCommand {
+    Model(ModelThreadCommand),
+    Chat(ChatThreadCommand),
 }
 
 #[derive(Debug, Error)]
@@ -74,7 +76,7 @@ pub enum ModelThreadError {
 pub struct ModelThreadHandle {
     /// A `mpsc` `Sender` channel, responsible to send new `ModelThreadCommand`
     /// to the corresponding `Model`'s thread
-    sender: mpsc::Sender<ModelThreadCommand>,
+    sender: mpsc::Sender<ThreadCommand>,
     /// The join handle of the corresponding `Model`'s thread
     join_handle: std::thread::JoinHandle<Result<(), ModelThreadError>>,
 }
@@ -93,7 +95,7 @@ impl ModelThreadHandle {
 /// `mpsc` `Receiver` channel, listening to incoming `ModelThreadCommand`'s
 pub struct ModelThread<M: ModelTrait> {
     model: M,
-    receiver: mpsc::Receiver<ModelThreadCommand>,
+    model_thread_receiver: mpsc::Receiver<ThreadCommand>,
 }
 
 impl<M> ModelThread<M>
@@ -108,10 +110,9 @@ where
     pub fn run(mut self) -> Result<(), ModelThreadError> {
         debug!("Start Model thread");
 
-        while let Ok(command) = self.receiver.recv() {
-            let ModelThreadCommand { request, sender } = command;
-            let (response, time_to_generate, num_input_tokens, num_output_tokens) = match request {
-                ThreadRequest::Inference(request) => {
+        while let Ok(command) = self.model_thread_receiver.recv() {
+            match command {
+                ThreadCommand::Model(ModelThreadCommand { request, sender }) => {
                     let request_id = request.id();
                     let sampled_node_index = request.sampled_node_index();
                     let num_sampled_nodes = request.num_sampled_nodes();
@@ -146,49 +147,51 @@ where
                         output_destination,
                         output_type,
                     );
-                    (
-                        ThreadResponse::Inference(response),
-                        time_to_generate,
-                        num_input_tokens,
-                        num_output_tokens,
-                    )
+
+                    sender.send(response).ok();
+
+                    // set metrics
+                    let histogram = metrics::histogram!("atoma-inference-time");
+                    histogram.record(time_to_generate);
+                    let histogram = metrics::histogram!("atoma-inference-input-tokens");
+                    histogram.record(num_input_tokens as f32);
+                    if let Some(output_tokens) = num_output_tokens {
+                        let histogram = metrics::histogram!("atoma-inference-output-tokens");
+                        histogram.record(output_tokens as f32);
+                    }
                 }
-                ThreadRequest::ChatInference(request) => {
-                    let chat_id = request.chat_id;
-                    let params = request.params;
-
-                    let model_output = self.model.run_chat_prompt(&request.prompt, &params)?;
-                    let time_to_generate = model_output.time_to_generate();
-                    let num_input_tokens = model_output.num_input_tokens();
-                    let num_output_tokens = model_output.num_output_tokens();
-                    let input_tokens = model_output.input_tokens();
-                    let output_tokens = model_output.output_tokens();
-                    let output = model_output.text_output();
-                    (
-                        ThreadResponse::ChatInference(ChatInferenceResponse {
-                            chat_id,
-                            output,
-                            input_tokens,
-                            output_tokens,
-                            time_to_generate,
-                        }),
-                        time_to_generate,
-                        num_input_tokens,
-                        num_output_tokens,
-                    )
+                ThreadCommand::Chat(ChatThreadCommand {
+                    request: chat_request,
+                    sender,
+                }) => {
+                    let model_params = ModelParams::Text2TextModelParams(Text2TextModelParams {
+                        max_tokens: chat_request.params.max_tokens,
+                        temperature: chat_request.params.temperature,
+                        top_p: chat_request.params.top_p,
+                        top_k: chat_request.params.top_k,
+                        prompt: atoma_types::InputSource::Raw {
+                            prompt: chat_request.prompt,
+                        },
+                        model: chat_request.model_id,
+                        random_seed: chat_request.random_seed,
+                        repeat_penalty: chat_request.params.repeat_penalty,
+                        repeat_last_n: chat_request.params.repeat_last_n,
+                        pre_prompt_tokens: chat_request.pre_prompt_tokens,
+                        chat: true,
+                        should_stream_output: true,
+                    });
+                    let model_input =
+                        M::Input::try_from((chat_request.chat_id.clone(), model_params))?;
+                    let model_output = self.model.run(model_input)?;
+                    let chat_response = ChatInferenceResponse {
+                        chat_id: chat_request.chat_id,
+                        output: model_output.text_output(),
+                        input_tokens: model_output.input_tokens(),
+                        output_tokens: model_output.output_tokens(),
+                        time_to_generate: model_output.time_to_generate(),
+                    };
+                    sender.send(chat_response).ok();
                 }
-            };
-
-            sender.send(response).ok();
-
-            // set metrics
-            let histogram = metrics::histogram!("atoma-inference-time");
-            histogram.record(time_to_generate);
-            let histogram = metrics::histogram!("atoma-inference-input-tokens");
-            histogram.record(num_input_tokens as f32);
-            if let Some(output_tokens) = num_output_tokens {
-                let histogram = metrics::histogram!("atoma-inference-output-tokens");
-                histogram.record(output_tokens as f32);
             }
         }
 
@@ -200,10 +203,10 @@ where
 /// different AI models (being operated each on its own model threads).
 pub struct ModelThreadDispatcher {
     /// Mapping from each model id to the remove `Sender`'s `ModelThreadCommand`
-    pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ModelThreadCommand>>,
+    pub(crate) model_senders: HashMap<ModelId, mpsc::Sender<ThreadCommand>>,
     /// A `FuturesUnordered` containing each generated `Response`'s oneshot receiver.
     /// It should yield everyime a new AI inference output is generated.
-    pub(crate) responses: FuturesUnordered<oneshot::Receiver<ThreadResponse>>,
+    pub(crate) responses: FuturesUnordered<oneshot::Receiver<Response>>,
 }
 
 impl ModelThreadDispatcher {
@@ -226,7 +229,7 @@ impl ModelThreadDispatcher {
             let model_name = model_config.model_id().clone();
             let model_type = ModelType::from_str(&model_name)?;
 
-            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
+            let (model_sender, model_receiver) = mpsc::channel::<ThreadCommand>();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let join_handle = dispatch_model_thread(
@@ -256,10 +259,13 @@ impl ModelThreadDispatcher {
     /// Sends a `ModelThreadCommand` instance into the corresponding
     /// `Model`'s thread, to be processed by the `Model` itself.
     #[instrument(skip_all)]
-    fn send(&self, command: ModelThreadCommand) {
-        let model_id = match &command.request {
-            ThreadRequest::Inference(request) => request.model(),
-            ThreadRequest::ChatInference(request) => request.model_id.clone(),
+    fn send(&self, command: ThreadCommand) {
+        let model_id = match &command {
+            ThreadCommand::Model(ModelThreadCommand { request, .. }) => request.model(),
+            ThreadCommand::Chat(ChatThreadCommand {
+                request: chat_request,
+                ..
+            }) => chat_request.model_id.clone(),
         };
         info!("sending new request with model_id: {model_id}");
 
@@ -279,12 +285,9 @@ impl ModelThreadDispatcher {
     #[instrument(skip_all)]
     pub(crate) fn run_json_inference(
         &self,
-        (request, sender): (ThreadRequest, oneshot::Sender<ThreadResponse>),
+        (request, sender): (Request, oneshot::Sender<Response>),
     ) {
-        self.send(ModelThreadCommand {
-            request,
-            sender,
-        });
+        self.send(ThreadCommand::Model(ModelThreadCommand { request, sender }));
     }
 
     /// Responsible for handling requests from the node's event listener service.
@@ -292,22 +295,21 @@ impl ModelThreadDispatcher {
     #[instrument(skip_all)]
     pub(crate) fn run_subscriber_inference(&self, request: Request) {
         let (sender, receiver) = oneshot::channel();
-        self.send(ModelThreadCommand {
-            request: ThreadRequest::Inference(request),
-            sender,
-        });
+        self.send(ThreadCommand::Model(ModelThreadCommand { request, sender }));
         self.responses.push(receiver);
     }
 
-    /// Responsible for handling requests from the chat service.
+    /// Responsible for handling requests from the node's chat service.
     #[instrument(skip_all)]
-    pub(crate) fn run_chat_inference(&self, request: ChatInferenceRequest) {
-        let (sender, receiver) = oneshot::channel();
-        self.send(ModelThreadCommand {
-            request: ThreadRequest::ChatInference(request),
+    pub(crate) fn run_chat_inference(
+        &self,
+        chat_request: ChatInferenceRequest,
+        sender: oneshot::Sender<ChatInferenceResponse>,
+    ) {
+        self.send(ThreadCommand::Chat(ChatThreadCommand {
+            request: chat_request,
             sender,
-        });
-        self.responses.push(receiver);
+        }));
     }
 }
 
@@ -321,7 +323,7 @@ pub(crate) fn dispatch_model_thread(
     model_name: String,
     model_type: ModelType,
     model_config: ModelConfig,
-    model_receiver: mpsc::Receiver<ModelThreadCommand>,
+    model_receiver: mpsc::Receiver<ThreadCommand>,
     stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
 ) -> JoinHandle<Result<(), ModelThreadError>> {
     if model_config.device_ids().len() > 1 {
@@ -502,13 +504,13 @@ pub(crate) fn dispatch_model_thread(
 }
 
 /// Spawns a new model thread
-#[instrument(skip(api_key, cache_dir, model_config, model_receiver, stream_tx))]
+#[instrument(skip_all)]
 pub(crate) fn spawn_model_thread<M>(
     model_name: String,
     api_key: String,
     cache_dir: PathBuf,
     model_config: ModelConfig,
-    model_receiver: mpsc::Receiver<ModelThreadCommand>,
+    model_thread_receiver: mpsc::Receiver<ThreadCommand>,
     stream_tx: tokio::sync::mpsc::Sender<AtomaStreamingData>,
 ) -> JoinHandle<Result<(), ModelThreadError>>
 where
@@ -523,7 +525,7 @@ where
         let model = M::load(load_data, stream_tx)?;
         let model_thread = ModelThread {
             model,
-            receiver: model_receiver,
+            model_thread_receiver,
         };
 
         if let Err(e) = model_thread.run() {

@@ -319,30 +319,30 @@ impl TryFrom<Value> for ModelParams {
 /// - should_stream_output: boolean value used for streaming the response back to the User, on some UI
 #[derive(Clone, Debug, Deserialize)]
 pub struct Text2TextModelParams {
-    prompt: InputSource,
+    pub prompt: InputSource,
     /// The specified model of the request
-    model: String,
+    pub model: String,
     /// The temperature
-    temperature: f64,
+    pub temperature: f64,
     /// The random seed, used in sampling new tokens
-    random_seed: u64,
+    pub random_seed: u64,
     /// The repeat penalty
-    repeat_penalty: f32,
+    pub repeat_penalty: f32,
     /// The repeat last n
-    repeat_last_n: u64,
+    pub repeat_last_n: u64,
     /// Number of max tokens
-    max_tokens: u64,
+    pub max_tokens: u64,
     /// Optional top k value
-    top_k: Option<u64>,
+    pub top_k: Option<u64>,
     /// Optional top p value
-    top_p: Option<f64>,
+    pub top_p: Option<f64>,
     /// Boolean that controls if the request is to be used in chat mode or not
-    chat: bool,
+    pub chat: bool,
     /// Pre prompt tokens, to be used solely in case `chat == true`
-    pre_prompt_tokens: Vec<u32>,
+    pub pre_prompt_tokens: Vec<u32>,
     /// Should stream output, if true the node should stream the output
     /// back to the used (on the UI). Used only when `chat == true`
-    should_stream_output: bool,
+    pub should_stream_output: bool,
 }
 
 impl Text2TextModelParams {
@@ -1018,6 +1018,12 @@ impl AtomaStreamingData {
 pub const HASH_BYTES_SIZE: usize = 32;
 pub type Hash = [u8; HASH_BYTES_SIZE];
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ChatRequest { 
+    StartChat(StartChatRequest),
+    ChatInference(ChatInferenceRequest),
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Represents a request to start a chat session.
 pub struct StartChatRequest {
@@ -1040,15 +1046,6 @@ pub struct StartChatRequest {
     pub random_seed: u64,
 }
 
-/// Represents a request to process a request within a chat session.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChatRequest {
-    /// The unique identifier for the chat session.
-    pub chat_id: String,
-    /// The prompt to process
-    pub prompt: String,
-}
-
 /// Represents a response to a chat request.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChatInferenceRequest {
@@ -1061,8 +1058,10 @@ pub struct ChatInferenceRequest {
     /// The generation parameters
     pub params: GenerateParameters,
     /// Pre-prompt tokens, in the case where the inference
-    /// request pertains to a chat session
+    /// request pertains to an initialized chat session
     pub pre_prompt_tokens: Vec<u32>,
+    /// The random seed
+    pub random_seed: u64,
     /// The generation parameters
     pub generate_params: GenerateParameters,
 }
@@ -1154,86 +1153,6 @@ pub struct ChatSessionMetadata {
     /// allowing for reproducible results across multiple runs. This seed is
     /// crucial for scenarios where deterministic behavior is required.
     pub random_seed: u64,
-}
-
-/// Represents the data associated with a chat session, including the context
-/// of the conversation, input and output token hashes, and relevant metadata.
-/// This struct is essential for managing the flow of information during a
-/// chat session, ensuring that all necessary data is captured and organized
-/// for serving the end-user.
-#[derive(Clone, Debug)]
-pub struct ChatSessionData {
-    /// The last prompt submitted by the end-user. It is optional, as at the
-    /// start of the chat, the node does not have access to the first prompt.
-    pub last_user_prompt: Option<String>,
-    /// The last time the chat session was updated
-    pub last_updated_time: Instant,
-    /// A collection of token IDs representing the entire chat session context.
-    /// Each inner vector corresponds to a sequence of tokens for a specific
-    /// message or input within the session, allowing for structured context
-    /// management. It's size can be at most the maximum chat's model
-    /// maximum context window size.
-    pub context_token_ids: Vec<u32>,
-    /// The chat inference parameters, necessary for the decoding phase
-    pub params: Vec<GenerateParameters>,
-    /// A collection of cryptographic hashes for each input prompt's token IDs.
-    /// These hashes provide a secure way to verify the integrity of the input
-    /// prompts used in the chat session, ensuring that the original prompts
-    /// can be reconstructed or validated if necessary.
-    pub input_prompts_hashes: Vec<Hash>,
-    /// A collection of cryptographic hashes for each generated output's token IDs.
-    /// Similar to input prompts, these hashes ensure the integrity and authenticity
-    /// of the responses generated during the chat session, allowing for traceability
-    /// and verification of the outputs.
-    pub output_prompts_hashes: Vec<Hash>,
-    /// The number of input tokens in the chat session
-    pub num_input_tokens: usize,
-    /// The number of output tokens in the chat session
-    pub num_output_tokens: usize,
-    /// Metadata associated with the chat session, encapsulating important
-    /// information such as user details, session limits, and timing data.
-    /// This metadata is crucial for managing the chat session effectively
-    /// and ensuring compliance with defined parameters.
-    pub chat_session_metadata: ChatSessionMetadata,
-}
-
-impl ChatSessionData {
-    pub fn new(
-        chat_id: String,
-        user_pk: String,
-        received_time: Instant,
-        model_id: String,
-        max_context_window_size: usize,
-        max_input_tokens: usize,
-        max_output_tokens: usize,
-        max_messages: usize,
-        output_destination: OutputDestination,
-        random_seed: u64,
-    ) -> Self {
-        let chat_session_metadata = ChatSessionMetadata {
-            chat_id: chat_id,
-            user_pk: user_pk,
-            received_time: received_time,
-            model_id: model_id,
-            max_context_window_size: max_context_window_size,
-            max_input_tokens: max_input_tokens,
-            max_output_tokens: max_output_tokens,
-            max_messages: max_messages,
-            output_destination: output_destination,
-            random_seed: random_seed,
-        };
-        ChatSessionData {
-            chat_session_metadata: chat_session_metadata,
-            last_user_prompt: None,
-            last_updated_time: received_time,
-            context_token_ids: Vec::new(),
-            params: Vec::new(),
-            input_prompts_hashes: Vec::new(),
-            output_prompts_hashes: Vec::new(),
-            num_input_tokens: 0,
-            num_output_tokens: 0,
-        }
-    }
 }
 
 impl TryFrom<(Value, String)> for StartChatRequest {

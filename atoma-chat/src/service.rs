@@ -1,6 +1,6 @@
 use atoma_crypto::blake2b_hash;
 use atoma_types::{
-    ChatInferenceRequest, ChatInferenceResponse, ChatSessionData, Hash, StartChatRequest,
+    ChatInferenceRequest, ChatInferenceResponse, ChatRequest, Hash, StartChatRequest,
 };
 use std::time::Duration;
 use std::{collections::HashMap, time::Instant};
@@ -10,7 +10,7 @@ use tokio::sync::oneshot::error::RecvError;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, info_span, instrument, trace, Span};
 
-use crate::MAX_CONTEXT_WINDOW_SIZE;
+use crate::{types::ChatSessionData, MAX_CONTEXT_WINDOW_SIZE};
 
 /// The chat session retry timeout in seconds, corresponding to 3 seconds
 pub const RETRY_TIMEOUT_SECS: u64 = 3;
@@ -23,10 +23,8 @@ pub type OutputData = (ChatId, String, usize, usize, f64);
 pub struct ChatService {
     /// The model ids that the chat service can handle
     pub model_ids: Vec<String>,
-    /// Receiver for start chat events.
-    pub start_chat_event_receiver: mpsc::Receiver<StartChatRequest>,
     /// Receiver for chat requests.
-    pub chat_request_receiver: mpsc::Receiver<ChatInferenceRequest>,
+    pub chat_request_receiver: mpsc::Receiver<ChatRequest>,
     /// Sender for chat inference requests.
     pub inference_sender:
         mpsc::Sender<(ChatInferenceRequest, oneshot::Sender<ChatInferenceResponse>)>,
@@ -47,8 +45,7 @@ impl ChatService {
     pub fn new(
         model_ids: Vec<String>,
         num_retries: usize,
-        start_chat_event_receiver: mpsc::Receiver<StartChatRequest>,
-        chat_request_receiver: mpsc::Receiver<ChatInferenceRequest>,
+        chat_request_receiver: mpsc::Receiver<ChatRequest>,
         client_sender: mpsc::Sender<(ChatId, usize, usize, Vec<Hash>, Vec<Hash>)>,
         inference_sender: mpsc::Sender<(
             ChatInferenceRequest,
@@ -58,7 +55,6 @@ impl ChatService {
     ) -> Self {
         Self {
             model_ids,
-            start_chat_event_receiver,
             chat_request_receiver,
             client_sender,
             inference_sender,
@@ -74,23 +70,34 @@ impl ChatService {
         trace!("Starting chat service");
         loop {
             tokio::select! {
-                Some(event) = self.start_chat_event_receiver.recv() => {
-                    self.handle_start_chat_event(event)?;
-                },
-                Some(request) = self.chat_request_receiver.recv() => {
-                    let chat_id = request.chat_id.clone();
-                    self.handle_chat_request(request).await?;
-                    // Check if the updated parameters have been reached, if
-                    // that's the case, we commit to the chat session and close it
-                    if let Some(chat_data) = self.chat_sessions_data.get(&chat_id) {
+            Some(request) = self.chat_request_receiver.recv() => {
+                match request {
+                    ChatRequest::StartChat(request) => {
+                        self.handle_start_chat_event(request)?;
+                    }
+                    ChatRequest::ChatInference(mut request) => {
+                        let chat_id = request.chat_id.clone();
+                        // 1. update the pre_prompt_tokens with the current context_token_ids
+                        // of the existing chat session
+                        request.pre_prompt_tokens = self
+                            .chat_sessions_data
+                            .get(&chat_id)
+                            .unwrap()
+                            .context_token_ids
+                            .clone();
+                        // 2. handle the chat inference request
+                        self.handle_chat_request(request).await?;
+                        // 3. Check if the updated parameters have been reached, if
+                        // that's the case, we commit to the chat session and close it
+                        let chat_data = self.chat_sessions_data.get(&chat_id).unwrap();
                         if chat_data.num_input_tokens >= chat_data.chat_session_metadata.max_input_tokens
                             || chat_data.num_output_tokens >= chat_data.chat_session_metadata.max_output_tokens
                             || chat_data.input_prompts_hashes.len() >= chat_data.chat_session_metadata.max_messages {
                             self.handle_close_chat_session(chat_id).await?;
                         }
+                        }
                     }
-                },
-
+                }
             }
         }
     }

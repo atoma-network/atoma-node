@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use atoma_types::{AtomaStreamingData, GenerateParameters};
+use atoma_types::AtomaStreamingData;
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::generation::LogitsProcessor;
@@ -271,24 +271,5 @@ impl ModelTrait for QwenModel {
             output_tokens,
             num_input_tokens,
         })
-    }
-
-    fn run_chat_prompt(&mut self, chat_id: String, prompt: &String, random_seed: u64, request: &GenerateParameters) -> Result<Self::Output, ModelError> {
-        let input = TextModelInput {
-            request_id: chat_id,
-            prompt: prompt.clone(),
-            pre_prompt_tokens: vec![],
-            max_tokens: request.max_tokens as usize,
-            temperature: request.temperature,
-            top_p: request.top_p,
-            repeat_last_n: request.repeat_last_n as usize,
-            repeat_penalty: request.repeat_penalty,
-            random_seed,
-            should_stream_output: true,
-            top_k: request.top_k.map(|k| k as usize),
-            chat: true,
-        };
-
-        self.run(input)
     }
 }

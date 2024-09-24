@@ -1,4 +1,6 @@
-use atoma_types::{AtomaStreamingData, ChatInferenceRequest, Request};
+use atoma_types::{
+    AtomaStreamingData, ChatInferenceRequest, ChatInferenceResponse, Request, Response,
+};
 use candle::Error as CandleError;
 use futures::StreamExt;
 use std::fmt::Debug;
@@ -9,7 +11,6 @@ use tracing::{error, info, instrument, trace};
 
 use thiserror::Error;
 
-use crate::model_thread::{ThreadRequest, ThreadResponse};
 use crate::{
     model_thread::{ModelThreadDispatcher, ModelThreadError, ModelThreadHandle},
     models::config::ModelsConfig,
@@ -31,16 +32,16 @@ pub struct ModelService {
     cache_dir: PathBuf,
     /// A `mpsc` end `Receiver`, listening to new requests, from the node's
     /// JRPC service.
-    json_server_req_rx: Receiver<(ThreadRequest, oneshot::Sender<ThreadResponse>)>,
+    json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
     /// A `mpsc` end `Receiver`, listening to new requests, from the node's
     /// event listener service (requests coming from the Atoma's smart contract).
     subscriber_req_rx: Receiver<Request>,
     /// Atoma's node response sender. Responsible for sending the generated output to
     /// different the Atoma's client service (for on-chain submission of the
     /// cryptographic commitment to the output).
-    atoma_node_resp_tx: Sender<ThreadResponse>,
+    atoma_node_resp_tx: Sender<Response>,
     /// A `mpsc` end `Receiver`, receiving new requests from the chat service.
-    chat_request_receiver: Receiver<ChatInferenceRequest>,
+    chat_request_receiver: Receiver<(ChatInferenceRequest, oneshot::Sender<ChatInferenceResponse>)>,
 }
 
 impl ModelService {
@@ -49,11 +50,14 @@ impl ModelService {
     /// It includes starting a new `ModelThread` for the `Model` being hold.
     pub fn start(
         model_config: ModelsConfig,
-        json_server_req_rx: Receiver<(ThreadRequest, oneshot::Sender<ThreadResponse>)>,
+        json_server_req_rx: Receiver<(Request, oneshot::Sender<Response>)>,
         subscriber_req_rx: Receiver<Request>,
-        atoma_node_resp_tx: Sender<ThreadResponse>,
+        atoma_node_resp_tx: Sender<Response>,
         stream_tx: Sender<AtomaStreamingData>,
-        chat_request_receiver: Receiver<ChatInferenceRequest>,
+        chat_request_receiver: Receiver<(
+            ChatInferenceRequest,
+            oneshot::Sender<ChatInferenceResponse>,
+        )>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -92,6 +96,7 @@ impl ModelService {
                     self.dispatcher.run_subscriber_inference(request);
                     let counter = metrics::counter!("atoma-inference-service-request");
                     counter.increment(1);
+
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
@@ -104,8 +109,11 @@ impl ModelService {
                         error!("Found error in generating inference response: {}", e);
                     }
                 },
-                Some(chat_request) = self.chat_request_receiver.recv() => {
-                    self.dispatcher.run_chat_inference(chat_request);
+                Some((chat_request, sender)) = self.chat_request_receiver.recv() => {
+                    info!("Received a new chat inference request");
+                    self.dispatcher.run_chat_inference(chat_request, sender);
+                    let counter = metrics::counter!("atoma-inference-service-request");
+                    counter.increment(1);
                 },
                 else => continue,
             }
