@@ -16,7 +16,7 @@ use crate::config::SuiSubscriberConfig;
 use crate::AtomaEvent;
 
 use atoma_types::{
-    ChatRequest, InputSource, ModelInput, Request, SmallId, StartChatRequest, NON_SAMPLED_NODE_ERR
+    ChatRequest, InputSource, ModelInput, Request, SmallId, StartChatRequest, NON_SAMPLED_NODE_ERR,
 };
 
 type BoxedSenderError = Box<
@@ -341,7 +341,7 @@ impl SuiSubscriber {
         debug!("event data: {}", event_data);
         let start_chat_request = StartChatRequest::try_from((event_data, user_pk))?;
         self.start_chat_event_sender
-            .send(ChatRequest::StartChat(start_chat_request)    )
+            .send(ChatRequest::StartChat(start_chat_request))
             .await
             .map_err(Box::new)?;
         Ok(())

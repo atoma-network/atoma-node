@@ -1019,7 +1019,7 @@ pub const HASH_BYTES_SIZE: usize = 32;
 pub type Hash = [u8; HASH_BYTES_SIZE];
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum ChatRequest { 
+pub enum ChatRequest {
     StartChat(StartChatRequest),
     ChatInference(ChatInferenceRequest),
 }
@@ -1087,7 +1087,7 @@ pub struct ChatInferenceResponse {
 /// of output characteristics such as randomness, length, and diversity.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenerateParameters {
-    /// The model id 
+    /// The model id
     pub model_id: String,
     /// The temperature controls the randomness of the output. Higher values
     /// result in more diverse outputs, while lower values make the output

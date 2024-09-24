@@ -65,7 +65,8 @@ impl AtomaInputManager {
         firebase: Firebase,
         #[cfg(feature = "supabase")] supabase: atoma_helpers::Supabase,
     ) -> Result<Self, AtomaInputManagerError> {
-        let config: AtomaInputManagerConfig = AtomaInputManagerConfig::from_file_path(config_file_path);
+        let config: AtomaInputManagerConfig =
+            AtomaInputManagerConfig::from_file_path(config_file_path);
 
         info!("Starting Atoma Input Manager...");
         let start = std::time::Instant::now();
