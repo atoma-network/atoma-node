@@ -151,8 +151,9 @@ impl ModelTrait for MistralModel {
             .get_ids()
             .to_vec();
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
-
-        let input_tokens = tokens.len();
+        let input_tokens = tokens.clone();
+        let mut output_tokens = vec![];
+        let num_input_tokens = tokens.len();
 
         let mut generated_tokens = 0_usize;
         let eos_token = match self.tokenizer.get_token("</s>") {
@@ -185,12 +186,20 @@ impl ModelTrait for MistralModel {
             tokens.push(next_token);
             if let Some(word) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&word);
+                output_tokens.push(next_token);
             }
         }
 
         let dt = start_gen.elapsed();
         if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
+            output_tokens.extend(
+                self.tokenizer
+                    .tokenizer()
+                    .encode(rest, true)?
+                    .get_ids()
+                    .to_vec(),
+            );
         }
 
         info!(
@@ -208,7 +217,8 @@ impl ModelTrait for MistralModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: if input.chat { tokens } else { vec![] },
+            output_tokens,
+            num_input_tokens,
         })
     }
 }

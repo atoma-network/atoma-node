@@ -165,7 +165,9 @@ impl ModelTrait for LlamaModel {
             prompt_ids
         };
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
-        let input_tokens = tokens.len();
+        let input_tokens = tokens.clone();
+        let mut output_tokens = vec![];
+        let num_input_tokens = tokens.len();
 
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
@@ -202,6 +204,7 @@ impl ModelTrait for LlamaModel {
             index_pos += ctxt.len();
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
+            output_tokens.push(next_token);
 
             match eos_token_id {
                 Some(model::LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
@@ -216,6 +219,13 @@ impl ModelTrait for LlamaModel {
             }
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 res += &t;
+                output_tokens.extend(
+                    self.tokenizer
+                        .tokenizer()
+                        .encode(t, true)?
+                        .get_ids()
+                        .to_vec(),
+                );
             }
 
             generated_tokens += 1;
@@ -238,9 +248,10 @@ impl ModelTrait for LlamaModel {
         Ok(TextModelOutput {
             text: res,
             time: dt.as_secs_f64(),
+            num_input_tokens,
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: if input.chat { tokens } else { vec![] },
+            output_tokens,
         })
     }
 }

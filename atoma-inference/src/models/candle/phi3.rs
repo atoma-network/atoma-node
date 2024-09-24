@@ -136,7 +136,10 @@ impl ModelTrait for Phi3Model {
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
         let tokens = tokens.get_ids().to_vec();
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
-        let input_tokens = tokens.len();
+        let input_tokens = tokens.clone();
+        let num_input_tokens = tokens.len();
+        let mut output_tokens = vec![];
+
         let mut generated_tokens = 0usize;
         let eos_token = match self.tokenizer.get_token("<|endoftext|>") {
             Some(token) => token,
@@ -168,6 +171,7 @@ impl ModelTrait for Phi3Model {
                 break;
             }
             tokens.push(next_token);
+            output_tokens.push(next_token);
             if let Some(token) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&token)
             }
@@ -177,6 +181,13 @@ impl ModelTrait for Phi3Model {
 
         if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output.push_str(&rest);
+            output_tokens.extend(
+                self.tokenizer
+                    .tokenizer()
+                    .encode(rest, true)?
+                    .get_ids()
+                    .to_vec(),
+            );
         }
 
         info!(
@@ -194,7 +205,8 @@ impl ModelTrait for Phi3Model {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: if input.chat { tokens } else { vec![] },
+            output_tokens,
+            num_input_tokens,
         })
     }
 }

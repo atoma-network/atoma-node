@@ -70,13 +70,10 @@ async fn inner_jrpc_call(
                     return Err(e.to_string());
                 }
             };
-            sender
-                .send((request.clone(), one_sender))
-                .await
-                .map_err(|e| {
-                    error!("Failed to send request to Model Service");
-                    e.to_string()
-                })?;
+            sender.send((request, one_sender)).await.map_err(|e| {
+                error!("Failed to send request to Model Service");
+                e.to_string()
+            })?;
             match one_receiver.await {
                 Ok(response) => Ok(response.response()),
                 Err(e) => {

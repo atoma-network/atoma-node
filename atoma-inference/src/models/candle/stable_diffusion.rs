@@ -99,8 +99,16 @@ impl LlmOutput for StableDiffusionOutput {
         self.time_to_generate
     }
 
-    fn tokens(&self) -> Vec<u32> {
-        panic!("Asking image models for the tokens is not supported")
+    fn output_tokens(&self) -> Vec<u32> {
+        unimplemented!("Asking image models for the tokens is not supported")
+    }
+
+    fn input_tokens(&self) -> Vec<u32> {
+        unimplemented!("Asking image models for the tokens is not supported")
+    }
+
+    fn text_output(&self) -> String {
+        unimplemented!("Asking image models for the tokens is not supported")
     }
 }
 

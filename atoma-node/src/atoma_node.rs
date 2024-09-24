@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use atoma_chat::service::{ChatService, ChatSessionError};
 use atoma_client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_helpers::{Firebase, FirebaseConfig};
 #[cfg(feature = "supabase")]
@@ -24,6 +25,7 @@ use tokio::{
 };
 use tracing::{error, info, instrument, Span};
 
+const NUM_RETRIES_PER_CHAT_MESSAGE: usize = 3;
 const CHANNEL_SIZE: usize = 32;
 
 pub struct AtomaNode {}
@@ -39,12 +41,17 @@ impl AtomaNode {
         P: AsRef<Path> + Send + 'static + Clone,
     {
         let model_config = ModelsConfig::from_file_path(config_path.clone());
+        let model_ids = model_config.models().iter().map(|m| m.model_id()).collect();
 
         let (subscriber_req_tx, subscriber_req_rx) = mpsc::channel(CHANNEL_SIZE);
         let (atoma_node_resp_tx, atoma_node_resp_rx) = mpsc::channel(CHANNEL_SIZE);
         let (output_manager_tx, output_manager_rx) = mpsc::channel(CHANNEL_SIZE);
         let (input_manager_tx, input_manager_rx) = mpsc::channel(CHANNEL_SIZE);
         let (streamer_tx, streamer_rx) = tokio::sync::mpsc::channel(CHANNEL_SIZE);
+        let (chat_request_sender, chat_request_receiver) = mpsc::channel(CHANNEL_SIZE);
+        let (chat_client_sender, chat_client_receiver) = mpsc::channel(CHANNEL_SIZE);
+        let (inference_sender, inference_receiver) = mpsc::channel(CHANNEL_SIZE);
+        let (output_destination_sender, output_destination_receiver) = mpsc::channel(CHANNEL_SIZE);
 
         let firebase_config = FirebaseConfig::from_file_path(config_path.clone());
         let firebase = Firebase::new(
@@ -72,11 +79,32 @@ impl AtomaNode {
                     subscriber_req_rx,
                     atoma_node_resp_tx,
                     streamer_tx,
+                    inference_receiver,
                 )?;
                 model_service
                     .run()
                     .await
                     .map_err(AtomaNodeError::ModelServiceError)
+            })
+        };
+
+        let chat_service_handle = {
+            let span = span.clone();
+            tokio::spawn(async move {
+                let _enter = span.enter();
+                info!("Starting Chat service..");
+                let chat_service = ChatService::new(
+                    model_ids,
+                    NUM_RETRIES_PER_CHAT_MESSAGE,
+                    chat_request_receiver,
+                    chat_client_sender,
+                    inference_sender,
+                    output_destination_sender,
+                );
+                chat_service
+                    .run()
+                    .await
+                    .map_err(AtomaNodeError::ChatServiceError)
             })
         };
 
@@ -90,6 +118,7 @@ impl AtomaNode {
                     config_path,
                     subscriber_req_tx,
                     input_manager_tx,
+                    chat_request_sender,
                 )
                 .await?;
                 sui_event_subscriber
@@ -108,6 +137,7 @@ impl AtomaNode {
                 let atoma_sui_client = AtomaSuiClient::new_from_config_file(
                     config_path.clone(),
                     atoma_node_resp_rx,
+                    chat_client_receiver,
                     output_manager_tx,
                 )?;
                 atoma_sui_client
@@ -132,6 +162,7 @@ impl AtomaNode {
                     firebase,
                     #[cfg(feature = "supabase")]
                     supabase,
+                    output_destination_receiver,
                 )
                 .await?;
                 atoma_output_manager.run().await.map_err(|e| {
@@ -187,6 +218,7 @@ impl AtomaNode {
         let atoma_output_manager_abort_handle = atoma_output_manager_handle.abort_handle();
         let atoma_input_manager_abort_handle = atoma_input_manager_handle.abort_handle();
         let atoma_streamer_abort_handle = atoma_streamer_handle.abort_handle();
+        let chat_service_abort_handle = chat_service_handle.abort_handle();
 
         // This is needed for the error propagation so the try_join! will fail if one of the tasks fails.
         let model_service_task = async { model_service_handle.await? };
@@ -195,6 +227,7 @@ impl AtomaNode {
         let atoma_output_manager_task = async { atoma_output_manager_handle.await? };
         let atoma_input_manager_task = async { atoma_input_manager_handle.await? };
         let atoma_streamer_task = async { atoma_streamer_handle.await? };
+        let chat_service_task = async { chat_service_handle.await? };
 
         if let Err(e) = try_join!(
             model_service_task,
@@ -202,7 +235,8 @@ impl AtomaNode {
             atoma_sui_client_task,
             atoma_output_manager_task,
             atoma_input_manager_task,
-            atoma_streamer_task
+            atoma_streamer_task,
+            chat_service_task
         ) {
             // If one of them fails, abort them all.
             model_service_abort_handle.abort();
@@ -211,6 +245,7 @@ impl AtomaNode {
             atoma_output_manager_abort_handle.abort();
             atoma_input_manager_abort_handle.abort();
             atoma_streamer_abort_handle.abort();
+            chat_service_abort_handle.abort();
             Err(e)
         } else {
             Ok(())
@@ -232,6 +267,8 @@ pub enum AtomaNodeError {
     AtomaInputManagerError(#[from] AtomaInputManagerError),
     #[error("Atoma streamer error: `{0}`")]
     AtomaStreamerError(#[from] AtomaStreamerError),
+    #[error("Chat service error: `{0}`")]
+    ChatServiceError(#[from] ChatSessionError),
     #[error("Tokio failed to join task: `{0}`")]
     JoinError(#[from] JoinError),
     #[error("Url parse error: `{0}`")]

@@ -204,7 +204,9 @@ impl ModelTrait for QwenModel {
             .get_ids()
             .to_vec();
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
-        let input_tokens = tokens.len();
+        let input_tokens = tokens.clone();
+        let mut output_tokens = vec![];
+        let num_input_tokens = tokens.len();
 
         let mut logits_processor =
             LogitsProcessor::new(input.random_seed, Some(input.temperature), input.top_p);
@@ -243,6 +245,7 @@ impl ModelTrait for QwenModel {
                 break;
             }
             tokens.push(next_token);
+            output_tokens.push(next_token);
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
                 output.push_str(&t);
             }
@@ -265,7 +268,8 @@ impl ModelTrait for QwenModel {
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
             input_tokens,
-            tokens: if input.chat { tokens } else { vec![] },
+            output_tokens,
+            num_input_tokens,
         })
     }
 }

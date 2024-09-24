@@ -1,3 +1,4 @@
+use crate::model_thread::ThreadCommand;
 use crate::models::types::LlmOutput;
 use crate::models::{config::ModelConfig, types::ModelType, ModelError, ModelTrait};
 use std::{path::PathBuf, time::Duration};
@@ -45,8 +46,17 @@ impl LlmOutput for MockInputOutput {
     fn time_to_generate(&self) -> f64 {
         0.0
     }
-    fn tokens(&self) -> Vec<u32> {
+
+    fn output_tokens(&self) -> Vec<u32> {
         vec![]
+    }
+
+    fn input_tokens(&self) -> Vec<u32> {
+        vec![]
+    }
+
+    fn text_output(&self) -> String {
+        "".to_string()
     }
 }
 
@@ -105,7 +115,7 @@ impl ModelThreadDispatcher {
         for i in duration_in_secs {
             let model_name = format!("test_model_{:?}", i);
 
-            let (model_sender, model_receiver) = mpsc::channel::<ModelThreadCommand>();
+            let (model_sender, model_receiver) = mpsc::channel::<ThreadCommand>();
             model_senders.insert(model_name.clone(), model_sender.clone());
 
             let duration = format!("{i}");
@@ -168,7 +178,9 @@ async fn test_mock_model_thread() {
                 request: request.clone(),
                 sender: response_sender,
             };
-            sender.send(command).expect("Failed to send command");
+            sender
+                .send(ThreadCommand::Model(command))
+                .expect("Failed to send command");
             responses.push(response_receiver);
             should_be_received_responses.push(
                 MockInputOutput::try_from((String::new(), request.params()))
@@ -180,8 +192,8 @@ async fn test_mock_model_thread() {
 
     let mut received_responses = vec![];
     while let Some(response) = responses.next().await {
-        if let Ok(value) = response {
-            received_responses.push(value.response().as_u64().unwrap());
+        if let Ok(response) = response {
+            received_responses.push(response.response().as_u64().unwrap());
         }
     }
 
@@ -233,14 +245,16 @@ async fn test_inference_service() {
     let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     let (stream_tx, _) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
-
+    let (_, chat_request_receiver) = tokio::sync::mpsc::channel(CHANNEL_BUFFER);
     println!("Starting model service..");
+
     let mut service = ModelService::start(
         config.clone(),
         json_server_req_receiver,
         subscriber_req_rx,
         atoma_node_resp_tx,
         stream_tx,
+        chat_request_receiver,
     )
     .unwrap();
 

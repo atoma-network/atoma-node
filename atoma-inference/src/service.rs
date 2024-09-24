@@ -1,11 +1,13 @@
-use atoma_types::{AtomaStreamingData, Request, Response};
+use atoma_types::{
+    AtomaStreamingData, ChatInferenceRequest, ChatInferenceResponse, Request, Response,
+};
 use candle::Error as CandleError;
 use futures::StreamExt;
 use std::fmt::Debug;
 use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, trace};
 
 use thiserror::Error;
 
@@ -38,6 +40,8 @@ pub struct ModelService {
     /// different the Atoma's client service (for on-chain submission of the
     /// cryptographic commitment to the output).
     atoma_node_resp_tx: Sender<Response>,
+    /// A `mpsc` end `Receiver`, receiving new requests from the chat service.
+    chat_request_receiver: Receiver<(ChatInferenceRequest, oneshot::Sender<ChatInferenceResponse>)>,
 }
 
 impl ModelService {
@@ -50,6 +54,10 @@ impl ModelService {
         subscriber_req_rx: Receiver<Request>,
         atoma_node_resp_tx: Sender<Response>,
         stream_tx: Sender<AtomaStreamingData>,
+        chat_request_receiver: Receiver<(
+            ChatInferenceRequest,
+            oneshot::Sender<ChatInferenceResponse>,
+        )>,
     ) -> Result<Self, ModelServiceError> {
         let flush_storage = model_config.flush_storage();
         let cache_dir = model_config.cache_dir();
@@ -67,6 +75,7 @@ impl ModelService {
             json_server_req_rx,
             subscriber_req_rx,
             atoma_node_resp_tx,
+            chat_request_receiver,
         })
     }
 
@@ -80,13 +89,14 @@ impl ModelService {
         loop {
             tokio::select! {
                 Some(request) = self.json_server_req_rx.recv() => {
-                    info!("Received a new request, with id = {:?}", request.0.id());
+                    trace!("Received a new request");
                     self.dispatcher.run_json_inference(request);
                 },
                 Some(request) = self.subscriber_req_rx.recv() => {
                     self.dispatcher.run_subscriber_inference(request);
                     let counter = metrics::counter!("atoma-inference-service-request");
                     counter.increment(1);
+
                 },
                 Some(resp) = self.dispatcher.responses.next() => match resp {
                     Ok(response) => {
@@ -98,6 +108,12 @@ impl ModelService {
                     Err(e) => {
                         error!("Found error in generating inference response: {}", e);
                     }
+                },
+                Some((chat_request, sender)) = self.chat_request_receiver.recv() => {
+                    info!("Received a new chat inference request");
+                    self.dispatcher.run_chat_inference(chat_request, sender);
+                    let counter = metrics::counter!("atoma-inference-service-request");
+                    counter.increment(1);
                 },
                 else => continue,
             }
@@ -176,8 +192,17 @@ mod tests {
         fn time_to_generate(&self) -> f64 {
             0.0
         }
-        fn tokens(&self) -> Vec<u32> {
+
+        fn input_tokens(&self) -> Vec<u32> {
             vec![]
+        }
+
+        fn output_tokens(&self) -> Vec<u32> {
+            vec![]
+        }
+
+        fn text_output(&self) -> String {
+            "".to_string()
         }
     }
 
@@ -244,6 +269,7 @@ mod tests {
         let (_, subscriber_req_rx) = tokio::sync::mpsc::channel(1);
         let (atoma_node_resp_tx, _) = tokio::sync::mpsc::channel(1);
         let (stream_tx, _) = tokio::sync::mpsc::channel(1);
+        let (_, chat_request_receiver) = tokio::sync::mpsc::channel(1);
 
         let config = ModelsConfig::from_file_path(CONFIG_FILE_PATH);
 
@@ -253,6 +279,7 @@ mod tests {
             subscriber_req_rx,
             atoma_node_resp_tx,
             stream_tx,
+            chat_request_receiver,
         )
         .unwrap();
 

@@ -183,8 +183,10 @@ impl ModelTrait for FalconModel {
             .get_ids()
             .to_vec();
         let mut tokens = [input.pre_prompt_tokens, tokens].concat();
+        let input_tokens = tokens.clone();
+        let mut output_tokens = vec![];
 
-        let input_tokens = tokens.len();
+        let num_input_tokens = tokens.len();
 
         let request_id = Some(input.request_id).filter(|_| input.should_stream_output);
         let mut generated_tokens = 0;
@@ -213,6 +215,7 @@ impl ModelTrait for FalconModel {
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
             new_tokens.push(next_token);
+            output_tokens.push(next_token);
             debug!("> {:?}", start_gen);
 
             if let Some(t) = self.tokenizer.next_token(next_token, request_id.clone())? {
@@ -223,6 +226,13 @@ impl ModelTrait for FalconModel {
         }
         if let Some(rest) = self.tokenizer.decode_rest(request_id.clone())? {
             output += &rest;
+            output_tokens.extend(
+                self.tokenizer
+                    .tokenizer()
+                    .encode(rest, true)?
+                    .get_ids()
+                    .to_vec(),
+            );
         }
         let dt = start_gen.elapsed();
 
@@ -240,8 +250,9 @@ impl ModelTrait for FalconModel {
             text: output,
             time: dt.as_secs_f64(),
             tokens_count: generated_tokens,
+            num_input_tokens,
             input_tokens,
-            tokens: if input.chat { tokens } else { vec![] },
+            output_tokens,
         })
     }
 }

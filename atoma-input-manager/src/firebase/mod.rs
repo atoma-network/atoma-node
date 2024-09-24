@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
-use atoma_helpers::{Firebase, FirebaseAuth};
+use atoma_helpers::Firebase;
 use atoma_types::ModelInput;
 use reqwest::Client;
-use tokio::sync::Mutex;
 use tracing::{info, instrument};
-use url::Url;
 
 use crate::AtomaInputManagerError;
 
