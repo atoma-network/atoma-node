@@ -685,9 +685,9 @@ mod tests {
     #[test]
     fn test_published_event_deserialization() {
         let json = json!({
-            "db": "0x123",
-            "manager_badge": "0x456"
-            });
+        "db": "0x123",
+        "manager_badge": "0x456"
+        });
         let event: PublishedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.db, "0x123");
         assert_eq!(event.manager_badge, "0x456");

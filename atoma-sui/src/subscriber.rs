@@ -1,7 +1,7 @@
 use crate::{
     config::SuiEventSubscriberConfig,
     events::{AtomaEvent, SuiEventParseError},
-    handlers::handle_atoma_event,
+    handlers::{handle_atoma_event, handle_event_with_retries},
 };
 use futures::stream::{self, StreamExt};
 use std::{path::Path, str::FromStr, time::Duration};
@@ -159,26 +159,18 @@ impl SuiEventSubscriber {
                     let event_name = sui_event.type_.name;
                     trace!("Received new event: {event_name:#?}");
                     match AtomaEvent::from_str(event_name.as_str()) {
-                        Ok(atoma_event) => {
-                            match handle_atoma_event(atoma_event) {
-                                Ok(_) => {
-                                    trace!("Event with name: {event_name} handled successfully");
-                                }
-                                Err(e) => {
-                                    error!("Failed to handle event: {e}");
-                                    // TODO: handle error properly, the best way is to set the cursor
-                                    // to the current object id that caused the error and continue for a next iteration
-                                    // to retry the event parsing. Maybe we set a limit of retries for an event before
-                                    // to mark it as unparseable and skip it.
-                                }
+                        Ok(atoma_event) => match handle_atoma_event(&atoma_event) {
+                            Ok(_) => {
+                                trace!("Event with name: {event_name} handled successfully");
                             }
-                        }
+                            Err(e) => {
+                                error!("Failed to handle event: {e}");
+                                handle_event_with_retries(&atoma_event)
+                            }
+                        },
                         Err(e) => {
                             error!("Failed to parse event: {e}");
-                            // TODO: handle error properly, the best way is to set the cursor
-                            // to the current object id that caused the error and continue for a next iteration
-                            // to retry the event parsing. Maybe we set a limit of retries for an event before
-                            // to mark it as unparseable and skip it.
+                            // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                         }
                     }
                 })
