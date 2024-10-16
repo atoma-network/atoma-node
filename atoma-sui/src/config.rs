@@ -26,6 +26,10 @@ pub struct SuiEventSubscriberConfig {
     /// This sets the maximum time to wait for a response from the Sui network
     request_timeout: Duration,
 
+    /// The number of concurrent tasks to run
+    /// This sets the maximum number of tasks to run concurrently
+    num_concurrent_tasks: Option<usize>,
+
     /// Optional value to limit the number of dynamic fields to be retrieved for each iteration
     /// of the event subscriber loop
     limit: Option<usize>,
@@ -45,6 +49,7 @@ impl SuiEventSubscriberConfig {
         request_timeout: Duration,
         limit: Option<usize>,
         small_ids: Vec<u64>,
+        num_concurrent_tasks: Option<usize>,
     ) -> Self {
         Self {
             http_rpc_node_addr,
@@ -53,6 +58,7 @@ impl SuiEventSubscriberConfig {
             request_timeout,
             limit,
             small_ids,
+            num_concurrent_tasks,
         }
     }
 
@@ -84,6 +90,11 @@ impl SuiEventSubscriberConfig {
     /// Getter for `small_id`
     pub fn small_ids(&self) -> Vec<u64> {
         self.small_ids.clone()
+    }
+
+    /// Getter for `num_concurrent_tasks`
+    pub fn num_concurrent_tasks(&self) -> Option<usize> {
+        self.num_concurrent_tasks
     }
 
     /// Constructs a new `SuiEventSubscriberConfig` instance from a configuration file path.
@@ -139,10 +150,11 @@ pub mod tests {
             Duration::from_secs(5 * 60),
             Some(10),
             vec![0, 1, 2],
+            Some(10),
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nlimit = 10\nsmall_ids = [0, 1, 2]\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nlimit = 10\nsmall_ids = [0, 1, 2]\nnum_concurrent_tasks = 10\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

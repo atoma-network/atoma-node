@@ -1,7 +1,9 @@
 use crate::{
     config::SuiEventSubscriberConfig,
-    events::{AtomaEvent, SuiEventParseError}, handlers::handle_atoma_event,
+    events::{AtomaEvent, SuiEventParseError},
+    handlers::handle_atoma_event,
 };
+use futures::stream::{self, StreamExt};
 use std::{path::Path, str::FromStr, time::Duration};
 use sui_sdk::{
     rpc_types::{EventFilter, EventPage},
@@ -13,6 +15,8 @@ use tracing::{error, info, info_span, instrument, trace, Span};
 
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
+/// The default number of concurrent event handling tasks to run.
+const DEFAULT_NUM_CONCURRENT_TASKS: usize = 32;
 
 type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
@@ -101,8 +105,13 @@ impl SuiEventSubscriber {
 
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<()> {
+        let _enter = self.span.enter();
         let package_id = self.config.package_id();
         let limit = self.config.limit();
+        let num_concurrent_tasks = self
+            .config
+            .num_concurrent_tasks()
+            .unwrap_or(DEFAULT_NUM_CONCURRENT_TASKS);
 
         let client = Self::build_client(&self.config).await?;
 
@@ -126,11 +135,36 @@ impl SuiEventSubscriber {
                 }
             };
             self.cursor = next_cursor;
-            for sui_event in data.iter() {
-                trace!("Received new event: {sui_event:#?}");
-                let atoma_event = AtomaEvent::from_str(&sui_event.type_.name.as_str())?;
-                handle_atoma_event(atoma_event)?;
-            }
+
+            stream::iter(data)
+                .for_each_concurrent(num_concurrent_tasks, |sui_event| async move {
+                    let event_name = sui_event.type_.name;
+                    trace!("Received new event: {event_name:#?}");
+                    match AtomaEvent::from_str(event_name.as_str()) {
+                        Ok(atoma_event) => {
+                            match handle_atoma_event(atoma_event) { 
+                                Ok(_) => {
+                                    trace!("Event with name: {event_name} handled successfully");
+                                },
+                                Err(e) => {
+                                    error!("Failed to handle event: {e}");
+                                    // TODO: handle error properly, the best way is to set the cursor
+                                    // to the current object id that caused the error and continue for a next iteration
+                                    // to retry the event parsing. Maybe we set a limit of retries for an event before
+                                    // to mark it as unparseable and skip it.
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to parse event: {e}");
+                            // TODO: handle error properly, the best way is to set the cursor
+                            // to the current object id that caused the error and continue for a next iteration
+                            // to retry the event parsing. Maybe we set a limit of retries for an event before
+                            // to mark it as unparseable and skip it.
+                        }
+                    }
+                })
+                .await;
 
             if !has_next_page {
                 // No new events to read, so let's wait for a while
