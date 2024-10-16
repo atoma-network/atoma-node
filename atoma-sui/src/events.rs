@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use sui_sdk::rpc_types::SuiEvent;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, SuiEventParseError>;
