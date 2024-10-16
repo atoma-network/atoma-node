@@ -1,0 +1,8 @@
+[package]
+name = "atoma-sui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
