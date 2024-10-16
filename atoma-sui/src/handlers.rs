@@ -76,6 +76,20 @@ pub(crate) fn handle_atoma_event(event: &AtomaEvent) -> Result<()> {
     Ok(())
 }
 
+/// Attempts to handle an Atoma event with retries.
+///
+/// This function will try to handle the event up to `MAX_RETRIES_FOR_UNHANDLED_EVENTS` times
+/// if the initial attempt fails.
+///
+/// # Arguments
+///
+/// * `atoma_event` - A reference to the AtomaEvent to be handled.
+/// * `event_name` - The name of the event, used for logging purposes.
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the event was handled successfully,
+///   or an error if all retry attempts failed.
 pub(crate) fn handle_event_with_retries(event: &AtomaEvent) {
     let mut retries = 0;
     while retries < MAX_RETRIES_FOR_UNHANDLED_EVENTS {
