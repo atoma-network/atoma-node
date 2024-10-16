@@ -6,3 +6,5 @@ edition.workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sui-sdk.workspace = true
+thiserror.workspace = true

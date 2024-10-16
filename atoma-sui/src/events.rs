@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use sui_sdk::rpc_types::SuiEvent;
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, SuiEventParseError>;
 
 /// Represents the various events that can be emitted by the Atoma contract on the Sui blockchain.
 ///
 /// This enum encapsulates all possible events across different modules of the Atoma system,
 /// including database operations, settlement processes, and specific AI task events.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SuiEvent {
+pub enum AtomaEvent {
     /// Events related to the database (Db) module:
 
     /// Emitted when the Atoma contract is first published.
@@ -56,6 +61,37 @@ pub enum SuiEvent {
     Text2ImagePromptEvent,
     /// Emitted when a text-to-text prompt is processed.
     Text2TextPromptEvent,
+}
+
+impl FromStr for AtomaEvent {
+    type Err = SuiEventParseError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "PublishedEvent" => Ok(Self::PublishedEvent),
+            "NodeRegisteredEvent" => Ok(Self::NodeRegisteredEvent),
+            "NodeSubscribedToModelEvent" => Ok(Self::NodeSubscribedToModelEvent),
+            "NodeSubscribedToTaskEvent" => Ok(Self::NodeSubscribedToTaskEvent),
+            "NodeUnsubscribedFromTaskEvent" => Ok(Self::NodeUnsubscribedFromTaskEvent),
+            "TaskRegisteredEvent" => Ok(Self::TaskRegisteredEvent),
+            "TaskDeprecationEvent" => Ok(Self::TaskDeprecationEvent),
+            "TaskRemovedEvent" => Ok(Self::TaskRemovedEvent),
+            "StackCreatedEvent" => Ok(Self::StackCreatedEvent),
+            "StackTrySettleEvent" => Ok(Self::StackTrySettleEvent),
+            "NewStackSettlementAttestationEvent" => Ok(Self::NewStackSettlementAttestationEvent),
+            "StackSettlementTicketEvent" => Ok(Self::StackSettlementTicketEvent),
+            "StackSettlementTicketClaimedEvent" => Ok(Self::StackSettlementTicketClaimedEvent),
+            "StackAttestationDisputeEvent" => Ok(Self::StackAttestationDisputeEvent),
+            "FirstSubmissionEvent" => Ok(Self::FirstSubmissionEvent),
+            "DisputeEvent" => Ok(Self::DisputeEvent),
+            "NewlySampledNodesEvent" => Ok(Self::NewlySampledNodesEvent),
+            "SettledEvent" => Ok(Self::SettledEvent),
+            "RetrySettlementEvent" => Ok(Self::RetrySettlementEvent),
+            "Text2ImagePromptEvent" => Ok(Self::Text2ImagePromptEvent),
+            "Text2TextPromptEvent" => Ok(Self::Text2TextPromptEvent),
+            _ => Err(SuiEventParseError::UnknownEvent(s.to_string())),
+        }
+    }
 }
 
 /// Represents an event that is emitted when the Atoma contract is first published.
@@ -132,7 +168,7 @@ pub struct NodeSubscribedToTaskEvent {
 ///
 /// This event contains information about the unsubscribing node and the task it's unsubscribing from.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeUnsubscribedFromTaskEvent { 
+pub struct NodeUnsubscribedFromTaskEvent {
     /// The small ID of the task that the node is unsubscribing from.
     /// This is a compact identifier for the task within the Atoma network.
     pub task_small_id: TaskSmallId,
@@ -181,7 +217,7 @@ pub struct TaskDeprecationEvent {
 /// This event contains information about the removed task, including its identifiers
 /// and the epoch at which it was removed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TaskRemovedEvent { 
+pub struct TaskRemovedEvent {
     /// The unique identifier of the removed task.
     /// This is typically a longer, more descriptive ID for the task.
     pub task_id: String,
@@ -200,7 +236,7 @@ pub struct TaskRemovedEvent {
 /// This event contains information about the newly created stack, including its identifiers,
 /// the selected node, computational resources, and pricing details.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StackCreatedEvent { 
+pub struct StackCreatedEvent {
     /// The unique identifier of the created stack.
     /// This is typically a longer, more descriptive ID for the stack.
     pub stack_id: String,
@@ -227,7 +263,7 @@ pub struct StackCreatedEvent {
 /// This event contains information about the settlement attempt, including the stack and node identifiers,
 /// requested attestation nodes, proofs, and claimed compute units.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StackTrySettleEvent { 
+pub struct StackTrySettleEvent {
     /// The small ID of the stack being settled.
     /// This is used for efficient referencing of the stack within the Atoma network.
     pub stack_small_id: StackSmallId,
@@ -258,7 +294,7 @@ pub struct StackTrySettleEvent {
 /// This event contains information about the stack being attested, the nodes involved in the attestation process,
 /// and the computational resources claimed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NewStackSettlementAttestationEvent { 
+pub struct NewStackSettlementAttestationEvent {
     /// The small ID of the stack being attested.
     /// This is used for efficient referencing of the stack within the Atoma network.
     pub stack_small_id: StackSmallId,
@@ -281,7 +317,7 @@ pub struct NewStackSettlementAttestationEvent {
 /// This event contains information about the settled stack, including identifiers, computational claims,
 /// attestation nodes, dispute resolution details, and the committed proof.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StackSettlementTicketEvent { 
+pub struct StackSettlementTicketEvent {
     /// The small ID of the stack for which the settlement ticket is issued.
     /// This is used for efficient referencing of the stack within the Atoma network.
     pub stack_small_id: StackSmallId,
@@ -411,7 +447,7 @@ pub struct Text2ImagePromptParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Text2ImagePromptEvent {
     /// The ID of the settlement object.
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The parameters of the prompt that nodes must evaluate.
     pub params: Text2ImagePromptParams,
@@ -431,9 +467,9 @@ pub struct Text2ImagePromptEvent {
 
 /// Represents an event emitted when the first submission is made in a settlement process.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct FirstSubmissionEvent { 
+pub struct FirstSubmissionEvent {
     /// The ID of the settlement object.
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The small ID of the node that made the first submission.
     pub node_id: NodeSmallId,
@@ -443,7 +479,7 @@ pub struct FirstSubmissionEvent {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DisputeEvent {
     /// The ID of the settlement object.
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The small ID of the node that made the first submission.
     pub timeout: Option<TimeoutInfo>,
@@ -453,7 +489,7 @@ pub struct DisputeEvent {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NewlySampledNodesEvent {
     /// The ID of the settlement object.
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The list of newly sampled nodes for the task.
     pub new_nodes: Vec<MapNodeToChunk>,
@@ -461,9 +497,9 @@ pub struct NewlySampledNodesEvent {
 
 /// Represents an event emitted when a ticket is settled.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SettledEvent { 
+pub struct SettledEvent {
     /// The ID of the settlement object.   
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The oracle node ID that settled the ticket.
     pub oracle_node_id: Option<NodeSmallId>,
@@ -471,9 +507,9 @@ pub struct SettledEvent {
 
 /// Represents an event emitted when a retry settlement is requested.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RetrySettlementEvent { 
+pub struct RetrySettlementEvent {
     /// The ID of the settlement object.   
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The number of nodes in the echelon that should be used to retry the settlement.
     pub how_many_nodes_in_echelon: u64,
@@ -536,7 +572,7 @@ pub struct Text2TextPromptParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Text2TextPromptEvent {
     /// The ID of the settlement object.
-    pub ticket_id: ObjectID,
+    pub ticket_id: String,
 
     /// The parameters of the prompt that nodes must evaluate.
     pub params: Text2TextPromptParams,
@@ -631,4 +667,10 @@ pub struct MapNodeToChunk {
     /// The order or position of this chunk within the overall task or dataset.
     /// This helps maintain the correct sequence when processing or reassembling distributed work.
     pub order: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum SuiEventParseError {
+    #[error("Unknown event error: {0}")]
+    UnknownEvent(String),
 }
