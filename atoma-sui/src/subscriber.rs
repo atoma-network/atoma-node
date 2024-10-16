@@ -103,6 +103,24 @@ impl SuiEventSubscriber {
         Ok(client)
     }
 
+    /// Runs the event subscriber, continuously processing events from the Sui blockchain.
+    ///
+    /// This method enters an infinite loop that:
+    /// 1. Queries for new events using the configured filter and cursor.
+    /// 2. Processes each event concurrently using the specified number of tasks.
+    /// 3. Updates the cursor for the next query.
+    /// 4. Waits for a short duration if no new events are available.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - A Result indicating success or an error if the subscription process fails.
+    ///
+    /// # Errors
+    ///
+    /// This method may return an error if:
+    /// * There's a failure in building the Sui client.
+    /// * Event querying encounters an error.
+    /// * Event processing or handling fails (though these are currently logged and not propagated).
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<()> {
         let _enter = self.span.enter();
