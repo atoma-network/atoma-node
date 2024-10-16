@@ -642,12 +642,15 @@ pub struct TimeoutInfo {
     /// Once this reaches a threshold `MaxTicketTimeouts`, the ticket
     /// will be disputed.
     pub timed_out_count: u64,
+
     /// If the settlement takes more than this, the settlement can be cut
     /// short.
     /// See the `try_to_settle` endpoint.
     pub timeout_ms: u64,
+
     /// Will be relevant for timeouting.
     pub started_in_epoch: u64,
+
     /// Will be relevant for timeouting.
     pub started_at_epoch_timestamp_ms: u64,
 }

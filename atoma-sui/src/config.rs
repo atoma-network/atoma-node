@@ -11,14 +11,28 @@ use sui_sdk::types::base_types::ObjectID;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SuiEventSubscriberConfig {
     /// The HTTP URL for a Sui RPC node, to which the subscriber will connect
+    /// This is used for making HTTP requests to the Sui RPC node
     http_rpc_node_addr: String,
+
     /// The WebSocket URL for a Sui RPC node, to which the subscriber will connect
+    /// This is used for establishing WebSocket connections for real-time events
     ws_rpc_node_addr: String,
-    /// The package ID on the Sui network
+
+    /// The Atoma's package ID on the Sui network
+    /// This identifies the specific package (smart contract) to interact with
     package_id: ObjectID,
+
     /// The timeout duration for requests
+    /// This sets the maximum time to wait for a response from the Sui network
     request_timeout: Duration,
-    /// A list of small IDs (purpose may vary based on implementation)
+
+    /// Optional value to limit the number of dynamic fields to be retrieved for each iteration
+    /// of the event subscriber loop
+    limit: Option<usize>,
+
+    /// A list of node small IDs
+    /// These are values used to identify the Atoma's nodes that are under control by
+    /// current Sui wallet
     small_ids: Vec<u64>,
 }
 
@@ -29,6 +43,7 @@ impl SuiEventSubscriberConfig {
         ws_rpc_node_addr: String,
         package_id: ObjectID,
         request_timeout: Duration,
+        limit: Option<usize>,
         small_ids: Vec<u64>,
     ) -> Self {
         Self {
@@ -36,6 +51,7 @@ impl SuiEventSubscriberConfig {
             ws_rpc_node_addr,
             package_id,
             request_timeout,
+            limit,
             small_ids,
         }
     }
@@ -48,6 +64,11 @@ impl SuiEventSubscriberConfig {
     /// Getter for `ws_url`
     pub fn ws_rpc_node_addr(&self) -> String {
         self.ws_rpc_node_addr.clone()
+    }
+
+    /// Getter for `limit`
+    pub fn limit(&self) -> Option<usize> {
+        self.limit
     }
 
     /// Getter for `package_id`
@@ -116,11 +137,12 @@ pub mod tests {
                 .parse()
                 .unwrap(),
             Duration::from_secs(5 * 60),
+            Some(10),
             vec![0, 1, 2],
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nsmall_ids = [0, 1, 2]\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_url = \"\"\nws_url = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nlimit = 10\nsmall_ids = [0, 1, 2]\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
