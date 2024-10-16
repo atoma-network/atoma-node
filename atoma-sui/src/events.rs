@@ -676,3 +676,365 @@ pub enum SuiEventParseError {
     #[error("Unknown event error: {0}")]
     UnknownEvent(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_published_event_deserialization() {
+        let json = json!({
+            "db": "0x123",
+            "manager_badge": "0x456"
+            });
+        let event: PublishedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.db, "0x123");
+        assert_eq!(event.manager_badge, "0x456");
+    }
+
+    #[test]
+    fn test_node_registered_event_deserialization() {
+        let json = json!({
+            "badge_id": "0x789",
+            "node_small_id": {"inner": 42}
+        });
+        let event: NodeRegisteredEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.badge_id, "0x789");
+        assert_eq!(event.node_small_id.inner, 42);
+    }
+
+    #[test]
+    fn test_node_subscribed_to_model_event_deserialization() {
+        let json = json!({
+            "node_small_id": {"inner": 1},
+            "model_name": "gpt-3",
+            "echelon_id": {"inner": 2}
+        });
+        let event: NodeSubscribedToModelEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.node_small_id.inner, 1);
+        assert_eq!(event.model_name, "gpt-3");
+        assert_eq!(event.echelon_id.inner, 2);
+    }
+
+    #[test]
+    fn test_node_subscribed_to_task_event_deserialization() {
+        let json = json!({
+            "task_small_id": {"inner": 3},
+            "node_small_id": {"inner": 4},
+            "price_per_compute_unit": 100
+        });
+        let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_small_id.inner, 3);
+        assert_eq!(event.node_small_id.inner, 4);
+        assert_eq!(event.price_per_compute_unit, 100);
+    }
+
+    #[test]
+    fn test_node_unsubscribed_from_task_event_deserialization() {
+        let json = json!({
+            "task_small_id": {"inner": 5},
+            "node_small_id": {"inner": 6}
+        });
+        let event: NodeUnsubscribedFromTaskEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_small_id.inner, 5);
+        assert_eq!(event.node_small_id.inner, 6);
+    }
+
+    #[test]
+    fn test_task_registered_event_deserialization() {
+        let json = json!({
+            "task_id": "task-001",
+            "task_small_id": {"inner": 7}
+        });
+        let event: TaskRegisteredEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_id, "task-001");
+        assert_eq!(event.task_small_id.inner, 7);
+    }
+
+    #[test]
+    fn test_task_deprecation_event_deserialization() {
+        let json = json!({
+            "task_id": "task-002",
+            "task_small_id": {"inner": 8},
+            "epoch": 1000
+        });
+        let event: TaskDeprecationEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_id, "task-002");
+        assert_eq!(event.task_small_id.inner, 8);
+        assert_eq!(event.epoch, 1000);
+    }
+
+    #[test]
+    fn test_task_removed_event_deserialization() {
+        let json = json!({
+            "task_id": "task-003",
+            "task_small_id": {"inner": 9},
+            "removed_at_epoch": 2000
+        });
+        let event: TaskRemovedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_id, "task-003");
+        assert_eq!(event.task_small_id.inner, 9);
+        assert_eq!(event.removed_at_epoch, 2000);
+    }
+
+    #[test]
+    fn test_stack_created_event_deserialization() {
+        let json = json!({
+            "stack_id": "stack-001",
+            "stack_small_id": {"inner": 10},
+            "selected_node_id": {"inner": 11},
+            "num_compute_units": 5,
+            "price": 1000
+        });
+        let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_id, "stack-001");
+        assert_eq!(event.stack_small_id.inner, 10);
+        assert_eq!(event.selected_node_id.inner, 11);
+        assert_eq!(event.num_compute_units, 5);
+        assert_eq!(event.price, 1000);
+    }
+
+    #[test]
+    fn test_stack_try_settle_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": 12},
+            "selected_node_id": {"inner": 13},
+            "requested_attestation_nodes": [{"inner": 14}, {"inner": 15}],
+            "committed_stack_proof": [1, 2, 3],
+            "stack_merkle_leaf": [4, 5, 6],
+            "num_claimed_compute_units": 100
+        });
+        let event: StackTrySettleEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 12);
+        assert_eq!(event.selected_node_id.inner, 13);
+        assert_eq!(event.requested_attestation_nodes.len(), 2);
+        assert_eq!(event.requested_attestation_nodes[0].inner, 14);
+        assert_eq!(event.requested_attestation_nodes[1].inner, 15);
+        assert_eq!(event.committed_stack_proof, vec![1, 2, 3]);
+        assert_eq!(event.stack_merkle_leaf, vec![4, 5, 6]);
+        assert_eq!(event.num_claimed_compute_units, 100);
+    }
+
+    #[test]
+    fn test_new_stack_settlement_attestation_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": 16},
+            "selected_node_id": {"inner": 17},
+            "num_claimed_compute_units": 200,
+            "attestation_node_id": {"inner": 18}
+        });
+        let event: NewStackSettlementAttestationEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 16);
+        assert_eq!(event.selected_node_id.inner, 17);
+        assert_eq!(event.num_claimed_compute_units, 200);
+        assert_eq!(event.attestation_node_id.inner, 18);
+    }
+
+    #[test]
+    fn test_stack_settlement_ticket_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": 19},
+            "selected_node_id": {"inner": 20},
+            "num_claimed_compute_units": 300,
+            "requested_attestation_nodes": [{"inner": 21}, {"inner": 22}],
+            "dispute_settled_at_epoch": 3000,
+            "committed_stack_proof": [7, 8, 9]
+        });
+        let event: StackSettlementTicketEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 19);
+        assert_eq!(event.selected_node_id.inner, 20);
+        assert_eq!(event.num_claimed_compute_units, 300);
+        assert_eq!(event.requested_attestation_nodes.len(), 2);
+        assert_eq!(event.requested_attestation_nodes[0].inner, 21);
+        assert_eq!(event.requested_attestation_nodes[1].inner, 22);
+        assert_eq!(event.dispute_settled_at_epoch, 3000);
+        assert_eq!(event.committed_stack_proof, vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn test_stack_settlement_ticket_claimed_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": 23},
+            "selected_node_id": {"inner": 24},
+            "attestation_nodes": [{"inner": 25}, {"inner": 26}],
+            "num_claimed_compute_units": 400,
+            "user_refund_amount": [10, 11, 12]
+        });
+        let event: StackSettlementTicketClaimedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 23);
+        assert_eq!(event.selected_node_id.inner, 24);
+        assert_eq!(event.attestation_nodes.len(), 2);
+        assert_eq!(event.attestation_nodes[0].inner, 25);
+        assert_eq!(event.attestation_nodes[1].inner, 26);
+        assert_eq!(event.num_claimed_compute_units, 400);
+        assert_eq!(event.user_refund_amount, vec![10, 11, 12]);
+    }
+
+    #[test]
+    fn test_stack_attestation_dispute_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": 27},
+            "attestation_commitment": [13, 14, 15],
+            "attestation_node_id": {"inner": 28},
+            "original_node_id": {"inner": 29},
+            "original_commitment": [16, 17, 18]
+        });
+        let event: StackAttestationDisputeEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 27);
+        assert_eq!(event.attestation_commitment, vec![13, 14, 15]);
+        assert_eq!(event.attestation_node_id.inner, 28);
+        assert_eq!(event.original_node_id.inner, 29);
+        assert_eq!(event.original_commitment, vec![16, 17, 18]);
+    }
+
+    #[test]
+    fn test_first_submission_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-003",
+            "node_id": {"inner": 30}
+        });
+        let event: FirstSubmissionEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-003");
+        assert_eq!(event.node_id.inner, 30);
+    }
+
+    #[test]
+    fn test_dispute_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-004",
+            "timeout": {
+                "timed_out_count": 2,
+                "timeout_ms": 5000,
+                "started_in_epoch": 4000,
+                "started_at_epoch_timestamp_ms": 162000
+            }
+        });
+        let event: DisputeEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-004");
+        assert!(event.timeout.is_some());
+        let timeout = event.timeout.unwrap();
+        assert_eq!(timeout.timed_out_count, 2);
+        assert_eq!(timeout.timeout_ms, 5000);
+        assert_eq!(timeout.started_in_epoch, 4000);
+        assert_eq!(timeout.started_at_epoch_timestamp_ms, 162000);
+    }
+
+    #[test]
+    fn test_newly_sampled_nodes_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-005",
+            "new_nodes": [
+                {"node_id": {"inner": 31}, "order": 0},
+                {"node_id": {"inner": 32}, "order": 1}
+            ]
+        });
+        let event: NewlySampledNodesEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-005");
+        assert_eq!(event.new_nodes.len(), 2);
+        assert_eq!(event.new_nodes[0].node_id.inner, 31);
+        assert_eq!(event.new_nodes[0].order, 0);
+        assert_eq!(event.new_nodes[1].node_id.inner, 32);
+        assert_eq!(event.new_nodes[1].order, 1);
+    }
+
+    #[test]
+    fn test_settled_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-006",
+            "oracle_node_id": {"inner": 33}
+        });
+        let event: SettledEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-006");
+        assert!(event.oracle_node_id.is_some());
+        assert_eq!(event.oracle_node_id.unwrap().inner, 33);
+    }
+
+    #[test]
+    fn test_retry_settlement_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-007",
+            "how_many_nodes_in_echelon": 5
+        });
+        let event: RetrySettlementEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-007");
+        assert_eq!(event.how_many_nodes_in_echelon, 5);
+    }
+
+    #[test]
+    fn test_text2image_prompt_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-001",
+            "params": {
+                "guidance_scale": 7,
+                "height": 512,
+                "img2img": null,
+                "img2img_strength": 0,
+                "model": "stable-diffusion-v1-5",
+                "n_steps": 50,
+                "num_samples": 1,
+                "output_destination": [1, 2, 3],
+                "prompt": [65, 66, 67],
+                "random_seed": 42,
+                "uncond_prompt": [68, 69, 70],
+                "width": 512
+            },
+            "chunks_count": 4,
+            "nodes": [{"inner": 1}, {"inner": 2}],
+            "output_destination": [4, 5, 6]
+        });
+        let event: Text2ImagePromptEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-001");
+        assert_eq!(event.params.guidance_scale, 7);
+        assert_eq!(event.params.height, 512);
+        assert_eq!(event.params.model, "stable-diffusion-v1-5");
+        assert_eq!(event.chunks_count, 4);
+        assert_eq!(event.nodes.len(), 2);
+        assert_eq!(event.nodes[0].inner, 1);
+        assert_eq!(event.nodes[1].inner, 2);
+        assert_eq!(event.output_destination, vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn test_text2text_prompt_event_deserialization() {
+        let json = json!({
+            "ticket_id": "ticket-002",
+            "params": {
+                "max_tokens": 100,
+                "model": "gpt-3",
+                "pre_prompt_tokens": [1, 2, 3],
+                "prepend_output_with_input": true,
+                "prompt": [65, 66, 67],
+                "random_seed": 42,
+                "repeat_last_n": 64,
+                "repeat_penalty": 1065353216,  // 1.0 in IEEE 754 single-precision float
+                "should_stream_output": false,
+                "temperature": 1065353216,  // 1.0 in IEEE 754 single-precision float
+                "top_k": 50,
+                "top_p": 1065353216  // 1.0 in IEEE 754 single-precision float
+            },
+            "chunks_count": 2,
+            "nodes": [{"inner": 3}, {"inner": 4}],
+            "output_destination": [7, 8, 9]
+        });
+        let event: Text2TextPromptEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.ticket_id, "ticket-002");
+        assert_eq!(event.params.max_tokens, 100);
+        assert_eq!(event.params.model, "gpt-3");
+        assert_eq!(event.params.pre_prompt_tokens, vec![1, 2, 3]);
+        assert!(event.params.prepend_output_with_input);
+        assert_eq!(event.params.prompt, vec![65, 66, 67]);
+        assert_eq!(event.params.random_seed, 42);
+        assert_eq!(event.params.repeat_last_n, 64);
+        assert_eq!(event.params.repeat_penalty, 1065353216);
+        assert!(!event.params.should_stream_output);
+        assert_eq!(event.params.temperature, 1065353216);
+        assert_eq!(event.params.top_k, 50);
+        assert_eq!(event.params.top_p, 1065353216);
+        assert_eq!(event.chunks_count, 2);
+        assert_eq!(event.nodes.len(), 2);
+        assert_eq!(event.nodes[0].inner, 3);
+        assert_eq!(event.nodes[1].inner, 4);
+        assert_eq!(event.output_destination, vec![7, 8, 9]);
+    }
+}

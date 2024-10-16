@@ -160,10 +160,10 @@ impl SuiEventSubscriber {
                     trace!("Received new event: {event_name:#?}");
                     match AtomaEvent::from_str(event_name.as_str()) {
                         Ok(atoma_event) => {
-                            match handle_atoma_event(atoma_event) { 
+                            match handle_atoma_event(atoma_event) {
                                 Ok(_) => {
                                     trace!("Event with name: {event_name} handled successfully");
-                                },
+                                }
                                 Err(e) => {
                                     error!("Failed to handle event: {e}");
                                     // TODO: handle error properly, the best way is to set the cursor
