@@ -6,7 +6,12 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, StateManagerError>;
 
+// StateManager is responsible for managing the state of the Atoma system.
+///
+/// It provides an interface to interact with the SQLite database, handling operations
+/// related to tasks, node subscriptions, stacks, and various other system components.
 pub struct StateManager {
+    /// The SQLite connection pool used for database operations.
     pub db: SqlitePool,
 }
 
