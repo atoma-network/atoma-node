@@ -17,7 +17,15 @@ pub struct StateManager {
 
 impl StateManager {
     /// Constructor
-    pub async fn start(database_url: String) -> Result<Self> {
+    pub fn new(db: SqlitePool) -> Self {
+        Self { db }
+    }
+
+    /// Creates a new `StateManager` instance from a database URL.
+    ///
+    /// This method establishes a connection to the SQLite database using the provided URL,
+    /// creates all necessary tables in the database, and returns a new `StateManager` instance.
+    pub async fn new_from_url(database_url: String) -> Result<Self> {
         let db = SqlitePool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
@@ -168,8 +176,9 @@ impl StateManager {
         skip_all,
         fields(task_small_id = %task_small_id)
     )]
-    pub async fn deprecate_task(&self, task_small_id: i64) -> Result<()> {
-        sqlx::query("UPDATE tasks SET is_deprecated = TRUE WHERE task_small_id = ?")
+    pub async fn deprecate_task(&self, task_small_id: i64, epoch: i64) -> Result<()> {
+        sqlx::query("UPDATE tasks SET is_deprecated = TRUE, deprecated_at_epoch = ? WHERE task_small_id = ?")
+            .bind(epoch)
             .bind(task_small_id)
             .execute(&self.db)
             .await?;
@@ -614,7 +623,7 @@ impl StateManager {
         skip_all,
         fields(stack_small_id = %stack_small_id, already_computed_units = %already_computed_units)
     )]
-    pub async fn update_computed_units(
+    pub async fn update_computed_units_for_stack(
         &self,
         stack_small_id: i64,
         already_computed_units: i64,

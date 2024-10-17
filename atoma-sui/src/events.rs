@@ -1,3 +1,4 @@
+use atoma_state::types::{Stack, Task};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -234,6 +235,12 @@ pub struct TaskRegisteredEvent {
     /// If true, the task is considered outdated but may still be accessible for historical reasons.
     pub is_deprecated: bool,
 
+    /// The epoch at which the task will be deprecated.
+    pub valid_until_epoch: Option<u64>,
+
+    /// The epoch at which the task was deprecated.
+    pub deprecated_at_epoch: Option<u64>,
+
     /// A list of optimization flags or identifiers applied to this task.
     /// These optimizations may affect how the task is processed or executed.
     pub optimizations: Vec<u16>,
@@ -249,6 +256,29 @@ pub struct TaskRegisteredEvent {
     /// The minimum reputation score required for a node to work on this task, if applicable.
     /// This helps ensure that only sufficiently trusted nodes can participate in certain tasks.
     pub minimum_reputation_score: Option<u8>,
+}
+
+impl From<TaskRegisteredEvent> for Task {
+    fn from(event: TaskRegisteredEvent) -> Self {
+        Task {
+            task_id: event.task_id,
+            task_small_id: event.task_small_id.inner as i64,
+            role: event.role.inner as i64,
+            model_name: event.model_name,
+            is_deprecated: event.is_deprecated,
+            valid_until_epoch: event.valid_until_epoch.map(|epoch| epoch as i64),
+            deprecated_at_epoch: event.deprecated_at_epoch.map(|epoch| epoch as i64),
+            optimizations: serde_json::to_string(&event.optimizations).unwrap(),
+            security_level: event.security_level as i64,
+            minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
+            task_metrics_compute_unit: event.task_metrics.compute_unit as i64,
+            task_metrics_time_unit: event
+                .task_metrics
+                .time_unit
+                .map(|time_unit| time_unit as i64),
+            task_metrics_value: event.task_metrics.value.map(|value| value as i64),
+        }
+    }
 }
 
 /// Represents an event that is emitted when a task is deprecated in the Atoma network.
@@ -318,6 +348,20 @@ pub struct StackCreatedEvent {
     /// The price associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
     pub price: u64,
+}
+
+impl From<StackCreatedEvent> for Stack {
+    fn from(event: StackCreatedEvent) -> Self {
+        Stack {
+            stack_id: event.stack_id,
+            stack_small_id: event.stack_small_id.inner as i64,
+            task_small_id: event.task_small_id.inner as i64,
+            selected_node_id: event.selected_node_id.inner as i64,
+            num_compute_units: event.num_compute_units as i64,
+            price: event.price as i64,
+            already_computed_units: 0,
+        }
+    }
 }
 
 /// Represents an event that is emitted when an attempt is made to settle a stack in the Atoma network.
