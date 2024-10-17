@@ -165,7 +165,7 @@ impl SuiEventSubscriber {
                             }
                             Err(e) => {
                                 error!("Failed to handle event: {e}");
-                                handle_event_with_retries(&atoma_event)
+                                handle_event_with_retries(&atoma_event).await
                             }
                         },
                         Err(e) => {
