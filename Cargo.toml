@@ -2,19 +2,7 @@
 resolver = "2"
 
 members = [
-    "atoma-client",
-    "atoma-crypto",
-    "atoma-event-subscribe/arbitrum",
-    "atoma-event-subscribe/solana",
-    "atoma-event-subscribe/sui",
-    "atoma-helpers",
-    "atoma-inference",
-    "atoma-input-manager",
-    "atoma-node",
-    "atoma-output-manager",
-    "atoma-streamer",
-    "atoma-types",
-    "atoma-vllm",
+    "atoma-sui"
 ]
 
 [workspace.package]
@@ -24,16 +12,6 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.81"
 async-trait = "0.1.78"
-atoma-client = { path = "./atoma-client/" }
-atoma-crypto = { path = "./atoma-crypto/" }
-atoma-helpers = { path = "./atoma-helpers/" }
-atoma-inference = { path = "./atoma-inference/" }
-atoma-input-manager = { path = "./atoma-input-manager/" }
-atoma-output-manager = { path = "./atoma-output-manager/" }
-atoma-paged-attention = { git = "https://github.com/atoma-network/atoma-paged-attention", branch = "main" }
-atoma-streamer = { path = "./atoma-streamer" }
-atoma-sui = { path = "./atoma-event-subscribe/sui/" }
-atoma-types = { path = "./atoma-types" }
 axum = "0.7.5"
 blake2 = "0.10.6"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }
