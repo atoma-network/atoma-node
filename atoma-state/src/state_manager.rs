@@ -1,4 +1,4 @@
-use crate::types::{Stack, Task};
+use crate::types::{Stack, StackAttestationDispute, StackSettlementTicket, Task};
 
 use sqlx::{pool::PoolConnection, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
@@ -33,11 +33,7 @@ impl StateManager {
     /// This function will return an error if the connection pool is unable to
     /// provide a connection, which could happen due to various reasons such as
     /// connection timeouts or pool exhaustion.
-    #[tracing::instrument(
-        level = "debug",
-        skip(self),
-        fields(function = "get_connection")
-    )]
+    #[tracing::instrument(level = "debug", skip(self), fields(function = "get_connection"))]
     pub async fn get_connection(&self) -> Result<PoolConnection<Sqlite>> {
         let conn = self.db.acquire().await?;
         Ok(conn)
@@ -116,21 +112,21 @@ impl StateManager {
                 minimum_reputation_score
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-            .bind(task.task_small_id)
-            .bind(task.task_id)
-            .bind(task.role)
-            .bind(task.model_name)
-            .bind(task.is_deprecated)
-            .bind(task.valid_until_epoch)
-            .bind(task.deprecated_at_epoch)
-            .bind(task.optimizations)
-            .bind(task.security_level)
-            .bind(task.task_metrics_compute_unit)
-            .bind(task.task_metrics_time_unit)
-            .bind(task.task_metrics_value)
-            .bind(task.minimum_reputation_score)
-            .execute(&self.db)
-            .await?;
+        .bind(task.task_small_id)
+        .bind(task.task_id)
+        .bind(task.role)
+        .bind(task.model_name)
+        .bind(task.is_deprecated)
+        .bind(task.valid_until_epoch)
+        .bind(task.deprecated_at_epoch)
+        .bind(task.optimizations)
+        .bind(task.security_level)
+        .bind(task.task_metrics_compute_unit)
+        .bind(task.task_metrics_time_unit)
+        .bind(task.task_metrics_value)
+        .bind(task.minimum_reputation_score)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -262,7 +258,7 @@ impl StateManager {
         tasks
             .into_iter()
             .map(|task| Task::from_row(&task).map_err(StateManagerError::from))
-            .collect::<Result<Vec<Task>>>()
+            .collect()
     }
 
     /// Checks if a node is subscribed to a specific task.
@@ -308,10 +304,10 @@ impl StateManager {
         let result = sqlx::query(
             "SELECT COUNT(*) FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?",
         )
-            .bind(node_small_id)
-            .bind(task_small_id)
-            .fetch_one(&self.db)
-            .await?;
+        .bind(node_small_id)
+        .bind(task_small_id)
+        .fetch_one(&self.db)
+        .await?;
         let count: i64 = result.get(0);
         Ok(count > 0)
     }
@@ -491,24 +487,24 @@ impl StateManager {
     /// # Arguments
     ///
     /// * `stack_small_id` - The unique small identifier of the stack to retrieve.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Result<Stack>`: A result containing either:
     ///   - `Ok(Stack)`: A `Stack` object representing the stack.
     ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function will return an error if:
     /// - The database query fails to execute.
     /// - There's an issue converting the database rows into a `Stack` object.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust,no_run
     /// use your_crate::StateManager;
-    /// 
+    ///
     /// async fn get_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<Stack, StateManagerError> {  
     ///     state_manager.get_stack(stack_id).await
     /// }
@@ -519,9 +515,7 @@ impl StateManager {
         fields(stack_small_id = %stack_small_id)
     )]
     pub async fn get_stack(&self, stack_small_id: i64) -> Result<Stack> {
-        let stack = sqlx::query(
-            "SELECT * FROM stacks WHERE stack_small_id = ?",
-        )
+        let stack = sqlx::query("SELECT * FROM stacks WHERE stack_small_id = ?")
             .bind(stack_small_id)
             .fetch_one(&self.db)
             .await?;
@@ -554,15 +548,15 @@ impl StateManager {
     /// async fn insert_stack(state_manager: &StateManager, stack: Stack) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack(stack).await
     /// }   
-    /// ``` 
+    /// ```
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack.stack_small_id, 
-            stack_id = %stack.stack_id, 
-            task_small_id = %stack.task_small_id, 
-            selected_node_id = %stack.selected_node_id, 
-            num_compute_units = %stack.num_compute_units, 
+        fields(stack_small_id = %stack.stack_small_id,
+            stack_id = %stack.stack_id,
+            task_small_id = %stack.task_small_id,
+            selected_node_id = %stack.selected_node_id,
+            num_compute_units = %stack.num_compute_units,
             price = %stack.price)
     )]
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
@@ -605,7 +599,7 @@ impl StateManager {
     ///
     /// ```rust,no_run
     /// use your_crate::StateManager;
-    /// 
+    ///
     /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_computed_units(stack_small_id, already_computed_units).await
     /// }
@@ -620,9 +614,7 @@ impl StateManager {
         stack_small_id: i64,
         already_computed_units: i64,
     ) -> Result<()> {
-        sqlx::query(
-            "UPDATE stacks SET already_computed_units = ? WHERE stack_small_id = ?",
-        )
+        sqlx::query("UPDATE stacks SET already_computed_units = ? WHERE stack_small_id = ?")
             .bind(already_computed_units)
             .bind(stack_small_id)
             .execute(&self.db)
@@ -651,7 +643,7 @@ impl StateManager {
     ///
     /// ```rust,no_run
     /// use your_crate::StateManager;
-    /// 
+    ///
     /// async fn remove_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.remove_stack(stack_small_id).await
     /// }
@@ -668,8 +660,368 @@ impl StateManager {
             .await?;
         Ok(())
     }
-}
 
+    /// Retrieves the stack settlement ticket for a given stack.
+    ///
+    /// This method fetches the settlement ticket details from the `stack_settlement_tickets` table
+    /// based on the provided `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack whose settlement ticket is to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<StackSettlementTicket>`: A result containing either:
+    ///   - `Ok(StackSettlementTicket)`: A `StackSettlementTicket` object representing the settlement ticket.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database row into a `StackSettlementTicket` object.
+    /// - No settlement ticket is found for the given `stack_small_id`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::{StateManager, StackSettlementTicket};
+    ///
+    /// async fn get_settlement_ticket(state_manager: &StateManager, stack_small_id: i64) -> Result<StackSettlementTicket, StateManagerError> {
+    ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id)
+    )]
+    pub async fn get_stack_settlement_ticket(
+        &self,
+        stack_small_id: i64,
+    ) -> Result<StackSettlementTicket> {
+        let stack_try_settle =
+            sqlx::query("SELECT * FROM stack_settlement_tickets WHERE stack_small_id = ?")
+                .bind(stack_small_id)
+                .fetch_one(&self.db)
+                .await?;
+        Ok(StackSettlementTicket::from_row(&stack_try_settle)?)
+    }
+
+    /// Inserts a new stack settlement ticket into the database.
+    ///
+    /// This method inserts a new entry into the `stack_settlement_tickets` table with the provided stack settlement ticket details.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_settlement_ticket` - The `StackSettlementTicket` object to be inserted into the database.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the provided `StackSettlementTicket` object into a database row.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::{StateManager, StackSettlementTicket};
+    ///
+    /// async fn insert_settlement_ticket(state_manager: &StateManager, stack_settlement_ticket: StackSettlementTicket) -> Result<(), StateManagerError> {
+    ///     state_manager.insert_new_stack_settlement_ticket(stack_settlement_ticket).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_settlement_ticket.stack_small_id,
+            selected_node_id = %stack_settlement_ticket.selected_node_id,
+            num_claimed_compute_units = %stack_settlement_ticket.num_claimed_compute_units,
+            requested_attestation_nodes = %stack_settlement_ticket.requested_attestation_nodes)
+    )]
+    pub async fn insert_new_stack_settlement_ticket(
+        &self,
+        stack_settlement_ticket: StackSettlementTicket,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO stack_settlement_tickets 
+                (
+                    stack_small_id, 
+                    selected_node_id, 
+                    num_claimed_compute_units, 
+                    requested_attestation_nodes, 
+                    committed_stack_proof, 
+                    stack_merkle_leaf, 
+                    dispute_settled_at_epoch, 
+                    already_attested_nodes, 
+                    is_in_dispute, 
+                    user_refund_amount, is_claimed) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(stack_settlement_ticket.stack_small_id)
+        .bind(stack_settlement_ticket.selected_node_id)
+        .bind(stack_settlement_ticket.num_claimed_compute_units)
+        .bind(stack_settlement_ticket.requested_attestation_nodes)
+        .bind(stack_settlement_ticket.committed_stack_proof)
+        .bind(stack_settlement_ticket.stack_merkle_leaf)
+        .bind(stack_settlement_ticket.dispute_settled_at_epoch)
+        .bind(stack_settlement_ticket.already_attested_nodes)
+        .bind(stack_settlement_ticket.is_in_dispute)
+        .bind(stack_settlement_ticket.user_refund_amount)
+        .bind(stack_settlement_ticket.is_claimed)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates a stack settlement ticket with attestation commitments.
+    ///
+    /// This method updates the `stack_settlement_tickets` table with new attestation information
+    /// for a specific stack. It updates the committed stack proof, stack Merkle leaf, and adds
+    /// a new attestation node to the list of already attested nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack to update.
+    /// * `committed_stack_proof` - The new committed stack proof as a byte vector.
+    /// * `stack_merkle_leaf` - The new stack Merkle leaf as a byte vector.
+    /// * `attestation_node_id` - The ID of the node providing the attestation.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified stack settlement ticket doesn't exist.
+    /// - There's an issue updating the JSON array of already attested nodes.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn update_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let committed_stack_proof = vec![1, 2, 3, 4];
+    ///     let stack_merkle_leaf = vec![5, 6, 7, 8];
+    ///     let attestation_node_id = 42;
+    ///
+    ///     state_manager.update_stack_settlement_ticket_with_attestation_commitments(
+    ///         stack_small_id,
+    ///         committed_stack_proof,
+    ///         stack_merkle_leaf,
+    ///         attestation_node_id
+    ///     ).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id,
+            attestation_node_id = %attestation_node_id)
+    )]
+    pub async fn update_stack_settlement_ticket_with_attestation_commitments(
+        &self,
+        stack_small_id: i64,
+        committed_stack_proof: Vec<u8>,
+        stack_merkle_leaf: Vec<u8>,
+        attestation_node_id: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE stack_settlement_tickets 
+                SET committed_stack_proof = ?,
+                    stack_merkle_leaf = ?, 
+                    already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
+                WHERE stack_small_id = ?",
+        )
+        .bind(committed_stack_proof)
+        .bind(stack_merkle_leaf)
+        .bind(attestation_node_id)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Updates a stack settlement ticket to mark it as claimed and set the user refund amount.
+    ///
+    /// This method updates the `stack_settlement_tickets` table, setting the `is_claimed` flag to true
+    /// and updating the `user_refund_amount` for a specific stack settlement ticket.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack settlement ticket to update.
+    /// * `user_refund_amount` - The amount to be refunded to the user.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified stack settlement ticket doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn claim_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let user_refund_amount = 1000;
+    ///
+    ///     state_manager.update_stack_settlement_ticket_with_claim(stack_small_id, user_refund_amount).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id,
+            user_refund_amount = %user_refund_amount)
+    )]
+    pub async fn update_stack_settlement_ticket_with_claim(
+        &self,
+        stack_small_id: i64,
+        user_refund_amount: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE stack_settlement_tickets 
+                SET user_refund_amount = ?,
+                    is_claimed = true
+                WHERE stack_small_id = ?",
+        )
+        .bind(user_refund_amount)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Retrieves all stack attestation disputes for a given stack and attestation node.
+    ///
+    /// This method fetches all disputes from the `stack_attestation_disputes` table
+    /// that match the provided `stack_small_id` and `attestation_node_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack.
+    /// * `attestation_node_id` - The ID of the attestation node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
+    ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of `StackAttestationDispute` objects representing all disputes found.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `StackAttestationDispute` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::{StateManager, StackAttestationDispute};
+    ///
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let attestation_node_id = 42;
+    ///     state_manager.get_stack_attestation_disputes(stack_small_id, attestation_node_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id,
+            attestation_node_id = %attestation_node_id)
+    )]
+    pub async fn get_stack_attestation_disputes(
+        &self,
+        stack_small_id: i64,
+        attestation_node_id: i64,
+    ) -> Result<Vec<StackAttestationDispute>> {
+        let disputes = sqlx::query(
+            "SELECT * FROM stack_attestation_disputes 
+                WHERE stack_small_id = ? AND attestation_node_id = ?",
+        )
+        .bind(stack_small_id)
+        .bind(attestation_node_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        disputes
+            .into_iter()
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Inserts a new stack attestation dispute into the database.
+    ///
+    /// This method adds a new entry to the `stack_attestation_disputes` table with the provided dispute information.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_attestation_dispute` - A `StackAttestationDispute` struct containing all the information about the dispute to be inserted.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's a constraint violation (e.g., duplicate primary key).
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::{StateManager, StackAttestationDispute};
+    ///
+    /// async fn add_dispute(state_manager: &StateManager, dispute: StackAttestationDispute) -> Result<(), StateManagerError> {
+    ///     state_manager.insert_stack_attestation_dispute(dispute).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_attestation_dispute.stack_small_id,
+            attestation_node_id = %stack_attestation_dispute.attestation_node_id,
+            original_node_id = %stack_attestation_dispute.original_node_id)
+    )]
+    pub async fn insert_stack_attestation_dispute(
+        &self,
+        stack_attestation_dispute: StackAttestationDispute,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO stack_attestation_disputes 
+                (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment) 
+                VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(stack_attestation_dispute.stack_small_id)
+        .bind(stack_attestation_dispute.attestation_commitment)
+        .bind(stack_attestation_dispute.attestation_node_id)
+        .bind(stack_attestation_dispute.original_node_id)
+        .bind(stack_attestation_dispute.original_commitment)
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum StateManagerError {
@@ -835,13 +1187,20 @@ pub(crate) mod queries {
     /// This table stores information about attestations for stack settlements.
     ///
     /// # Table Structure
-    /// - `stack_small_id`: INTEGER NOT NULL - The ID of the stack being attested.
+    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
     /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for the stack.
     /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
-    /// - `attestation_node_id`: INTEGER NOT NULL - The ID of the node providing the attestation.
+    /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
+    /// - `committed_stack_proof`: BLOB NOT NULL - The committed proof for the stack settlement.
+    /// - `stack_merkle_leaf`: BLOB NOT NULL - The Merkle leaf for the stack.
+    /// - `dispute_settled_at_epoch`: INTEGER - The epoch when the dispute was settled (nullable).
+    /// - `already_attested_nodes`: TEXT NOT NULL - A list of nodes that have already attested.
+    /// - `is_in_dispute`: BOOLEAN NOT NULL - Indicates whether the settlement is in dispute.
+    /// - `user_refund_amount`: INTEGER NOT NULL - The amount to be refunded to the user.
+    /// - `is_claimed`: BOOLEAN NOT NULL - Indicates whether the settlement has been claimed.
     ///
     /// # Primary Key
-    /// The table uses a composite primary key of (stack_small_id, attestation_node_id).
+    /// The table uses `stack_small_id` as the primary key.
     ///
     /// # Foreign Key
     /// - `stack_small_id` references the `stacks` table.
@@ -851,77 +1210,17 @@ pub(crate) mod queries {
     pub(crate) fn stack_settlement_attestations() -> String {
         format!(
             "CREATE TABLE IF NOT EXISTS stack_settlement_attestations (
-                stack_small_id INTEGER NOT NULL,
-                selected_node_id INTEGER NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
-                attestation_node_id INTEGER NOT NULL,
-                PRIMARY KEY (stack_small_id, attestation_node_id),
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
-    }
-
-    /// Generates the SQL query to create the `stack_settlement_tickets` table.
-    ///
-    /// This table stores information about settlement tickets for stacks.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
-    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for the stack.
-    /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
-    /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
-    /// - `dispute_settled_at_epoch`: INTEGER NOT NULL - The epoch when the dispute was settled.
-    /// - `committed_stack_proof`: BLOB NOT NULL - The committed proof for the stack.
-    ///
-    /// # Primary Key
-    /// The table uses `stack_small_id` as the primary key.
-    ///
-    /// # Foreign Key
-    /// - `stack_small_id` references the `stacks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
-    pub(crate) fn stack_settlement_tickets() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
                 stack_small_id INTEGER PRIMARY KEY,
                 selected_node_id INTEGER NOT NULL,
                 num_claimed_compute_units INTEGER NOT NULL,
                 requested_attestation_nodes TEXT NOT NULL,
-                dispute_settled_at_epoch INTEGER NOT NULL,
                 committed_stack_proof BLOB NOT NULL,
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
-    }
-
-    /// Generates the SQL query to create the `stack_settlement_ticket_claims` table.
-    ///
-    /// This table stores information about claims made on stack settlement tickets.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
-    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for the stack.
-    /// - `attestation_nodes`: TEXT NOT NULL - A list of nodes that provided attestations.
-    /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
-    /// - `user_refund_amount`: INTEGER NOT NULL - The amount to be refunded to the user.
-    ///
-    /// # Primary Key
-    /// The table uses `stack_small_id` as the primary key.
-    ///
-    /// # Foreign Key
-    /// - `stack_small_id` references the `stacks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_settlement_ticket_claims` table.
-    pub(crate) fn stack_settlement_ticket_claims() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_settlement_ticket_claims (
-                stack_small_id INTEGER PRIMARY KEY,
-                selected_node_id INTEGER NOT NULL,
-                attestation_nodes TEXT NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
+                stack_merkle_leaf BLOB NOT NULL,
+                dispute_settled_at_epoch INTEGER,
+                already_attested_nodes TEXT NOT NULL,
+                is_in_dispute BOOLEAN NOT NULL,
                 user_refund_amount INTEGER NOT NULL,
+                is_claimed BOOLEAN NOT NULL,
                 FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
             )"
         )
@@ -1005,10 +1304,6 @@ pub(crate) mod queries {
         sqlx::query(&stacks()).execute(db).await?;
         sqlx::query(&stack_try_settle()).execute(db).await?;
         sqlx::query(&stack_settlement_attestations())
-            .execute(db)
-            .await?;
-        sqlx::query(&stack_settlement_tickets()).execute(db).await?;
-        sqlx::query(&stack_settlement_ticket_claims())
             .execute(db)
             .await?;
         sqlx::query(&stack_attestation_disputes())

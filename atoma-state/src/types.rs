@@ -28,3 +28,36 @@ pub struct Stack {
     pub price: i64,
     pub already_computed_units: i64,
 }
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct StackSettlementTicket {
+    pub stack_small_id: i64,
+    pub selected_node_id: i64,
+    pub num_claimed_compute_units: i64,
+    pub requested_attestation_nodes: String,
+    pub committed_stack_proof: Vec<u8>,
+    pub stack_merkle_leaf: Vec<u8>,
+    pub dispute_settled_at_epoch: Option<i64>,
+    pub already_attested_nodes: String,
+    pub is_in_dispute: bool,
+    pub user_refund_amount: i64,
+    pub is_claimed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct StackAttestationDispute {
+    pub stack_small_id: i64,
+    pub attestation_commitment: Vec<u8>,
+    pub attestation_node_id: i64,
+    pub original_node_id: i64,
+    pub original_commitment: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct StackAttestation {
+    pub stack_small_id: i64,
+    pub attestation_commitment: Vec<u8>,
+    pub attestation_node_id: i64,
+    pub original_node_id: i64,
+    pub original_commitment: Vec<u8>,
+}
