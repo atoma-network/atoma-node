@@ -20,6 +20,8 @@ pub enum AtomaEvent {
     NodeSubscribedToModelEvent,
     /// Emitted when a node subscribes to a specific task.
     NodeSubscribedToTaskEvent,
+    /// Emitted when a node updates its subscription to a task.
+    NodeSubscriptionUpdatedEvent,
     /// Emitted when a node unsubscribes from a task.
     NodeUnsubscribedFromTaskEvent,
     /// Emitted when a new task is registered in the network.
@@ -158,6 +160,30 @@ pub struct NodeSubscribedToTaskEvent {
     pub node_small_id: NodeSmallId,
 
     /// The price per compute unit that the node is offering for this task.
+    /// This represents the cost in Atoma's native currency for each unit of computation
+    /// that the node will perform for this task.
+    pub price_per_compute_unit: u64,
+
+    /// The maximum number of compute units that the node is willing to process for this task.
+    /// This limits the amount of resources the node will commit to processing the task.
+    pub max_num_compute_units: u64,
+}
+
+/// Represents an event that is emitted when a node updates its subscription to a task in the Atoma network.
+///
+/// This event contains information about the node, the task it's updating its subscription to,
+/// and the new price per compute unit that the node is offering for this task.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeSubscriptionUpdatedEvent {
+    /// The small ID of the task that the node is updating its subscription to.
+    /// This is a compact identifier for the task within the Atoma network.
+    pub task_small_id: TaskSmallId,
+
+    /// The small ID of the node that is updating its subscription to the task.
+    /// This is a compact identifier for the node within the Atoma network.
+    pub node_small_id: NodeSmallId,
+
+    /// The new price per compute unit that the node is offering for this task.
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     pub price_per_compute_unit: u64,
@@ -785,6 +811,21 @@ mod tests {
         assert_eq!(event.node_small_id.inner, 4);
         assert_eq!(event.price_per_compute_unit, 100);
         assert_eq!(event.max_num_compute_units, 1000);
+    }
+
+    #[test]
+    fn test_node_subscription_updated_event_deserialization() {
+        let json = json!({
+            "task_small_id": {"inner": 3},
+            "node_small_id": {"inner": 4},
+            "price_per_compute_unit": 150,
+            "max_num_compute_units": 1500
+        });
+        let event: NodeSubscriptionUpdatedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_small_id.inner, 3);
+        assert_eq!(event.node_small_id.inner, 4);
+        assert_eq!(event.price_per_compute_unit, 150);
+        assert_eq!(event.max_num_compute_units, 1500);
     }
 
     #[test]
