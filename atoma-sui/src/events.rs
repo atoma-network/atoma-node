@@ -777,12 +777,14 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": 3},
             "node_small_id": {"inner": 4},
-            "price_per_compute_unit": 100
+            "price_per_compute_unit": 100,
+            "max_num_compute_units": 1000
         });
         let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
         assert_eq!(event.price_per_compute_unit, 100);
+        assert_eq!(event.max_num_compute_units, 1000);
     }
 
     #[test]
@@ -858,6 +860,7 @@ mod tests {
         let json = json!({
             "stack_id": "stack-001",
             "stack_small_id": {"inner": 10},
+            "task_small_id": {"inner": 3},
             "selected_node_id": {"inner": 11},
             "num_compute_units": 5,
             "price": 1000
@@ -865,6 +868,7 @@ mod tests {
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_id, "stack-001");
         assert_eq!(event.stack_small_id.inner, 10);
+        assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.selected_node_id.inner, 11);
         assert_eq!(event.num_compute_units, 5);
         assert_eq!(event.price, 1000);
