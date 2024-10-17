@@ -1,0 +1,12 @@
+[package]
+name = "atoma-state"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+config.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio-native-tls", "sqlite"] }
+thiserror.workspace = true
+tracing.workspace = true
