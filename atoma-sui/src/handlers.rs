@@ -34,6 +34,9 @@ pub(crate) fn handle_atoma_event(event: &AtomaEvent) -> Result<()> {
         AtomaEvent::NodeSubscribedToTaskEvent => {
             println!("NodeSubscribedToTaskEvent");
         }
+        AtomaEvent::NodeSubscriptionUpdatedEvent => {
+            println!("NodeSubscriptionUpdatedEvent");
+        }
         AtomaEvent::NodeUnsubscribedFromTaskEvent => {
             println!("NodeUnsubscribedFromTaskEvent");
         }

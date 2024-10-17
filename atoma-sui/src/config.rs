@@ -111,7 +111,7 @@ impl SuiEventSubscriberConfig {
     ///
     /// This method will panic if:
     /// - The configuration file cannot be read or parsed.
-    /// - The "event_subscriber" section is missing from the configuration file.
+    /// - The "atoma-sui" section is missing from the configuration file.
     /// - The configuration values cannot be deserialized into a `SuiEventSubscriberConfig` instance.
     ///
     /// # Examples
@@ -128,10 +128,10 @@ impl SuiEventSubscriberConfig {
         ));
         let config = builder
             .build()
-            .expect("Failed to generate inference configuration file");
+            .expect("Failed to generate atoma-sui configuration file");
         config
-            .get::<Self>("event_subscriber")
-            .expect("Failed to generated config file")
+            .get::<Self>("atoma-sui")
+            .expect("Failed to generate configuration instance")
     }
 }
 
