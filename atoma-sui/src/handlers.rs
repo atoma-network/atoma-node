@@ -3,7 +3,9 @@ use serde_json::Value;
 use tracing::{error, instrument, trace};
 
 use crate::{
-    events::{AtomaEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackCreatedEvent, TaskDeprecationEvent, TaskRegisteredEvent},
+    events::{
+        AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent
+    },
     subscriber::Result,
 };
 
@@ -52,22 +54,21 @@ pub(crate) async fn handle_atoma_event(
         AtomaEvent::StackCreatedEvent => {
             handle_stack_created_event(value, db, node_small_ids).await
         }
-        AtomaEvent::StackTrySettleEvent => {
-            todo!()
-        }
+        AtomaEvent::StackTrySettleEvent => handle_stack_try_settle_event(value, db).await,
         AtomaEvent::NewStackSettlementAttestationEvent => {
-            todo!()
+            handle_new_stack_settlement_attestation_event(value, db).await
         }
         AtomaEvent::StackSettlementTicketEvent => {
-            todo!()
+            handle_stack_settlement_ticket_event(value, db).await
         }
         AtomaEvent::StackSettlementTicketClaimedEvent => {
-            todo!()
+            handle_stack_settlement_ticket_claimed_event(value, db).await
         }
         AtomaEvent::StackAttestationDisputeEvent => {
-            todo!()
+            handle_stack_attestation_dispute_event(value, db).await
         }
         AtomaEvent::TaskRemovedEvent => {
+            // TODO: Removed tasks should clean all stacks and stack settlement tickets ??
             todo!()
         }
         AtomaEvent::RetrySettlementEvent => {
@@ -273,22 +274,218 @@ pub(crate) async fn handle_node_task_unsubscription_event(
 /// is present in the `node_small_ids` slice. This ensures that only stacks relevant to
 /// the current node(s) are processed and stored.
 #[instrument(level = "trace", skip_all)]
-pub(crate) async fn handle_stack_created_event(value: Value, db: &SqlitePool, node_small_ids: &[u64]) -> Result<()> {
+pub(crate) async fn handle_stack_created_event(
+    value: Value,
+    db: &SqlitePool,
+    node_small_ids: &[u64],
+) -> Result<()> {
     trace!("Processing stack created event");
     let stack_event: StackCreatedEvent = serde_json::from_value(value)?;
     let node_small_id = stack_event.selected_node_id.inner;
     if node_small_ids.contains(&node_small_id) {
         trace!("Stack selected current node, with id {node_small_id}, inserting new stack");
-        let state_manager = StateManager::new(db.clone()); 
+        let state_manager = StateManager::new(db.clone());
         let stack = stack_event.into();
         state_manager.insert_new_stack(stack).await?;
     }
-
     Ok(())
 }
 
+/// Handles a stack try settle event.
+///
+/// This function processes a stack try settle event by parsing the event data,
+/// converting it into a stack settlement ticket, and inserting it into the database.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized stack try settle event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `StackTrySettleEvent`.
+/// * The database operation to insert the new stack settlement ticket fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Deserializes the input `value` into a `StackTrySettleEvent`.
+/// 2. Converts the event into a stack settlement ticket.
+/// 3. Creates a new `StateManager` instance.
+/// 4. Inserts the new stack settlement ticket into the database using the `StateManager`.
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_stack_try_settle_event(value: Value, db: &SqlitePool) -> Result<()> {
+    trace!("Processing stack try settle event");
+    let stack_settlement_ticket_event: StackTrySettleEvent = serde_json::from_value(value)?;
+    let stack_settlement_ticket = stack_settlement_ticket_event.into();
+    let state_manager = StateManager::new(db.clone());
+    state_manager
+        .insert_new_stack_settlement_ticket(stack_settlement_ticket)
+        .await?;
+    Ok(())
+}
 
-/// Attempts to handle an Atoma event with retries.
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_new_stack_settlement_attestation_event(
+    value: Value,
+    db: &SqlitePool,
+) -> Result<()> {
+    trace!("Processing new stack settlement attestation event");
+    let stack_attestation_event: NewStackSettlementAttestationEvent =
+        serde_json::from_value(value)?;
+    let stack_small_id = stack_attestation_event.stack_small_id.inner as i64;
+    let attestation_node_id = stack_attestation_event.attestation_node_id.inner as i64;
+    let committed_stack_proof = stack_attestation_event.committed_stack_proof;
+    let stack_merkle_leaf = stack_attestation_event.stack_merkle_leaf;
+
+    let state_manager = StateManager::new(db.clone());
+    state_manager
+        .update_stack_settlement_ticket_with_attestation_commitments(
+            stack_small_id,
+            committed_stack_proof,
+            stack_merkle_leaf,
+            attestation_node_id,
+        )
+        .await?;
+    Ok(())
+}
+
+/// Handles a stack settlement ticket event.
+///
+/// This function processes a stack settlement ticket event by parsing the event data
+/// and updating the corresponding stack settlement ticket in the database.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized stack settlement ticket event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `StackSettlementTicketEvent`.
+/// * The database operation to settle the stack settlement ticket fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Deserializes the input `value` into a `StackSettlementTicketEvent`.
+/// 2. Extracts the `stack_small_id` and `dispute_settled_at_epoch` from the event.
+/// 3. Creates a new `StateManager` instance.
+/// 4. Calls the `settle_stack_settlement_ticket` method on the `StateManager` to update the database.
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_stack_settlement_ticket_event(
+    value: Value,
+    db: &SqlitePool,
+) -> Result<()> {
+    trace!("Processing stack settlement ticket event");
+    let stack_settlement_ticket_event: StackSettlementTicketEvent = serde_json::from_value(value)?;
+    let stack_small_id = stack_settlement_ticket_event.stack_small_id.inner as i64;
+    let dispute_settled_at_epoch = stack_settlement_ticket_event.dispute_settled_at_epoch as i64;
+    let state_manager = StateManager::new(db.clone());
+    state_manager
+        .settle_stack_settlement_ticket(stack_small_id, dispute_settled_at_epoch)
+        .await?;
+    Ok(())
+}
+
+/// Handles a stack settlement ticket claimed event.
+///
+/// This function processes a stack settlement ticket claimed event by parsing the event data
+/// and updating the corresponding stack settlement ticket in the database with claim information.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized stack settlement ticket claimed event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `StackSettlementTicketClaimedEvent`.
+/// * The database operation to update the stack settlement ticket with claim information fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Deserializes the input `value` into a `StackSettlementTicketClaimedEvent`.
+/// 2. Extracts the `stack_small_id` and `user_refund_amount` from the event.
+/// 3. Creates a new `StateManager` instance.
+/// 4. Calls the `update_stack_settlement_ticket_with_claim` method on the `StateManager` to update the database.
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_stack_settlement_ticket_claimed_event(
+    value: Value,
+    db: &SqlitePool,
+) -> Result<()> {
+    trace!("Processing stack settlement ticket claimed event");
+    let stack_settlement_ticket_event: StackSettlementTicketClaimedEvent =
+        serde_json::from_value(value)?;
+    let stack_small_id = stack_settlement_ticket_event.stack_small_id.inner as i64;
+    let user_refund_amount = stack_settlement_ticket_event.user_refund_amount as i64;
+    let state_manager = StateManager::new(db.clone());
+    state_manager
+        .update_stack_settlement_ticket_with_claim(stack_small_id, user_refund_amount)
+        .await?;
+    Ok(())
+}
+
+/// Handles a stack attestation dispute event.
+///
+/// This function processes a stack attestation dispute event by parsing the event data
+/// and inserting the dispute information into the database.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized stack attestation dispute event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `StackAttestationDisputeEvent`.
+/// * The database operation to insert the stack attestation dispute fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Deserializes the input `value` into a `StackAttestationDisputeEvent`.
+/// 2. Converts the event into a stack attestation dispute object.
+/// 3. Creates a new `StateManager` instance.
+/// 4. Inserts the stack attestation dispute into the database using the `StateManager`.
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_stack_attestation_dispute_event(
+    value: Value,
+    db: &SqlitePool,
+) -> Result<()> {
+    trace!("Processing stack attestation dispute event");
+    let stack_attestation_event: StackAttestationDisputeEvent = serde_json::from_value(value)?;
+    let stack_attestation_dispute = stack_attestation_event.into();
+    let state_manager = StateManager::new(db.clone());
+    state_manager
+        .insert_stack_attestation_dispute(
+            stack_attestation_dispute
+        )
+        .await?;
+    Ok(())
+}
+
 /// Attempts to handle an Atoma event with retries.
 ///
 /// This function will try to handle the event up to `MAX_RETRIES_FOR_UNHANDLED_EVENTS` times
@@ -304,7 +501,12 @@ pub(crate) async fn handle_stack_created_event(value: Value, db: &SqlitePool, no
 /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the event was handled successfully,
 ///   or an error if all retry attempts failed.
 #[instrument(level = "trace", skip_all, fields(event))]
-pub(crate) async fn handle_event_with_retries(event: &AtomaEvent, value: Value, db: &SqlitePool, node_small_ids: &[u64]) {
+pub(crate) async fn handle_event_with_retries(
+    event: &AtomaEvent,
+    value: Value,
+    db: &SqlitePool,
+    node_small_ids: &[u64],
+) {
     let mut retries = 0;
     while retries < MAX_RETRIES_FOR_UNHANDLED_EVENTS {
         retries += 1;

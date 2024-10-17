@@ -1,4 +1,4 @@
-use atoma_state::types::{Stack, Task};
+use atoma_state::types::{Stack, StackSettlementTicket, StackAttestationDispute, Task};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -395,6 +395,31 @@ pub struct StackTrySettleEvent {
     pub num_claimed_compute_units: u64,
 }
 
+impl From<StackTrySettleEvent> for StackSettlementTicket {
+    fn from(event: StackTrySettleEvent) -> Self {
+        StackSettlementTicket {
+            stack_small_id: event.stack_small_id.inner as i64,
+            selected_node_id: event.selected_node_id.inner as i64,
+            num_claimed_compute_units: event.num_claimed_compute_units as i64,
+            requested_attestation_nodes: serde_json::to_string(
+                &event
+                    .requested_attestation_nodes
+                    .into_iter()
+                    .map(|id| id.inner)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+            committed_stack_proof: event.committed_stack_proof,
+            stack_merkle_leaf: event.stack_merkle_leaf,
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: serde_json::to_string(&Vec::<i64>::new()).unwrap(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        }
+    }
+}
+
 /// Represents an event that is emitted when a new attestation is made for a stack settlement in the Atoma network.
 ///
 /// This event contains information about the stack being attested, the nodes involved in the attestation process,
@@ -405,17 +430,17 @@ pub struct NewStackSettlementAttestationEvent {
     /// This is used for efficient referencing of the stack within the Atoma network.
     pub stack_small_id: StackSmallId,
 
-    /// The small ID of the node that was originally selected to process this stack.
-    /// This identifies which node in the network was responsible for executing the stack's tasks.
-    pub selected_node_id: NodeSmallId,
-
-    /// The number of compute units claimed by the selected node for processing this stack.
-    /// This represents the computational resources used in executing the stack's tasks.
-    pub num_claimed_compute_units: u64,
-
-    /// The small ID of the node providing the attestation for this stack settlement.
-    /// This node is responsible for verifying and confirming the correctness of the stack's execution.
+    /// The small ID of the node that made the attestation.
+    /// This identifies which node in the network made the attestation.
     pub attestation_node_id: NodeSmallId,
+
+    /// The committed proof of the stack's execution.
+    /// This is typically a cryptographic proof that demonstrates the correctness of the execution.
+    pub committed_stack_proof: Vec<u8>,
+
+    /// The Merkle leaf representing the stack in the network's Merkle tree.
+    /// This is used for efficient verification and auditing of the stack's state.
+    pub stack_merkle_leaf: Vec<u8>,
 }
 
 /// Represents an event that is emitted when a settlement ticket is issued for a stack in the Atoma network.
@@ -473,7 +498,7 @@ pub struct StackSettlementTicketClaimedEvent {
 
     /// The amount of refund, if any, issued to the user for this stack settlement.
     /// This is represented as a vector of bytes, likely to accommodate different currency representations.
-    pub user_refund_amount: Vec<u8>,
+    pub user_refund_amount: u64,
 }
 
 /// Represents an event that is emitted when there's a dispute in the attestation process for a stack in the Atoma network.
@@ -502,6 +527,19 @@ pub struct StackAttestationDisputeEvent {
     /// This is typically a cryptographic commitment that represents the original node's claim about the stack execution.
     pub original_commitment: Vec<u8>,
 }
+
+impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
+    fn from(event: StackAttestationDisputeEvent) -> Self {
+        StackAttestationDispute {
+            stack_small_id: event.stack_small_id.inner as i64,
+            attestation_commitment: event.attestation_commitment,
+            attestation_node_id: event.attestation_node_id.inner as i64,
+            original_node_id: event.original_node_id.inner as i64,
+            original_commitment: event.original_commitment,
+        }
+    }
+}
+
 
 /// Represents the parameters for a text-to-image prompt.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -984,15 +1022,15 @@ mod tests {
     fn test_new_stack_settlement_attestation_event_deserialization() {
         let json = json!({
             "stack_small_id": {"inner": 16},
-            "selected_node_id": {"inner": 17},
-            "num_claimed_compute_units": 200,
-            "attestation_node_id": {"inner": 18}
+            "attestation_node_id": {"inner": 17},
+            "committed_stack_proof": [1, 2, 3],
+            "stack_merkle_leaf": [4, 5, 6]
         });
         let event: NewStackSettlementAttestationEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_small_id.inner, 16);
-        assert_eq!(event.selected_node_id.inner, 17);
-        assert_eq!(event.num_claimed_compute_units, 200);
-        assert_eq!(event.attestation_node_id.inner, 18);
+        assert_eq!(event.attestation_node_id.inner, 17);
+        assert_eq!(event.committed_stack_proof, vec![1, 2, 3]);
+        assert_eq!(event.stack_merkle_leaf, vec![4, 5, 6]);
     }
 
     #[test]
@@ -1023,7 +1061,7 @@ mod tests {
             "selected_node_id": {"inner": 24},
             "attestation_nodes": [{"inner": 25}, {"inner": 26}],
             "num_claimed_compute_units": 400,
-            "user_refund_amount": [10, 11, 12]
+            "user_refund_amount": 100
         });
         let event: StackSettlementTicketClaimedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_small_id.inner, 23);
@@ -1032,7 +1070,7 @@ mod tests {
         assert_eq!(event.attestation_nodes[0].inner, 25);
         assert_eq!(event.attestation_nodes[1].inner, 26);
         assert_eq!(event.num_claimed_compute_units, 400);
-        assert_eq!(event.user_refund_amount, vec![10, 11, 12]);
+        assert_eq!(event.user_refund_amount, 100);
     }
 
     #[test]

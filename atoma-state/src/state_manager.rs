@@ -866,6 +866,52 @@ impl StateManager {
         Ok(())
     }
 
+    /// Settles a stack settlement ticket by updating the dispute settled at epoch.
+    ///
+    /// This method updates the `stack_settlement_tickets` table, setting the `dispute_settled_at_epoch` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack settlement ticket to update.
+    /// * `dispute_settled_at_epoch` - The epoch at which the dispute was settled.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified stack settlement ticket doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn settle_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let dispute_settled_at_epoch = 10;
+    ///
+    ///     state_manager.settle_stack_settlement_ticket(stack_small_id, dispute_settled_at_epoch).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id,
+            dispute_settled_at_epoch = %dispute_settled_at_epoch)
+    )]
+    pub async fn settle_stack_settlement_ticket(&self, stack_small_id: i64, dispute_settled_at_epoch: i64) -> Result<()> {
+        sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = ? WHERE stack_small_id = ?")
+            .bind(dispute_settled_at_epoch)
+            .bind(stack_small_id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
     /// Updates a stack settlement ticket to mark it as claimed and set the user refund amount.
     ///
     /// This method updates the `stack_settlement_tickets` table, setting the `is_claimed` flag to true
