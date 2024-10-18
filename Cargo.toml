@@ -13,6 +13,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.81"
 async-trait = "0.1.78"
+atoma-state = { path = "./atoma-state" }
 axum = "0.7.5"
 blake2 = "0.10.6"
 candle = { git = "https://github.com/huggingface/candle", package = "candle-core", branch = "main" }

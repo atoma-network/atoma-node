@@ -3,6 +3,7 @@ use crate::{
     events::{AtomaEvent, SuiEventParseError},
     handlers::{handle_atoma_event, handle_event_with_retries},
 };
+use atoma_state::SqlitePool;
 use futures::stream::{self, StreamExt};
 use std::{path::Path, str::FromStr, time::Duration};
 use sui_sdk::{
@@ -18,7 +19,7 @@ const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 /// The default number of concurrent event handling tasks to run.
 const DEFAULT_NUM_CONCURRENT_TASKS: usize = 32;
 
-type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
+pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
 /// A subscriber for Sui blockchain events.
 ///
@@ -27,6 +28,8 @@ type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 pub struct SuiEventSubscriber {
     /// The configuration values for the subscriber.
     config: SuiEventSubscriberConfig,
+    /// The database url.
+    database_url: String,
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
     /// The ID of the last processed event, used for pagination.
@@ -37,10 +40,11 @@ pub struct SuiEventSubscriber {
 
 impl SuiEventSubscriber {
     /// Constructor
-    pub fn new(config: SuiEventSubscriberConfig) -> Self {
+    pub fn new(config: SuiEventSubscriberConfig, database_url: String) -> Self {
         let filter = EventFilter::Package(config.package_id());
         Self {
             config,
+            database_url,
             filter,
             cursor: None,
             span: info_span!("events-subscriber"),
@@ -65,9 +69,9 @@ impl SuiEventSubscriber {
     ///
     /// This function will return an error if:
     /// * The configuration file cannot be read or parsed.
-    pub fn new_from_config<P: AsRef<Path>>(config_path: P) -> Result<Self> {
+    pub fn new_from_config<P: AsRef<Path>>(config_path: P, database_url: String) -> Self {
         let config = SuiEventSubscriberConfig::from_file_path(config_path);
-        Ok(Self::new(config))
+        Self::new(config, database_url)
     }
 
     /// Builds a SuiClient based on the provided configuration.
@@ -121,7 +125,7 @@ impl SuiEventSubscriber {
     /// * There's a failure in building the Sui client.
     /// * Event querying encounters an error.
     /// * Event processing or handling fails (though these are currently logged and not propagated).
-    #[instrument(skip_all)]
+    #[instrument(level = "info", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
         let _enter = self.span.enter();
         let package_id = self.config.package_id();
@@ -132,6 +136,10 @@ impl SuiEventSubscriber {
             .unwrap_or(DEFAULT_NUM_CONCURRENT_TASKS);
 
         let client = Self::build_client(&self.config).await?;
+        let db = SqlitePool::connect(&self.database_url)
+            .await
+            .map_err(|e| SuiEventSubscriberError::StateManagerError(e.into()))?;
+        let node_small_ids = self.config.small_ids();
 
         info!("Starting to run events subscriber, for package: {package_id}");
 
@@ -154,23 +162,45 @@ impl SuiEventSubscriber {
             };
             self.cursor = next_cursor;
 
+            let db = db.clone();
             stream::iter(data)
-                .for_each_concurrent(num_concurrent_tasks, |sui_event| async move {
-                    let event_name = sui_event.type_.name;
-                    trace!("Received new event: {event_name:#?}");
-                    match AtomaEvent::from_str(event_name.as_str()) {
-                        Ok(atoma_event) => match handle_atoma_event(&atoma_event) {
-                            Ok(_) => {
-                                trace!("Event with name: {event_name} handled successfully");
+                .for_each_concurrent(num_concurrent_tasks, |sui_event| {
+                    let db = db.clone();
+                    let node_small_ids = node_small_ids.clone();
+                    async move {
+                        let event_name = sui_event.type_.name;
+                        trace!("Received new event: {event_name:#?}");
+                        match AtomaEvent::from_str(event_name.as_str()) {
+                            Ok(atoma_event) => {
+                                match handle_atoma_event(
+                                    &atoma_event,
+                                    sui_event.parsed_json.clone(),
+                                    &db,
+                                    &node_small_ids,
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        trace!(
+                                            "Event with name: {event_name} handled successfully"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to handle event: {e}");
+                                        handle_event_with_retries(
+                                            &atoma_event,
+                                            sui_event.parsed_json,
+                                            &db,
+                                            &node_small_ids,
+                                        )
+                                        .await
+                                    }
+                                }
                             }
                             Err(e) => {
-                                error!("Failed to handle event: {e}");
-                                handle_event_with_retries(&atoma_event)
+                                error!("Failed to parse event: {e}");
+                                // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                             }
-                        },
-                        Err(e) => {
-                            error!("Failed to parse event: {e}");
-                            // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                         }
                     }
                 })
@@ -195,4 +225,8 @@ pub enum SuiEventSubscriberError {
     ReadEventsError(#[from] sui_sdk::error::Error),
     #[error("Failed to parse event: {0}")]
     SuiEventParseError(#[from] SuiEventParseError),
+    #[error("Failed to deserialize event: {0}")]
+    DeserializeError(#[from] serde_json::Error),
+    #[error("State manager error: {0}")]
+    StateManagerError(#[from] atoma_state::StateManagerError),
 }
