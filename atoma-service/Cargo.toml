@@ -4,12 +4,15 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-axum.workspace = true
+axum = { workspace = true }
 atoma-sui = { path = "../atoma-sui" }
+ed25519-dalek = { workspace = true }
+p256 = { workspace = true }
+secp256k1 = { workspace = true }
+sqlx = { workspace = true }
 tokenizers = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
-tracing.workspace = true
+thiserror = { workspace = true }
+tracing = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
-sqlx = { workspace = true }
-curve25519-dalek = { workspace = true }

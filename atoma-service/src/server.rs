@@ -1,6 +1,5 @@
 use axum::{routing::get, Router};
 use sqlx::SqlitePool;
-use std::net::SocketAddr;
 use tokenizers::Tokenizer;
 use tokio::{net::TcpListener, signal, sync::watch::Sender};
 use tracing::info;
