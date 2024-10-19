@@ -1,4 +1,4 @@
-use atoma_state::types::{Stack, StackSettlementTicket, StackAttestationDispute, Task};
+use atoma_state::types::{Stack, StackAttestationDispute, StackSettlementTicket, Task};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -539,7 +539,6 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
         }
     }
 }
-
 
 /// Represents the parameters for a text-to-image prompt.
 #[derive(Clone, Debug, Deserialize, Serialize)]

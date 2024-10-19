@@ -1,0 +1,15 @@
+[package]
+name = "atoma-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+atoma-sui = { path = "../atoma-sui" }
+tokenizers = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
+tracing.workspace = true
+utoipa = { workspace = true, features = ["axum_extras"] }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+sqlx = { workspace = true }
+curve25519-dalek = { workspace = true }
