@@ -2,4 +2,5 @@
 //! and supports multiple signature schemes (including ed25519, secp256k1, and secp256r1,
 //! matching SUI's supported cryptography primitives).
 pub mod authentication;
+pub mod middleware;
 pub mod server;
