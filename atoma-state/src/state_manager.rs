@@ -6,7 +6,7 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, StateManagerError>;
 
-// StateManager is responsible for managing the state of the Atoma system.
+/// StateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
 ///
 /// It provides an interface to interact with the SQLite database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
@@ -903,7 +903,11 @@ impl StateManager {
         fields(stack_small_id = %stack_small_id,
             dispute_settled_at_epoch = %dispute_settled_at_epoch)
     )]
-    pub async fn settle_stack_settlement_ticket(&self, stack_small_id: i64, dispute_settled_at_epoch: i64) -> Result<()> {
+    pub async fn settle_stack_settlement_ticket(
+        &self,
+        stack_small_id: i64,
+        dispute_settled_at_epoch: i64,
+    ) -> Result<()> {
         sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = ? WHERE stack_small_id = ?")
             .bind(dispute_settled_at_epoch)
             .bind(stack_small_id)

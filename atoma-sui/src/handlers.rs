@@ -4,7 +4,10 @@ use tracing::{error, instrument, trace};
 
 use crate::{
     events::{
-        AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent
+        AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
+        NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
+        StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
+        StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
     },
     subscriber::Result,
 };
@@ -479,9 +482,7 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
     let stack_attestation_dispute = stack_attestation_event.into();
     let state_manager = StateManager::new(db.clone());
     state_manager
-        .insert_stack_attestation_dispute(
-            stack_attestation_dispute
-        )
+        .insert_stack_attestation_dispute(stack_attestation_dispute)
         .await?;
     Ok(())
 }

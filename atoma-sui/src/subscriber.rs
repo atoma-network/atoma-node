@@ -12,7 +12,8 @@ use sui_sdk::{
     SuiClient, SuiClientBuilder,
 };
 use thiserror::Error;
-use tracing::{error, info, info_span, instrument, trace, Span};
+use tokio::sync::watch::Receiver;
+use tracing::{error, info, instrument, trace};
 
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
@@ -34,20 +35,24 @@ pub struct SuiEventSubscriber {
     filter: EventFilter,
     /// The ID of the last processed event, used for pagination.
     cursor: Option<EventID>,
-    /// The span used to trace the events subscriber.
-    span: Span,
+    /// The shutdown signal.
+    shutdown_signal: Receiver<bool>,
 }
 
 impl SuiEventSubscriber {
     /// Constructor
-    pub fn new(config: SuiEventSubscriberConfig, database_url: String) -> Self {
+    pub fn new(
+        config: SuiEventSubscriberConfig,
+        database_url: String,
+        shutdown_signal: Receiver<bool>,
+    ) -> Self {
         let filter = EventFilter::Package(config.package_id());
         Self {
             config,
             database_url,
             filter,
             cursor: None,
-            span: info_span!("events-subscriber"),
+            shutdown_signal,
         }
     }
 
@@ -69,9 +74,13 @@ impl SuiEventSubscriber {
     ///
     /// This function will return an error if:
     /// * The configuration file cannot be read or parsed.
-    pub fn new_from_config<P: AsRef<Path>>(config_path: P, database_url: String) -> Self {
+    pub fn new_from_config<P: AsRef<Path>>(
+        config_path: P,
+        database_url: String,
+        shutdown_signal: Receiver<bool>,
+    ) -> Self {
         let config = SuiEventSubscriberConfig::from_file_path(config_path);
-        Self::new(config, database_url)
+        Self::new(config, database_url, shutdown_signal)
     }
 
     /// Builds a SuiClient based on the provided configuration.
@@ -95,7 +104,7 @@ impl SuiEventSubscriber {
     /// This function will return an error if:
     /// * The SuiClient cannot be built with the provided configuration.
     /// * There's a network issue when connecting to the specified RPC node.
-    #[instrument(skip_all, fields(
+    #[instrument(level = "info", skip_all, fields(
         http_rpc_node_addr = %config.http_rpc_node_addr()
     ))]
     pub async fn build_client(config: &SuiEventSubscriberConfig) -> Result<SuiClient> {
@@ -127,7 +136,6 @@ impl SuiEventSubscriber {
     /// * Event processing or handling fails (though these are currently logged and not propagated).
     #[instrument(level = "info", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
-        let _enter = self.span.enter();
         let package_id = self.config.package_id();
         let limit = self.config.limit();
         let num_concurrent_tasks = self
@@ -144,6 +152,11 @@ impl SuiEventSubscriber {
         info!("Starting to run events subscriber, for package: {package_id}");
 
         loop {
+            if *self.shutdown_signal.borrow() {
+                info!("Shutdown signal received, gracefully stopping subscriber...");
+                break;
+            }
+
             let event_filter = self.filter.clone();
             let EventPage {
                 data,
@@ -213,9 +226,10 @@ impl SuiEventSubscriber {
                     DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
                 ))
                 .await;
-                continue;
             }
         }
+
+        Ok(())
     }
 }
 
