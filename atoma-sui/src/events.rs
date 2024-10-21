@@ -325,6 +325,9 @@ pub struct TaskRemovedEvent {
 /// the selected node, computational resources, and pricing details.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StackCreatedEvent {
+    /// The address of the owner of the stack.
+    pub owner_address: String,
+
     /// The unique identifier of the created stack.
     /// This is typically a longer, more descriptive ID for the stack.
     pub stack_id: String,
@@ -353,6 +356,7 @@ pub struct StackCreatedEvent {
 impl From<StackCreatedEvent> for Stack {
     fn from(event: StackCreatedEvent) -> Self {
         Stack {
+            owner_address: event.owner_address,
             stack_id: event.stack_id,
             stack_small_id: event.stack_small_id.inner as i64,
             task_small_id: event.task_small_id.inner as i64,
@@ -360,6 +364,7 @@ impl From<StackCreatedEvent> for Stack {
             num_compute_units: event.num_compute_units as i64,
             price: event.price as i64,
             already_computed_units: 0,
+            in_settle_period: false,
         }
     }
 }

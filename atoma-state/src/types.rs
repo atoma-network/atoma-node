@@ -35,6 +35,8 @@ pub struct Task {
 /// Represents a stack of compute units for a specific task
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Stack {
+    /// Address of the owner of the stack
+    pub owner_address: String,
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
     /// Unique string identifier for the stack
@@ -49,6 +51,8 @@ pub struct Stack {
     pub price: i64,
     /// Number of compute units already processed
     pub already_computed_units: i64,
+    /// Indicates whether the stack is currently in the settle period
+    pub in_settle_period: bool,
 }
 
 /// Represents a settlement ticket for a compute stack

@@ -51,6 +51,7 @@ half = { version = "2.3.1", features = [
 ] }
 hex = "0.4.3"
 hf-hub = "0.3.2"
+hyper = "1.5.0"
 image = { version = "0.25.2", default-features = false, features = [
     "jpeg",
     "png",
@@ -76,6 +77,7 @@ thiserror = "1.0.58"
 tokenizers = "0.15.2"
 tokio = "1.36.0"
 toml = "0.8.12"
+tower = "0.5.1"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 url = "2.5.2"
