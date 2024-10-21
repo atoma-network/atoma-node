@@ -39,3 +39,5 @@ jobs:
         run: cargo install cargo-lints
       - name: Clippy check (with lints)
         run: cargo lints clippy --all-targets
+      - name: Unit tests checks
+        run: cargo test --all-targets --lib
