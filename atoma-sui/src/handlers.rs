@@ -1,14 +1,20 @@
 use atoma_state::{SqlitePool, StateManager};
 use serde_json::Value;
+use std::time::Duration;
 use tracing::{error, instrument, trace};
 
 use crate::{
     events::{
-        AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent
+        AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
+        NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
+        StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
+        StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
     },
     subscriber::Result,
 };
 
+/// The duration for retries in milliseconds.
+const DURATION_FOR_RETRY_IN_MILLIS: u64 = 100;
 /// The maximum number of retries for events to which handling fails.
 const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
 
@@ -479,9 +485,7 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
     let stack_attestation_dispute = stack_attestation_event.into();
     let state_manager = StateManager::new(db.clone());
     state_manager
-        .insert_stack_attestation_dispute(
-            stack_attestation_dispute
-        )
+        .insert_stack_attestation_dispute(stack_attestation_dispute)
         .await?;
     Ok(())
 }
@@ -516,5 +520,6 @@ pub(crate) async fn handle_event_with_retries(
                 error!("Failed to handle event: {e}");
             }
         }
+        tokio::time::sleep(Duration::from_millis(DURATION_FOR_RETRY_IN_MILLIS)).await;
     }
 }

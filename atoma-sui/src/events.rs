@@ -1,4 +1,4 @@
-use atoma_state::types::{Stack, StackSettlementTicket, StackAttestationDispute, Task};
+use atoma_state::types::{Stack, StackAttestationDispute, StackSettlementTicket, Task};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -397,6 +397,15 @@ pub struct StackTrySettleEvent {
 
 impl From<StackTrySettleEvent> for StackSettlementTicket {
     fn from(event: StackTrySettleEvent) -> Self {
+        let num_attestation_nodes = event.requested_attestation_nodes.len();
+        let expanded_size = 32 * num_attestation_nodes;
+
+        let mut expanded_proofs = event.committed_stack_proof;
+        expanded_proofs.resize(expanded_size, 0);
+
+        let mut expanded_leaves = event.stack_merkle_leaf;
+        expanded_leaves.resize(expanded_size, 0);
+
         StackSettlementTicket {
             stack_small_id: event.stack_small_id.inner as i64,
             selected_node_id: event.selected_node_id.inner as i64,
@@ -409,8 +418,8 @@ impl From<StackTrySettleEvent> for StackSettlementTicket {
                     .collect::<Vec<_>>(),
             )
             .unwrap(),
-            committed_stack_proof: event.committed_stack_proof,
-            stack_merkle_leaf: event.stack_merkle_leaf,
+            committed_stack_proofs: expanded_proofs,
+            stack_merkle_leaves: expanded_leaves,
             dispute_settled_at_epoch: None,
             already_attested_nodes: serde_json::to_string(&Vec::<i64>::new()).unwrap(),
             is_in_dispute: false,
@@ -539,7 +548,6 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
         }
     }
 }
-
 
 /// Represents the parameters for a text-to-image prompt.
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -63,9 +63,9 @@ pub struct StackSettlementTicket {
     /// Comma-separated list of node IDs requested for attestation
     pub requested_attestation_nodes: String,
     /// Cryptographic proof of the committed stack state
-    pub committed_stack_proof: Vec<u8>,
+    pub committed_stack_proofs: Vec<u8>,
     /// Merkle leaf representing the stack in a larger tree structure
-    pub stack_merkle_leaf: Vec<u8>,
+    pub stack_merkle_leaves: Vec<u8>,
     /// Optional epoch timestamp when a dispute was settled
     pub dispute_settled_at_epoch: Option<i64>,
     /// Comma-separated list of node IDs that have already attested
@@ -86,21 +86,6 @@ pub struct StackAttestationDispute {
     /// Cryptographic commitment provided by the attesting node
     pub attestation_commitment: Vec<u8>,
     /// Identifier of the node that provided the attestation
-    pub attestation_node_id: i64,
-    /// Identifier of the original node that performed the computation
-    pub original_node_id: i64,
-    /// Original cryptographic commitment provided by the computing node
-    pub original_commitment: Vec<u8>,
-}
-
-/// Represents an attestation for a compute stack
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct StackAttestation {
-    /// Unique small integer identifier for the stack being attested
-    pub stack_small_id: i64,
-    /// Cryptographic commitment provided by the attesting node
-    pub attestation_commitment: Vec<u8>,
-    /// Identifier of the node performing the attestation
     pub attestation_node_id: i64,
     /// Identifier of the original node that performed the computation
     pub original_node_id: i64,

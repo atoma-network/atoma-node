@@ -770,7 +770,7 @@ impl StateManager {
                     num_claimed_compute_units, 
                     requested_attestation_nodes, 
                     committed_stack_proof, 
-                    stack_merkle_leaf, 
+                    stack_merkle_leaves, 
                     dispute_settled_at_epoch, 
                     already_attested_nodes, 
                     is_in_dispute, 
@@ -781,8 +781,8 @@ impl StateManager {
         .bind(stack_settlement_ticket.selected_node_id)
         .bind(stack_settlement_ticket.num_claimed_compute_units)
         .bind(stack_settlement_ticket.requested_attestation_nodes)
-        .bind(stack_settlement_ticket.committed_stack_proof)
-        .bind(stack_settlement_ticket.stack_merkle_leaf)
+        .bind(stack_settlement_ticket.committed_stack_proofs)
+        .bind(stack_settlement_ticket.stack_merkle_leaves)
         .bind(stack_settlement_ticket.dispute_settled_at_epoch)
         .bind(stack_settlement_ticket.already_attested_nodes)
         .bind(stack_settlement_ticket.is_in_dispute)
@@ -815,6 +815,8 @@ impl StateManager {
     /// This function will return an error if:
     /// - The database query fails to execute.
     /// - The specified stack settlement ticket doesn't exist.
+    /// - The attestation node is not found in the list of requested attestation nodes.
+    /// - The provided Merkle leaf has an invalid length.
     /// - There's an issue updating the JSON array of already attested nodes.
     ///
     /// # Example
@@ -849,18 +851,47 @@ impl StateManager {
         stack_merkle_leaf: Vec<u8>,
         attestation_node_id: i64,
     ) -> Result<()> {
+        let mut tx = self.db.begin().await?;
+
+        let row = sqlx::query(
+            "SELECT stack_merkle_leaf, requested_attestation_nodes 
+             FROM stack_settlement_tickets 
+             WHERE stack_small_id = ?",
+        )
+        .bind(stack_small_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let mut current_merkle_leaf: Vec<u8> = row.get("stack_merkle_leaf");
+        let requested_nodes: String = row.get("requested_attestation_nodes");
+        let requested_nodes: Vec<i64> = serde_json::from_str(&requested_nodes)?;
+
+        // Find the index of the attestation_node_id
+        let index = requested_nodes
+            .iter()
+            .position(|&id| id == attestation_node_id)
+            .ok_or_else(|| StateManagerError::AttestationNodeNotFound(attestation_node_id))?;
+
+        // Update the corresponding 32-byte range in the stack_merkle_leaf
+        let start = index * 32;
+        let end = start + 32;
+        if end > current_merkle_leaf.len() {
+            return Err(StateManagerError::InvalidMerkleLeafLength);
+        }
+        current_merkle_leaf[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
+
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-                SET committed_stack_proof = ?,
-                    stack_merkle_leaf = ?, 
-                    already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
-                WHERE stack_small_id = ?",
+             SET committed_stack_proofs = ?,
+                 stack_merkle_leaves = ?, 
+                 already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
+             WHERE stack_small_id = ?",
         )
         .bind(committed_stack_proof)
-        .bind(stack_merkle_leaf)
+        .bind(current_merkle_leaf)
         .bind(attestation_node_id)
         .bind(stack_small_id)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await?;
 
         Ok(())
@@ -903,7 +934,11 @@ impl StateManager {
         fields(stack_small_id = %stack_small_id,
             dispute_settled_at_epoch = %dispute_settled_at_epoch)
     )]
-    pub async fn settle_stack_settlement_ticket(&self, stack_small_id: i64, dispute_settled_at_epoch: i64) -> Result<()> {
+    pub async fn settle_stack_settlement_ticket(
+        &self,
+        stack_small_id: i64,
+        dispute_settled_at_epoch: i64,
+    ) -> Result<()> {
         sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = ? WHERE stack_small_id = ?")
             .bind(dispute_settled_at_epoch)
             .bind(stack_small_id)
@@ -1087,6 +1122,12 @@ impl StateManager {
 pub enum StateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("Attestation node not found: {0}")]
+    AttestationNodeNotFound(i64),
+    #[error("Invalid Merkle leaf length")]
+    InvalidMerkleLeafLength,
+    #[error("Failed to parse JSON: {0}")]
+    JsonParseError(#[from] serde_json::Error),
 }
 
 pub(crate) mod queries {
@@ -1122,23 +1163,22 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `tasks` table.
     pub(crate) fn create_tasks_table_query() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS tasks (
-                task_small_id INTEGER PRIMARY KEY,
-                task_id TEXT UNIQUE NOT NULL,
-                role INTEGER NOT NULL,
-                model_name TEXT,
-                is_deprecated BOOLEAN NOT NULL,
-                valid_until_epoch INTEGER,
-                deprecated_at_epoch INTEGER,
-                optimizations TEXT NOT NULL,
-                security_level INTEGER NOT NULL,
-                task_metrics_compute_unit INTEGER NOT NULL,
-                task_metrics_time_unit INTEGER,
-                task_metrics_value INTEGER,
-                minimum_reputation_score INTEGER
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS tasks (
+            task_small_id INTEGER PRIMARY KEY,
+            task_id TEXT UNIQUE NOT NULL,
+            role INTEGER NOT NULL,
+            model_name TEXT,
+            is_deprecated BOOLEAN NOT NULL,
+            valid_until_epoch INTEGER,
+            deprecated_at_epoch INTEGER,
+            optimizations TEXT NOT NULL,
+            security_level INTEGER NOT NULL,
+            task_metrics_compute_unit INTEGER NOT NULL,
+            task_metrics_time_unit INTEGER,
+            task_metrics_value INTEGER,
+            minimum_reputation_score INTEGER
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `node_subscriptions` table.
@@ -1159,16 +1199,15 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `node_subscriptions` table.
     pub(crate) fn subscribed_tasks_query() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS node_subscriptions (
-                task_small_id INTEGER NOT NULL,
-                node_small_id INTEGER NOT NULL,
-                price_per_compute_unit INTEGER NOT NULL,
-                max_num_compute_units INTEGER NOT NULL,
-                PRIMARY KEY (task_small_id, node_small_id),
-                FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS node_subscriptions (
+            task_small_id INTEGER NOT NULL,
+            node_small_id INTEGER NOT NULL,
+            price_per_compute_unit INTEGER NOT NULL,
+            max_num_compute_units INTEGER NOT NULL,
+            PRIMARY KEY (task_small_id, node_small_id),
+            FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `stacks` table.
@@ -1194,8 +1233,7 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stacks` table.
     pub(crate) fn stacks() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stacks (
+        "CREATE TABLE IF NOT EXISTS stacks (
                 stack_small_id INTEGER PRIMARY KEY,
                 stack_id TEXT UNIQUE NOT NULL,
                 task_small_id INTEGER NOT NULL,
@@ -1204,8 +1242,7 @@ pub(crate) mod queries {
                 price INTEGER NOT NULL,
                 already_computed_units INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
-            )"
-        )
+            )".to_string()
     }
 
     /// Generates the SQL query to create the `stack_try_settle` table.
@@ -1217,7 +1254,7 @@ pub(crate) mod queries {
     /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for settlement.
     /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
     /// - `committed_stack_proof`: BLOB NOT NULL - The committed proof for the stack settlement.
-    /// - `stack_merkle_leaf`: BLOB NOT NULL - The Merkle leaf for the stack.
+    /// - `stack_merkle_leaves`: BLOB NOT NULL - The Merkle leaf for the stack.
     /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
     ///
     /// # Primary Key
@@ -1229,61 +1266,16 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_try_settle` table.
     pub(crate) fn stack_try_settle() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_try_settle (
-                stack_small_id INTEGER PRIMARY KEY,
-                selected_node_id INTEGER NOT NULL,
-                requested_attestation_nodes TEXT NOT NULL,
-                committed_stack_proof BLOB NOT NULL,
-                stack_merkle_leaf BLOB NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
-    }
-
-    /// Generates the SQL query to create the `stack_settlement_attestations` table.
-    ///
-    /// This table stores information about attestations for stack settlements.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
-    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for the stack.
-    /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
-    /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
-    /// - `committed_stack_proof`: BLOB NOT NULL - The committed proof for the stack settlement.
-    /// - `stack_merkle_leaf`: BLOB NOT NULL - The Merkle leaf for the stack.
-    /// - `dispute_settled_at_epoch`: INTEGER - The epoch when the dispute was settled (nullable).
-    /// - `already_attested_nodes`: TEXT NOT NULL - A list of nodes that have already attested.
-    /// - `is_in_dispute`: BOOLEAN NOT NULL - Indicates whether the settlement is in dispute.
-    /// - `user_refund_amount`: INTEGER NOT NULL - The amount to be refunded to the user.
-    /// - `is_claimed`: BOOLEAN NOT NULL - Indicates whether the settlement has been claimed.
-    ///
-    /// # Primary Key
-    /// The table uses `stack_small_id` as the primary key.
-    ///
-    /// # Foreign Key
-    /// - `stack_small_id` references the `stacks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_settlement_attestations` table.
-    pub(crate) fn stack_settlement_attestations() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_settlement_attestations (
-                stack_small_id INTEGER PRIMARY KEY,
-                selected_node_id INTEGER NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
-                requested_attestation_nodes TEXT NOT NULL,
-                committed_stack_proof BLOB NOT NULL,
-                stack_merkle_leaf BLOB NOT NULL,
-                dispute_settled_at_epoch INTEGER,
-                already_attested_nodes TEXT NOT NULL,
-                is_in_dispute BOOLEAN NOT NULL,
-                user_refund_amount INTEGER NOT NULL,
-                is_claimed BOOLEAN NOT NULL,
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS stack_try_settle (
+            stack_small_id INTEGER PRIMARY KEY,
+            selected_node_id INTEGER NOT NULL,
+            requested_attestation_nodes TEXT NOT NULL,
+            committed_stack_proof BLOB NOT NULL,
+            stack_merkle_leaves BLOB NOT NULL,
+            num_claimed_compute_units INTEGER NOT NULL,
+            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `stack_attestation_disputes` table.
@@ -1306,17 +1298,16 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_attestation_disputes` table.
     pub(crate) fn stack_attestation_disputes() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
-                stack_small_id INTEGER NOT NULL,
-                attestation_commitment BLOB NOT NULL,
-                attestation_node_id INTEGER NOT NULL,
-                original_node_id INTEGER NOT NULL,
-                original_commitment BLOB NOT NULL,
-                PRIMARY KEY (stack_small_id, attestation_node_id),
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
+            stack_small_id INTEGER NOT NULL,
+            attestation_commitment BLOB NOT NULL,
+            attestation_node_id INTEGER NOT NULL,
+            original_node_id INTEGER NOT NULL,
+            original_commitment BLOB NOT NULL,
+            PRIMARY KEY (stack_small_id, attestation_node_id),
+            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+        )"
+        .to_string()
     }
 
     /// Creates all the necessary tables in the database.
@@ -1326,9 +1317,7 @@ pub(crate) mod queries {
     /// - node_subscriptions
     /// - stacks
     /// - stack_try_settle
-    /// - stack_settlement_attestations
     /// - stack_settlement_tickets
-    /// - stack_settlement_ticket_claims
     /// - stack_attestation_disputes
     ///
     /// # Arguments
@@ -1363,9 +1352,7 @@ pub(crate) mod queries {
         sqlx::query(&subscribed_tasks_query()).execute(db).await?;
         sqlx::query(&stacks()).execute(db).await?;
         sqlx::query(&stack_try_settle()).execute(db).await?;
-        sqlx::query(&stack_settlement_attestations())
-            .execute(db)
-            .await?;
+
         sqlx::query(&stack_attestation_disputes())
             .execute(db)
             .await?;
