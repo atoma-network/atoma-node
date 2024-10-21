@@ -1,9 +1,13 @@
+use std::time::Duration;
 use tracing::error;
 
 use crate::{events::AtomaEvent, subscriber::SuiEventSubscriberError};
 
 /// The maximum number of retries for events to which handling fails.
 const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
+
+/// The duration for retries in milliseconds.
+const DURATION_FOR_RETRY_IN_MILLIS: u64 = 100;
 
 pub type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
@@ -93,7 +97,7 @@ pub(crate) fn handle_atoma_event(event: &AtomaEvent) -> Result<()> {
 ///
 /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the event was handled successfully,
 ///   or an error if all retry attempts failed.
-pub(crate) fn handle_event_with_retries(event: &AtomaEvent) {
+pub(crate) async fn handle_event_with_retries(event: &AtomaEvent) {
     let mut retries = 0;
     while retries < MAX_RETRIES_FOR_UNHANDLED_EVENTS {
         retries += 1;
@@ -103,5 +107,6 @@ pub(crate) fn handle_event_with_retries(event: &AtomaEvent) {
                 error!("Failed to handle event: {e}");
             }
         }
+        tokio::time::sleep(Duration::from_millis(DURATION_FOR_RETRY_IN_MILLIS)).await;
     }
 }
