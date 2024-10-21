@@ -272,7 +272,9 @@ pub async fn verify_stack_permissions(
         error!("No available stack with enough compute units");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    req_parts.extensions.insert((stack_small_id, total_num_tokens));
+    req_parts
+        .extensions
+        .insert((stack_small_id, total_num_tokens));
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
 }

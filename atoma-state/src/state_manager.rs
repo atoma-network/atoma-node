@@ -125,21 +125,21 @@ impl StateManager {
                 minimum_reputation_score
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-            .bind(task.task_small_id)
-            .bind(task.task_id)
-            .bind(task.role)
-            .bind(task.model_name)
-            .bind(task.is_deprecated)
-            .bind(task.valid_until_epoch)
-            .bind(task.deprecated_at_epoch)
-            .bind(task.optimizations)
-            .bind(task.security_level)
-            .bind(task.task_metrics_compute_unit)
-            .bind(task.task_metrics_time_unit)
-            .bind(task.task_metrics_value)
-            .bind(task.minimum_reputation_score)
-            .execute(&self.db)
-            .await?;
+        .bind(task.task_small_id)
+        .bind(task.task_id)
+        .bind(task.role)
+        .bind(task.model_name)
+        .bind(task.is_deprecated)
+        .bind(task.valid_until_epoch)
+        .bind(task.deprecated_at_epoch)
+        .bind(task.optimizations)
+        .bind(task.security_level)
+        .bind(task.task_metrics_compute_unit)
+        .bind(task.task_metrics_time_unit)
+        .bind(task.task_metrics_value)
+        .bind(task.minimum_reputation_score)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -567,7 +567,7 @@ impl StateManager {
     /// }
     /// ```
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn get_available_stacks(&self, public_key : String) -> Result<Vec<Stack>> {
+    pub async fn get_available_stacks(&self, public_key: String) -> Result<Vec<Stack>> {
         let stacks = sqlx::query("SELECT * FROM stacks WHERE owner_address = ?")
             .bind(public_key)
             .fetch_all(&self.db)
@@ -638,14 +638,14 @@ impl StateManager {
                 RETURNING *
             )
             SELECT * FROM updated_stack
-            "#
+            "#,
         )
-            .bind(stack_small_id)
-            .bind(public_key)
-            .bind(num_compute_units)
-            .fetch_optional(&self.db)
-            .await?;
-    
+        .bind(stack_small_id)
+        .bind(public_key)
+        .bind(num_compute_units)
+        .fetch_optional(&self.db)
+        .await?;
+
         Ok(maybe_stack)
     }
 
@@ -822,17 +822,22 @@ impl StateManager {
         skip_all,
         fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
     )]
-    pub async fn update_stack_num_tokens(&self, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<()> {
+    pub async fn update_stack_num_tokens(
+        &self,
+        stack_small_id: i64,
+        estimated_total_tokens: i64,
+        total_tokens: i64,
+    ) -> Result<()> {
         let result = sqlx::query(
             "UPDATE stacks 
             SET already_computed_units = already_computed_units - (? - ?) 
-            WHERE stack_small_id = ?"
+            WHERE stack_small_id = ?",
         )
-            .bind(estimated_total_tokens)
-            .bind(total_tokens)
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?;
+        .bind(estimated_total_tokens)
+        .bind(total_tokens)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(StateManagerError::StackNotFound);
@@ -944,19 +949,19 @@ impl StateManager {
                     user_refund_amount, is_claimed) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-            .bind(stack_settlement_ticket.stack_small_id)
-            .bind(stack_settlement_ticket.selected_node_id)
-            .bind(stack_settlement_ticket.num_claimed_compute_units)
-            .bind(stack_settlement_ticket.requested_attestation_nodes)
-            .bind(stack_settlement_ticket.committed_stack_proof)
-            .bind(stack_settlement_ticket.stack_merkle_leaf)
-            .bind(stack_settlement_ticket.dispute_settled_at_epoch)
-            .bind(stack_settlement_ticket.already_attested_nodes)
-            .bind(stack_settlement_ticket.is_in_dispute)
-            .bind(stack_settlement_ticket.user_refund_amount)
-            .bind(stack_settlement_ticket.is_claimed)
-            .execute(&self.db)
-            .await?;
+        .bind(stack_settlement_ticket.stack_small_id)
+        .bind(stack_settlement_ticket.selected_node_id)
+        .bind(stack_settlement_ticket.num_claimed_compute_units)
+        .bind(stack_settlement_ticket.requested_attestation_nodes)
+        .bind(stack_settlement_ticket.committed_stack_proof)
+        .bind(stack_settlement_ticket.stack_merkle_leaf)
+        .bind(stack_settlement_ticket.dispute_settled_at_epoch)
+        .bind(stack_settlement_ticket.already_attested_nodes)
+        .bind(stack_settlement_ticket.is_in_dispute)
+        .bind(stack_settlement_ticket.user_refund_amount)
+        .bind(stack_settlement_ticket.is_claimed)
+        .execute(&self.db)
+        .await?;
 
         // Also update the stack to set in_settle_period to true
         sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = ?")
@@ -1030,12 +1035,12 @@ impl StateManager {
                     already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
                 WHERE stack_small_id = ?",
         )
-            .bind(committed_stack_proof)
-            .bind(stack_merkle_leaf)
-            .bind(attestation_node_id)
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?;
+        .bind(committed_stack_proof)
+        .bind(stack_merkle_leaf)
+        .bind(attestation_node_id)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
 
         Ok(())
     }
@@ -1139,10 +1144,10 @@ impl StateManager {
                     is_claimed = true
                 WHERE stack_small_id = ?",
         )
-            .bind(user_refund_amount)
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?;
+        .bind(user_refund_amount)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
 
         Ok(())
     }
@@ -1195,10 +1200,10 @@ impl StateManager {
             "SELECT * FROM stack_attestation_disputes 
                 WHERE stack_small_id = ? AND attestation_node_id = ?",
         )
-            .bind(stack_small_id)
-            .bind(attestation_node_id)
-            .fetch_all(&self.db)
-            .await?;
+        .bind(stack_small_id)
+        .bind(attestation_node_id)
+        .fetch_all(&self.db)
+        .await?;
 
         disputes
             .into_iter()

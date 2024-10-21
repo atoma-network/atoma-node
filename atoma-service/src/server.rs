@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use atoma_state::StateManager;
 use axum::{
-    extract::State, http::StatusCode, middleware::{from_fn, from_fn_with_state}, response::IntoResponse, routing::{get, post}, Extension, Json, Router
+    extract::State,
+    http::StatusCode,
+    middleware::{from_fn, from_fn_with_state},
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Json, Router,
 };
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -133,13 +138,10 @@ pub async fn chat_completions_handler(
             error!("Error sending request to inference service: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    let response_body = response
-        .json::<Value>()
-        .await
-        .map_err(|e| {
-            error!("Error reading response body: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let response_body = response.json::<Value>().await.map_err(|e| {
+        error!("Error reading response body: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     // Extract the response total number of tokens
     let total_tokens = response_body
         .get("usage")
@@ -147,7 +149,7 @@ pub async fn chat_completions_handler(
         .and_then(|total_tokens| total_tokens.as_u64())
         .map(|n| n as i64)
         .unwrap_or(0);
-    
+
     let state_manager = StateManager::new(state.state.clone());
 
     state_manager
@@ -160,14 +162,16 @@ pub async fn chat_completions_handler(
 
     // Sign the response body
 
-
     Ok(Json(response_body))
 }
 
-pub(crate) mod utils { 
+pub(crate) mod utils {
     use super::*;
 
-    pub(crate) fn sign_response_body(response_body: Value, public_keys: Vec<String>) -> Result<String, Box<dyn std::error::Error>> {
+    pub(crate) fn sign_response_body(
+        response_body: Value,
+        public_keys: Vec<String>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         Ok(response_body.to_string())
     }
 }
