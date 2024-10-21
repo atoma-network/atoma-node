@@ -63,9 +63,9 @@ pub struct StackSettlementTicket {
     /// Comma-separated list of node IDs requested for attestation
     pub requested_attestation_nodes: String,
     /// Cryptographic proof of the committed stack state
-    pub committed_stack_proof: Vec<u8>,
+    pub committed_stack_proofs: Vec<u8>,
     /// Merkle leaf representing the stack in a larger tree structure
-    pub stack_merkle_leaf: Vec<u8>,
+    pub stack_merkle_leaves: Vec<u8>,
     /// Optional epoch timestamp when a dispute was settled
     pub dispute_settled_at_epoch: Option<i64>,
     /// Comma-separated list of node IDs that have already attested
