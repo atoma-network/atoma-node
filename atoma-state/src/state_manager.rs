@@ -1067,23 +1067,22 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `tasks` table.
     pub(crate) fn create_tasks_table_query() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS tasks (
-                task_small_id INTEGER PRIMARY KEY,
-                task_id TEXT UNIQUE NOT NULL,
-                role INTEGER NOT NULL,
-                model_name TEXT,
-                is_deprecated BOOLEAN NOT NULL,
-                valid_until_epoch INTEGER,
-                deprecated_at_epoch INTEGER,
-                optimizations TEXT NOT NULL,
-                security_level INTEGER NOT NULL,
-                task_metrics_compute_unit INTEGER NOT NULL,
-                task_metrics_time_unit INTEGER,
-                task_metrics_value INTEGER,
-                minimum_reputation_score INTEGER
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS tasks (
+            task_small_id INTEGER PRIMARY KEY,
+            task_id TEXT UNIQUE NOT NULL,
+            role INTEGER NOT NULL,
+            model_name TEXT,
+            is_deprecated BOOLEAN NOT NULL,
+            valid_until_epoch INTEGER,
+            deprecated_at_epoch INTEGER,
+            optimizations TEXT NOT NULL,
+            security_level INTEGER NOT NULL,
+            task_metrics_compute_unit INTEGER NOT NULL,
+            task_metrics_time_unit INTEGER,
+            task_metrics_value INTEGER,
+            minimum_reputation_score INTEGER
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `node_subscriptions` table.
@@ -1104,16 +1103,15 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `node_subscriptions` table.
     pub(crate) fn subscribed_tasks_query() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS node_subscriptions (
-                task_small_id INTEGER NOT NULL,
-                node_small_id INTEGER NOT NULL,
-                price_per_compute_unit INTEGER NOT NULL,
-                max_num_compute_units INTEGER NOT NULL,
-                PRIMARY KEY (task_small_id, node_small_id),
-                FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS node_subscriptions (
+            task_small_id INTEGER NOT NULL,
+            node_small_id INTEGER NOT NULL,
+            price_per_compute_unit INTEGER NOT NULL,
+            max_num_compute_units INTEGER NOT NULL,
+            PRIMARY KEY (task_small_id, node_small_id),
+            FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `stacks` table.
@@ -1139,8 +1137,7 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stacks` table.
     pub(crate) fn stacks() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stacks (
+        "CREATE TABLE IF NOT EXISTS stacks (
                 stack_small_id INTEGER PRIMARY KEY,
                 stack_id TEXT UNIQUE NOT NULL,
                 task_small_id INTEGER NOT NULL,
@@ -1149,8 +1146,7 @@ pub(crate) mod queries {
                 price INTEGER NOT NULL,
                 already_computed_units INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
-            )"
-        )
+            )".to_string()
     }
 
     /// Generates the SQL query to create the `stack_try_settle` table.
@@ -1174,17 +1170,16 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_try_settle` table.
     pub(crate) fn stack_try_settle() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_try_settle (
-                stack_small_id INTEGER PRIMARY KEY,
-                selected_node_id INTEGER NOT NULL,
-                requested_attestation_nodes TEXT NOT NULL,
-                committed_stack_proof BLOB NOT NULL,
-                stack_merkle_leaf BLOB NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS stack_try_settle (
+            stack_small_id INTEGER PRIMARY KEY,
+            selected_node_id INTEGER NOT NULL,
+            requested_attestation_nodes TEXT NOT NULL,
+            committed_stack_proof BLOB NOT NULL,
+            stack_merkle_leaf BLOB NOT NULL,
+            num_claimed_compute_units INTEGER NOT NULL,
+            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `stack_settlement_attestations` table.
@@ -1213,22 +1208,21 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_settlement_attestations` table.
     pub(crate) fn stack_settlement_attestations() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_settlement_attestations (
-                stack_small_id INTEGER PRIMARY KEY,
-                selected_node_id INTEGER NOT NULL,
-                num_claimed_compute_units INTEGER NOT NULL,
-                requested_attestation_nodes TEXT NOT NULL,
-                committed_stack_proof BLOB NOT NULL,
-                stack_merkle_leaf BLOB NOT NULL,
-                dispute_settled_at_epoch INTEGER,
-                already_attested_nodes TEXT NOT NULL,
-                is_in_dispute BOOLEAN NOT NULL,
-                user_refund_amount INTEGER NOT NULL,
-                is_claimed BOOLEAN NOT NULL,
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS stack_settlement_attestations (
+            stack_small_id INTEGER PRIMARY KEY,
+            selected_node_id INTEGER NOT NULL,
+            num_claimed_compute_units INTEGER NOT NULL,
+            requested_attestation_nodes TEXT NOT NULL,
+            committed_stack_proof BLOB NOT NULL,
+            stack_merkle_leaf BLOB NOT NULL,
+            dispute_settled_at_epoch INTEGER,
+            already_attested_nodes TEXT NOT NULL,
+            is_in_dispute BOOLEAN NOT NULL,
+            user_refund_amount INTEGER NOT NULL,
+            is_claimed BOOLEAN NOT NULL,
+            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+        )"
+        .to_string()
     }
 
     /// Generates the SQL query to create the `stack_attestation_disputes` table.
@@ -1251,17 +1245,16 @@ pub(crate) mod queries {
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_attestation_disputes` table.
     pub(crate) fn stack_attestation_disputes() -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
-                stack_small_id INTEGER NOT NULL,
-                attestation_commitment BLOB NOT NULL,
-                attestation_node_id INTEGER NOT NULL,
-                original_node_id INTEGER NOT NULL,
-                original_commitment BLOB NOT NULL,
-                PRIMARY KEY (stack_small_id, attestation_node_id),
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        )
+        "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
+            stack_small_id INTEGER NOT NULL,
+            attestation_commitment BLOB NOT NULL,
+            attestation_node_id INTEGER NOT NULL,
+            original_node_id INTEGER NOT NULL,
+            original_commitment BLOB NOT NULL,
+            PRIMARY KEY (stack_small_id, attestation_node_id),
+            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+        )"
+        .to_string()
     }
 
     /// Creates all the necessary tables in the database.
