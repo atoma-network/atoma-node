@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Represents a task in the system
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Task {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
@@ -33,7 +33,7 @@ pub struct Task {
 }
 
 /// Represents a stack of compute units for a specific task
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Stack {
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
@@ -52,7 +52,7 @@ pub struct Stack {
 }
 
 /// Represents a settlement ticket for a compute stack
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct StackSettlementTicket {
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
@@ -79,7 +79,7 @@ pub struct StackSettlementTicket {
 }
 
 /// Represents a dispute in the stack attestation process
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct StackAttestationDispute {
     /// Unique small integer identifier for the stack involved in the dispute
     pub stack_small_id: i64,
@@ -91,4 +91,34 @@ pub struct StackAttestationDispute {
     pub original_node_id: i64,
     /// Original cryptographic commitment provided by the computing node
     pub original_commitment: Vec<u8>,
+}
+
+/// Represents an attestation for a compute stack
+#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
+pub struct StackAttestation {
+    /// Unique small integer identifier for the stack being attested
+    pub stack_small_id: i64,
+    /// Cryptographic commitment provided by the attesting node
+    pub attestation_commitment: Vec<u8>,
+    /// Identifier of the node performing the attestation
+    pub attestation_node_id: i64,
+    /// Identifier of the original node that performed the computation
+    pub original_node_id: i64,
+    /// Original cryptographic commitment provided by the computing node
+    pub original_commitment: Vec<u8>,
+}
+
+/// Represents a node subscription to a task
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct NodeSubscription {
+    /// Unique small integer identifier for the node subscription
+    pub node_small_id: i64,
+    /// Unique small integer identifier for the task
+    pub task_small_id: i64,
+    /// Price per compute unit for the subscription
+    pub price_per_compute_unit: i64,
+    /// Maximum number of compute units for the subscription
+    pub max_num_compute_units: i64,
+    /// Indicates whether the subscription is valid
+    pub valid: bool,
 }

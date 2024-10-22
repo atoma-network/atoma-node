@@ -247,7 +247,7 @@ pub(crate) async fn handle_node_task_unsubscription_event(
     let task_small_id = node_subscription_event.task_small_id.inner as i64;
     let state_manager = StateManager::new(db.clone());
     state_manager
-        .remove_node_subscription(node_small_id, task_small_id)
+        .unsubscribe_node_from_task(node_small_id, task_small_id)
         .await?;
     Ok(())
 }

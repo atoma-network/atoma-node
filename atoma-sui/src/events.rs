@@ -951,7 +951,7 @@ mod tests {
         assert_eq!(event.task_small_id.inner, 7);
         assert_eq!(event.role.inner, 1);
         assert_eq!(event.model_name, Some("gpt-3".to_string()));
-        assert_eq!(event.is_deprecated, false);
+        assert!(!event.is_deprecated);
         assert_eq!(event.optimizations, vec![1, 2, 3]);
         assert_eq!(event.security_level, 2);
         assert_eq!(event.task_metrics.compute_unit, 10);
