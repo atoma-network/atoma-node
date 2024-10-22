@@ -79,7 +79,7 @@ pub struct StackSettlementTicket {
 }
 
 /// Represents a dispute in the stack attestation process
-#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct StackAttestationDispute {
     /// Unique small integer identifier for the stack involved in the dispute
     pub stack_small_id: i64,

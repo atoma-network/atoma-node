@@ -1674,4 +1674,286 @@ mod tests {
         let retrieved_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(ticket, retrieved_ticket);
     }
+
+    #[tokio::test]
+    async fn test_update_stack_settlement_ticket() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Setup: Insert task, subscription, stack, and initial settlement ticket
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+        let initial_ticket = StackSettlementTicket {
+            stack_small_id: 1,
+            selected_node_id: 1,
+            num_claimed_compute_units: 5,
+            requested_attestation_nodes: "[1,2]".to_string(),
+            committed_stack_proofs: vec![1, 2, 3],
+            stack_merkle_leaves: vec![4, 5, 6],
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: "".to_string(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        };
+        state_manager
+            .insert_new_stack_settlement_ticket(initial_ticket)
+            .await
+            .unwrap();
+
+        // Update the settlement ticket with attestation commitments
+        let committed_stack_proof = vec![7, 8, 9];
+        let stack_merkle_leaf = vec![10, 11, 12];
+        let attestation_node_id = 2;
+        state_manager
+            .update_stack_settlement_ticket_with_attestation_commitments(
+                1,
+                committed_stack_proof.clone(),
+                stack_merkle_leaf.clone(),
+                attestation_node_id,
+            )
+            .await
+            .unwrap();
+
+        // Verify the update
+        let updated_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
+        assert_eq!(updated_ticket.committed_stack_proofs, committed_stack_proof);
+        assert_eq!(updated_ticket.stack_merkle_leaves, stack_merkle_leaf);
+        assert_eq!(updated_ticket.already_attested_nodes, "[2]");
+
+        // Update the settlement ticket with a claim
+        let user_refund_amount = 500;
+        state_manager
+            .update_stack_settlement_ticket_with_claim(1, user_refund_amount)
+            .await
+            .unwrap();
+
+        // Verify the claim update
+        let claimed_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
+        assert_eq!(claimed_ticket.user_refund_amount, user_refund_amount);
+        assert!(claimed_ticket.is_claimed);
+    }
+
+    #[tokio::test]
+    async fn test_stack_attestation_disputes() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Setup: Insert task, subscription, stack, and settlement ticket
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+        let ticket = StackSettlementTicket {
+            stack_small_id: 1,
+            selected_node_id: 1,
+            num_claimed_compute_units: 10,
+            requested_attestation_nodes: "2,3".to_string(),
+            committed_stack_proofs: vec![1, 2, 3],
+            stack_merkle_leaves: vec![4, 5, 6],
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: "2".to_string(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        };
+        state_manager
+            .insert_new_stack_settlement_ticket(ticket)
+            .await
+            .unwrap();
+
+        // Insert an attestation dispute
+        let dispute = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![7, 8, 9],
+            attestation_node_id: 3,
+            original_node_id: 1,
+            original_commitment: vec![1, 2, 3],
+        };
+        state_manager
+            .insert_stack_attestation_dispute(dispute.clone())
+            .await
+            .unwrap();
+
+        // Verify the dispute was inserted
+        let retrieved_disputes = state_manager
+            .get_stack_attestation_disputes(1, 3)
+            .await
+            .unwrap();
+        assert_eq!(retrieved_disputes.len(), 1);
+        assert_eq!(retrieved_disputes[0], dispute);
+
+        // Try to insert a duplicate dispute (should fail)
+        let result = state_manager
+            .insert_stack_attestation_dispute(dispute.clone())
+            .await;
+        assert!(result.is_err());
+
+        // Insert another dispute for the same stack but different attestation node
+        let another_dispute = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![10, 11, 12],
+            attestation_node_id: 2,
+            original_node_id: 1,
+            original_commitment: vec![1, 2, 3],
+        };
+        state_manager
+            .insert_stack_attestation_dispute(another_dispute)
+            .await
+            .unwrap();
+
+        // Verify both disputes are present
+        let all_disputes = state_manager
+            .get_stack_attestation_disputes(1, 0)
+            .await
+            .unwrap();
+        assert_eq!(all_disputes.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cascading_delete_with_disputes() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Setup: Insert task, subscription, stack, and settlement ticket
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+        let ticket = StackSettlementTicket {
+            stack_small_id: 1,
+            selected_node_id: 1,
+            num_claimed_compute_units: 10,
+            requested_attestation_nodes: "2,3".to_string(),
+            committed_stack_proofs: vec![1, 2, 3],
+            stack_merkle_leaves: vec![4, 5, 6],
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: "2".to_string(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        };
+        state_manager
+            .insert_new_stack_settlement_ticket(ticket)
+            .await
+            .unwrap();
+
+        // Insert disputes
+        let dispute1 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![7, 8, 9],
+            attestation_node_id: 2,
+            original_node_id: 1,
+            original_commitment: vec![1, 2, 3],
+        };
+        let dispute2 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![10, 11, 12],
+            attestation_node_id: 3,
+            original_node_id: 1,
+            original_commitment: vec![1, 2, 3],
+        };
+        state_manager
+            .insert_stack_attestation_dispute(dispute1)
+            .await
+            .unwrap();
+        state_manager
+            .insert_stack_attestation_dispute(dispute2)
+            .await
+            .unwrap();
+
+        // Delete the task
+        state_manager.remove_task(1).await.unwrap();
+
+        // Verify that all related records are deleted, including disputes
+        assert!(state_manager.get_task_by_small_id(1).await.is_err());
+        assert!(!state_manager
+            .is_node_subscribed_to_task(1, 1)
+            .await
+            .unwrap());
+        assert!(state_manager.get_stack(1).await.is_err());
+        assert!(state_manager.get_stack_settlement_ticket(1).await.is_err());
+        let disputes = state_manager
+            .get_stack_attestation_disputes(1, 0)
+            .await
+            .unwrap();
+        assert!(disputes.is_empty());
+    }
 }
