@@ -804,7 +804,7 @@ impl StateManager {
             .ok_or_else(|| StateManagerError::AttestationNodeNotFound(attestation_node_id))?;
 
         // Update the corresponding 32-byte range in the stack_merkle_leaves
-        let start = index * 32;
+        let start = (index + 1) * 32;
         let end = start + 32;
         if end > current_merkle_leaves.len() {
             return Err(StateManagerError::InvalidMerkleLeafLength);
@@ -815,7 +815,6 @@ impl StateManager {
 
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
         committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
-
         sqlx::query(
             "UPDATE stack_settlement_tickets 
              SET committed_stack_proofs = ?,
@@ -830,6 +829,7 @@ impl StateManager {
         .execute(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 
