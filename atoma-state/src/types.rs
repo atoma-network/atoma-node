@@ -119,4 +119,6 @@ pub struct NodeSubscription {
     pub price_per_compute_unit: i64,
     /// Maximum number of compute units for the subscription
     pub max_num_compute_units: i64,
+    /// Indicates whether the subscription is valid
+    pub valid: bool,
 }

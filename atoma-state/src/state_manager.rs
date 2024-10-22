@@ -17,7 +17,15 @@ pub struct StateManager {
 
 impl StateManager {
     /// Constructor
-    pub async fn start(database_url: String) -> Result<Self> {
+    pub fn new(db: SqlitePool) -> Self {
+        Self { db }
+    }
+
+    /// Creates a new `StateManager` instance from a database URL.
+    ///
+    /// This method establishes a connection to the SQLite database using the provided URL,
+    /// creates all necessary tables in the database, and returns a new `StateManager` instance.
+    pub async fn new_from_url(database_url: String) -> Result<Self> {
         let db = SqlitePool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
@@ -168,8 +176,9 @@ impl StateManager {
         skip_all,
         fields(task_small_id = %task_small_id)
     )]
-    pub async fn deprecate_task(&self, task_small_id: i64) -> Result<()> {
-        sqlx::query("UPDATE tasks SET is_deprecated = TRUE WHERE task_small_id = ?")
+    pub async fn deprecate_task(&self, task_small_id: i64, epoch: i64) -> Result<()> {
+        sqlx::query("UPDATE tasks SET is_deprecated = TRUE, deprecated_at_epoch = ? WHERE task_small_id = ?")
+            .bind(epoch)
             .bind(task_small_id)
             .execute(&self.db)
             .await?;
@@ -326,7 +335,9 @@ impl StateManager {
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_subscriptions (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units) VALUES (?, ?, ?, ?)",
+            "INSERT INTO node_subscriptions 
+                (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
+                VALUES (?, ?, ?, ?, TRUE)",
         )
             .bind(node_small_id)
             .bind(task_small_id)
@@ -402,6 +413,49 @@ impl StateManager {
         )
             .bind(price_per_compute_unit)
             .bind(max_num_compute_units)
+            .bind(node_small_id)
+            .bind(task_small_id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    /// Unsubscribes a node from a task.
+    ///
+    /// This method updates the `valid` field of the `node_subscriptions` table to `FALSE` for the specified node and task combination.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique identifier of the node to be unsubscribed.
+    /// * `task_small_id` - The unique identifier of the task from which the node is unsubscribed.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn unsubscribe_node(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<(), StateManagerError> {
+    ///     state_manager.unsubscribe_node_from_task(node_small_id, task_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id, task_small_id = %task_small_id)
+    )]
+    pub async fn unsubscribe_node_from_task(
+        &self,
+        node_small_id: i64,
+        task_small_id: i64,
+    ) -> Result<()> {
+        sqlx::query("UPDATE node_subscriptions SET valid = FALSE WHERE node_small_id = ? AND task_small_id = ?")
             .bind(node_small_id)
             .bind(task_small_id)
             .execute(&self.db)
@@ -530,7 +584,7 @@ impl StateManager {
     /// use your_crate::StateManager;
     ///
     /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
-    ///     state_manager.update_computed_units(stack_small_id, already_computed_units).await
+    ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
     /// }
     /// ```
     #[tracing::instrument(
@@ -538,7 +592,7 @@ impl StateManager {
         skip_all,
         fields(stack_small_id = %stack_small_id, already_computed_units = %already_computed_units)
     )]
-    pub async fn update_computed_units(
+    pub async fn update_computed_units_for_stack(
         &self,
         stack_small_id: i64,
         already_computed_units: i64,
@@ -690,6 +744,8 @@ impl StateManager {
     /// This function will return an error if:
     /// - The database query fails to execute.
     /// - The specified stack settlement ticket doesn't exist.
+    /// - The attestation node is not found in the list of requested attestation nodes.
+    /// - The provided Merkle leaf has an invalid length.
     /// - There's an issue updating the JSON array of already attested nodes.
     ///
     /// # Example
@@ -724,20 +780,105 @@ impl StateManager {
         stack_merkle_leaf: Vec<u8>,
         attestation_node_id: i64,
     ) -> Result<()> {
-        sqlx::query(
-            "UPDATE stack_settlement_tickets 
-                SET committed_stack_proofs = ?,
-                    stack_merkle_leaves = ?, 
-                    already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
-                WHERE stack_small_id = ?",
+        let mut tx = self.db.begin().await?;
+
+        let row = sqlx::query(
+            "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes 
+             FROM stack_settlement_tickets 
+             WHERE stack_small_id = ?",
         )
-        .bind(committed_stack_proof)
-        .bind(stack_merkle_leaf)
-        .bind(attestation_node_id)
         .bind(stack_small_id)
-        .execute(&self.db)
+        .fetch_one(&mut *tx)
         .await?;
 
+        let mut committed_stack_proofs: Vec<u8> = row.get("committed_stack_proofs");
+        let mut current_merkle_leaves: Vec<u8> = row.get("stack_merkle_leaves");
+        let requested_nodes: String = row.get("requested_attestation_nodes");
+        let requested_nodes: Vec<i64> = serde_json::from_str(&requested_nodes)?;
+
+        // Find the index of the attestation_node_id
+        let index = requested_nodes
+            .iter()
+            .position(|&id| id == attestation_node_id)
+            .ok_or_else(|| StateManagerError::AttestationNodeNotFound(attestation_node_id))?;
+
+        // Update the corresponding 32-byte range in the stack_merkle_leaves
+        let start = (index + 1) * 32;
+        let end = start + 32;
+        if end > current_merkle_leaves.len() {
+            return Err(StateManagerError::InvalidMerkleLeafLength);
+        }
+        if end > committed_stack_proofs.len() {
+            return Err(StateManagerError::InvalidCommittedStackProofLength);
+        }
+
+        current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
+        committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
+        sqlx::query(
+            "UPDATE stack_settlement_tickets 
+             SET committed_stack_proofs = ?,
+                 stack_merkle_leaves = ?, 
+                 already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
+             WHERE stack_small_id = ?",
+        )
+        .bind(committed_stack_proofs)
+        .bind(current_merkle_leaves)
+        .bind(attestation_node_id)
+        .bind(stack_small_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Settles a stack settlement ticket by updating the dispute settled at epoch.
+    ///
+    /// This method updates the `stack_settlement_tickets` table, setting the `dispute_settled_at_epoch` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack settlement ticket to update.
+    /// * `dispute_settled_at_epoch` - The epoch at which the dispute was settled.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified stack settlement ticket doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn settle_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let dispute_settled_at_epoch = 10;
+    ///
+    ///     state_manager.settle_stack_settlement_ticket(stack_small_id, dispute_settled_at_epoch).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id,
+            dispute_settled_at_epoch = %dispute_settled_at_epoch)
+    )]
+    pub async fn settle_stack_settlement_ticket(
+        &self,
+        stack_small_id: i64,
+        dispute_settled_at_epoch: i64,
+    ) -> Result<()> {
+        sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = ? WHERE stack_small_id = ?")
+            .bind(dispute_settled_at_epoch)
+            .bind(stack_small_id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -916,6 +1057,14 @@ impl StateManager {
 pub enum StateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("Attestation node not found: {0}")]
+    AttestationNodeNotFound(i64),
+    #[error("Invalid Merkle leaf length")]
+    InvalidMerkleLeafLength,
+    #[error("Invalid committed stack proof length")]
+    InvalidCommittedStackProofLength,
+    #[error("Failed to parse JSON: {0}")]
+    JsonParseError(#[from] serde_json::Error),
 }
 
 pub(crate) mod queries {
@@ -992,6 +1141,7 @@ pub(crate) mod queries {
             node_small_id INTEGER NOT NULL,
             price_per_compute_unit INTEGER NOT NULL,
             max_num_compute_units INTEGER NOT NULL,
+            valid BOOLEAN NOT NULL,
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
         )"
@@ -1144,7 +1294,7 @@ mod tests {
         std::fs::create_dir_all(temp_dir.path()).unwrap();
         std::fs::File::create(&db_path).unwrap();
         let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
-        let state_manager = StateManager::start(database_url).await.unwrap();
+        let state_manager = StateManager::new_from_url(database_url).await.unwrap();
         (state_manager, temp_dir)
     }
 
@@ -1194,9 +1344,10 @@ mod tests {
             task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
-        state_manager.insert_new_task(task).await.unwrap();
 
-        state_manager.deprecate_task(1).await.unwrap();
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager.deprecate_task(1, 100).await.unwrap();
+
         let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert!(deprecated_task.is_deprecated);
 
@@ -1389,7 +1540,11 @@ mod tests {
         state_manager.insert_new_stack(stack).await.unwrap();
 
         // Update computed units
-        state_manager.update_computed_units(1, 15).await.unwrap();
+
+        state_manager
+            .update_computed_units_for_stack(1, 15)
+            .await
+            .unwrap();
 
         // Verify the update
         let updated_stack = state_manager.get_stack(1).await.unwrap();
@@ -1500,8 +1655,8 @@ mod tests {
             selected_node_id: 1,
             num_claimed_compute_units: 5,
             requested_attestation_nodes: "[1,2]".to_string(),
-            committed_stack_proofs: vec![1, 2, 3],
-            stack_merkle_leaves: vec![4, 5, 6],
+            committed_stack_proofs: vec![0; 96],
+            stack_merkle_leaves: vec![0; 96],
             dispute_settled_at_epoch: None,
             already_attested_nodes: "[]".to_string(),
             is_in_dispute: false,
@@ -1514,8 +1669,8 @@ mod tests {
             .unwrap();
 
         // Update the settlement ticket with attestation commitments
-        let committed_stack_proof = vec![7, 8, 9];
-        let stack_merkle_leaf = vec![10, 11, 12];
+        let committed_stack_proof = vec![2; 32];
+        let stack_merkle_leaf = vec![2; 32];
         let attestation_node_id = 2;
         state_manager
             .update_stack_settlement_ticket_with_attestation_commitments(
@@ -1529,8 +1684,16 @@ mod tests {
 
         // Verify the update
         let updated_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
-        assert_eq!(updated_ticket.committed_stack_proofs, committed_stack_proof);
-        assert_eq!(updated_ticket.stack_merkle_leaves, stack_merkle_leaf);
+        assert_eq!(
+            updated_ticket.committed_stack_proofs[64..96],
+            committed_stack_proof[0..32]
+        );
+        assert_eq!(
+            updated_ticket.stack_merkle_leaves[64..96],
+            stack_merkle_leaf[0..32]
+        );
+        assert_eq!(updated_ticket.committed_stack_proofs[0..64], vec![0; 64]);
+        assert_eq!(updated_ticket.stack_merkle_leaves[0..64], vec![0; 64]);
         assert_eq!(updated_ticket.already_attested_nodes, "[2]");
 
         // Update the settlement ticket with a claim
