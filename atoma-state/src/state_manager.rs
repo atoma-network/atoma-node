@@ -1,4 +1,4 @@
-use crate::types::{Stack, StackAttestationDispute, StackSettlementTicket, Task};
+use crate::types::{NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task};
 
 use sqlx::{pool::PoolConnection, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
@@ -377,6 +377,17 @@ impl StateManager {
         Ok(())
     }
 
+    pub async fn get_node_subscription_by_task_small_id(
+        &self,
+        task_small_id: i64,
+    ) -> Result<NodeSubscription> {
+        let subscription = sqlx::query("SELECT * FROM node_subscriptions WHERE task_small_id = ?")
+            .bind(task_small_id)
+            .fetch_one(&self.db)
+            .await?;
+        Ok(NodeSubscription::from_row(&subscription)?)
+    }
+
     /// Updates an existing node subscription to a task with new price and compute unit values.
     ///
     /// This method updates an entry in the `node_subscriptions` table, modifying the
@@ -664,6 +675,52 @@ impl StateManager {
             .execute(&self.db)
             .await?;
         Ok(())
+    }
+
+    /// Retrieves the stack settlement ticket associated with a specific stack ID.
+    ///
+    /// This method fetches the stack settlement ticket details from the `stack_settlement_tickets` table based on the provided `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack to retrieve.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<StackSettlementTicket>`: A result containing either:
+    ///   - `Ok(StackSettlementTicket)`: A `StackSettlementTicket` object representing the stack settlement ticket.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into a `StackSettlementTicket` object.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use your_crate::StateManager;
+    ///
+    /// async fn get_settlement_ticket(state_manager: &StateManager, stack_small_id: i64) -> Result<StackSettlementTicket, StateManagerError> {
+    ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id)
+    )]
+    pub async fn get_stack_settlement_ticket(
+        &self,
+        stack_small_id: i64,
+    ) -> Result<StackSettlementTicket> {
+        let stack_settlement_ticket =
+            sqlx::query("SELECT * FROM stack_settlement_tickets WHERE stack_small_id = ?")
+                .bind(stack_small_id)
+                .fetch_one(&self.db)
+                .await?;
+        Ok(StackSettlementTicket::from_row(&stack_settlement_ticket)?)
     }
 
     /// Inserts a new stack settlement ticket into the database.
@@ -1196,5 +1253,425 @@ pub(crate) mod queries {
             .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    async fn setup_test_db() -> (StateManager, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
+        let state_manager = StateManager::start(database_url).await.unwrap();
+        (state_manager, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_task() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+
+        state_manager.insert_new_task(task.clone()).await.unwrap();
+        let retrieved_task = state_manager.get_task_by_small_id(1).await.unwrap();
+        assert_eq!(task, retrieved_task);
+    }
+
+    #[tokio::test]
+    async fn test_deprecate_task() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        state_manager.deprecate_task(1).await.unwrap();
+        let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
+        assert!(deprecated_task.is_deprecated);
+    }
+
+    #[tokio::test]
+    async fn test_get_subscribed_tasks() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert two tasks
+        let task1 = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        let task2 = Task {
+            task_small_id: 2,
+            task_id: "task2".to_string(),
+            role: 1,
+            model_name: Some("model2".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt2".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task1.clone()).await.unwrap();
+        state_manager.insert_new_task(task2).await.unwrap();
+
+        // Subscribe a node to task1
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
+        assert_eq!(subscribed_tasks.len(), 1);
+        assert_eq!(subscribed_tasks[0], task1);
+    }
+
+    #[tokio::test]
+    async fn test_cascading_delete_task() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Subscribe a node to the task
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Create a stack for the subscription
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Create a settlement ticket for the stack
+        let settlement_ticket = StackSettlementTicket {
+            stack_small_id: 1,
+            selected_node_id: 1,
+            num_claimed_compute_units: 10,
+            requested_attestation_nodes: "node1".to_string(),
+            committed_stack_proofs: vec![],
+            stack_merkle_leaves: vec![],
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: "node1".to_string(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        };
+        state_manager
+            .insert_new_stack_settlement_ticket(settlement_ticket)
+            .await
+            .unwrap();
+
+        // Delete the task
+        state_manager.remove_task(1).await.unwrap();
+
+        // Verify that all related records are deleted
+        assert!(state_manager.get_task_by_small_id(1).await.is_err());
+        assert!(!state_manager
+            .is_node_subscribed_to_task(1, 1)
+            .await
+            .unwrap());
+        assert!(state_manager.get_stack(1).await.is_err());
+        // Add a method to check if a settlement ticket exists and use it here
+    }
+
+    #[tokio::test]
+    async fn test_update_node_subscription() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Subscribe a node to the task
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        let subscription = state_manager
+            .get_node_subscription_by_task_small_id(1)
+            .await
+            .unwrap();
+        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.max_num_compute_units, 1000);
+
+        // Update the subscription
+        state_manager
+            .update_node_subscription(1, 1, 200, 2000)
+            .await
+            .unwrap();
+
+        // Verify the update
+        // You'll need to implement a method to get subscription details)
+        let subscription = state_manager
+            .get_node_subscription_by_task_small_id(1)
+            .await
+            .unwrap();
+        assert_eq!(subscription.price_per_compute_unit, 200);
+        assert_eq!(subscription.max_num_compute_units, 2000);
+    }
+
+    #[tokio::test]
+    async fn test_remove_node_subscription() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Remove the subscription
+        state_manager.remove_node_subscription(1, 1).await.unwrap();
+
+        // Verify the subscription is removed
+        assert!(!state_manager
+            .is_node_subscribed_to_task(1, 1)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_stack() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Insert a stack
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack.clone()).await.unwrap();
+
+        // Get the stack and verify
+        let retrieved_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(stack, retrieved_stack);
+    }
+
+    #[tokio::test]
+    async fn test_update_computed_units() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task, subscribe a node, and create a stack
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Update computed units
+        state_manager.update_computed_units(1, 15).await.unwrap();
+
+        // Verify the update
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 15);
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_stack_settlement_ticket() {
+        let (state_manager, _temp_dir) = setup_test_db().await;
+
+        // Insert a task, subscribe a node, and create a stack
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Insert a stack settlement ticket
+        let ticket = StackSettlementTicket {
+            stack_small_id: 1,
+            selected_node_id: 1,
+            num_claimed_compute_units: 10,
+            requested_attestation_nodes: "node1,node2".to_string(),
+            committed_stack_proofs: vec![1, 2, 3],
+            stack_merkle_leaves: vec![4, 5, 6],
+            dispute_settled_at_epoch: None,
+            already_attested_nodes: "node1".to_string(),
+            is_in_dispute: false,
+            user_refund_amount: 0,
+            is_claimed: false,
+        };
+        state_manager
+            .insert_new_stack_settlement_ticket(ticket.clone())
+            .await
+            .unwrap();
+
+        // Verify the insertion (you'll need to implement a method to get a settlement ticket)
+        let retrieved_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
+        assert_eq!(ticket, retrieved_ticket);
     }
 }
