@@ -337,13 +337,12 @@ impl StateManager {
         sqlx::query(
             "INSERT INTO node_subscriptions 
                 (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
-                VALUES (?, ?, ?, ?, ?)",
+                VALUES (?, ?, ?, ?, TRUE)",
         )
             .bind(node_small_id)
             .bind(task_small_id)
             .bind(price_per_compute_unit)
             .bind(max_num_compute_units)
-            .bind(true)
             .execute(&self.db)
             .await?;
         Ok(())

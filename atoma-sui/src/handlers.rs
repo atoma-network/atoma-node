@@ -26,22 +26,22 @@ pub(crate) async fn handle_atoma_event(
 ) -> Result<()> {
     match event {
         AtomaEvent::DisputeEvent => {
-            todo!()
+            unimplemented!("Dispute event not implemented");
         }
         AtomaEvent::SettledEvent => {
-            todo!()
+            unimplemented!("Settled event not implemented");
         }
         AtomaEvent::PublishedEvent => {
-            todo!()
+            unimplemented!("Published event not implemented");
         }
         AtomaEvent::NewlySampledNodesEvent => {
-            todo!()
+            unimplemented!("Newly sampled nodes event not implemented");
         }
         AtomaEvent::NodeRegisteredEvent => {
-            todo!()
+            unimplemented!("Node registered event not implemented");
         }
         AtomaEvent::NodeSubscribedToModelEvent => {
-            todo!()
+            unimplemented!("Node subscribed to model event not implemented");
         }
         AtomaEvent::NodeSubscribedToTaskEvent => {
             handle_node_task_subscription_event(value, db).await
@@ -74,17 +74,16 @@ pub(crate) async fn handle_atoma_event(
             handle_stack_attestation_dispute_event(value, db).await
         }
         AtomaEvent::TaskRemovedEvent => {
-            // TODO: Removed tasks should clean all stacks and stack settlement tickets ??
-            todo!()
+            unimplemented!("Task removed event not implemented");
         }
         AtomaEvent::RetrySettlementEvent => {
-            todo!()
+            unimplemented!("Retry settlement event not implemented");
         }
         AtomaEvent::Text2ImagePromptEvent => {
-            todo!()
+            unimplemented!("Text2Image prompt event not implemented");
         }
         AtomaEvent::Text2TextPromptEvent => {
-            todo!()
+            unimplemented!("Text2Text prompt event not implemented");
         }
     }
 }
