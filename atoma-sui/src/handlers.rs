@@ -235,6 +235,25 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
     Ok(())
 }
 
+/// Handles a node task unsubscription event.
+///
+/// This function processes a node task unsubscription event by parsing the event data,
+/// extracting the necessary information, and updating the node's subscription status in the database.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized node task unsubscription event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `NodeUnsubscribedFromTaskEvent`.
+/// * The database operation to unsubscribe the node from the task fails.
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_node_task_unsubscription_event(
     value: Value,
@@ -335,6 +354,25 @@ pub(crate) async fn handle_stack_try_settle_event(value: Value, db: &SqlitePool)
     Ok(())
 }
 
+/// Handles a new stack settlement attestation event.
+///
+/// This function processes a new stack settlement attestation event by parsing the event data
+/// and updating the corresponding stack settlement ticket in the database with attestation commitments.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized new stack settlement attestation event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `NewStackSettlementAttestationEvent`.
+/// * The database operation to update the stack settlement ticket with attestation commitments fails.
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_new_stack_settlement_attestation_event(
     value: Value,
