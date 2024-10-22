@@ -335,7 +335,9 @@ impl StateManager {
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_subscriptions (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO node_subscriptions 
+                (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
+                VALUES (?, ?, ?, ?, ?)",
         )
             .bind(node_small_id)
             .bind(task_small_id)
@@ -583,7 +585,7 @@ impl StateManager {
     /// use your_crate::StateManager;
     ///
     /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
-    ///     state_manager.update_computed_units(stack_small_id, already_computed_units).await
+    ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
     /// }
     /// ```
     #[tracing::instrument(
@@ -1343,9 +1345,10 @@ mod tests {
             task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
-        state_manager.insert_new_task(task).await.unwrap();
 
+        state_manager.insert_new_task(task).await.unwrap();
         state_manager.deprecate_task(1, 100).await.unwrap();
+
         let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert!(deprecated_task.is_deprecated);
 
@@ -1538,6 +1541,7 @@ mod tests {
         state_manager.insert_new_stack(stack).await.unwrap();
 
         // Update computed units
+
         state_manager
             .update_computed_units_for_stack(1, 15)
             .await
