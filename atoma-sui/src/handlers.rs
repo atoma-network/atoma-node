@@ -1,13 +1,13 @@
 use std::time::Duration;
-
 use tracing::error;
 
 use crate::{events::AtomaEvent, subscriber::SuiEventSubscriberError};
 
-/// The duration for retries for events to which handling fails.
-const DURATION_FOR_RETRY_IN_MILLIS: u64 = 500;
 /// The maximum number of retries for events to which handling fails.
 const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
+
+/// The duration for retries in milliseconds.
+const DURATION_FOR_RETRY_IN_MILLIS: u64 = 100;
 
 pub type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
@@ -33,6 +33,9 @@ pub(crate) fn handle_atoma_event(event: &AtomaEvent) -> Result<()> {
         }
         AtomaEvent::NodeSubscribedToTaskEvent => {
             println!("NodeSubscribedToTaskEvent");
+        }
+        AtomaEvent::NodeSubscriptionUpdatedEvent => {
+            println!("NodeSubscriptionUpdatedEvent");
         }
         AtomaEvent::NodeUnsubscribedFromTaskEvent => {
             println!("NodeUnsubscribedFromTaskEvent");

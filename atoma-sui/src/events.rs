@@ -20,6 +20,8 @@ pub enum AtomaEvent {
     NodeSubscribedToModelEvent,
     /// Emitted when a node subscribes to a specific task.
     NodeSubscribedToTaskEvent,
+    /// Emitted when a node updates its subscription to a task.
+    NodeSubscriptionUpdatedEvent,
     /// Emitted when a node unsubscribes from a task.
     NodeUnsubscribedFromTaskEvent,
     /// Emitted when a new task is registered in the network.
@@ -161,6 +163,34 @@ pub struct NodeSubscribedToTaskEvent {
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     pub price_per_compute_unit: u64,
+
+    /// The maximum number of compute units that the node is willing to process for this task.
+    /// This limits the amount of resources the node will commit to processing the task.
+    pub max_num_compute_units: u64,
+}
+
+/// Represents an event that is emitted when a node updates its subscription to a task in the Atoma network.
+///
+/// This event contains information about the node, the task it's updating its subscription to,
+/// and the new price per compute unit that the node is offering for this task.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeSubscriptionUpdatedEvent {
+    /// The small ID of the task that the node is updating its subscription to.
+    /// This is a compact identifier for the task within the Atoma network.
+    pub task_small_id: TaskSmallId,
+
+    /// The small ID of the node that is updating its subscription to the task.
+    /// This is a compact identifier for the node within the Atoma network.
+    pub node_small_id: NodeSmallId,
+
+    /// The new price per compute unit that the node is offering for this task.
+    /// This represents the cost in Atoma's native currency for each unit of computation
+    /// that the node will perform for this task.
+    pub price_per_compute_unit: u64,
+
+    /// The maximum number of compute units that the node is willing to process for this task.
+    /// This limits the amount of resources the node will commit to processing the task.
+    pub max_num_compute_units: u64,
 }
 
 /// Represents an event that is emitted when a node unsubscribes from a specific task in the Atoma network.
@@ -179,8 +209,9 @@ pub struct NodeUnsubscribedFromTaskEvent {
 
 /// Represents an event that is emitted when a new task is registered in the Atoma network.
 ///
-/// This event contains information about the newly registered task, including its unique
-/// identifier and small ID within the network.
+/// This event contains comprehensive information about the newly registered task, including its
+/// identifiers, role, associated model, deprecation status, optimizations, security level,
+/// performance metrics, and minimum reputation requirements.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TaskRegisteredEvent {
     /// The unique identifier of the task.
@@ -190,6 +221,34 @@ pub struct TaskRegisteredEvent {
     /// The small ID assigned to the task within the Atoma network.
     /// This ID is used for efficient referencing of the task in various operations and events.
     pub task_small_id: TaskSmallId,
+
+    /// The role of the task in the Atoma network.
+    /// This defines the task's function or purpose within the system.
+    pub role: TaskRole,
+
+    /// The name of the AI model associated with this task, if applicable.
+    /// This field is optional as not all tasks may be tied to a specific model.
+    pub model_name: Option<String>,
+
+    /// Indicates whether the task is deprecated.
+    /// If true, the task is considered outdated but may still be accessible for historical reasons.
+    pub is_deprecated: bool,
+
+    /// A list of optimization flags or identifiers applied to this task.
+    /// These optimizations may affect how the task is processed or executed.
+    pub optimizations: Vec<u16>,
+
+    /// The security level required for this task.
+    /// Higher values typically indicate stricter security measures or clearance levels.
+    pub security_level: u16,
+
+    /// Performance metrics associated with this task.
+    /// This may include information such as expected completion time, resource usage, etc.
+    pub task_metrics: TaskMetrics,
+
+    /// The minimum reputation score required for a node to work on this task, if applicable.
+    /// This helps ensure that only sufficiently trusted nodes can participate in certain tasks.
+    pub minimum_reputation_score: Option<u8>,
 }
 
 /// Represents an event that is emitted when a task is deprecated in the Atoma network.
@@ -243,6 +302,10 @@ pub struct StackCreatedEvent {
     /// The small ID assigned to the stack within the Atoma network.
     /// This ID is used for efficient referencing of the stack in various operations and events.
     pub stack_small_id: StackSmallId,
+
+    /// The small ID of the task that the stack is associated with.
+    /// This is a compact identifier for the task within the Atoma network.
+    pub task_small_id: TaskSmallId,
 
     /// The small ID of the node selected to process this stack.
     /// This identifies which node in the network is responsible for executing the stack's tasks.
@@ -631,6 +694,24 @@ pub struct TaskSmallId {
     pub inner: u64,
 }
 
+/// Represents the role of a task in the Atoma network.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TaskRole {
+    /// The unique numerical identifier for the task role.
+    pub inner: u16,
+}
+
+/// Represents the metrics of a task in the Atoma network.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TaskMetrics {
+    /// The number of compute units used by the task.
+    pub compute_unit: u16,
+    /// The number of time units used by the task.
+    pub time_unit: Option<u16>,
+    /// The value of the task.
+    pub value: Option<u64>,
+}
+
 /// Represents information about a timeout in the Atoma network.
 ///
 /// This struct contains details about the timeout, such as the number of times
@@ -722,12 +803,29 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": 3},
             "node_small_id": {"inner": 4},
-            "price_per_compute_unit": 100
+            "price_per_compute_unit": 100,
+            "max_num_compute_units": 1000
         });
         let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
         assert_eq!(event.price_per_compute_unit, 100);
+        assert_eq!(event.max_num_compute_units, 1000);
+    }
+
+    #[test]
+    fn test_node_subscription_updated_event_deserialization() {
+        let json = json!({
+            "task_small_id": {"inner": 3},
+            "node_small_id": {"inner": 4},
+            "price_per_compute_unit": 150,
+            "max_num_compute_units": 1500
+        });
+        let event: NodeSubscriptionUpdatedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.task_small_id.inner, 3);
+        assert_eq!(event.node_small_id.inner, 4);
+        assert_eq!(event.price_per_compute_unit, 150);
+        assert_eq!(event.max_num_compute_units, 1500);
     }
 
     #[test]
@@ -745,11 +843,31 @@ mod tests {
     fn test_task_registered_event_deserialization() {
         let json = json!({
             "task_id": "task-001",
-            "task_small_id": {"inner": 7}
+            "task_small_id": {"inner": 7},
+            "role": {"inner": 1},
+            "model_name": "gpt-3",
+            "is_deprecated": false,
+            "optimizations": [1, 2, 3],
+            "security_level": 2,
+            "task_metrics": {
+                "compute_unit": 10,
+                "time_unit": 5,
+                "value": 100
+            },
+            "minimum_reputation_score": 80
         });
         let event: TaskRegisteredEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_id, "task-001");
         assert_eq!(event.task_small_id.inner, 7);
+        assert_eq!(event.role.inner, 1);
+        assert_eq!(event.model_name, Some("gpt-3".to_string()));
+        assert!(!event.is_deprecated);
+        assert_eq!(event.optimizations, vec![1, 2, 3]);
+        assert_eq!(event.security_level, 2);
+        assert_eq!(event.task_metrics.compute_unit, 10);
+        assert_eq!(event.task_metrics.time_unit, Some(5));
+        assert_eq!(event.task_metrics.value, Some(100));
+        assert_eq!(event.minimum_reputation_score, Some(80));
     }
 
     #[test]
@@ -783,6 +901,7 @@ mod tests {
         let json = json!({
             "stack_id": "stack-001",
             "stack_small_id": {"inner": 10},
+            "task_small_id": {"inner": 3},
             "selected_node_id": {"inner": 11},
             "num_compute_units": 5,
             "price": 1000
@@ -790,6 +909,7 @@ mod tests {
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_id, "stack-001");
         assert_eq!(event.stack_small_id.inner, 10);
+        assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.selected_node_id.inner, 11);
         assert_eq!(event.num_compute_units, 5);
         assert_eq!(event.price, 1000);
