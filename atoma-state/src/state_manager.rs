@@ -176,46 +176,6 @@ impl StateManager {
         Ok(())
     }
 
-    /// Removes a task from the database based on its small ID.
-    ///
-    /// This method deletes a task from the `tasks` table using the provided `task_small_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `task_small_id` - The unique small identifier for the task to be removed.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database query fails to execute.
-    /// - The task with the specified `task_small_id` doesn't exist.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use your_crate::StateManager;
-    ///
-    /// async fn delete_task(state_manager: &StateManager, task_small_id: i64) -> Result<(), StateManagerError> {
-    ///     state_manager.remove_task(task_small_id).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(task_small_id = %task_small_id)
-    )]
-    pub async fn remove_task(&self, task_small_id: i64) -> Result<()> {
-        sqlx::query("DELETE FROM tasks WHERE task_small_id = ?")
-            .bind(task_small_id)
-            .execute(&self.db)
-            .await?;
-        Ok(())
-    }
-
     /// Retrieves all tasks subscribed to by a specific node.
     ///
     /// This method fetches all tasks from the database that are associated with
@@ -449,53 +409,6 @@ impl StateManager {
         Ok(())
     }
 
-    /// Removes a node's subscription to a specific task.
-    ///
-    /// This method deletes the entry from the `node_subscriptions` table that matches
-    /// the given `node_small_id` and `task_small_id` combination.
-    ///
-    /// # Arguments
-    ///
-    /// * `node_small_id` - The unique identifier of the node whose subscription is to be removed.
-    /// * `task_small_id` - The unique identifier of the task from which the node is unsubscribing.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database query fails to execute.
-    /// - The specified subscription doesn't exist.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use your_crate::StateManager;
-    ///
-    /// async fn unsubscribe_node(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<(), StateManagerError> {
-    ///     state_manager.remove_node_subscription(node_small_id, task_small_id).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_id = %node_small_id, task_small_id = %task_small_id)
-    )]
-    pub async fn remove_node_subscription(
-        &self,
-        node_small_id: i64,
-        task_small_id: i64,
-    ) -> Result<()> {
-        sqlx::query("DELETE FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?")
-            .bind(node_small_id)
-            .bind(task_small_id)
-            .execute(&self.db)
-            .await?;
-        Ok(())
-    }
-
     /// Retrieves the stack associated with a specific stack ID.
     ///
     /// This method fetches the stack details from the `stacks` table based on the provided `stack_id`.
@@ -638,45 +551,6 @@ impl StateManager {
         Ok(())
     }
 
-    /// Removes a stack from the database.
-    ///
-    /// This method deletes the entry from the `stacks` table that matches the provided `stack_small_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `stack_small_id` - The unique small identifier of the stack to remove.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database query fails to execute.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use your_crate::StateManager;
-    ///
-    /// async fn remove_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<(), StateManagerError> {
-    ///     state_manager.remove_stack(stack_small_id).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id)
-    )]
-    pub async fn remove_stack(&self, stack_small_id: i64) -> Result<()> {
-        sqlx::query("DELETE FROM stacks WHERE stack_small_id = ?")
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?;
-        Ok(())
-    }
-
     /// Retrieves the stack settlement ticket associated with a specific stack ID.
     ///
     /// This method fetches the stack settlement ticket details from the `stack_settlement_tickets` table based on the provided `stack_small_id`.
@@ -769,12 +643,13 @@ impl StateManager {
                     selected_node_id, 
                     num_claimed_compute_units, 
                     requested_attestation_nodes, 
-                    committed_stack_proof, 
-                    stack_merkle_leaf, 
+                    committed_stack_proofs, 
+                    stack_merkle_leaves, 
                     dispute_settled_at_epoch, 
                     already_attested_nodes, 
                     is_in_dispute, 
-                    user_refund_amount, is_claimed) 
+                    user_refund_amount, 
+                    is_claimed) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(stack_settlement_ticket.stack_small_id)
@@ -851,8 +726,8 @@ impl StateManager {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-                SET committed_stack_proof = ?,
-                    stack_merkle_leaf = ?, 
+                SET committed_stack_proofs = ?,
+                    stack_merkle_leaves = ?, 
                     already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
                 WHERE stack_small_id = ?",
         )
@@ -1244,6 +1119,8 @@ pub(crate) mod queries {
     /// }
     /// ```
     pub(crate) async fn create_all_tables(db: &Pool<Sqlite>) -> Result<()> {
+        sqlx::query("PRAGMA foreign_keys = ON;").execute(db).await?;
+
         sqlx::query(&create_tasks_table_query()).execute(db).await?;
         sqlx::query(&subscribed_tasks_query()).execute(db).await?;
         sqlx::query(&stacks()).execute(db).await?;
@@ -1264,6 +1141,8 @@ mod tests {
     async fn setup_test_db() -> (StateManager, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
+        std::fs::create_dir_all(temp_dir.path()).unwrap();
+        std::fs::File::create(&db_path).unwrap();
         let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
         let state_manager = StateManager::start(database_url).await.unwrap();
         (state_manager, temp_dir)
@@ -1271,7 +1150,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_get_task() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         let task = Task {
             task_small_id: 1,
@@ -1292,11 +1171,13 @@ mod tests {
         state_manager.insert_new_task(task.clone()).await.unwrap();
         let retrieved_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert_eq!(task, retrieved_task);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_deprecate_task() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         let task = Task {
             task_small_id: 1,
@@ -1318,11 +1199,13 @@ mod tests {
         state_manager.deprecate_task(1).await.unwrap();
         let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert!(deprecated_task.is_deprecated);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_subscribed_tasks() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Insert two tasks
         let task1 = Task {
@@ -1367,83 +1250,13 @@ mod tests {
         let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
         assert_eq!(subscribed_tasks.len(), 1);
         assert_eq!(subscribed_tasks[0], task1);
-    }
 
-    #[tokio::test]
-    async fn test_cascading_delete_task() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
-
-        // Insert a task
-        let task = Task {
-            task_small_id: 1,
-            task_id: "task1".to_string(),
-            role: 1,
-            model_name: Some("model1".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: Some(100),
-            deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
-            security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
-            minimum_reputation_score: Some(50),
-        };
-        state_manager.insert_new_task(task).await.unwrap();
-
-        // Subscribe a node to the task
-        state_manager
-            .subscribe_node_to_task(1, 1, 100, 1000)
-            .await
-            .unwrap();
-
-        // Create a stack for the subscription
-        let stack = Stack {
-            stack_small_id: 1,
-            stack_id: "stack1".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 10,
-            price: 1000,
-            already_computed_units: 0,
-        };
-        state_manager.insert_new_stack(stack).await.unwrap();
-
-        // Create a settlement ticket for the stack
-        let settlement_ticket = StackSettlementTicket {
-            stack_small_id: 1,
-            selected_node_id: 1,
-            num_claimed_compute_units: 10,
-            requested_attestation_nodes: "node1".to_string(),
-            committed_stack_proofs: vec![],
-            stack_merkle_leaves: vec![],
-            dispute_settled_at_epoch: None,
-            already_attested_nodes: "node1".to_string(),
-            is_in_dispute: false,
-            user_refund_amount: 0,
-            is_claimed: false,
-        };
-        state_manager
-            .insert_new_stack_settlement_ticket(settlement_ticket)
-            .await
-            .unwrap();
-
-        // Delete the task
-        state_manager.remove_task(1).await.unwrap();
-
-        // Verify that all related records are deleted
-        assert!(state_manager.get_task_by_small_id(1).await.is_err());
-        assert!(!state_manager
-            .is_node_subscribed_to_task(1, 1)
-            .await
-            .unwrap());
-        assert!(state_manager.get_stack(1).await.is_err());
-        // Add a method to check if a settlement ticket exists and use it here
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_node_subscription() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Insert a task
         let task = Task {
@@ -1490,47 +1303,13 @@ mod tests {
             .unwrap();
         assert_eq!(subscription.price_per_compute_unit, 200);
         assert_eq!(subscription.max_num_compute_units, 2000);
-    }
 
-    #[tokio::test]
-    async fn test_remove_node_subscription() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
-
-        // Insert a task and subscribe a node
-        let task = Task {
-            task_small_id: 1,
-            task_id: "task1".to_string(),
-            role: 1,
-            model_name: Some("model1".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: Some(100),
-            deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
-            security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
-            minimum_reputation_score: Some(50),
-        };
-        state_manager.insert_new_task(task).await.unwrap();
-        state_manager
-            .subscribe_node_to_task(1, 1, 100, 1000)
-            .await
-            .unwrap();
-
-        // Remove the subscription
-        state_manager.remove_node_subscription(1, 1).await.unwrap();
-
-        // Verify the subscription is removed
-        assert!(!state_manager
-            .is_node_subscribed_to_task(1, 1)
-            .await
-            .unwrap());
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_insert_and_get_stack() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Insert a task and subscribe a node
         let task = Task {
@@ -1569,11 +1348,13 @@ mod tests {
         // Get the stack and verify
         let retrieved_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(stack, retrieved_stack);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_computed_units() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Insert a task, subscribe a node, and create a stack
         let task = Task {
@@ -1613,11 +1394,13 @@ mod tests {
         // Verify the update
         let updated_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 15);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_insert_and_get_stack_settlement_ticket() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Insert a task, subscribe a node, and create a stack
         let task = Task {
@@ -1660,7 +1443,7 @@ mod tests {
             committed_stack_proofs: vec![1, 2, 3],
             stack_merkle_leaves: vec![4, 5, 6],
             dispute_settled_at_epoch: None,
-            already_attested_nodes: "node1".to_string(),
+            already_attested_nodes: "[]".to_string(),
             is_in_dispute: false,
             user_refund_amount: 0,
             is_claimed: false,
@@ -1673,11 +1456,13 @@ mod tests {
         // Verify the insertion (you'll need to implement a method to get a settlement ticket)
         let retrieved_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(ticket, retrieved_ticket);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_stack_settlement_ticket() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and initial settlement ticket
         let task = Task {
@@ -1718,7 +1503,7 @@ mod tests {
             committed_stack_proofs: vec![1, 2, 3],
             stack_merkle_leaves: vec![4, 5, 6],
             dispute_settled_at_epoch: None,
-            already_attested_nodes: "".to_string(),
+            already_attested_nodes: "[]".to_string(),
             is_in_dispute: false,
             user_refund_amount: 0,
             is_claimed: false,
@@ -1759,11 +1544,13 @@ mod tests {
         let claimed_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(claimed_ticket.user_refund_amount, user_refund_amount);
         assert!(claimed_ticket.is_claimed);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_stack_attestation_disputes() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
+        let (state_manager, temp_dir) = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and settlement ticket
         let task = Task {
@@ -1855,105 +1642,17 @@ mod tests {
             .unwrap();
 
         // Verify both disputes are present
-        let all_disputes = state_manager
-            .get_stack_attestation_disputes(1, 0)
-            .await
-            .unwrap();
-        assert_eq!(all_disputes.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_cascading_delete_with_disputes() {
-        let (state_manager, _temp_dir) = setup_test_db().await;
-
-        // Setup: Insert task, subscription, stack, and settlement ticket
-        let task = Task {
-            task_small_id: 1,
-            task_id: "task1".to_string(),
-            role: 1,
-            model_name: Some("model1".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: Some(100),
-            deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
-            security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
-            minimum_reputation_score: Some(50),
-        };
-        state_manager.insert_new_task(task).await.unwrap();
-        state_manager
-            .subscribe_node_to_task(1, 1, 100, 1000)
-            .await
-            .unwrap();
-        let stack = Stack {
-            stack_small_id: 1,
-            stack_id: "stack1".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 10,
-            price: 1000,
-            already_computed_units: 0,
-        };
-        state_manager.insert_new_stack(stack).await.unwrap();
-        let ticket = StackSettlementTicket {
-            stack_small_id: 1,
-            selected_node_id: 1,
-            num_claimed_compute_units: 10,
-            requested_attestation_nodes: "2,3".to_string(),
-            committed_stack_proofs: vec![1, 2, 3],
-            stack_merkle_leaves: vec![4, 5, 6],
-            dispute_settled_at_epoch: None,
-            already_attested_nodes: "2".to_string(),
-            is_in_dispute: false,
-            user_refund_amount: 0,
-            is_claimed: false,
-        };
-        state_manager
-            .insert_new_stack_settlement_ticket(ticket)
-            .await
-            .unwrap();
-
-        // Insert disputes
-        let dispute1 = StackAttestationDispute {
-            stack_small_id: 1,
-            attestation_commitment: vec![7, 8, 9],
-            attestation_node_id: 2,
-            original_node_id: 1,
-            original_commitment: vec![1, 2, 3],
-        };
-        let dispute2 = StackAttestationDispute {
-            stack_small_id: 1,
-            attestation_commitment: vec![10, 11, 12],
-            attestation_node_id: 3,
-            original_node_id: 1,
-            original_commitment: vec![1, 2, 3],
-        };
-        state_manager
-            .insert_stack_attestation_dispute(dispute1)
-            .await
-            .unwrap();
-        state_manager
-            .insert_stack_attestation_dispute(dispute2)
-            .await
-            .unwrap();
-
-        // Delete the task
-        state_manager.remove_task(1).await.unwrap();
-
-        // Verify that all related records are deleted, including disputes
-        assert!(state_manager.get_task_by_small_id(1).await.is_err());
-        assert!(!state_manager
-            .is_node_subscribed_to_task(1, 1)
-            .await
-            .unwrap());
-        assert!(state_manager.get_stack(1).await.is_err());
-        assert!(state_manager.get_stack_settlement_ticket(1).await.is_err());
         let disputes = state_manager
-            .get_stack_attestation_disputes(1, 0)
+            .get_stack_attestation_disputes(1, 2)
             .await
             .unwrap();
-        assert!(disputes.is_empty());
+        assert_eq!(disputes.len(), 1);
+        let disputes = state_manager
+            .get_stack_attestation_disputes(1, 2)
+            .await
+            .unwrap();
+        assert_eq!(disputes.len(), 1);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 }
