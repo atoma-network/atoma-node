@@ -170,9 +170,9 @@ pub async fn verify_stack_permissions(
             error!("Failed to decode public key");
             StatusCode::BAD_REQUEST
         })
-        .and_then(|bytes| {
+        .map(|bytes| {
             let encoding = hex::encode(bytes);
-            Ok(format!("0x{}", encoding))
+            format!("0x{}", encoding)
         })?;
     let stack_small_id = req_parts.headers.get("X-Stack-Id").ok_or_else(|| {
         error!("Stack ID header not found");
@@ -181,7 +181,7 @@ pub async fn verify_stack_permissions(
     let stack_small_id = stack_small_id
         .to_str()
         .map_err(|_| {
-            error!("Stack small ID canont a string");
+            error!("Stack small ID cannot be converted to a string");
             StatusCode::BAD_REQUEST
         })?
         .parse::<i64>()

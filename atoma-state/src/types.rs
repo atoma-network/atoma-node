@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Represents a task in the system
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Task {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
@@ -33,7 +33,7 @@ pub struct Task {
 }
 
 /// Represents a stack of compute units for a specific task
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Stack {
     /// Address of the owner of the stack
     pub owner_address: String,
@@ -56,7 +56,7 @@ pub struct Stack {
 }
 
 /// Represents a settlement ticket for a compute stack
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct StackSettlementTicket {
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
@@ -67,9 +67,9 @@ pub struct StackSettlementTicket {
     /// Comma-separated list of node IDs requested for attestation
     pub requested_attestation_nodes: String,
     /// Cryptographic proof of the committed stack state
-    pub committed_stack_proof: Vec<u8>,
+    pub committed_stack_proofs: Vec<u8>,
     /// Merkle leaf representing the stack in a larger tree structure
-    pub stack_merkle_leaf: Vec<u8>,
+    pub stack_merkle_leaves: Vec<u8>,
     /// Optional epoch timestamp when a dispute was settled
     pub dispute_settled_at_epoch: Option<i64>,
     /// Comma-separated list of node IDs that have already attested
@@ -83,7 +83,7 @@ pub struct StackSettlementTicket {
 }
 
 /// Represents a dispute in the stack attestation process
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct StackAttestationDispute {
     /// Unique small integer identifier for the stack involved in the dispute
     pub stack_small_id: i64,
@@ -97,17 +97,17 @@ pub struct StackAttestationDispute {
     pub original_commitment: Vec<u8>,
 }
 
-/// Represents an attestation for a compute stack
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct StackAttestation {
-    /// Unique small integer identifier for the stack being attested
-    pub stack_small_id: i64,
-    /// Cryptographic commitment provided by the attesting node
-    pub attestation_commitment: Vec<u8>,
-    /// Identifier of the node performing the attestation
-    pub attestation_node_id: i64,
-    /// Identifier of the original node that performed the computation
-    pub original_node_id: i64,
-    /// Original cryptographic commitment provided by the computing node
-    pub original_commitment: Vec<u8>,
+/// Represents a node subscription to a task
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct NodeSubscription {
+    /// Unique small integer identifier for the node subscription
+    pub node_small_id: i64,
+    /// Unique small integer identifier for the task
+    pub task_small_id: i64,
+    /// Price per compute unit for the subscription
+    pub price_per_compute_unit: i64,
+    /// Maximum number of compute units for the subscription
+    pub max_num_compute_units: i64,
+    /// Indicates whether the subscription is valid
+    pub valid: bool,
 }

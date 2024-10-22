@@ -402,6 +402,15 @@ pub struct StackTrySettleEvent {
 
 impl From<StackTrySettleEvent> for StackSettlementTicket {
     fn from(event: StackTrySettleEvent) -> Self {
+        let num_attestation_nodes = event.requested_attestation_nodes.len();
+        let expanded_size = 32 * num_attestation_nodes;
+
+        let mut expanded_proofs = event.committed_stack_proof;
+        expanded_proofs.resize(expanded_size, 0);
+
+        let mut expanded_leaves = event.stack_merkle_leaf;
+        expanded_leaves.resize(expanded_size, 0);
+
         StackSettlementTicket {
             stack_small_id: event.stack_small_id.inner as i64,
             selected_node_id: event.selected_node_id.inner as i64,
@@ -414,8 +423,8 @@ impl From<StackTrySettleEvent> for StackSettlementTicket {
                     .collect::<Vec<_>>(),
             )
             .unwrap(),
-            committed_stack_proof: event.committed_stack_proof,
-            stack_merkle_leaf: event.stack_merkle_leaf,
+            committed_stack_proofs: expanded_proofs,
+            stack_merkle_leaves: expanded_leaves,
             dispute_settled_at_epoch: None,
             already_attested_nodes: serde_json::to_string(&Vec::<i64>::new()).unwrap(),
             is_in_dispute: false,
@@ -947,7 +956,7 @@ mod tests {
         assert_eq!(event.task_small_id.inner, 7);
         assert_eq!(event.role.inner, 1);
         assert_eq!(event.model_name, Some("gpt-3".to_string()));
-        assert_eq!(event.is_deprecated, false);
+        assert!(!event.is_deprecated);
         assert_eq!(event.optimizations, vec![1, 2, 3]);
         assert_eq!(event.security_level, 2);
         assert_eq!(event.task_metrics.compute_unit, 10);
@@ -985,6 +994,7 @@ mod tests {
     #[test]
     fn test_stack_created_event_deserialization() {
         let json = json!({
+            "owner_address": "0x123",
             "stack_id": "stack-001",
             "stack_small_id": {"inner": 10},
             "task_small_id": {"inner": 3},
@@ -993,6 +1003,7 @@ mod tests {
             "price": 1000
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.owner_address, "0x123");
         assert_eq!(event.stack_id, "stack-001");
         assert_eq!(event.stack_small_id.inner, 10);
         assert_eq!(event.task_small_id.inner, 3);

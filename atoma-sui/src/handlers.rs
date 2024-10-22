@@ -1,5 +1,6 @@
 use atoma_state::{SqlitePool, StateManager};
 use serde_json::Value;
+use std::time::Duration;
 use tracing::{error, instrument, trace};
 
 use crate::{
@@ -12,6 +13,8 @@ use crate::{
     subscriber::Result,
 };
 
+/// The duration for retries in milliseconds.
+const DURATION_FOR_RETRY_IN_MILLIS: u64 = 100;
 /// The maximum number of retries for events to which handling fails.
 const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
 
@@ -23,22 +26,22 @@ pub(crate) async fn handle_atoma_event(
 ) -> Result<()> {
     match event {
         AtomaEvent::DisputeEvent => {
-            todo!()
+            unimplemented!("Dispute event not implemented");
         }
         AtomaEvent::SettledEvent => {
-            todo!()
+            unimplemented!("Settled event not implemented");
         }
         AtomaEvent::PublishedEvent => {
-            todo!()
+            unimplemented!("Published event not implemented");
         }
         AtomaEvent::NewlySampledNodesEvent => {
-            todo!()
+            unimplemented!("Newly sampled nodes event not implemented");
         }
         AtomaEvent::NodeRegisteredEvent => {
-            todo!()
+            unimplemented!("Node registered event not implemented");
         }
         AtomaEvent::NodeSubscribedToModelEvent => {
-            todo!()
+            unimplemented!("Node subscribed to model event not implemented");
         }
         AtomaEvent::NodeSubscribedToTaskEvent => {
             handle_node_task_subscription_event(value, db).await
@@ -71,17 +74,16 @@ pub(crate) async fn handle_atoma_event(
             handle_stack_attestation_dispute_event(value, db).await
         }
         AtomaEvent::TaskRemovedEvent => {
-            // TODO: Removed tasks should clean all stacks and stack settlement tickets ??
-            todo!()
+            unimplemented!("Task removed event not implemented");
         }
         AtomaEvent::RetrySettlementEvent => {
-            todo!()
+            unimplemented!("Retry settlement event not implemented");
         }
         AtomaEvent::Text2ImagePromptEvent => {
-            todo!()
+            unimplemented!("Text2Image prompt event not implemented");
         }
         AtomaEvent::Text2TextPromptEvent => {
-            todo!()
+            unimplemented!("Text2Text prompt event not implemented");
         }
     }
 }
@@ -233,6 +235,25 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
     Ok(())
 }
 
+/// Handles a node task unsubscription event.
+///
+/// This function processes a node task unsubscription event by parsing the event data,
+/// extracting the necessary information, and updating the node's subscription status in the database.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized node task unsubscription event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `NodeUnsubscribedFromTaskEvent`.
+/// * The database operation to unsubscribe the node from the task fails.
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_node_task_unsubscription_event(
     value: Value,
@@ -244,7 +265,7 @@ pub(crate) async fn handle_node_task_unsubscription_event(
     let task_small_id = node_subscription_event.task_small_id.inner as i64;
     let state_manager = StateManager::new(db.clone());
     state_manager
-        .remove_node_subscription(node_small_id, task_small_id)
+        .unsubscribe_node_from_task(node_small_id, task_small_id)
         .await?;
     Ok(())
 }
@@ -333,6 +354,25 @@ pub(crate) async fn handle_stack_try_settle_event(value: Value, db: &SqlitePool)
     Ok(())
 }
 
+/// Handles a new stack settlement attestation event.
+///
+/// This function processes a new stack settlement attestation event by parsing the event data
+/// and updating the corresponding stack settlement ticket in the database with attestation commitments.
+///
+/// # Arguments
+///
+/// * `value` - A `serde_json::Value` containing the serialized new stack settlement attestation event data.
+/// * `db` - A reference to the `SqlitePool` for database operations.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `NewStackSettlementAttestationEvent`.
+/// * The database operation to update the stack settlement ticket with attestation commitments fails.
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_new_stack_settlement_attestation_event(
     value: Value,
@@ -518,5 +558,6 @@ pub(crate) async fn handle_event_with_retries(
                 error!("Failed to handle event: {e}");
             }
         }
+        tokio::time::sleep(Duration::from_millis(DURATION_FOR_RETRY_IN_MILLIS)).await;
     }
 }
