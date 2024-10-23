@@ -587,25 +587,25 @@ impl StateManager {
         public_key: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
-        // We need to pass in the owner address, because we need to make sure that the stack belongs to the current user
+        // NOTE: We need to pass in the owner address, because we need to make sure that the stack belongs to the current user
         let maybe_stack = sqlx::query_as::<_, Stack>(
             r#"
             WITH updated_stack AS (
                 UPDATE stacks
-                SET already_computed_units = already_computed_units + ?
-                WHERE stack_small_id = ?
-                AND owner_address = ?
-                AND num_compute_units - already_computed_units >= ?
+                SET already_computed_units = already_computed_units + ?1
+                WHERE stack_small_id = ?2
+                AND owner_address = ?3
+                AND num_compute_units - already_computed_units >= ?1
                 AND in_settle_period = false
-                AND already_computed_units + ? <= num_compute_units
+                AND already_computed_units + ?1 <= num_compute_units
                 RETURNING *
             )
             SELECT * FROM updated_stack
             "#,
         )
+        .bind(num_compute_units)
         .bind(stack_small_id)
         .bind(public_key)
-        .bind(num_compute_units)
         .fetch_optional(&self.db)
         .await?;
 

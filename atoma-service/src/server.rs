@@ -168,6 +168,8 @@ pub async fn chat_completions_handler(
 
     let state_manager = StateManager::new(state.state.clone());
 
+    // NOTE: We need to update the stack num tokens, because the inference response might have produced
+    // less tokens than estimated what we initially estimated, from the middleware.
     state_manager
         .update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens)
         .await
