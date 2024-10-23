@@ -803,11 +803,11 @@ impl StateManager {
             SET already_computed_units = already_computed_units - (? - ?) 
             WHERE stack_small_id = ?",
         )
-            .bind(estimated_total_tokens)
-            .bind(total_tokens)
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?;
+        .bind(estimated_total_tokens)
+        .bind(total_tokens)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(StateManagerError::StackNotFound);
