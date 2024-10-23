@@ -204,6 +204,28 @@ pub(crate) mod utils {
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
+    /// Signs a response body using the node's Sui keystore.
+    ///
+    /// This function takes a JSON response body, converts it to bytes, creates a SHA-256 hash,
+    /// and signs it using the Sui keystore with the specified address.
+    ///
+    /// # Arguments
+    ///
+    /// * `response_body` - The JSON response body to be signed
+    /// * `keystore` - The Sui keystore containing the signing keys
+    /// * `address_index` - The index of the address to use for signing within the keystore
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing:
+    /// * A 32-byte array containing the SHA-256 hash of the response body
+    /// * A base64-encoded string of the signature
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The keystore fails to sign the hash
+    /// * The SHA-256 hash cannot be converted to a 32-byte array
     pub(crate) fn sign_response_body(
         response_body: &Value,
         keystore: &Arc<FileBasedKeystore>,
