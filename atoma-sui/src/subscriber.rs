@@ -1,5 +1,5 @@
 use crate::{
-    config::SuiEventSubscriberConfig,
+    config::AtomaSuiConfig,
     events::{AtomaEvent, SuiEventParseError},
     handlers::{handle_atoma_event, handle_event_with_retries},
 };
@@ -28,7 +28,7 @@ pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 /// from the Sui blockchain based on specified filters.
 pub struct SuiEventSubscriber {
     /// The configuration values for the subscriber.
-    config: SuiEventSubscriberConfig,
+    config: AtomaSuiConfig,
     /// The database url.
     database_url: String,
     /// The event filter used to specify which events to subscribe to.
@@ -42,11 +42,11 @@ pub struct SuiEventSubscriber {
 impl SuiEventSubscriber {
     /// Constructor
     pub fn new(
-        config: SuiEventSubscriberConfig,
+        config: AtomaSuiConfig,
         database_url: String,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let filter = EventFilter::Package(config.package_id());
+        let filter = EventFilter::Package(config.atoma_package_id());
         Self {
             config,
             database_url,
@@ -79,19 +79,19 @@ impl SuiEventSubscriber {
         database_url: String,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let config = SuiEventSubscriberConfig::from_file_path(config_path);
+        let config = AtomaSuiConfig::from_file_path(config_path);
         Self::new(config, database_url, shutdown_signal)
     }
 
     /// Builds a SuiClient based on the provided configuration.
     ///
     /// This asynchronous method creates a new SuiClient instance using the settings
-    /// specified in the SuiEventSubscriberConfig. It sets up the client with the
+    /// specified in the AtomaSuiConfig. It sets up the client with the
     /// configured request timeout and HTTP RPC node address.
     ///
     /// # Arguments
     ///
-    /// * `config` - A reference to a SuiEventSubscriberConfig containing the necessary
+    /// * `config` - A reference to a AtomaSuiConfig containing the necessary
     ///              configuration parameters.
     ///
     /// # Returns
@@ -107,11 +107,12 @@ impl SuiEventSubscriber {
     #[instrument(level = "info", skip_all, fields(
         http_rpc_node_addr = %config.http_rpc_node_addr()
     ))]
-    pub async fn build_client(config: &SuiEventSubscriberConfig) -> Result<SuiClient> {
-        let client = SuiClientBuilder::default()
-            .request_timeout(config.request_timeout())
-            .build(config.http_rpc_node_addr())
-            .await?;
+    pub async fn build_client(config: &AtomaSuiConfig) -> Result<SuiClient> {
+        let mut client_builder = SuiClientBuilder::default();
+        if let Some(request_timeout) = config.request_timeout() {
+            client_builder = client_builder.request_timeout(request_timeout);
+        }
+        let client = client_builder.build(config.http_rpc_node_addr()).await?;
         info!("Client built successfully");
         Ok(client)
     }
@@ -136,7 +137,7 @@ impl SuiEventSubscriber {
     /// * Event processing or handling fails (though these are currently logged and not propagated).
     #[instrument(level = "info", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
-        let package_id = self.config.package_id();
+        let package_id = self.config.atoma_package_id();
         let limit = self.config.limit();
         let num_concurrent_tasks = self
             .config
