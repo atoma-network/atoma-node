@@ -587,27 +587,45 @@ impl StateManager {
         public_key: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
-        // NOTE: We need to pass in the owner address, because we need to make sure that the stack belongs to the current user
-        let maybe_stack = sqlx::query_as::<_, Stack>(
+        // First, begin a transaction to ensure atomicity
+        let mut transaction = self.db.begin().await?;
+
+        // First try to update the row
+        let rows_affected = sqlx::query(
             r#"
-            WITH updated_stack AS (
-                UPDATE stacks
-                SET already_computed_units = already_computed_units + ?1
-                WHERE stack_small_id = ?2
-                AND owner_address = ?3
-                AND num_compute_units - already_computed_units >= ?1
-                AND in_settle_period = false
-                AND already_computed_units + ?1 <= num_compute_units
-                RETURNING *
-            )
-            SELECT * FROM updated_stack
+            UPDATE stacks
+            SET already_computed_units = already_computed_units + ?1
+            WHERE stack_small_id = ?2
+            AND owner_address = ?3
+            AND num_compute_units - already_computed_units >= ?1
+            AND in_settle_period = false
             "#,
         )
         .bind(num_compute_units)
         .bind(stack_small_id)
         .bind(public_key)
-        .fetch_optional(&self.db)
+        .execute(&mut *transaction)
         .await?;
+
+        // If update was successful, get the updated row
+        let maybe_stack = if rows_affected.rows_affected() > 0 {
+            sqlx::query_as::<_, Stack>(
+                r#"
+                SELECT * FROM stacks
+                WHERE stack_small_id = ?1
+                AND owner_address = ?2
+                "#,
+            )
+            .bind(stack_small_id)
+            .bind(public_key)
+            .fetch_optional(&mut *transaction)
+            .await?
+        } else {
+            None
+        };
+
+        // Commit the transaction
+        transaction.commit().await?;
 
         Ok(maybe_stack)
     }
@@ -761,11 +779,11 @@ impl StateManager {
             SET already_computed_units = already_computed_units - (? - ?) 
             WHERE stack_small_id = ?",
         )
-        .bind(estimated_total_tokens)
-        .bind(total_tokens)
-        .bind(stack_small_id)
-        .execute(&self.db)
-        .await?;
+            .bind(estimated_total_tokens)
+            .bind(total_tokens)
+            .bind(stack_small_id)
+            .execute(&self.db)
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(StateManagerError::StackNotFound);
@@ -2041,6 +2059,123 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(disputes.len(), 1);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_available_stack_with_compute_units() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Test case 1: Stack with sufficient compute units
+        let stack1 = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+        };
+        state_manager
+            .insert_new_stack(stack1.clone())
+            .await
+            .unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(1, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        let updated_stack = result.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 50);
+
+        // Test case 2: Stack with insufficient compute units
+        let result = state_manager
+            .get_available_stack_with_compute_units(1, "0x123", 60)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 3: Stack in settle period
+        let mut stack2 = stack1.clone();
+        stack2.stack_small_id = 2;
+        stack2.stack_id = "stack2".to_string();
+        stack2.in_settle_period = true;
+        state_manager.insert_new_stack(stack2).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(2, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 4: Stack with different owner
+        let mut stack3 = stack1.clone();
+        stack3.stack_small_id = 3;
+        stack3.stack_id = "stack3".to_string();
+        stack3.owner_address = "0x456".to_string();
+        state_manager.insert_new_stack(stack3).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(3, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 5: Non-existent stack
+        let result = state_manager
+            .get_available_stack_with_compute_units(999, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 6: Exact number of compute units available
+        let mut stack4 = stack1.clone();
+        stack4.stack_small_id = 4;
+        stack4.stack_id = "stack4".to_string();
+        stack4.num_compute_units = 100;
+        stack4.already_computed_units = 50;
+        state_manager.insert_new_stack(stack4).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(4, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        let updated_stack = result.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 100);
+
+        // Test case 7: Attempt to use more compute units than available
+        let result = state_manager
+            .get_available_stack_with_compute_units(4, "0x123", 1)
+            .await
+            .unwrap();
+        assert!(result.is_none());
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
