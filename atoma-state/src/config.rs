@@ -36,7 +36,7 @@ impl SqliteConfig {
     ///
     /// ```
     /// use std::path::Path;
-    /// use your_crate::SqliteConfig;
+    /// use atoma_node::atoma_state::SqliteConfig;
     ///
     /// let config = SqliteConfig::from_file_path("path/to/config.toml");
     /// ```

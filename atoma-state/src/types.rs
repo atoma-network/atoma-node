@@ -35,6 +35,8 @@ pub struct Task {
 /// Represents a stack of compute units for a specific task
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Stack {
+    /// Address of the owner of the stack
+    pub owner_address: String,
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
     /// Unique string identifier for the stack
@@ -49,6 +51,8 @@ pub struct Stack {
     pub price: i64,
     /// Number of compute units already processed
     pub already_computed_units: i64,
+    /// Indicates whether the stack is currently in the settle period
+    pub in_settle_period: bool,
 }
 
 /// Represents a settlement ticket for a compute stack
@@ -86,21 +90,6 @@ pub struct StackAttestationDispute {
     /// Cryptographic commitment provided by the attesting node
     pub attestation_commitment: Vec<u8>,
     /// Identifier of the node that provided the attestation
-    pub attestation_node_id: i64,
-    /// Identifier of the original node that performed the computation
-    pub original_node_id: i64,
-    /// Original cryptographic commitment provided by the computing node
-    pub original_commitment: Vec<u8>,
-}
-
-/// Represents an attestation for a compute stack
-#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
-pub struct StackAttestation {
-    /// Unique small integer identifier for the stack being attested
-    pub stack_small_id: i64,
-    /// Cryptographic commitment provided by the attesting node
-    pub attestation_commitment: Vec<u8>,
-    /// Identifier of the node performing the attestation
     pub attestation_node_id: i64,
     /// Identifier of the original node that performed the computation
     pub original_node_id: i64,

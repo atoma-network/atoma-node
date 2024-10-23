@@ -325,6 +325,9 @@ pub struct TaskRemovedEvent {
 /// the selected node, computational resources, and pricing details.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StackCreatedEvent {
+    /// The address of the owner of the stack.
+    pub owner_address: String,
+
     /// The unique identifier of the created stack.
     /// This is typically a longer, more descriptive ID for the stack.
     pub stack_id: String,
@@ -353,6 +356,7 @@ pub struct StackCreatedEvent {
 impl From<StackCreatedEvent> for Stack {
     fn from(event: StackCreatedEvent) -> Self {
         Stack {
+            owner_address: event.owner_address,
             stack_id: event.stack_id,
             stack_small_id: event.stack_small_id.inner as i64,
             task_small_id: event.task_small_id.inner as i64,
@@ -360,6 +364,7 @@ impl From<StackCreatedEvent> for Stack {
             num_compute_units: event.num_compute_units as i64,
             price: event.price as i64,
             already_computed_units: 0,
+            in_settle_period: false,
         }
     }
 }
@@ -989,6 +994,7 @@ mod tests {
     #[test]
     fn test_stack_created_event_deserialization() {
         let json = json!({
+            "owner_address": "0x123",
             "stack_id": "stack-001",
             "stack_small_id": {"inner": 10},
             "task_small_id": {"inner": 3},
@@ -997,6 +1003,7 @@ mod tests {
             "price": 1000
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.owner_address, "0x123");
         assert_eq!(event.stack_id, "stack-001");
         assert_eq!(event.stack_small_id.inner, 10);
         assert_eq!(event.task_small_id.inner, 3);
