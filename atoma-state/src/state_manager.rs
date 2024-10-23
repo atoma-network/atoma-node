@@ -541,37 +541,61 @@ impl StateManager {
         Ok(Stack::from_row(&stack)?)
     }
 
-    /// Retrieves all available stacks for a given owner's public key with a specified number of compute units.
+    /// Retrieves and updates an available stack with the specified number of compute units.
     ///
-    /// This method fetches a public key owned stack, for the current node, from the `stacks` table
-    /// that have a remaining number of compute units greater than or equal to the specified `num_compute_units`.
+    /// This method attempts to reserve a specified number of compute units from a stack
+    /// owned by the given public key. It performs this operation atomically using a database
+    /// transaction to ensure consistency.
     ///
     /// # Arguments
     ///
-    /// * `public_key` - A string representing the owner's public key.
-    /// * `num_compute_units` - The minimum number of compute units remaining in the stacks.
+    /// * `stack_small_id` - The unique identifier of the stack.
+    /// * `public_key` - The public key of the stack owner.
+    /// * `num_compute_units` - The number of compute units to reserve.
     ///
     /// # Returns
     ///
-    /// - `Result<Stack>`: A result containing either:
-    ///   - `Ok(Stack)`: A `Stack` object representing the stack owned by the given public key with the specified number of compute units remaining.
-    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    /// - `Result<Option<Stack>>`: A result containing either:
+    ///   - `Ok(Some(Stack))`: If the stack was successfully updated, returns the updated stack.
+    ///   - `Ok(None)`: If the stack couldn't be updated (e.g., insufficient compute units or stack in settle period).
+    ///   - `Err(StateManagerError)`: If there was an error during the database operation.
     ///
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The database query fails to execute.
-    /// - There's an issue converting the database rows into `Stack` objects.
+    /// - The database transaction fails to begin, execute, or commit.
+    /// - There's an issue with the SQL query execution.
+    ///
+    /// # Details
+    ///
+    /// The function performs the following steps:
+    /// 1. Begins a database transaction.
+    /// 2. Attempts to update the stack by increasing the `already_computed_units` field.
+    /// 3. If the update is successful (i.e., the stack has enough available compute units),
+    ///    it fetches the updated stack information.
+    /// 4. Commits the transaction.
+    ///
+    /// The update will only succeed if:
+    /// - The stack belongs to the specified owner (public key).
+    /// - The stack has enough remaining compute units.
+    /// - The stack is not in the settle period.
     ///
     /// # Example
     ///
     /// ```rust,no_run
     /// use your_crate::{StateManager, Stack};
     ///
-    /// async fn get_available_stack_with_compute_units(state_manager: &StateManager, public_key: String, num_compute_units: i64) -> Result<Stack, StateManagerError> {
-    ///     state_manager.get_available_stack_with_compute_units(public_key, num_compute_units).await
+    /// async fn reserve_compute_units(state_manager: &StateManager) -> Result<Option<Stack>, StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let public_key = "owner_public_key";
+    ///     let num_compute_units = 100;
+    ///
+    ///     state_manager.get_available_stack_with_compute_units(stack_small_id, public_key, num_compute_units).await
     /// }
     /// ```
+    ///
+    /// This function is particularly useful for atomically reserving compute units from a stack,
+    /// ensuring that the operation is thread-safe and consistent even under concurrent access.
     #[tracing::instrument(
         level = "trace",
         skip_all,
