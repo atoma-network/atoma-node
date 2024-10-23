@@ -9,7 +9,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use blake2::Digest;
+use blake2::{digest::generic_array::GenericArray, Digest};
+use p256::U32;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -230,8 +231,9 @@ pub async fn health() -> impl IntoResponse {
     fields(path = CHAT_COMPLETIONS_PATH)
 )]
 pub async fn chat_completions_handler(
-    Extension(((stack_small_id, estimated_total_tokens), payload_hash)): Extension<(
-        (i64, i64),
+    Extension((stack_small_id, estimated_total_tokens, payload_hash)): Extension<(
+        i64,
+        i64,
         [u8; 32],
     )>,
     State(state): State<AppState>,

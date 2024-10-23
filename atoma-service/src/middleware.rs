@@ -21,6 +21,47 @@ const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
 const MESSAGES: &str = "messages";
 const MODEL: &str = "model";
 
+/// Metadata extracted from the request
+#[derive(Clone, Default)]
+pub struct RequestMetadata {
+    /// The stack small ID
+    pub stack_small_id: i64,
+    /// The estimated total number of tokens
+    pub estimated_total_tokens: i64,
+    /// The payload hash
+    pub payload_hash: [u8; 32],
+}
+
+impl RequestMetadata {
+    /// Create a new `RequestMetadata` with the given stack info
+    pub fn with_stack_info(mut self, stack_small_id: i64, estimated_total_tokens: i64) -> Self {
+        self.stack_small_id = stack_small_id;
+        self.estimated_total_tokens = estimated_total_tokens;
+        self
+    }
+
+    /// Create a new `RequestMetadata` with the given payload hash
+    pub fn with_payload_hash(mut self, payload_hash: [u8; 32]) -> Self {
+        self.payload_hash = payload_hash;
+        self
+    }
+
+    /// Get the payload hash
+    pub fn payload_hash(&self) -> [u8; 32] {
+        self.payload_hash
+    }
+
+    /// Get the estimated total tokens
+    pub fn estimated_total_tokens(&self) -> i64 {
+        self.estimated_total_tokens
+    }
+
+    /// Get the stack small ID
+    pub fn stack_small_id(&self) -> i64 {
+        self.stack_small_id
+    }
+}
+
 /// Middleware for verifying the signature of incoming requests.
 ///
 /// This middleware is designed to authenticate and verify the integrity of incoming requests
@@ -46,6 +87,10 @@ const MODEL: &str = "model";
 /// - `X-Signature`: The signature of the request body, base64 encoded.
 /// - `X-PublicKey`: The public key used for verification, base64 encoded.
 /// - `X-Scheme`: The signature scheme used (e.g., "ed25519").
+///
+/// # Extensions
+/// This middleware adds or updates a `RequestMetadata` extension to the request containing:
+/// - `payload_hash`: The 32-byte Blake2b hash of the request body
 ///
 /// # Errors
 /// Returns a `BAD_REQUEST` status code if:
@@ -123,7 +168,13 @@ pub async fn signature_verification_middleware(
             StatusCode::UNAUTHORIZED
         })?;
 
-    req_parts.extensions.insert(body_blake2b_hash_bytes);
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default()
+        .with_payload_hash(body_blake2b_hash_bytes);
+    req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
 
     Ok(next.run(req).await)
@@ -151,6 +202,13 @@ pub async fn signature_verification_middleware(
 /// - `model`: The name of the AI model to be used.
 /// - `messages`: An array of message objects, each containing a "content" field.
 /// - `max_completion_tokens`: The maximum number of tokens for the AI's response.
+///
+/// # Extensions
+/// This middleware adds a `RequestMetadata` extension to the request containing:
+/// - `stack_small_id`: The ID of the stack being used
+/// - `estimated_total_tokens`: The total number of tokens calculated for the request
+///
+/// This metadata can be accessed by downstream handlers using `req.extensions()`.
 ///
 /// # Errors
 /// Returns a `BAD_REQUEST` status code if:
@@ -283,9 +341,9 @@ pub async fn verify_stack_permissions(
         error!("No available stack with enough compute units");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    req_parts
-        .extensions
-        .insert((stack_small_id, total_num_tokens));
+    let request_metadata =
+        RequestMetadata::default().with_stack_info(stack_small_id, total_num_tokens);
+    req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
 }
