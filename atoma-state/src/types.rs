@@ -53,7 +53,7 @@ pub struct Stack {
     pub already_computed_units: i64,
     /// Indicates whether the stack is currently in the settle period
     pub in_settle_period: bool,
-    /// Joint concatenation of SHA256 hashes of each payload and response pairs that was already processed
+    /// Joint concatenation of Blake2b hashes of each payload and response pairs that was already processed
     /// by the node for this stack.
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.

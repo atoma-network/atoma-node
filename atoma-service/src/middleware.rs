@@ -10,8 +10,9 @@ use axum::{
     response::Response,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
+use blake2::{digest::generic_array::GenericArray, Digest};
+use p256::U32;
 use serde_json::Value;
-use sha2::Digest;
 use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
@@ -100,14 +101,20 @@ pub async fn signature_verification_middleware(
             error!("Failed to convert body to bytes");
             StatusCode::BAD_REQUEST
         })?;
-    let body_sha256_hash = sha2::Sha256::digest(&body_bytes);
-    let body_sha256_hash_bytes: [u8; 32] = body_sha256_hash
+    let mut blake2b_hash = blake2::Blake2b::new();
+    blake2b_hash.update(&body_bytes);
+    let body_blake2b_hash: GenericArray<u8, U32> = blake2b_hash.finalize();
+    let body_blake2b_hash_bytes: [u8; 32] = body_blake2b_hash
         .as_slice()
         .try_into()
-        .expect("Invalid SHA256 hash length");
+        .expect("Invalid Blake2b hash length");
 
     signature_scheme
-        .verify(&body_sha256_hash_bytes, &signature_bytes, &public_key_bytes) // Signature second, public key third
+        .verify(
+            &body_blake2b_hash_bytes,
+            &signature_bytes,
+            &public_key_bytes,
+        ) // Signature second, public key third
         .map_err(|_| {
             error!(
                 "Failed to verify signature scheme: {}",
@@ -116,7 +123,7 @@ pub async fn signature_verification_middleware(
             StatusCode::UNAUTHORIZED
         })?;
 
-    req_parts.extensions.insert(body_sha256_hash_bytes);
+    req_parts.extensions.insert(body_blake2b_hash_bytes);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
 
     Ok(next.run(req).await)

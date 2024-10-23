@@ -9,9 +9,9 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use blake2::Digest;
 use reqwest::Client;
 use serde_json::{json, Value};
-use sha2::Digest;
 use sqlx::SqlitePool;
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
@@ -282,12 +282,15 @@ pub async fn chat_completions_handler(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let total_hash: [u8; 32] = sha2::Sha256::digest(&[payload_hash, response_hash].concat())
+    let mut blake2b = blake2::Blake2b::new();
+    blake2b.update(&[payload_hash, response_hash].concat());
+    let total_hash: GenericArray<u8, U32> = blake2b.finalize();
+    let total_hash_bytes: [u8; 32] = total_hash
         .as_slice()
         .try_into()
-        .expect("Invalid SHA256 hash length");
+        .expect("Invalid BLAKE2b hash length");
     state_manager
-        .update_stack_total_hash(stack_small_id, total_hash)
+        .update_stack_total_hash(stack_small_id, total_hash_bytes)
         .await
         .map_err(|e| {
             error!("Error updating stack total hash: {}", e);
@@ -298,7 +301,8 @@ pub async fn chat_completions_handler(
 
 pub(crate) mod utils {
     use super::*;
-    use sha2::Digest;
+    use blake2::{digest::generic_array::GenericArray, Digest};
+    use p256::U32;
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
@@ -332,15 +336,17 @@ pub(crate) mod utils {
         let address = keystore.addresses()[address_index];
         let response_body_str = response_body.to_string();
         let response_body_bytes = response_body_str.as_bytes();
-        let sha256_hash = sha2::Sha256::digest(response_body_bytes);
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update(response_body_bytes);
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
         let signature = keystore
-            .sign_hashed(&address, sha256_hash.as_slice())
+            .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign response body");
         Ok((
-            sha256_hash
+            blake2b_hash
                 .as_slice()
                 .try_into()
-                .expect("Invalid SHA256 hash length"),
+                .expect("Invalid BLAKE2b hash length"),
             signature.encode_base64(),
         ))
     }

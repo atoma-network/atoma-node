@@ -14,7 +14,7 @@ const ED25519_PUBLIC_KEY_LENGTH: usize = 32;
 const ED25519_SIGNATURE_LENGTH: usize = 64;
 const SECP256K1_PUBLIC_KEY_LENGTH: usize = 33;
 const SECP256K1_SIGNATURE_LENGTH: usize = 64;
-const SHA256_HASH_LENGTH: usize = 32;
+const BLAKE2_HASH_LENGTH: usize = 32;
 
 /// Represents the supported signature schemes for authentication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +55,7 @@ impl SignatureScheme {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to verify. For all schemes, this MUST be a 32-byte SHA256 hash of the original message.
+    /// * `message` - The message to verify. For all schemes, this MUST be a 32-byte Blake2b hash of the original message.
     /// * `signature` - The signature bytes to verify.
     /// * `public_key` - The public key bytes used for verification.
     ///
@@ -72,19 +72,19 @@ impl SignatureScheme {
     ///
     /// # Warning
     ///
-    /// The `message` parameter MUST be a 32-byte SHA256 hash of the original message for all signature schemes.
+    /// The `message` parameter MUST be a 32-byte Blake2b hash of the original message for all signature schemes.
     /// Passing the raw message will result in incorrect verification or errors.
     ///
     /// # Examples
     ///
     /// ```
-    /// use sha2::{Sha256, Digest};
+    /// use blake2::{Blake2b, Digest};
     /// # use atoma_node::atoma_service::{SignatureScheme, AuthenticationError};
     ///
     /// # fn main() -> Result<(), AuthenticationError> {
     /// let scheme = SignatureScheme::Ed25519;
     /// let original_message = b"Hello, world!";
-    /// let message = Sha256::digest(original_message);
+    /// let message = Blake2b::digest(original_message);
     /// let signature = // ... obtain signature bytes ...
     /// let public_key = // ... obtain public key bytes ...
     ///
@@ -112,11 +112,11 @@ impl SignatureScheme {
         }
     }
 
-    /// Checks if the provided message has the correct length for a SHA256 hash.
+    /// Checks if the provided message has the correct length for a Blake2b hash.
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to check, expected to be a SHA256 hash.
+    /// * `message` - The message to check, expected to be a Blake2b hash.
     ///
     /// # Returns
     ///
@@ -125,12 +125,12 @@ impl SignatureScheme {
     /// # Errors
     ///
     /// This function will return an `AuthenticationError::MalformedMessage` if:
-    /// - The message length is not equal to `SHA256_HASH_LENGTH` (32 bytes).
+    /// - The message length is not equal to `BLAKE2_HASH_LENGTH` (32 bytes).
     fn check_message_length(message: &[u8]) -> Result<(), AuthenticationError> {
-        if message.len() != SHA256_HASH_LENGTH {
+        if message.len() != BLAKE2_HASH_LENGTH {
             return Err(AuthenticationError::MalformedMessage(format!(
-                "Message must be {} bytes long, as it is the sha256 digest of the message, instead got {} bytes",
-                SHA256_HASH_LENGTH,
+                "Message must be {} bytes long, as it is the blake2 digest of the message, instead got {} bytes",
+                BLAKE2_HASH_LENGTH,
                 message.len(),
             )));
         }
@@ -199,7 +199,7 @@ impl SignatureScheme {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to verify. This must be a 32-byte SHA256 hash of the original message.
+    /// * `message` - The message to verify. This must be a 32-byte Blake2b hash of the original message.
     /// * `signature` - The signature bytes to verify.
     /// * `public_key` - The public key bytes used for verification.
     ///
@@ -237,7 +237,7 @@ impl SignatureScheme {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to verify. This must be a 32-byte SHA256 hash of the original message.
+    /// * `message` - The message to verify. This must be a 32-byte Blake2b hash of the original message.
     /// * `signature` - The signature bytes to verify.
     /// * `public_key` - The public key bytes used for verification.
     ///
@@ -266,7 +266,7 @@ impl SignatureScheme {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message to verify. This must be a 32-byte SHA256 hash of the original message.
+    /// * `message` - The message to verify. This must be a 32-byte Blake2b hash of the original message.
     /// * `signature` - The signature bytes to verify.
     /// * `public_key` - The public key bytes used for verification.
     ///
@@ -318,15 +318,15 @@ pub enum AuthenticationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blake2::{Blake2b, Digest};
     use ed25519_dalek::SigningKey;
     use p256::ecdsa::{signature::Signer, SigningKey as P256SigningKey};
     use rand::{rngs::OsRng, RngCore};
     use secp256k1::{Message, SecretKey};
-    use sha2::{Digest, Sha256};
 
     fn generate_test_message() -> [u8; 32] {
         let message = b"Hello, world!";
-        Sha256::digest(message).into()
+        Blake2b::digest(message).into()
     }
 
     #[test]
