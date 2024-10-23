@@ -79,7 +79,7 @@ impl SignatureScheme {
     ///
     /// ```
     /// use sha2::{Sha256, Digest};
-    /// # use your_crate::{SignatureScheme, AuthenticationError};
+    /// # use atoma_node::atoma_service::{SignatureScheme, AuthenticationError};
     ///
     /// # fn main() -> Result<(), AuthenticationError> {
     /// let scheme = SignatureScheme::Ed25519;
