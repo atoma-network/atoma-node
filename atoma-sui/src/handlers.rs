@@ -18,6 +18,56 @@ const DURATION_FOR_RETRY_IN_MILLIS: u64 = 100;
 /// The maximum number of retries for events to which handling fails.
 const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
 
+/// Handles various Atoma events by delegating to specific handler functions based on the event type.
+///
+/// This function serves as the main event dispatcher for the Atoma system, routing different event types
+/// to their corresponding handler functions. For each event type, it either calls the appropriate handler
+/// or returns an unimplemented error for events that are not yet supported.
+///
+/// # Arguments
+///
+/// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to handle
+/// * `value` - The serialized event data as a `serde_json::Value`
+/// * `db` - A reference to the SQLite connection pool for database operations
+/// * `node_small_ids` - A slice of node IDs that are relevant for the current context
+///
+/// # Returns
+///
+/// Returns a `Result<()>` which is:
+/// * `Ok(())` if the event was handled successfully
+/// * `Err(_)` if there was an error processing the event or if the event type is not yet implemented
+///
+/// # Event Types
+///
+/// Currently implemented events:
+/// * `NodeSubscribedToTaskEvent` - Handles node task subscription events
+/// * `NodeSubscriptionUpdatedEvent` - Handles updates to node task subscriptions
+/// * `NodeUnsubscribedFromTaskEvent` - Handles node task unsubscription events
+/// * `TaskRegisteredEvent` - Handles new task registration
+/// * `TaskDeprecationEvent` - Handles task deprecation
+/// * `StackCreatedEvent` - Handles stack creation
+/// * `StackTrySettleEvent` - Handles stack settlement attempts
+/// * `NewStackSettlementAttestationEvent` - Handles new stack settlement attestations
+/// * `StackSettlementTicketEvent` - Handles stack settlement tickets
+/// * `StackSettlementTicketClaimedEvent` - Handles claimed stack settlement tickets
+/// * `StackAttestationDisputeEvent` - Handles stack attestation disputes
+///
+/// Unimplemented events will return an `unimplemented!()` error with a descriptive message.
+///
+/// # Examples
+///
+/// ```no_run
+/// use atoma_state::SqlitePool;
+/// use serde_json::Value;
+///
+/// async fn example(event: AtomaEvent, value: Value, db: &SqlitePool, node_ids: &[u64]) {
+///     match handle_atoma_event(&event, value, db, node_ids).await {
+///         Ok(()) => println!("Event handled successfully"),
+///         Err(e) => eprintln!("Error handling event: {}", e),
+///     }
+/// }
+/// ```
+#[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_atoma_event(
     event: &AtomaEvent,
     value: Value,
