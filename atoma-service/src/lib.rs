@@ -4,3 +4,4 @@
 pub mod authentication;
 pub mod middleware;
 pub mod server;
+pub mod types;
