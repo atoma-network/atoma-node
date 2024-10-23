@@ -6,7 +6,7 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, StateManagerError>;
 
-// StateManager is responsible for managing the state of the Atoma system.
+/// StateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
 ///
 /// It provides an interface to interact with the SQLite database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
@@ -104,7 +104,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, Task};
+    /// use atoma_node::atoma_state::{StateManager, Task};
     ///
     /// async fn add_task(state_manager: &mut StateManager, task: Task) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_task(task).await
@@ -165,7 +165,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn deprecate_task(state_manager: &StateManager, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.deprecate_task(task_small_id).await
@@ -209,7 +209,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_node_tasks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Task>, StateManagerError> {
     ///     state_manager.get_subscribed_tasks(node_small_id).await
@@ -259,7 +259,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn check_subscription(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<bool, StateManagerError> {
     ///     state_manager.is_node_subscribed_to_task(node_small_id, task_small_id).await
@@ -311,7 +311,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn subscribe_node_to_task(state_manager: &StateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), StateManagerError> {
     ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
@@ -348,6 +348,42 @@ impl StateManager {
         Ok(())
     }
 
+    /// Retrieves the node subscription associated with a specific task ID.
+    ///
+    /// This method fetches the node subscription details from the `node_subscriptions` table
+    /// based on the provided `task_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `task_small_id` - The unique small identifier of the task to retrieve the subscription for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<NodeSubscription>`: A result containing either:
+    ///   - `Ok(NodeSubscription)`: A `NodeSubscription` object representing the subscription details.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database row into a `NodeSubscription` object.
+    /// - No subscription is found for the given `task_small_id`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
+    ///
+    /// async fn get_subscription(state_manager: &StateManager, task_small_id: i64) -> Result<NodeSubscription, StateManagerError> {
+    ///     state_manager.get_node_subscription_by_task_small_id(task_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(task_small_id = %task_small_id)
+    )]
     pub async fn get_node_subscription_by_task_small_id(
         &self,
         task_small_id: i64,
@@ -385,7 +421,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_subscription(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     state_manager.update_node_subscription(1, 2, 100, 1000).await
@@ -439,7 +475,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn unsubscribe_node(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.unsubscribe_node_from_task(node_small_id, task_small_id).await
@@ -486,7 +522,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<Stack, StateManagerError> {  
     ///     state_manager.get_stack(stack_id).await
@@ -503,6 +539,119 @@ impl StateManager {
             .fetch_one(&self.db)
             .await?;
         Ok(Stack::from_row(&stack)?)
+    }
+
+    /// Retrieves and updates an available stack with the specified number of compute units.
+    ///
+    /// This method attempts to reserve a specified number of compute units from a stack
+    /// owned by the given public key. It performs this operation atomically using a database
+    /// transaction to ensure consistency.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique identifier of the stack.
+    /// * `public_key` - The public key of the stack owner.
+    /// * `num_compute_units` - The number of compute units to reserve.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<Stack>>`: A result containing either:
+    ///   - `Ok(Some(Stack))`: If the stack was successfully updated, returns the updated stack.
+    ///   - `Ok(None)`: If the stack couldn't be updated (e.g., insufficient compute units or stack in settle period).
+    ///   - `Err(StateManagerError)`: If there was an error during the database operation.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database transaction fails to begin, execute, or commit.
+    /// - There's an issue with the SQL query execution.
+    ///
+    /// # Details
+    ///
+    /// The function performs the following steps:
+    /// 1. Begins a database transaction.
+    /// 2. Attempts to update the stack by increasing the `already_computed_units` field.
+    /// 3. If the update is successful (i.e., the stack has enough available compute units),
+    ///    it fetches the updated stack information.
+    /// 4. Commits the transaction.
+    ///
+    /// The update will only succeed if:
+    /// - The stack belongs to the specified owner (public key).
+    /// - The stack has enough remaining compute units.
+    /// - The stack is not in the settle period.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, Stack};
+    ///
+    /// async fn reserve_compute_units(state_manager: &StateManager) -> Result<Option<Stack>, StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let public_key = "owner_public_key";
+    ///     let num_compute_units = 100;
+    ///
+    ///     state_manager.get_available_stack_with_compute_units(stack_small_id, public_key, num_compute_units).await
+    /// }
+    /// ```
+    ///
+    /// This function is particularly useful for atomically reserving compute units from a stack,
+    /// ensuring that the operation is thread-safe and consistent even under concurrent access.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(
+            stack_small_id = %stack_small_id,
+            public_key = %public_key,
+            num_compute_units = %num_compute_units
+        )
+    )]
+    pub async fn get_available_stack_with_compute_units(
+        &self,
+        stack_small_id: i64,
+        public_key: &str,
+        num_compute_units: i64,
+    ) -> Result<Option<Stack>> {
+        // First, begin a transaction to ensure atomicity
+        let mut transaction = self.db.begin().await?;
+
+        // First try to update the row
+        let rows_affected = sqlx::query(
+            r#"
+            UPDATE stacks
+            SET already_computed_units = already_computed_units + ?1
+            WHERE stack_small_id = ?2
+            AND owner_address = ?3
+            AND num_compute_units - already_computed_units >= ?1
+            AND in_settle_period = false
+            "#,
+        )
+        .bind(num_compute_units)
+        .bind(stack_small_id)
+        .bind(public_key)
+        .execute(&mut *transaction)
+        .await?;
+
+        // If update was successful, get the updated row
+        let maybe_stack = if rows_affected.rows_affected() > 0 {
+            sqlx::query_as::<_, Stack>(
+                r#"
+                SELECT * FROM stacks
+                WHERE stack_small_id = ?1
+                AND owner_address = ?2
+                "#,
+            )
+            .bind(stack_small_id)
+            .bind(public_key)
+            .fetch_optional(&mut *transaction)
+            .await?
+        } else {
+            None
+        };
+
+        // Commit the transaction
+        transaction.commit().await?;
+
+        Ok(maybe_stack)
     }
 
     /// Inserts a new stack into the database.
@@ -526,7 +675,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn insert_stack(state_manager: &StateManager, stack: Stack) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack(stack).await
@@ -544,8 +693,11 @@ impl StateManager {
     )]
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
-            "INSERT INTO stacks (stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stacks 
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
+            .bind(stack.owner_address)
             .bind(stack.stack_small_id)
             .bind(stack.stack_id)
             .bind(stack.task_small_id)
@@ -553,6 +705,7 @@ impl StateManager {
             .bind(stack.num_compute_units)
             .bind(stack.price)
             .bind(stack.already_computed_units)
+            .bind(stack.in_settle_period)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -581,7 +734,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
@@ -605,13 +758,72 @@ impl StateManager {
         Ok(())
     }
 
-    /// Retrieves the stack settlement ticket associated with a specific stack ID.
+    /// Updates the number of tokens already computed for a stack.
     ///
-    /// This method fetches the stack settlement ticket details from the `stack_settlement_tickets` table based on the provided `stack_small_id`.
+    /// This method updates the `already_computed_units` field in the `stacks` table
+    /// for the specified `stack_small_id`.
     ///
     /// # Arguments
     ///
-    /// * `stack_small_id` - The unique small identifier of the stack to retrieve.
+    /// * `stack_small_id` - The unique small identifier of the stack to update.
+    /// * `estimated_total_tokens` - The estimated total number of tokens.
+    /// * `total_tokens` - The total number of tokens.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn update_stack_num_tokens(state_manager: &StateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), StateManagerError> {
+    ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
+    )]
+    pub async fn update_stack_num_tokens(
+        &self,
+        stack_small_id: i64,
+        estimated_total_tokens: i64,
+        total_tokens: i64,
+    ) -> Result<()> {
+        let result = sqlx::query(
+            "UPDATE stacks 
+            SET already_computed_units = already_computed_units - (? - ?) 
+            WHERE stack_small_id = ?",
+        )
+        .bind(estimated_total_tokens)
+        .bind(total_tokens)
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(StateManagerError::StackNotFound);
+        }
+
+        Ok(())
+    }
+
+    /// Retrieves the stack settlement ticket for a given stack.
+    ///
+    /// This method fetches the settlement ticket details from the `stack_settlement_tickets` table
+    /// based on the provided `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack whose settlement ticket is to be retrieved.
     ///
     /// # Returns
     ///
@@ -623,12 +835,13 @@ impl StateManager {
     ///
     /// This function will return an error if:
     /// - The database query fails to execute.
-    /// - There's an issue converting the database rows into a `StackSettlementTicket` object.
+    /// - There's an issue converting the database row into a `StackSettlementTicket` object.
+    /// - No settlement ticket is found for the given `stack_small_id`.
     ///
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
     /// async fn get_settlement_ticket(state_manager: &StateManager, stack_small_id: i64) -> Result<StackSettlementTicket, StateManagerError> {
     ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
@@ -672,7 +885,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
     /// async fn insert_settlement_ticket(state_manager: &StateManager, stack_settlement_ticket: StackSettlementTicket) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack_settlement_ticket(stack_settlement_ticket).await
@@ -690,6 +903,7 @@ impl StateManager {
         &self,
         stack_settlement_ticket: StackSettlementTicket,
     ) -> Result<()> {
+        let mut tx = self.db.begin().await?;
         sqlx::query(
             "INSERT INTO stack_settlement_tickets 
                 (
@@ -717,8 +931,15 @@ impl StateManager {
         .bind(stack_settlement_ticket.is_in_dispute)
         .bind(stack_settlement_ticket.user_refund_amount)
         .bind(stack_settlement_ticket.is_claimed)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await?;
+
+        // Also update the stack to set in_settle_period to true
+        sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = ?")
+            .bind(stack_settlement_ticket.stack_small_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -751,7 +972,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -854,7 +1075,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn settle_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -905,7 +1126,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn claim_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -964,7 +1185,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
     ///     let stack_small_id = 1;
@@ -1019,7 +1240,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn add_dispute(state_manager: &StateManager, dispute: StackAttestationDispute) -> Result<(), StateManagerError> {
     ///     state_manager.insert_stack_attestation_dispute(dispute).await
@@ -1041,13 +1262,13 @@ impl StateManager {
                 (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment) 
                 VALUES (?, ?, ?, ?, ?)",
         )
-        .bind(stack_attestation_dispute.stack_small_id)
-        .bind(stack_attestation_dispute.attestation_commitment)
-        .bind(stack_attestation_dispute.attestation_node_id)
-        .bind(stack_attestation_dispute.original_node_id)
-        .bind(stack_attestation_dispute.original_commitment)
-        .execute(&self.db)
-        .await?;
+            .bind(stack_attestation_dispute.stack_small_id)
+            .bind(stack_attestation_dispute.attestation_commitment)
+            .bind(stack_attestation_dispute.attestation_node_id)
+            .bind(stack_attestation_dispute.original_node_id)
+            .bind(stack_attestation_dispute.original_commitment)
+            .execute(&self.db)
+            .await?;
 
         Ok(())
     }
@@ -1057,6 +1278,8 @@ impl StateManager {
 pub enum StateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("Stack not found")]
+    StackNotFound,
     #[error("Attestation node not found: {0}")]
     AttestationNodeNotFound(i64),
     #[error("Invalid Merkle leaf length")]
@@ -1101,20 +1324,20 @@ pub(crate) mod queries {
     /// A `String` containing the SQL query to create the `tasks` table.
     pub(crate) fn create_tasks_table_query() -> String {
         "CREATE TABLE IF NOT EXISTS tasks (
-            task_small_id INTEGER PRIMARY KEY,
-            task_id TEXT UNIQUE NOT NULL,
-            role INTEGER NOT NULL,
-            model_name TEXT,
-            is_deprecated BOOLEAN NOT NULL,
-            valid_until_epoch INTEGER,
-            deprecated_at_epoch INTEGER,
-            optimizations TEXT NOT NULL,
-            security_level INTEGER NOT NULL,
-            task_metrics_compute_unit INTEGER NOT NULL,
-            task_metrics_time_unit INTEGER,
-            task_metrics_value INTEGER,
-            minimum_reputation_score INTEGER
-        )"
+                task_small_id INTEGER PRIMARY KEY,
+                task_id TEXT UNIQUE NOT NULL,
+                role INTEGER NOT NULL,
+                model_name TEXT,
+                is_deprecated BOOLEAN NOT NULL,
+                valid_until_epoch INTEGER,
+                deprecated_at_epoch INTEGER,
+                optimizations TEXT NOT NULL,
+                security_level INTEGER NOT NULL,
+                task_metrics_compute_unit INTEGER NOT NULL,
+                task_metrics_time_unit INTEGER,
+                task_metrics_value INTEGER,
+                minimum_reputation_score INTEGER
+            )"
         .to_string()
     }
 
@@ -1144,7 +1367,8 @@ pub(crate) mod queries {
             valid BOOLEAN NOT NULL,
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
-        )"
+        );
+        CREATE INDEX IF NOT EXISTS retrieval_index ON node_subscriptions (task_small_id, node_small_id);"
         .to_string()
     }
 
@@ -1173,16 +1397,49 @@ pub(crate) mod queries {
     pub(crate) fn stacks() -> String {
         "CREATE TABLE IF NOT EXISTS stacks (
                 stack_small_id INTEGER PRIMARY KEY,
+                owner_address TEXT NOT NULL,
                 stack_id TEXT UNIQUE NOT NULL,
                 task_small_id INTEGER NOT NULL,
                 selected_node_id INTEGER NOT NULL,
                 num_compute_units INTEGER NOT NULL,
                 price INTEGER NOT NULL,
                 already_computed_units INTEGER NOT NULL,
+                in_settle_period BOOLEAN NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
-            )".to_string()
+            );
+            CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);
+            CREATE INDEX IF NOT EXISTS stack_small_id_index ON stacks (stack_small_id);"
+        .to_string()
     }
 
+    /// Generates the SQL query to create the `stack_settlement_tickets` table.
+    ///
+    /// This table stores information about settlement tickets for stacks.
+    ///
+    /// # Table Structure
+    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
+    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for settlement.
+    /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
+    /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
+    /// - `committed_stack_proofs`: BLOB NOT NULL - The committed proofs for the stack settlement.
+    /// - `stack_merkle_leaves`: BLOB NOT NULL - The Merkle leaves for the stack.
+    /// - `dispute_settled_at_epoch`: INTEGER - The epoch when the dispute was settled (nullable).
+    /// - `already_attested_nodes`: TEXT NOT NULL - A list of nodes that have already attested.
+    /// - `is_in_dispute`: BOOLEAN NOT NULL - Indicates whether the settlement is in dispute.
+    /// - `user_refund_amount`: INTEGER NOT NULL - The amount to be refunded to the user.
+    /// - `is_claimed`: BOOLEAN NOT NULL - Indicates whether the settlement has been claimed.
+    ///
+    /// # Primary Key
+    /// The table uses `stack_small_id` as the primary key.
+    ///
+    /// # Returns
+    /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
+    ///
+    /// # Foreign Key
+    /// - `stack_small_id` references the `stacks` table.
+    ///
+    /// # Returns
+    /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
     pub(crate) fn stack_settlement_tickets() -> String {
         "CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
             stack_small_id INTEGER PRIMARY KEY,
@@ -1196,7 +1453,8 @@ pub(crate) mod queries {
             is_in_dispute BOOLEAN NOT NULL,
             user_refund_amount INTEGER NOT NULL,
             is_claimed BOOLEAN NOT NULL
-        )"
+        );
+        CREATE INDEX IF NOT EXISTS stack_small_id_index ON stack_settlement_tickets (stack_small_id);"
         .to_string()
     }
 
@@ -1221,14 +1479,14 @@ pub(crate) mod queries {
     /// A `String` containing the SQL query to create the `stack_attestation_disputes` table.
     pub(crate) fn stack_attestation_disputes() -> String {
         "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
-            stack_small_id INTEGER NOT NULL,
-            attestation_commitment BLOB NOT NULL,
-            attestation_node_id INTEGER NOT NULL,
-            original_node_id INTEGER NOT NULL,
-            original_commitment BLOB NOT NULL,
-            PRIMARY KEY (stack_small_id, attestation_node_id),
-            FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-        )"
+                stack_small_id INTEGER NOT NULL,
+                attestation_commitment BLOB NOT NULL,
+                attestation_node_id INTEGER NOT NULL,
+                original_node_id INTEGER NOT NULL,
+                original_commitment BLOB NOT NULL,
+                PRIMARY KEY (stack_small_id, attestation_node_id),
+                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
+            )"
         .to_string()
     }
 
@@ -1261,7 +1519,7 @@ pub(crate) mod queries {
     ///
     /// ```rust,no_run
     /// use sqlx::SqlitePool;
-    /// use your_crate::queries;
+    /// use atoma_node::atoma_state::queries;
     ///
     /// async fn setup_database(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
     ///     queries::create_all_tables(pool).await?;
@@ -1486,6 +1744,7 @@ mod tests {
 
         // Insert a stack
         let stack = Stack {
+            owner_address: "0x123".to_string(),
             stack_small_id: 1,
             stack_id: "stack1".to_string(),
             task_small_id: 1,
@@ -1493,6 +1752,7 @@ mod tests {
             num_compute_units: 10,
             price: 1000,
             already_computed_units: 0,
+            in_settle_period: false,
         };
         state_manager.insert_new_stack(stack.clone()).await.unwrap();
 
@@ -1529,6 +1789,7 @@ mod tests {
             .await
             .unwrap();
         let stack = Stack {
+            owner_address: "0x123".to_string(),
             stack_small_id: 1,
             stack_id: "stack1".to_string(),
             task_small_id: 1,
@@ -1536,6 +1797,7 @@ mod tests {
             num_compute_units: 10,
             price: 1000,
             already_computed_units: 0,
+            in_settle_period: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -1579,6 +1841,7 @@ mod tests {
             .await
             .unwrap();
         let stack = Stack {
+            owner_address: "0x123".to_string(),
             stack_small_id: 1,
             stack_id: "stack1".to_string(),
             task_small_id: 1,
@@ -1586,6 +1849,7 @@ mod tests {
             num_compute_units: 10,
             price: 1000,
             already_computed_units: 0,
+            in_settle_period: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -1641,6 +1905,7 @@ mod tests {
             .await
             .unwrap();
         let stack = Stack {
+            owner_address: "0x123".to_string(),
             stack_small_id: 1,
             stack_id: "stack1".to_string(),
             task_small_id: 1,
@@ -1648,6 +1913,7 @@ mod tests {
             num_compute_units: 10,
             price: 1000,
             already_computed_units: 0,
+            in_settle_period: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let initial_ticket = StackSettlementTicket {
@@ -1737,6 +2003,7 @@ mod tests {
             .await
             .unwrap();
         let stack = Stack {
+            owner_address: "0x123".to_string(),
             stack_small_id: 1,
             stack_id: "stack1".to_string(),
             task_small_id: 1,
@@ -1744,6 +2011,7 @@ mod tests {
             num_compute_units: 10,
             price: 1000,
             already_computed_units: 0,
+            in_settle_period: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let ticket = StackSettlementTicket {
@@ -1815,6 +2083,123 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(disputes.len(), 1);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_available_stack_with_compute_units() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Test case 1: Stack with sufficient compute units
+        let stack1 = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+        };
+        state_manager
+            .insert_new_stack(stack1.clone())
+            .await
+            .unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(1, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        let updated_stack = result.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 50);
+
+        // Test case 2: Stack with insufficient compute units
+        let result = state_manager
+            .get_available_stack_with_compute_units(1, "0x123", 60)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 3: Stack in settle period
+        let mut stack2 = stack1.clone();
+        stack2.stack_small_id = 2;
+        stack2.stack_id = "stack2".to_string();
+        stack2.in_settle_period = true;
+        state_manager.insert_new_stack(stack2).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(2, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 4: Stack with different owner
+        let mut stack3 = stack1.clone();
+        stack3.stack_small_id = 3;
+        stack3.stack_id = "stack3".to_string();
+        stack3.owner_address = "0x456".to_string();
+        state_manager.insert_new_stack(stack3).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(3, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 5: Non-existent stack
+        let result = state_manager
+            .get_available_stack_with_compute_units(999, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        // Test case 6: Exact number of compute units available
+        let mut stack4 = stack1.clone();
+        stack4.stack_small_id = 4;
+        stack4.stack_id = "stack4".to_string();
+        stack4.num_compute_units = 100;
+        stack4.already_computed_units = 50;
+        state_manager.insert_new_stack(stack4).await.unwrap();
+
+        let result = state_manager
+            .get_available_stack_with_compute_units(4, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        let updated_stack = result.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 100);
+
+        // Test case 7: Attempt to use more compute units than available
+        let result = state_manager
+            .get_available_stack_with_compute_units(4, "0x123", 1)
+            .await
+            .unwrap();
+        assert!(result.is_none());
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }

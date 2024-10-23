@@ -551,6 +551,7 @@ pub(crate) async fn handle_event_with_retries(
     let mut retries = 0;
     while retries < MAX_RETRIES_FOR_UNHANDLED_EVENTS {
         retries += 1;
+        trace!("Retrying event handling, attempt {retries}");
         match handle_atoma_event(event, value.clone(), db, node_small_ids).await {
             Ok(_) => return,
             Err(e) => {

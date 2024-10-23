@@ -1,0 +1,31 @@
+[package]
+name = "atoma-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+atoma-sui = { workspace = true }
+atoma-state = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+hyper = { workspace = true }
+p256 = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+sha2 = { workspace = true }
+secp256k1 = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+sui-keys = { workspace = true }
+sui-sdk = { workspace = true }
+tokenizers = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
+tower = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true, features = ["axum_extras"] }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+
+[dev-dependencies]
+rand = { workspace = true }
