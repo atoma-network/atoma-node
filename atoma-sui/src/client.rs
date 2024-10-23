@@ -947,7 +947,6 @@ pub(crate) mod utils {
     /// # Implementation Notes
     ///
     /// - The function queries up to 100 objects at a time
-    /// - Pagination is not currently supported (will panic if more than 100 objects exist)
     /// - The function filters objects by package and looks for the specific NodeBadge type
     /// - Object content is parsed to extract the small_id from the Move object's fields
     pub(crate) async fn get_node_badge(
@@ -955,57 +954,70 @@ pub(crate) mod utils {
         package: ObjectID,
         active_address: SuiAddress,
     ) -> Option<(ObjectID, u64)> {
-        let Page {
-            data,
-            has_next_page,
-            ..
-        } = match client
-            .read_api()
-            .get_owned_objects(
-                active_address,
-                Some(SuiObjectResponseQuery {
-                    filter: Some(SuiObjectDataFilter::Package(package)),
-                    options: Some(SuiObjectDataOptions {
-                        show_type: true,
-                        show_content: true,
-                        ..Default::default()
+        let mut cursor = None;
+        loop {
+            let Page {
+                data,
+                has_next_page,
+                next_cursor,
+            } = match client
+                .read_api()
+                .get_owned_objects(
+                    active_address,
+                    Some(SuiObjectResponseQuery {
+                        filter: Some(SuiObjectDataFilter::Package(package)),
+                        options: Some(SuiObjectDataOptions {
+                            show_type: true,
+                            show_content: true,
+                            ..Default::default()
+                        }),
                     }),
-                }),
-                None,
-                Some(100),
-            )
-            .await
-        {
-            Ok(page) => page,
-            Err(e) => {
-                error!("Failed to get node badge: {:?}", e);
-                return None;
-            }
-        };
-        assert!(!has_next_page, "We don't support pagination yet");
-
-        data.into_iter().find_map(|resp| {
-            let object = resp.data?;
-
-            let ObjectType::Struct(type_) = object.type_? else {
-                return None;
+                    cursor,
+                    Some(100),
+                )
+                .await
+            {
+                Ok(page) => page,
+                Err(e) => {
+                    error!("Failed to get node badge: {:?}", e);
+                    return None;
+                }
             };
 
-            if type_.module().as_str() == MODULE_ID && type_.name().as_str() == DB_NODE_TYPE_NAME {
-                let id = object
-                    .content?
-                    .try_as_move()?
-                    .clone()
-                    .fields
-                    .to_json_value();
+            if let Some(object) = data.into_iter().find_map(|resp| {
+                let object = resp.data?;
 
-                Some((
-                    object.object_id,
-                    id["small_id"]["inner"].as_str()?.parse().ok()?,
-                ))
-            } else {
-                None
+                let ObjectType::Struct(type_) = object.type_? else {
+                    return None;
+                };
+
+                if type_.module().as_str() == MODULE_ID
+                    && type_.name().as_str() == DB_NODE_TYPE_NAME
+                {
+                    let id = object
+                        .content?
+                        .try_as_move()?
+                        .clone()
+                        .fields
+                        .to_json_value();
+
+                    Some((
+                        object.object_id,
+                        id["small_id"]["inner"].as_str()?.parse().ok()?,
+                    ))
+                } else {
+                    None
+                }
+            }) {
+                return Some(object);
             }
-        })
+
+            // Check if there is a next page
+            if !has_next_page {
+                break;
+            }
+            cursor = next_cursor;
+        }
+        None
     }
 }
