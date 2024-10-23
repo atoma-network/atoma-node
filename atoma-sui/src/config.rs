@@ -206,7 +206,7 @@ pub mod tests {
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_rpc_node_addr = \"\"\nws_rpc_node_addr = \"\"\npackage_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nnum_concurrent_tasks = 10\nlimit = 10\nsmall_ids = [0, 1, 2]\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_rpc_node_addr = \"\"\nws_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nnum_concurrent_tasks = 10\nmax_concurrent_requests = 10\nlimit = 10\nsmall_ids = [0, 1, 2]\nsui_config_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
