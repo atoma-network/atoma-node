@@ -2,6 +2,18 @@
 
 ![Atoma Logo](https://github.com/atoma-network/atoma-node/blob/atoma-image/atoma-assets/atoma-symbol.jpg)
 
+## Getting Started
+
+### Quickstart
+
+1. Configure `.env`, using as a template `.env.example`
+
+2. Start container
+
+```
+docker compose up
+```
+
 ## Introduction
 
 The present repository contains the logic to run an Atoma node. Atoma nodes empower the Atoma Network, a decentralized network
