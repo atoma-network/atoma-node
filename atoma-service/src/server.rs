@@ -11,6 +11,7 @@ use axum::{
 };
 use reqwest::Client;
 use serde_json::{json, Value};
+use sha2::Digest;
 use sqlx::SqlitePool;
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
@@ -131,7 +132,10 @@ pub async fn health_check() -> impl IntoResponse {
     fields(path = CHAT_COMPLETIONS_PATH)
 )]
 pub async fn chat_completions_handler(
-    Extension((stack_small_id, estimated_total_tokens)): Extension<(i64, i64)>,
+    Extension(((stack_small_id, estimated_total_tokens), payload_hash)): Extension<(
+        (i64, i64),
+        [u8; 32],
+    )>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
@@ -151,11 +155,13 @@ pub async fn chat_completions_handler(
     })?;
 
     // Sign the response body byte content and add the base64 encoded signature to the response body
-    let signature = utils::sign_response_body(&response_body, &state.keystore, state.address_index)
-        .map_err(|e| {
-            error!("Error signing response body: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let (response_hash, signature) =
+        utils::sign_response_body(&response_body, &state.keystore, state.address_index).map_err(
+            |e| {
+                error!("Error signing response body: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        )?;
     response_body["signature"] = json!(signature);
 
     // Extract the response total number of tokens
@@ -178,6 +184,17 @@ pub async fn chat_completions_handler(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    let total_hash: [u8; 32] = sha2::Sha256::digest(&[payload_hash, response_hash].concat())
+        .as_slice()
+        .try_into()
+        .expect("Invalid SHA256 hash length");
+    state_manager
+        .update_stack_total_hash(stack_small_id, total_hash)
+        .await
+        .map_err(|e| {
+            error!("Error updating stack total hash: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(response_body))
 }
 
@@ -191,14 +208,20 @@ pub(crate) mod utils {
         response_body: &Value,
         keystore: &Arc<FileBasedKeystore>,
         address_index: usize,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<([u8; 32], String), Box<dyn std::error::Error>> {
         let address = keystore.addresses()[address_index];
         let response_body_str = response_body.to_string();
         let response_body_bytes = response_body_str.as_bytes();
         let sha256_hash = sha2::Sha256::digest(response_body_bytes);
         let signature = keystore
             .sign_hashed(&address, sha256_hash.as_slice())
-            .unwrap();
-        Ok(signature.encode_base64())
+            .expect("Failed to sign response body");
+        Ok((
+            sha256_hash
+                .as_slice()
+                .try_into()
+                .expect("Invalid SHA256 hash length"),
+            signature.encode_base64(),
+        ))
     }
 }

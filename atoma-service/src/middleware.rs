@@ -63,7 +63,7 @@ pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let (req_parts, req_body) = req.into_parts();
+    let (mut req_parts, req_body) = req.into_parts();
     let signature = req_parts.headers.get("X-Signature").ok_or_else(|| {
         error!("Signature header not found");
         StatusCode::BAD_REQUEST
@@ -101,10 +101,13 @@ pub async fn signature_verification_middleware(
             StatusCode::BAD_REQUEST
         })?;
     let body_sha256_hash = sha2::Sha256::digest(&body_bytes);
-    let body_sha256_hash_bytes = body_sha256_hash.as_slice();
+    let body_sha256_hash_bytes: [u8; 32] = body_sha256_hash
+        .as_slice()
+        .try_into()
+        .expect("Invalid SHA256 hash length");
 
     signature_scheme
-        .verify(body_sha256_hash_bytes, &signature_bytes, &public_key_bytes) // Signature second, public key third
+        .verify(&body_sha256_hash_bytes, &signature_bytes, &public_key_bytes) // Signature second, public key third
         .map_err(|_| {
             error!(
                 "Failed to verify signature scheme: {}",
@@ -113,6 +116,7 @@ pub async fn signature_verification_middleware(
             StatusCode::UNAUTHORIZED
         })?;
 
+    req_parts.extensions.insert(body_sha256_hash_bytes);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
 
     Ok(next.run(req).await)

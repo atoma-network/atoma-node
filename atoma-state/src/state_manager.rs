@@ -694,8 +694,8 @@ impl StateManager {
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
             .bind(stack.owner_address)
             .bind(stack.stack_small_id)
@@ -706,6 +706,8 @@ impl StateManager {
             .bind(stack.price)
             .bind(stack.already_computed_units)
             .bind(stack.in_settle_period)
+            .bind(stack.total_hash)
+            .bind(stack.num_total_messages)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -940,6 +942,39 @@ impl StateManager {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn update_stack_total_hash(
+        &self,
+        stack_small_id: i64,
+        new_hash: [u8; 32],
+    ) -> Result<()> {
+        let mut transaction = self.db.begin().await?;
+
+        let existing_hash = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT total_hash, num_total_messages FROM stacks WHERE stack_small_id = ?",
+        )
+        .bind(stack_small_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|_| StateManagerError::StackNotFound)?;
+
+        let total_hash = [existing_hash, new_hash.to_vec()].concat();
+
+        // NOTE: also update the num_total_messages
+        sqlx::query(
+            "UPDATE stacks 
+                    SET total_hash = ?,
+                    num_total_messages = num_total_messages + 1
+                    WHERE stack_small_id = ?",
+        )
+        .bind(total_hash)
+        .bind(stack_small_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -1288,6 +1323,8 @@ pub enum StateManagerError {
     InvalidCommittedStackProofLength,
     #[error("Failed to parse JSON: {0}")]
     JsonParseError(#[from] serde_json::Error),
+    #[error("Failed to retrieve existing total hash for stack: `{0}`")]
+    FailedToRetrieveExistingTotalHash(i64),
 }
 
 pub(crate) mod queries {
@@ -1405,6 +1442,8 @@ pub(crate) mod queries {
                 price INTEGER NOT NULL,
                 already_computed_units INTEGER NOT NULL,
                 in_settle_period BOOLEAN NOT NULL,
+                total_hash BLOB NOT NULL,
+                num_total_messages INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
             );
             CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);
@@ -1753,6 +1792,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager.insert_new_stack(stack.clone()).await.unwrap();
 
@@ -1798,6 +1839,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -1850,6 +1893,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -1914,6 +1959,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let initial_ticket = StackSettlementTicket {
@@ -2012,6 +2059,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let ticket = StackSettlementTicket {
@@ -2124,6 +2173,8 @@ mod tests {
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         };
         state_manager
             .insert_new_stack(stack1.clone())
@@ -2200,6 +2251,67 @@ mod tests {
             .await
             .unwrap();
         assert!(result.is_none());
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_stack_total_hash() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert necessary task and subscription
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Insert a stack
+        let stack = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Update the total hash
+        let new_hash = [42u8; 32];
+        state_manager
+            .update_stack_total_hash(1, new_hash)
+            .await
+            .unwrap();
+
+        // Verify the update
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.total_hash, new_hash);
+        assert_eq!(updated_stack.num_total_messages, 1);
+
+        // Test updating non-existent stack
+        let result = state_manager.update_stack_total_hash(999, new_hash).await;
+        assert!(matches!(result, Err(StateManagerError::StackNotFound)));
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }

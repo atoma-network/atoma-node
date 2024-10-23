@@ -365,6 +365,8 @@ impl From<StackCreatedEvent> for Stack {
             price: event.price as i64,
             already_computed_units: 0,
             in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
         }
     }
 }
