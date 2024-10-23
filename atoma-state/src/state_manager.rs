@@ -104,7 +104,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, Task};
+    /// use atoma_node::atoma_state::{StateManager, Task};
     ///
     /// async fn add_task(state_manager: &mut StateManager, task: Task) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_task(task).await
@@ -165,7 +165,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn deprecate_task(state_manager: &StateManager, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.deprecate_task(task_small_id).await
@@ -209,7 +209,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_node_tasks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Task>, StateManagerError> {
     ///     state_manager.get_subscribed_tasks(node_small_id).await
@@ -259,7 +259,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn check_subscription(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<bool, StateManagerError> {
     ///     state_manager.is_node_subscribed_to_task(node_small_id, task_small_id).await
@@ -311,7 +311,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn subscribe_node_to_task(state_manager: &StateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), StateManagerError> {
     ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
@@ -373,7 +373,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, NodeSubscription};
+    /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
     ///
     /// async fn get_subscription(state_manager: &StateManager, task_small_id: i64) -> Result<NodeSubscription, StateManagerError> {
     ///     state_manager.get_node_subscription_by_task_small_id(task_small_id).await
@@ -421,7 +421,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_subscription(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     state_manager.update_node_subscription(1, 2, 100, 1000).await
@@ -475,7 +475,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn unsubscribe_node(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.unsubscribe_node_from_task(node_small_id, task_small_id).await
@@ -522,7 +522,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<Stack, StateManagerError> {  
     ///     state_manager.get_stack(stack_id).await
@@ -583,7 +583,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
     /// async fn reserve_compute_units(state_manager: &StateManager) -> Result<Option<Stack>, StateManagerError> {
     ///     let stack_small_id = 1;
@@ -675,7 +675,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn insert_stack(state_manager: &StateManager, stack: Stack) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack(stack).await
@@ -734,7 +734,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
@@ -781,7 +781,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_stack_num_tokens(state_manager: &StateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
@@ -841,7 +841,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
     /// async fn get_settlement_ticket(state_manager: &StateManager, stack_small_id: i64) -> Result<StackSettlementTicket, StateManagerError> {
     ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
@@ -885,7 +885,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
     /// async fn insert_settlement_ticket(state_manager: &StateManager, stack_settlement_ticket: StackSettlementTicket) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack_settlement_ticket(stack_settlement_ticket).await
@@ -972,7 +972,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -1075,7 +1075,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn settle_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -1126,7 +1126,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::StateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn claim_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
@@ -1185,7 +1185,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
     ///     let stack_small_id = 1;
@@ -1240,7 +1240,7 @@ impl StateManager {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use your_crate::{StateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn add_dispute(state_manager: &StateManager, dispute: StackAttestationDispute) -> Result<(), StateManagerError> {
     ///     state_manager.insert_stack_attestation_dispute(dispute).await
@@ -1519,7 +1519,7 @@ pub(crate) mod queries {
     ///
     /// ```rust,no_run
     /// use sqlx::SqlitePool;
-    /// use your_crate::queries;
+    /// use atoma_node::atoma_state::queries;
     ///
     /// async fn setup_database(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
     ///     queries::create_all_tables(pool).await?;
