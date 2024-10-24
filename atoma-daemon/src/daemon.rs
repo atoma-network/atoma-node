@@ -1,5 +1,5 @@
 use atoma_state::{
-    types::{NodeSubscription, Stack, StackAttestationDispute, Task},
+    types::{NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task},
     StateManager,
 };
 use atoma_sui::client::AtomaSuiClient;
@@ -25,6 +25,7 @@ pub struct DaemonState {
 pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
     Router::new()
         .route("/subscriptions", get(get_all_node_subscriptions))
+        .route("/subscriptions/:id", get(get_node_subscriptions))
         .route("/tasks", get(get_all_tasks))
         .route("/stacks", get(get_all_node_stacks))
         .route("/stacks/:id", get(get_node_stacks))
@@ -45,10 +46,6 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
             get(get_against_attestation_dispute),
         )
         .route(
-            "/against_attestation_disputes",
-            get(get_all_against_attestation_disputes),
-        )
-        .route(
             "/own_attestation_disputes",
             get(get_all_own_attestation_disputes),
         )
@@ -56,6 +53,8 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
             "/own_attestation_disputes/:id",
             get(get_own_attestation_dispute),
         )
+        .route("/claimed_stacks", get(get_all_claimed_stacks))
+        .route("/claimed_stacks/:id", get(get_node_claimed_stacks))
         .with_state(daemon_state)
 }
 
@@ -83,7 +82,7 @@ async fn get_all_node_subscriptions(
     let all_node_subscriptions = daemon_state
         .state_manager
         .get_all_node_subscriptions(
-            current_node_badges
+            &current_node_badges
                 .iter()
                 .map(|(_, small_id)| *small_id as i64)
                 .collect::<Vec<_>>(),
@@ -94,6 +93,23 @@ async fn get_all_node_subscriptions(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(all_node_subscriptions))
+}
+
+#[instrument(level = "trace", skip_all)]
+async fn get_node_subscriptions(
+    State(daemon_state): State<DaemonState>,
+    Path(node_small_id): Path<i64>,
+) -> Result<Json<Vec<NodeSubscription>>> {
+    Ok(Json(
+        daemon_state
+            .state_manager
+            .get_all_node_subscriptions(&[node_small_id])
+            .await
+            .map_err(|_| {
+                error!("Failed to get node subscriptions");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    ))
 }
 
 /// Retrieves all tasks from the state manager.
@@ -374,6 +390,70 @@ async fn get_own_attestation_dispute(
             .await
             .map_err(|_| {
                 error!("Failed to get own attestation dispute");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    ))
+}
+
+/// Retrieves all claimed stacks for the currently registered node badges.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing node badges and state manager
+///
+/// # Returns
+/// * `Result<Json<Vec<StackSettlementTicket>>>` - A JSON response containing a list of claimed stacks
+///   - `Ok(Json<Vec<StackSettlementTicket>>)` - Successfully retrieved claimed stacks
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve claimed stacks from state manager
+///
+/// # Example Response
+/// Returns a JSON array of StackSettlementTicket objects for all registered nodes
+#[instrument(level = "trace", skip_all)]
+async fn get_all_claimed_stacks(
+    State(daemon_state): State<DaemonState>,
+) -> Result<Json<Vec<StackSettlementTicket>>> {
+    Ok(Json(
+        daemon_state
+            .state_manager
+            .get_claimed_stacks(
+                &daemon_state
+                    .node_badges
+                    .iter()
+                    .map(|(_, small_id)| *small_id as i64)
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .map_err(|_| {
+                error!("Failed to get all claimed stacks");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    ))
+}
+
+/// Retrieves all claimed stacks for a specific node identified by its small ID.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the state manager
+/// * `node_small_id` - The small ID of the node whose claimed stacks should be retrieved
+///
+/// # Returns
+/// * `Result<Json<Vec<StackSettlementTicket>>>` - A JSON response containing a list of claimed stacks
+///   - `Ok(Json<Vec<StackSettlementTicket>>)` - Successfully retrieved claimed stacks
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve claimed stacks from state manager
+///
+/// # Example Response
+/// Returns a JSON array of StackSettlementTicket objects for the specified node
+#[instrument(level = "trace", skip_all)]
+async fn get_node_claimed_stacks(
+    State(daemon_state): State<DaemonState>,
+    Path(node_small_id): Path<i64>,
+) -> Result<Json<Vec<StackSettlementTicket>>> {
+    Ok(Json(
+        daemon_state
+            .state_manager
+            .get_claimed_stacks(&[node_small_id])
+            .await
+            .map_err(|_| {
+                error!("Failed to get node claimed stacks");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
     ))
