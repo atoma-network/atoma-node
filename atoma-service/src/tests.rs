@@ -7,9 +7,11 @@ mod middleware {
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
     use base64::{prelude::BASE64_STANDARD, Engine};
-    use blake2::{digest::generic_array::GenericArray, Digest};
+    use blake2::{
+        digest::generic_array::{typenum::U32, GenericArray},
+        Digest,
+    };
     use hex::ToHex;
-    use p256::U32;
     use reqwest::Client;
     use serde_json::json;
     use serial_test::serial;
