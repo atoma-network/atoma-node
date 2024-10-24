@@ -37,6 +37,7 @@ impl Hasher for Blake2bHasher {
 ///
 /// This struct contains the root and leaf of a Merkle tree, which are used
 /// to verify the integrity and authenticity of a stack's data.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommittedStackProof {
     /// A vector of bytes representing the final commitment proof. This
     /// is computed by iteratively hashing the Merkle root with a prefix index.
@@ -151,4 +152,163 @@ pub(crate) fn compute_committed_stack_proof(
         root: committed_stack_proof,
         leaf: stack_merkle_leaf,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn test_empty_total_hash() {
+        let total_hash = vec![];
+        let result = compute_committed_stack_proof(total_hash);
+        assert_eq!(result, Err(StatusCode::INTERNAL_SERVER_ERROR));
+    }
+
+    #[test]
+    fn test_non_multiple_of_32_total_hash() {
+        let total_hash = vec![0u8; 31]; // Length is not a multiple of 32
+        let result = compute_committed_stack_proof(total_hash);
+        assert_eq!(result, Err(StatusCode::INTERNAL_SERVER_ERROR));
+    }
+
+    #[test]
+    fn test_valid_total_hash_single_chunk() {
+        let total_hash = vec![0u8; 32]; // Single 32-byte chunk
+        let result = compute_committed_stack_proof(total_hash.clone());
+        assert!(result.is_ok());
+
+        let proof = result.unwrap();
+        assert_eq!(proof.root.len(), 32);
+        assert_eq!(proof.leaf.len(), 32);
+
+        // Verify the Merkle root
+        let expected_tree =
+            MerkleTree::<Blake2bHasher>::from_leaves(&[total_hash.try_into().unwrap()]);
+        let expected_root = expected_tree.root().unwrap();
+        let mut blake2b = Blake2b::new();
+        blake2b.update([0]);
+        blake2b.update(expected_root);
+        let expected_leaf: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.leaf, expected_leaf.as_slice().to_vec());
+
+        // Verify the commitment proof
+        let mut blake2b = Blake2b::new();
+        for i in 0..PROTOCOL_NUMBER_OF_ATTESTATION_NODES {
+            blake2b.update([i as u8]);
+            blake2b.update(expected_root);
+        }
+        let expected_commitment: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.root, expected_commitment.as_slice().to_vec());
+    }
+
+    #[test]
+    fn test_valid_total_hash_multiple_chunks() {
+        let total_hash = vec![0u8; 64]; // Two 32-byte chunks
+        let result = compute_committed_stack_proof(total_hash.clone());
+        assert!(result.is_ok());
+
+        let proof = result.unwrap();
+        assert_eq!(proof.root.len(), 32);
+        assert_eq!(proof.leaf.len(), 32);
+
+        // Verify the Merkle root
+        let leaves: Vec<[u8; 32]> = total_hash
+            .chunks(32)
+            .map(|chunk| chunk.try_into().unwrap())
+            .collect();
+        let expected_tree = MerkleTree::<Blake2bHasher>::from_leaves(&leaves);
+        let expected_root = expected_tree.root().unwrap();
+        let mut blake2b = Blake2b::new();
+        blake2b.update([0]);
+        blake2b.update(expected_root);
+        let expected_leaf: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.leaf, expected_leaf.as_slice().to_vec());
+
+        // Verify the commitment proof
+        let mut blake2b = Blake2b::new();
+        for i in 0..PROTOCOL_NUMBER_OF_ATTESTATION_NODES {
+            blake2b.update([i as u8]);
+            blake2b.update(expected_root);
+        }
+        let expected_commitment: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.root, expected_commitment.as_slice().to_vec());
+    }
+
+    #[test]
+    fn test_different_data_same_length() {
+        let total_hash1 = vec![0u8; 64];
+        let total_hash2 = vec![1u8; 64];
+
+        let result1 = compute_committed_stack_proof(total_hash1.clone());
+        let result2 = compute_committed_stack_proof(total_hash2.clone());
+
+        assert!(result1.is_ok());
+        assert!(result2.is_ok());
+
+        let proof1 = result1.unwrap();
+        let proof2 = result2.unwrap();
+
+        assert_ne!(proof1.root, proof2.root);
+        assert_ne!(proof1.leaf, proof2.leaf);
+
+        // Verify the Merkle roots
+        let leaves1: Vec<[u8; 32]> = total_hash1
+            .chunks(32)
+            .map(|chunk| chunk.try_into().unwrap())
+            .collect();
+        let expected_tree1 = MerkleTree::<Blake2bHasher>::from_leaves(&leaves1);
+        let expected_root1 = expected_tree1.root().unwrap();
+        let mut blake2b = Blake2b::new();
+        blake2b.update([0]);
+        blake2b.update(expected_root1);
+        let expected_leaf1: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof1.leaf, expected_leaf1.as_slice().to_vec());
+
+        let leaves2: Vec<[u8; 32]> = total_hash2
+            .chunks(32)
+            .map(|chunk| chunk.try_into().unwrap())
+            .collect();
+        let expected_tree2 = MerkleTree::<Blake2bHasher>::from_leaves(&leaves2);
+        let expected_root2 = expected_tree2.root().unwrap();
+        let mut blake2b = Blake2b::new();
+        blake2b.update([0]);
+        blake2b.update(expected_root2);
+        let expected_leaf2: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof2.leaf, expected_leaf2.as_slice().to_vec());
+    }
+
+    #[test]
+    fn test_large_total_hash() {
+        let total_hash = vec![0u8; 3200]; // 100 chunks of 32 bytes
+        let result = compute_committed_stack_proof(total_hash.clone());
+        assert!(result.is_ok());
+
+        let proof = result.unwrap();
+        assert_eq!(proof.root.len(), 32);
+        assert_eq!(proof.leaf.len(), 32);
+
+        // Verify the Merkle root
+        let leaves: Vec<[u8; 32]> = total_hash
+            .chunks(32)
+            .map(|chunk| chunk.try_into().unwrap())
+            .collect();
+        let expected_tree = MerkleTree::<Blake2bHasher>::from_leaves(&leaves);
+        let expected_root = expected_tree.root().unwrap();
+        let mut blake2b = Blake2b::new();
+        blake2b.update([0]);
+        blake2b.update(expected_root);
+        let expected_leaf: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.leaf, expected_leaf.as_slice().to_vec());
+
+        // Verify the commitment proof
+        let mut blake2b = Blake2b::new();
+        for i in 0..PROTOCOL_NUMBER_OF_ATTESTATION_NODES {
+            blake2b.update([i as u8]);
+            blake2b.update(expected_root);
+        }
+        let expected_commitment: GenericArray<u8, U32> = blake2b.finalize();
+        assert_eq!(proof.root, expected_commitment.as_slice().to_vec());
+    }
 }
