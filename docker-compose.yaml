@@ -1,0 +1,19 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+    env_file:
+      - .env
+    ports:
+      - "${INFERENCE_SERVER_PORT:-8000}:8000"
+    ipc: host
+    command: --model ${MODEL} --max-model-len ${MAX_MODEL_LEN} --tensor-parallel-size ${TENSOR_PARALLEL_SIZE}

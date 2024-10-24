@@ -3,3 +3,5 @@ target/
 .vscode/
 /models/
 config.toml
+
+.env
