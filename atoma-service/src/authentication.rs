@@ -30,9 +30,9 @@ pub enum SignatureScheme {
 impl Display for SignatureScheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SignatureScheme::EcdsaSecp256k1 => write!(f, "ecdsa_secp256k1"),
-            SignatureScheme::EcdsaSecp256r1 => write!(f, "ecdsa_secp256r1"),
-            SignatureScheme::Ed25519 => write!(f, "ed25519"),
+            SignatureScheme::EcdsaSecp256k1 => write!(f, "ECDSA_SECP256K1"),
+            SignatureScheme::EcdsaSecp256r1 => write!(f, "ECDSA_SECP256R1"),
+            SignatureScheme::Ed25519 => write!(f, "ED25519"),
         }
     }
 }
@@ -42,9 +42,9 @@ impl FromStr for SignatureScheme {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "ecdsa_secp256k1" => Ok(SignatureScheme::EcdsaSecp256k1),
-            "ecdsa_secp256r1" => Ok(SignatureScheme::EcdsaSecp256r1),
-            "ed25519" => Ok(SignatureScheme::Ed25519),
+            "ECDSA_SECP256K1" => Ok(SignatureScheme::EcdsaSecp256k1),
+            "ECDSA_SECP256R1" => Ok(SignatureScheme::EcdsaSecp256r1),
+            "ED25519" => Ok(SignatureScheme::Ed25519),
             _ => Err("Invalid signature scheme"),
         }
     }

@@ -22,7 +22,7 @@ use tracing::{error, info, instrument};
 use utoipa::OpenApi;
 
 use crate::{
-    middleware::{signature_verification_middleware, verify_stack_permissions},
+    middleware::{signature_verification_middleware, verify_stack_permissions, RequestMetadata},
     types::{ChatCompletionsRequest, ChatCompletionsResponse},
 };
 
@@ -231,14 +231,15 @@ pub async fn health() -> impl IntoResponse {
     fields(path = CHAT_COMPLETIONS_PATH)
 )]
 pub async fn chat_completions_handler(
-    Extension((stack_small_id, estimated_total_tokens, payload_hash)): Extension<(
-        i64,
-        i64,
-        [u8; 32],
-    )>,
+    Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_tokens,
+        payload_hash,
+    } = request_metadata;
     let response = state
         .inference_service_client
         .post(CHAT_COMPLETIONS_PATH)
@@ -285,7 +286,7 @@ pub async fn chat_completions_handler(
         })?;
 
     let mut blake2b = blake2::Blake2b::new();
-    blake2b.update(&[payload_hash, response_hash].concat());
+    blake2b.update([payload_hash, response_hash].concat());
     let total_hash: GenericArray<u8, U32> = blake2b.finalize();
     let total_hash_bytes: [u8; 32] = total_hash
         .as_slice()

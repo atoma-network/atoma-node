@@ -4,4 +4,6 @@
 pub mod authentication;
 pub mod middleware;
 pub mod server;
+#[cfg(test)]
+mod tests;
 pub mod types;

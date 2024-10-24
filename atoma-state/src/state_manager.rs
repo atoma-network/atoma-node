@@ -31,6 +31,10 @@ impl StateManager {
         Ok(Self { db })
     }
 
+    pub fn into_pool(self) -> SqlitePool {
+        self.db
+    }
+
     /// Acquires a connection from the SQLite connection pool.
     ///
     /// This method is used to obtain a connection from the pool for database operations.
