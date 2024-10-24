@@ -2,6 +2,7 @@
 resolver = "2"
 
 members = [ 
+    "atoma-daemon", 
     "atoma-service",
     "atoma-state",
     "atoma-sui",

@@ -1,0 +1,6 @@
+[package]
+name = "atoma-daemon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
