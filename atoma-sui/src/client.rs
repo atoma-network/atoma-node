@@ -202,6 +202,8 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
+        model_name = %model_name,
+        echelon = %echelon,
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_node_model_subscription_tx(
@@ -305,7 +307,9 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap(),
+        price_per_compute_unit = %price_per_compute_unit,
+        max_num_compute_units = %max_num_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_node_task_subscription_tx(
@@ -509,7 +513,8 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap(),
+        num_claimed_compute_units = %num_claimed_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_try_settle_stack_tx(
@@ -900,6 +905,8 @@ pub(crate) mod utils {
 
     /// The name of the Atoma's contract node badge type
     const DB_NODE_TYPE_NAME: &str = "NodeBadge";
+    /// The page size for querying a user's owned objects
+    const PAGE_SIZE: usize = 100;
 
     /// Retrieves the node badge (ObjectID and small_id) associated with a given address.
     ///
@@ -974,7 +981,7 @@ pub(crate) mod utils {
                         }),
                     }),
                     cursor,
-                    Some(100),
+                    Some(PAGE_SIZE),
                 )
                 .await
             {
