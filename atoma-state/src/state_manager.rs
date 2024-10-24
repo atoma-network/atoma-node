@@ -10,6 +10,7 @@ pub type Result<T> = std::result::Result<T, StateManagerError>;
 ///
 /// It provides an interface to interact with the SQLite database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
+#[derive(Clone)]
 pub struct StateManager {
     /// The SQLite connection pool used for database operations.
     pub db: SqlitePool,
@@ -84,6 +85,42 @@ impl StateManager {
             .fetch_one(&self.db)
             .await?;
         Ok(Task::from_row(&task)?)
+    }
+
+    /// Retrieves all tasks from the database.
+    ///
+    /// This method fetches all task records from the `tasks` table in the database.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Task>>`: A result containing either:
+    ///   - `Ok(Vec<Task>)`: A vector of all `Task` objects in the database.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `Task` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn list_all_tasks(state_manager: &StateManager) -> Result<Vec<Task>, StateManagerError> {
+    ///     state_manager.get_all_tasks().await
+    /// }
+    /// ```
+    #[tracing::instrument(level = "trace", skip_all, fields(function = "get_all_tasks"))]
+    pub async fn get_all_tasks(&self) -> Result<Vec<Task>> {
+        let tasks = sqlx::query("SELECT * FROM tasks")
+            .fetch_all(&self.db)
+            .await?;
+        tasks
+            .into_iter()
+            .map(|task| Task::from_row(&task).map_err(StateManagerError::from))
+            .collect()
     }
 
     /// Inserts a new task into the database.
@@ -236,6 +273,71 @@ impl StateManager {
         tasks
             .into_iter()
             .map(|task| Task::from_row(&task).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves all node subscriptions for a given set of node IDs.
+    ///
+    /// This method fetches all subscription records from the `node_subscriptions` table
+    /// that match any of the provided node IDs.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_ids` - A slice of node IDs to fetch subscriptions for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<NodeSubscription>>`: A result containing either:
+    ///   - `Ok(Vec<NodeSubscription>)`: A vector of `NodeSubscription` objects representing all found subscriptions.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `NodeSubscription` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
+    ///
+    /// async fn get_subscriptions(state_manager: &StateManager) -> Result<Vec<NodeSubscription>, StateManagerError> {
+    ///     let node_ids = vec![1, 2, 3];
+    ///     state_manager.get_all_node_subscriptions(&node_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_ids = ?node_small_ids)
+    )]
+    pub async fn get_all_node_subscriptions(
+        &self,
+        node_small_ids: Vec<i64>,
+    ) -> Result<Vec<NodeSubscription>> {
+        let placeholders: String = (1..=node_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM node_subscriptions WHERE node_small_id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in node_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let subscriptions = query_builder.fetch_all(&self.db).await?;
+
+        subscriptions
+            .into_iter()
+            .map(|subscription| {
+                NodeSubscription::from_row(&subscription).map_err(StateManagerError::from)
+            })
             .collect()
     }
 
@@ -543,6 +645,183 @@ impl StateManager {
             .fetch_one(&self.db)
             .await?;
         Ok(Stack::from_row(&stack)?)
+    }
+
+    /// Retrieves all stacks associated with the given node IDs.
+    ///
+    /// This method fetches all stack records from the database that are associated with any
+    /// of the provided node IDs in the `node_small_ids` array.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_ids` - A slice of node IDs to fetch stacks for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all stacks found.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `Stack` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, Stack};
+    ///
+    /// async fn get_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
+    ///     let node_ids = &[1, 2, 3];
+    ///     state_manager.get_all_stacks(node_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_ids = ?node_small_ids)
+    )]
+    pub async fn get_stacks_by_node_small_ids(&self, node_small_ids: &[i64]) -> Result<Vec<Stack>> {
+        let placeholders: String = (1..=node_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stacks WHERE node_small_id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in node_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let stacks = query_builder.fetch_all(&self.db).await?;
+
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves all stacks associated with a specific node ID.
+    ///
+    /// This method fetches all stack records from the `stacks` table that are associated
+    /// with the provided `node_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique identifier of the node whose stacks should be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects associated with the given node ID.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `Stack` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, Stack};
+    ///
+    /// async fn get_node_stacks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Stack>, StateManagerError> {
+    ///     state_manager.get_stack_by_id(node_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id)
+    )]
+    pub async fn get_stack_by_id(&self, node_small_id: i64) -> Result<Vec<Stack>> {
+        let stacks = sqlx::query("SELECT * FROM stacks WHERE node_small_id = ?")
+            .bind(node_small_id)
+            .fetch_all(&self.db)
+            .await?;
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves stacks that are almost filled beyond a specified percentage threshold.
+    ///
+    /// This method fetches all stacks from the database where:
+    /// 1. The stack belongs to one of the specified nodes (`node_small_ids`)
+    /// 2. The number of already computed units exceeds the specified percentage of total compute units
+    ///    (i.e., `already_computed_units > num_compute_units * percentage`)
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_ids` - A slice of node IDs to check for almost filled stacks.
+    /// * `percentage` - A floating-point value between 0 and 1 representing the threshold percentage.
+    ///                 For example, 0.8 means stacks that are more than 80% filled.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects that meet the filling criteria.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `Stack` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn get_filled_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
+    ///     let node_ids = &[1, 2, 3];  // Check stacks for these nodes
+    ///     let threshold = 0.8;        // Look for stacks that are 80% or more filled
+    ///     
+    ///     state_manager.get_almost_filled_stacks(node_ids, threshold).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_ids = ?node_small_ids, percentage = %percentage)
+    )]
+    pub async fn get_almost_filled_stacks(
+        &self,
+        node_small_ids: &[i64],
+        percentage: f64,
+    ) -> Result<Vec<Stack>> {
+        let placeholders: String = (1..=node_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stacks WHERE node_small_id IN ({}) AND num_compute_units * ? < already_computed_units",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in node_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+        query_builder = query_builder.bind(percentage);
+
+        let stacks = query_builder.fetch_all(&self.db).await?;
+
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
+            .collect()
     }
 
     /// Retrieves and updates an available stack with the specified number of compute units.
@@ -1255,6 +1534,133 @@ impl StateManager {
         disputes
             .into_iter()
             .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves all attestation disputes filed against the specified nodes.
+    ///
+    /// This method fetches all disputes from the `stack_attestation_disputes` table where the
+    /// specified nodes are the original nodes being disputed against (i.e., where they are
+    /// listed as `original_node_id`).
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_ids` - A slice of node IDs to check for disputes against.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
+    ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of all disputes found against the specified nodes.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `StackAttestationDispute` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
+    ///
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
+    ///     let node_ids = &[1, 2, 3]; // IDs of nodes to check for disputes against
+    ///     state_manager.get_against_attestation_disputes(node_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_ids = ?node_small_ids)
+    )]
+    pub async fn get_against_attestation_disputes(
+        &self,
+        node_small_ids: &[i64],
+    ) -> Result<Vec<StackAttestationDispute>> {
+        let placeholders: String = (1..=node_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stack_attestation_disputes WHERE original_node_id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in node_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let stacks = query_builder.fetch_all(&self.db).await?;
+
+        stacks
+            .into_iter()
+            .map(|stack| StackAttestationDispute::from_row(&stack).map_err(StateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves all attestation disputes where the specified nodes are the attestation providers.
+    ///
+    /// This method fetches all disputes from the `stack_attestation_disputes` table where the
+    /// specified nodes are the attestation providers (i.e., where they are listed as `attestation_node_id`).
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_ids` - A slice of node IDs to check for disputes where they are attestation providers.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
+    ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of all disputes where the specified nodes are attestation providers.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `StackAttestationDispute` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
+    ///
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
+    ///     let node_ids = &[1, 2, 3]; // IDs of nodes to check for disputes as attestation providers
+    ///     state_manager.get_own_attestation_disputes(node_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_ids = ?node_small_ids)
+    )]
+    pub async fn get_own_attestation_disputes(
+        &self,
+        node_small_ids: &[i64],
+    ) -> Result<Vec<StackAttestationDispute>> {
+        let placeholders: String = (1..=node_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stack_attestation_disputes WHERE attestation_node_id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in node_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let stacks = query_builder.fetch_all(&self.db).await?;
+
+        stacks
+            .into_iter()
+            .map(|stack| StackAttestationDispute::from_row(&stack).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -2331,6 +2737,108 @@ mod tests {
         // Test updating non-existent stack
         let result = state_manager.update_stack_total_hash(999, new_hash).await;
         assert!(matches!(result, Err(StateManagerError::StackNotFound)));
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_all_node_subscriptions() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Insert a task first (required for foreign key constraint)
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Create multiple node subscriptions
+        let subscriptions = vec![
+            (1, 100, 1000), // node_id: 1, price: 100, max_units: 1000
+            (2, 200, 2000), // node_id: 2, price: 200, max_units: 2000
+            (3, 300, 3000), // node_id: 3, price: 300, max_units: 3000
+        ];
+
+        // Insert the subscriptions
+        for (node_id, price, max_units) in subscriptions {
+            state_manager
+                .subscribe_node_to_task(node_id, 1, price, max_units)
+                .await
+                .unwrap();
+        }
+
+        // Test 1: Get subscriptions for all nodes
+        let all_node_ids = vec![1, 2, 3];
+        let result = state_manager
+            .get_all_node_subscriptions(all_node_ids)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result
+            .iter()
+            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+        assert!(result
+            .iter()
+            .any(|s| s.node_small_id == 2 && s.price_per_compute_unit == 200));
+        assert!(result
+            .iter()
+            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+
+        // Test 2: Get subscriptions for subset of nodes
+        let subset_node_ids = vec![1, 3];
+        let result = state_manager
+            .get_all_node_subscriptions(subset_node_ids)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result
+            .iter()
+            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+        assert!(result
+            .iter()
+            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+        assert!(!result.iter().any(|s| s.node_small_id == 2));
+
+        // Test 3: Get subscriptions for non-existent nodes
+        let non_existent_ids = vec![99, 100];
+        let result = state_manager
+            .get_all_node_subscriptions(non_existent_ids)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Test 4: Get subscriptions with empty input
+        let empty_ids: Vec<i64> = vec![];
+        let result = state_manager
+            .get_all_node_subscriptions(empty_ids)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Test 5: Verify subscription details
+        let single_node_id = vec![1];
+        let result = state_manager
+            .get_all_node_subscriptions(single_node_id)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        let subscription = &result[0];
+        assert_eq!(subscription.node_small_id, 1);
+        assert_eq!(subscription.task_small_id, 1);
+        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.max_num_compute_units, 1000);
+        assert!(subscription.valid);
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }

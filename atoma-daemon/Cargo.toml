@@ -4,3 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+axum = { workspace = true }
+atoma-state = { workspace = true }
+atoma-sui = { workspace = true }
+sui-sdk = { workspace = true }
+tracing = { workspace = true }

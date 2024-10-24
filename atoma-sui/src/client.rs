@@ -32,9 +32,19 @@ const START_ATTESTATION_DISPUTE_METHOD: &str = "start_attestation_dispute";
 /// The Atoma's contract method name for claiming funds
 const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 
+/// A client for interacting with the Atoma network using the Sui blockchain.
+///
+/// The `AtomaSuiClient` struct provides methods to perform various operations
+/// in the Atoma network, such as registering nodes, subscribing to models and tasks,
+/// and managing transactions. It maintains a wallet context and optionally stores
+/// a node badge representing the client's node registration status.
 pub struct AtomaSuiClient {
+    /// Configuration settings for the Atoma client, including paths and timeouts.
     config: AtomaSuiConfig,
+    /// The wallet context used for managing blockchain interactions.
     wallet_ctx: WalletContext,
+    /// An optional tuple containing the ObjectID and small ID of the node badge,
+    /// which represents the node's registration in the Atoma network.
     node_badge: Option<(ObjectID, u64)>,
 }
 

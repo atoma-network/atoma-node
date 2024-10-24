@@ -28,7 +28,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
-serial_test = "3.1.1"
 
 [dev-dependencies]
 mockall = { workspace = true }
