@@ -6,7 +6,7 @@ use atoma_sui::client::AtomaSuiClient;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
@@ -67,6 +67,11 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         )
         .route("/claimed_stacks", get(get_all_claimed_stacks))
         .route("/claimed_stacks/:id", get(get_node_claimed_stacks))
+        .route("/register", post(submit_node_registration_tx))
+        .route("/model_subscribe", post(submit_node_model_subscription_tx))
+        .route("/task_subscribe", post(submit_node_task_subscription_tx))
+        .route("/task_unsubscribe", post(submit_node_task_unsubscription_tx))
+        .route("/try_settle_stack", post(submit_node_try_settle_stack_tx))
         .with_state(daemon_state)
 }
 

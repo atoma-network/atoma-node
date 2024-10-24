@@ -12,6 +12,14 @@ use tracing::{error, instrument};
 /// Number of attestation nodes in the Atoma Network protocol
 const PROTOCOL_NUMBER_OF_ATTESTATION_NODES: u64 = 1;
 
+/// A hasher implementation using the Blake2b algorithm.
+///
+/// This struct implements the `Hasher` trait, allowing it to be used
+/// for creating Merkle trees with the `rs_merkle` crate. The Blake2b
+/// algorithm is a cryptographic hash function that provides a high
+/// level of security and is suitable for use in various applications
+/// requiring data integrity and authenticity.
+
 #[derive(Clone)]
 pub struct Blake2bHasher;
 
