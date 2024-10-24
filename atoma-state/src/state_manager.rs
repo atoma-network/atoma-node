@@ -690,7 +690,7 @@ impl StateManager {
             .join(",");
 
         let query = format!(
-            "SELECT * FROM stacks WHERE node_small_id IN ({})",
+            "SELECT * FROM stacks WHERE selected_node_id IN ({})",
             placeholders
         );
 
@@ -743,7 +743,7 @@ impl StateManager {
         fields(node_small_id = %node_small_id)
     )]
     pub async fn get_stack_by_id(&self, node_small_id: i64) -> Result<Vec<Stack>> {
-        let stacks = sqlx::query("SELECT * FROM stacks WHERE node_small_id = ?")
+        let stacks = sqlx::query("SELECT * FROM stacks WHERE selected_node_id = ?")
             .bind(node_small_id)
             .fetch_all(&self.db)
             .await?;
@@ -800,13 +800,10 @@ impl StateManager {
         node_small_ids: &[i64],
         percentage: f64,
     ) -> Result<Vec<Stack>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
+        let placeholders: String = vec!["?"; node_small_ids.len()].join(",");
 
         let query = format!(
-            "SELECT * FROM stacks WHERE node_small_id IN ({}) AND num_compute_units * ? < already_computed_units",
+            "SELECT * FROM stacks WHERE selected_node_id IN ({}) AND (CAST(already_computed_units AS FLOAT) / CAST(num_compute_units AS FLOAT)) > ?",
             placeholders
         );
 
@@ -2839,6 +2836,811 @@ mod tests {
         assert_eq!(subscription.price_per_compute_unit, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
         assert!(subscription.valid);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_stacks_by_node_small_ids_comprehensive() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert a task first (required for foreign key constraint)
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Setup: Subscribe nodes to the task
+        for node_id in 1..=3 {
+            state_manager
+                .subscribe_node_to_task(node_id, 1, 100, 1000)
+                .await
+                .unwrap();
+        }
+
+        // Test 1: Empty database - no stacks
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[1, 2])
+            .await
+            .unwrap();
+        assert!(result.is_empty(), "Expected empty result for no stacks");
+
+        // Setup: Create multiple stacks for different nodes
+        let stacks = vec![
+            Stack {
+                owner_address: "owner1".to_string(),
+                stack_small_id: 1,
+                stack_id: "stack1".to_string(),
+                task_small_id: 1,
+                selected_node_id: 1,
+                num_compute_units: 100,
+                price: 1000,
+                already_computed_units: 0,
+                in_settle_period: false,
+                total_hash: vec![1, 2, 3],
+                num_total_messages: 1,
+            },
+            Stack {
+                owner_address: "owner2".to_string(),
+                stack_small_id: 2,
+                stack_id: "stack2".to_string(),
+                task_small_id: 1,
+                selected_node_id: 1,
+                num_compute_units: 200,
+                price: 2000,
+                already_computed_units: 50,
+                in_settle_period: true,
+                total_hash: vec![4, 5, 6],
+                num_total_messages: 2,
+            },
+            Stack {
+                owner_address: "owner3".to_string(),
+                stack_small_id: 3,
+                stack_id: "stack3".to_string(),
+                task_small_id: 1,
+                selected_node_id: 2,
+                num_compute_units: 300,
+                price: 3000,
+                already_computed_units: 100,
+                in_settle_period: false,
+                total_hash: vec![7, 8, 9],
+                num_total_messages: 3,
+            },
+        ];
+
+        // Insert all stacks
+        for stack in stacks {
+            state_manager.insert_new_stack(stack).await.unwrap();
+        }
+
+        // Test 2: Get stacks for single node with multiple stacks
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[1])
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2, "Node 1 should have 2 stacks");
+        assert!(
+            result.iter().all(|s| s.selected_node_id == 1),
+            "All stacks should belong to node 1"
+        );
+        assert!(
+            result
+                .iter()
+                .any(|s| s.stack_small_id == 1 && s.price == 1000),
+            "Should find stack 1"
+        );
+        assert!(
+            result
+                .iter()
+                .any(|s| s.stack_small_id == 2 && s.price == 2000),
+            "Should find stack 2"
+        );
+
+        // Test 3: Get stacks for multiple nodes
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[1, 2])
+            .await
+            .unwrap();
+        assert_eq!(
+            result.len(),
+            3,
+            "Should find 3 total stacks for nodes 1 and 2"
+        );
+        assert_eq!(
+            result.iter().filter(|s| s.selected_node_id == 1).count(),
+            2,
+            "Node 1 should have 2 stacks"
+        );
+        assert_eq!(
+            result.iter().filter(|s| s.selected_node_id == 2).count(),
+            1,
+            "Node 2 should have 1 stack"
+        );
+
+        // Test 4: Get stacks with mix of existing and non-existing nodes
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[1, 99])
+            .await
+            .unwrap();
+        assert_eq!(
+            result.len(),
+            2,
+            "Should only find stacks for existing node 1"
+        );
+        assert!(
+            result.iter().all(|s| s.selected_node_id == 1),
+            "All stacks should belong to node 1"
+        );
+
+        // Test 5: Get stacks with all non-existing nodes
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[98, 99])
+            .await
+            .unwrap();
+        assert!(
+            result.is_empty(),
+            "Should find no stacks for non-existing nodes"
+        );
+
+        // Test 6: Get stacks with empty input
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[])
+            .await
+            .unwrap();
+        assert!(
+            result.is_empty(),
+            "Should return empty result for empty input"
+        );
+
+        // Test 7: Verify stack details are correct
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[2])
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1, "Node 2 should have 1 stack");
+        let stack = &result[0];
+        assert_eq!(stack.stack_small_id, 3);
+        assert_eq!(stack.owner_address, "owner3");
+        assert_eq!(stack.stack_id, "stack3");
+        assert_eq!(stack.task_small_id, 1);
+        assert_eq!(stack.selected_node_id, 2);
+        assert_eq!(stack.num_compute_units, 300);
+        assert_eq!(stack.price, 3000);
+        assert_eq!(stack.already_computed_units, 100);
+        assert!(!stack.in_settle_period);
+        assert_eq!(stack.total_hash, vec![7, 8, 9]);
+        assert_eq!(stack.num_total_messages, 3);
+
+        // Test 8: Verify stacks with different states (in_settle_period)
+        let result = state_manager
+            .get_stacks_by_node_small_ids(&[1])
+            .await
+            .unwrap();
+        assert!(
+            result.iter().any(|s| s.in_settle_period),
+            "Should find stack in settle period"
+        );
+        assert!(
+            result.iter().any(|s| !s.in_settle_period),
+            "Should find stack not in settle period"
+        );
+
+        // Cleanup
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_stack_by_id() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // First create a task and subscription since they're required foreign keys
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Create node subscription
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Create test stacks
+        let stack1 = Stack {
+            stack_small_id: 1,
+            owner_address: "owner1".to_string(),
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+
+        let stack2 = Stack {
+            stack_small_id: 2,
+            owner_address: "owner2".to_string(),
+            stack_id: "stack2".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 200,
+            price: 2000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+
+        // Insert test stacks
+        state_manager
+            .insert_new_stack(stack1.clone())
+            .await
+            .unwrap();
+        state_manager
+            .insert_new_stack(stack2.clone())
+            .await
+            .unwrap();
+
+        // Test retrieving stacks for node_id 1
+        let retrieved_stacks = state_manager.get_stack_by_id(1).await.unwrap();
+        assert_eq!(retrieved_stacks.len(), 2);
+        assert_eq!(retrieved_stacks[0], stack1);
+        assert_eq!(retrieved_stacks[1], stack2);
+
+        // Test retrieving stacks for non-existent node_id
+        let empty_stacks = state_manager.get_stack_by_id(999).await.unwrap();
+        assert!(empty_stacks.is_empty());
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_stack_by_id_with_multiple_nodes() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Create task
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Create node subscriptions for two different nodes
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        state_manager
+            .subscribe_node_to_task(2, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Create stacks for different nodes
+        let stack1 = Stack {
+            stack_small_id: 1,
+            owner_address: "owner1".to_string(),
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+
+        let stack2 = Stack {
+            stack_small_id: 2,
+            owner_address: "owner2".to_string(),
+            stack_id: "stack2".to_string(),
+            task_small_id: 1,
+            selected_node_id: 2,
+            num_compute_units: 200,
+            price: 2000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+
+        state_manager
+            .insert_new_stack(stack1.clone())
+            .await
+            .unwrap();
+        state_manager
+            .insert_new_stack(stack2.clone())
+            .await
+            .unwrap();
+
+        // Test retrieving stacks for each node
+        let node1_stacks = state_manager.get_stack_by_id(1).await.unwrap();
+        assert_eq!(node1_stacks.len(), 1);
+        assert_eq!(node1_stacks[0], stack1);
+
+        let node2_stacks = state_manager.get_stack_by_id(2).await.unwrap();
+        assert_eq!(node2_stacks.len(), 1);
+        assert_eq!(node2_stacks[0], stack2);
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_almost_filled_stacks() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Create a task and node subscription first
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Subscribe nodes to the task
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        state_manager
+            .subscribe_node_to_task(2, 1, 100, 1000)
+            .await
+            .unwrap();
+        state_manager
+            .subscribe_node_to_task(3, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Insert test stacks with various fill levels
+        let test_stacks = vec![
+            // Stack 90% filled for node 1
+            Stack {
+                stack_small_id: 1,
+                owner_address: "owner1".to_string(),
+                stack_id: "stack1".to_string(),
+                task_small_id: 1,
+                selected_node_id: 1,
+                num_compute_units: 100,
+                already_computed_units: 90,
+                price: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+            },
+            // Stack 50% filled for node 1
+            Stack {
+                stack_small_id: 2,
+                owner_address: "owner2".to_string(),
+                stack_id: "stack2".to_string(),
+                task_small_id: 1,
+                selected_node_id: 1,
+                num_compute_units: 100,
+                already_computed_units: 50,
+                price: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+            },
+            // Stack 95% filled for node 2
+            Stack {
+                stack_small_id: 3,
+                owner_address: "owner3".to_string(),
+                stack_id: "stack3".to_string(),
+                task_small_id: 1,
+                selected_node_id: 2,
+                num_compute_units: 100,
+                already_computed_units: 95,
+                price: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+            },
+            // Stack 100% filled for node 3
+            Stack {
+                stack_small_id: 4,
+                owner_address: "owner4".to_string(),
+                stack_id: "stack4".to_string(),
+                task_small_id: 1,
+                selected_node_id: 3,
+                num_compute_units: 100,
+                already_computed_units: 100,
+                price: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+            },
+        ];
+
+        for stack in test_stacks {
+            state_manager.insert_new_stack(stack).await.unwrap();
+        }
+
+        // Test case 1: Get stacks that are more than 80% filled
+        let filled_stacks = state_manager
+            .get_almost_filled_stacks(&[1, 2, 3], 0.8)
+            .await
+            .unwrap();
+        assert_eq!(filled_stacks.len(), 3);
+        assert!(filled_stacks
+            .iter()
+            .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));
+        assert!(filled_stacks
+            .iter()
+            .all(|s| { vec![1, 2, 3].contains(&s.selected_node_id) }));
+
+        // Test case 2: Get stacks that are more than 90% filled
+        let very_filled_stacks = state_manager
+            .get_almost_filled_stacks(&[1, 2, 3], 0.9)
+            .await
+            .unwrap();
+        assert_eq!(very_filled_stacks.len(), 2);
+        assert!(very_filled_stacks
+            .iter()
+            .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.9 }));
+        assert!(very_filled_stacks
+            .iter()
+            .all(|s| { vec![2, 3].contains(&s.selected_node_id) }));
+
+        // Test case 3: Check specific node
+        let node1_stacks = state_manager
+            .get_almost_filled_stacks(&[1], 0.8)
+            .await
+            .unwrap();
+        assert_eq!(node1_stacks.len(), 1);
+        assert_eq!(node1_stacks[0].selected_node_id, 1);
+
+        // Test case 4: Check with threshold that matches no stacks
+        let no_stacks = state_manager
+            .get_almost_filled_stacks(&[1, 2, 3], 1.1)
+            .await
+            .unwrap();
+        assert_eq!(no_stacks.len(), 0);
+
+        // Test case 5: Check with empty node list
+        let empty_nodes = state_manager
+            .get_almost_filled_stacks(&[], 0.8)
+            .await
+            .unwrap();
+        assert_eq!(empty_nodes.len(), 0);
+
+        // Test case 6: Check multiple specific nodes
+        let specific_nodes_stacks = state_manager
+            .get_almost_filled_stacks(&[1, 2], 0.8)
+            .await
+            .unwrap();
+        assert_eq!(specific_nodes_stacks.len(), 2);
+        assert!(specific_nodes_stacks
+            .iter()
+            .all(|s| vec![1, 2].contains(&s.selected_node_id)));
+        assert!(specific_nodes_stacks
+            .iter()
+            .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));
+
+        // Cleanup
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_almost_filled_stacks_edge_cases() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Create a task and node subscription
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager.subscribe_node_to_task(1, 1, 100, 1000).await.unwrap();
+
+        // Test case 1: Stack with 0 compute units
+        let zero_stack = Stack {
+            stack_small_id: 1,
+            owner_address: "owner1".to_string(),
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 0,
+            already_computed_units: 0,
+            price: 1000,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(zero_stack).await.unwrap();
+
+        // Test case 2: Stack with very large numbers
+        let large_stack = Stack {
+            stack_small_id: 2,
+            owner_address: "owner2".to_string(),
+            stack_id: "stack2".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: i64::MAX,
+            already_computed_units: i64::MAX / 2 + i64::MAX / 4,
+            price: 1000,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(large_stack).await.unwrap();
+
+        // Test with various thresholds
+        let test_cases = vec![
+            (0.0, 1),   // Should return both stacks
+            (0.5, 1),   // Should return only the large stack
+            (0.99, 0),  // Should return no stacks
+        ];
+
+        for (threshold, expected_count) in test_cases {
+            let stacks = state_manager
+                .get_almost_filled_stacks(&[1], threshold)
+                .await
+                .unwrap();
+            assert_eq!(
+                stacks.len(),
+                expected_count,
+                "Failed for threshold {}: expected {} stacks, got {}",
+                threshold,
+                expected_count,
+                stacks.len()
+            );
+        }
+
+        // Cleanup
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_against_attestation_disputes() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert task, subscription, stack, and disputes
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Insert disputes
+        let dispute1 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![1, 2, 3],
+            attestation_node_id: 2,
+            original_node_id: 1,
+            original_commitment: vec![4, 5, 6],
+        };
+        let dispute2 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![7, 8, 9],
+            attestation_node_id: 3,
+            original_node_id: 1,
+            original_commitment: vec![10, 11, 12],
+        };
+        state_manager
+            .insert_stack_attestation_dispute(dispute1.clone())
+            .await
+            .unwrap();
+        state_manager
+            .insert_stack_attestation_dispute(dispute2.clone())
+            .await
+            .unwrap();
+
+        // Test: Retrieve disputes against original_node_id = 1
+        let node_ids = &[1];
+        let disputes = state_manager
+            .get_against_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert_eq!(disputes.len(), 2);
+        assert!(disputes.contains(&dispute1));
+        assert!(disputes.contains(&dispute2));
+
+        // Test: Retrieve disputes against a non-existent node
+        let node_ids = &[999];
+        let disputes = state_manager
+            .get_against_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert!(disputes.is_empty());
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_own_attestation_disputes() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Insert task, subscription, stack, and disputes
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+        let stack = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(stack).await.unwrap();
+
+        // Insert disputes
+        let dispute1 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![1, 2, 3],
+            attestation_node_id: 2,
+            original_node_id: 1,
+            original_commitment: vec![4, 5, 6],
+        };
+        let dispute2 = StackAttestationDispute {
+            stack_small_id: 1,
+            attestation_commitment: vec![7, 8, 9],
+            attestation_node_id: 3,
+            original_node_id: 1,
+            original_commitment: vec![10, 11, 12],
+        };
+        state_manager
+            .insert_stack_attestation_dispute(dispute1.clone())
+            .await
+            .unwrap();
+        state_manager
+            .insert_stack_attestation_dispute(dispute2.clone())
+            .await
+            .unwrap();
+
+        // Test: Retrieve disputes for attestation_node_id = 2
+        let node_ids = &[2];
+        let disputes = state_manager
+            .get_own_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert_eq!(disputes.len(), 1);
+        assert_eq!(disputes[0], dispute1);
+
+        // Test: Retrieve disputes for attestation_node_id = 3
+        let node_ids = &[3];
+        let disputes = state_manager
+            .get_own_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert_eq!(disputes.len(), 1);
+        assert_eq!(disputes[0], dispute2);
+
+        // Test: Retrieve disputes for multiple attestation_node_ids
+        let node_ids = &[2, 3];
+        let disputes = state_manager
+            .get_own_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert_eq!(disputes.len(), 2);
+        assert!(disputes.contains(&dispute1));
+        assert!(disputes.contains(&dispute2));
+
+        // Test: Retrieve disputes for a non-existent attestation_node_id
+        let node_ids = &[999];
+        let disputes = state_manager
+            .get_own_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert!(disputes.is_empty());
+
+        // Test: Retrieve disputes with an empty node list
+        let node_ids: &[i64] = &[];
+        let disputes = state_manager
+            .get_own_attestation_disputes(node_ids)
+            .await
+            .unwrap();
+        assert!(disputes.is_empty());
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
