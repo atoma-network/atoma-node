@@ -1225,6 +1225,43 @@ impl StateManager {
         Ok(())
     }
 
+    /// Updates the total hash and increments the total number of messages for a stack.
+    ///
+    /// This method updates the `total_hash` field in the `stacks` table by appending a new hash
+    /// to the existing hash and increments the `num_total_messages` field by 1 for the specified `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack to update.
+    /// * `new_hash` - A 32-byte array representing the new hash to append to the existing total hash.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database transaction fails to begin, execute, or commit.
+    /// - The specified stack is not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn update_hash(state_manager: &StateManager) -> Result<(), StateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let new_hash = [0u8; 32]; // Example hash
+    ///
+    ///     state_manager.update_stack_total_hash(stack_small_id, new_hash).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id, new_hash = ?new_hash)
+    )]
     pub async fn update_stack_total_hash(
         &self,
         stack_small_id: i64,
@@ -1256,6 +1293,49 @@ impl StateManager {
 
         transaction.commit().await?;
         Ok(())
+    }
+
+    /// Retrieves the total hash for a specific stack.
+    ///
+    /// This method fetches the `total_hash` field from the `stacks` table for the given `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack whose total hash is to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<u8>>`: A result containing either:
+    ///   - `Ok(Vec<u8>)`: A byte vector representing the total hash of the stack.
+    ///   - `Err(StateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn get_total_hash(state_manager: &StateManager, stack_small_id: i64) -> Result<Vec<u8>, StateManagerError> {
+    ///     state_manager.get_stack_total_hash(stack_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id)
+    )]
+    pub async fn get_stack_total_hash(&self, stack_small_id: i64) -> Result<Vec<u8>> {
+        let total_hash = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT total_hash FROM stacks WHERE stack_small_id = ?",
+        )
+        .bind(stack_small_id)
+        .fetch_one(&self.db)
+        .await?;
+        Ok(total_hash)
     }
 
     /// Updates a stack settlement ticket with attestation commitments.
@@ -3373,7 +3453,7 @@ mod tests {
             .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));
         assert!(filled_stacks
             .iter()
-            .all(|s| { vec![1, 2, 3].contains(&s.selected_node_id) }));
+            .all(|s| { [1, 2, 3].contains(&s.selected_node_id) }));
 
         // Test case 2: Get stacks that are more than 90% filled
         let very_filled_stacks = state_manager
@@ -3386,7 +3466,7 @@ mod tests {
             .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.9 }));
         assert!(very_filled_stacks
             .iter()
-            .all(|s| { vec![2, 3].contains(&s.selected_node_id) }));
+            .all(|s| { [2, 3].contains(&s.selected_node_id) }));
 
         // Test case 3: Check specific node
         let node1_stacks = state_manager
@@ -3418,7 +3498,7 @@ mod tests {
         assert_eq!(specific_nodes_stacks.len(), 2);
         assert!(specific_nodes_stacks
             .iter()
-            .all(|s| vec![1, 2].contains(&s.selected_node_id)));
+            .all(|s| [1, 2].contains(&s.selected_node_id)));
         assert!(specific_nodes_stacks
             .iter()
             .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));

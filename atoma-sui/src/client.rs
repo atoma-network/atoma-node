@@ -120,7 +120,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let tx = client
@@ -158,7 +158,7 @@ impl AtomaSuiClient {
         .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?;
         self.node_badge = Some(created_object);
 
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to subscribe a node to a specific model in the Atoma network.
@@ -219,12 +219,12 @@ impl AtomaSuiClient {
     pub async fn submit_node_model_subscription_tx(
         &mut self,
         model_name: &str,
-        echelon: u8,
+        echelon: u64,
         node_badge_id: Option<ObjectID>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
@@ -261,7 +261,7 @@ impl AtomaSuiClient {
             response.digest
         );
 
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to subscribe a node to a specific task in the Atoma network.
@@ -331,7 +331,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_small_id = node_small_id.unwrap_or(
@@ -369,7 +369,7 @@ impl AtomaSuiClient {
             response.digest
         );
 
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to unsubscribe a node from a specific task in the Atoma network.
@@ -428,7 +428,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_small_id = node_small_id.unwrap_or(
@@ -463,7 +463,7 @@ impl AtomaSuiClient {
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
             response.digest
         );
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to try to settle a stack in the Atoma network.
@@ -537,7 +537,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_small_id = node_small_id.unwrap_or(
@@ -577,7 +577,7 @@ impl AtomaSuiClient {
             response.digest
         );
 
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to attest to a stack settlement in the Atoma network.

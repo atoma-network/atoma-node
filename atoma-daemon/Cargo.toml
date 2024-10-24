@@ -7,5 +7,11 @@ edition.workspace = true
 axum = { workspace = true }
 atoma-state = { workspace = true }
 atoma-sui = { workspace = true }
+blake2 = { workspace = true }
+rs_merkle = { workspace = true }
+serde = { workspace = true }
 sui-sdk = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
+utoipa = { workspace = true, features = ["axum_extras"] }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
