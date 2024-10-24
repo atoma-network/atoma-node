@@ -905,7 +905,7 @@ pub(crate) mod utils {
     /// The name of the Atoma's contract node badge type
     const DB_NODE_TYPE_NAME: &str = "NodeBadge";
     /// The page size for querying a user's owned objects
-    const PAGE_SIZE: u64 = 100;
+    const PAGE_SIZE: usize = 100;
 
     /// Retrieves the node badge (ObjectID and small_id) associated with a given address.
     ///
@@ -980,7 +980,7 @@ pub(crate) mod utils {
                         }),
                     }),
                     cursor,
-                    Some(),
+                    Some(PAGE_SIZE),
                 )
                 .await
             {
