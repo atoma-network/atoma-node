@@ -19,7 +19,6 @@ const PROTOCOL_NUMBER_OF_ATTESTATION_NODES: u64 = 1;
 /// algorithm is a cryptographic hash function that provides a high
 /// level of security and is suitable for use in various applications
 /// requiring data integrity and authenticity.
-
 #[derive(Clone)]
 pub struct Blake2bHasher;
 
