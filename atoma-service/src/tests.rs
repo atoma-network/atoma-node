@@ -27,6 +27,8 @@ mod middleware {
         server::AppState,
     };
 
+    const TEST_MESSAGE: &str = "Test message";
+
     fn setup_keystore() -> FileBasedKeystore {
         let temp_dir = tempdir().unwrap();
         let keystore_path = temp_dir.path().join("keystore");
@@ -40,6 +42,26 @@ mod middleware {
             )
             .unwrap();
         keystore
+    }
+
+    async fn get_signature() -> String {
+        let keystore = setup_keystore();
+        let address = keystore.addresses()[0];
+        let message = TEST_MESSAGE;
+        let body_message = Body::from(message);
+
+        // Create signature
+        let mut blake2b = blake2::Blake2b::new();
+        let body_message_bytes = axum::body::to_bytes(body_message, 1024)
+            .await
+            .expect("Failed to convert body to bytes");
+        blake2b.update(body_message_bytes);
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+
+        let signature = keystore
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        BASE64_STANDARD.encode(signature.as_ref())
     }
 
     async fn load_tokenizer() -> Tokenizer {
@@ -448,6 +470,168 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_signature_verification_success() {
+        let signature = get_signature().await;
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", signature)
+            .body(Body::from(TEST_MESSAGE))
+            .unwrap();
+
+        async fn check_metadata_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
+            let metadata = req
+                .extensions()
+                .get::<RequestMetadata>()
+                .expect("Metadata should be set");
+            assert_ne!(metadata.payload_hash, [0u8; 32]); // Hash should be set
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new()
+            .route("/", post(check_metadata_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_missing_header() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            // Intentionally omitting X-Signature header
+            .body(Body::from("Test message"))
+            .unwrap();
+
+        let mut app = Router::new()
+            .route("/", post(test_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_invalid_base64() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", "not-valid-base64!")
+            .body(Body::from("Test message"))
+            .unwrap();
+
+        let mut app = Router::new()
+            .route("/", post(test_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_invalid_signature() {
+        let keystore = setup_keystore();
+        let address = keystore.addresses()[0];
+        let message = "Test message";
+
+        // Sign a different message than what we'll send
+        let different_message = "Different message";
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update(different_message.as_bytes());
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+
+        let signature = keystore
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        let signature_b64 = BASE64_STANDARD.encode(signature.as_ref());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", signature_b64)
+            .body(Body::from(message)) // Send original message with signature for different message
+            .unwrap();
+
+        let mut app = Router::new()
+            .route("/", post(test_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_empty_body() {
+        let keystore = setup_keystore();
+        let address = keystore.addresses()[0];
+
+        // Sign empty message
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update([]);
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+
+        let signature = keystore
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        let signature_b64 = BASE64_STANDARD.encode(signature.as_ref());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", signature_b64)
+            .body(Body::empty())
+            .unwrap();
+
+        let mut app = Router::new()
+            .route("/", post(test_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_large_body() {
+        let keystore = setup_keystore();
+        let address = keystore.addresses()[0];
+
+        // Create a body larger than MAX_BODY_SIZE
+        let large_body = "x".repeat(2 * 1024 * 1024); // 2MB
+
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update(large_body.as_bytes());
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+
+        let signature = keystore
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        let signature_b64 = BASE64_STANDARD.encode(signature.as_ref());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", signature_b64)
+            .body(Body::from(large_body))
+            .unwrap();
+
+        let mut app = Router::new()
+            .route("/", post(test_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_preserves_body() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
         let message = "Test message";
@@ -458,7 +642,7 @@ mod middleware {
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
             .await
             .expect("Failed to convert body to bytes");
-        blake2b.update(body_message_bytes);
+        blake2b.update(&body_message_bytes);
         let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
 
         let signature = keystore
@@ -473,17 +657,87 @@ mod middleware {
             .body(Body::from(message))
             .unwrap();
 
-        async fn check_metadata_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
-            let metadata = req
-                .extensions()
-                .get::<RequestMetadata>()
-                .expect("Metadata should be set");
-            assert_ne!(metadata.payload_hash, [0u8; 32]); // Hash should be set
+        // Custom handler that verifies the body content
+        async fn verify_body_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
+            let body_bytes = axum::body::to_bytes(req.into_body(), 1024)
+                .await
+                .expect("Failed to read body");
+            assert_eq!(body_bytes, "Test message");
             Ok(Response::new(Body::empty()))
         }
 
         let mut app = Router::new()
-            .route("/", post(check_metadata_handler))
+            .route("/", post(verify_body_handler))
+            .layer(axum::middleware::from_fn(signature_verification_middleware));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_signature_verification_updates_extensions() {
+        let keystore = setup_keystore();
+        let address = keystore.addresses()[0];
+        let message = "Test message";
+        let body_message = Body::from(message);
+
+        // Create signature
+        let mut blake2b = blake2::Blake2b::new();
+        let body_message_bytes = axum::body::to_bytes(body_message, 1024)
+            .await
+            .expect("Failed to convert body to bytes");
+        blake2b.update(&body_message_bytes);
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+
+        let signature = keystore
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        let signature_b64 = BASE64_STANDARD.encode(signature.as_ref());
+
+        // Create initial RequestMetadata with some existing values
+        let initial_metadata = RequestMetadata {
+            stack_small_id: 42,
+            estimated_total_tokens: 100,
+            payload_hash: [0u8; 32],
+        };
+
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Signature", signature_b64)
+            .body(Body::from(message))
+            .unwrap();
+
+        // Insert initial metadata
+        req.extensions_mut().insert(initial_metadata);
+
+        // Custom handler that verifies the extensions
+        async fn verify_extensions_handler(
+            req: Request<Body>,
+        ) -> Result<Response<Body>, StatusCode> {
+            let metadata = req
+                .extensions()
+                .get::<RequestMetadata>()
+                .expect("Metadata should be set");
+
+            // Verify that the payload hash was updated but other fields preserved
+            assert_eq!(metadata.stack_small_id, 42);
+            assert_eq!(metadata.estimated_total_tokens, 100);
+            assert_ne!(metadata.payload_hash, [0u8; 32]);
+            assert_eq!(
+                metadata.payload_hash,
+                [
+                    11, 151, 188, 173, 230, 19, 73, 18, 62, 134, 60, 28, 15, 134, 77, 75, 122, 182,
+                    183, 33, 61, 174, 218, 225, 71, 33, 234, 229, 168, 253, 243, 109
+                ]
+            );
+
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new()
+            .route("/", post(verify_extensions_handler))
             .layer(axum::middleware::from_fn(signature_verification_middleware));
 
         let response = app.call(req).await.expect("Failed to get response");
