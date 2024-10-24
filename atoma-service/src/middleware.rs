@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::{authentication::SignatureScheme, server::AppState};
+use crate::server::AppState;
 use atoma_state::StateManager;
 use axum::{
     body::Body,
@@ -10,8 +10,9 @@ use axum::{
     response::Response,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
+use blake2::{digest::generic_array::GenericArray, Blake2b, Digest};
+use p256::U32;
 use serde_json::Value;
-use sha2::Digest;
 use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
@@ -19,6 +20,32 @@ const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
 const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
 const MESSAGES: &str = "messages";
 const MODEL: &str = "model";
+
+/// Metadata extracted from the request
+#[derive(Clone, Debug, Default)]
+pub struct RequestMetadata {
+    /// The stack small ID
+    pub stack_small_id: i64,
+    /// The estimated total number of tokens
+    pub estimated_total_tokens: i64,
+    /// The payload hash
+    pub payload_hash: [u8; 32],
+}
+
+impl RequestMetadata {
+    /// Create a new `RequestMetadata` with the given stack info
+    pub fn with_stack_info(mut self, stack_small_id: i64, estimated_total_tokens: i64) -> Self {
+        self.stack_small_id = stack_small_id;
+        self.estimated_total_tokens = estimated_total_tokens;
+        self
+    }
+
+    /// Create a new `RequestMetadata` with the given payload hash
+    pub fn with_payload_hash(mut self, payload_hash: [u8; 32]) -> Self {
+        self.payload_hash = payload_hash;
+        self
+    }
+}
 
 /// Middleware for verifying the signature of incoming requests.
 ///
@@ -46,6 +73,10 @@ const MODEL: &str = "model";
 /// - `X-PublicKey`: The public key used for verification, base64 encoded.
 /// - `X-Scheme`: The signature scheme used (e.g., "ed25519").
 ///
+/// # Extensions
+/// This middleware adds or updates a `RequestMetadata` extension to the request containing:
+/// - `payload_hash`: The 32-byte Blake2b hash of the request body
+///
 /// # Errors
 /// Returns a `BAD_REQUEST` status code if:
 /// - Required headers are missing or cannot be parsed.
@@ -63,56 +94,42 @@ pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let (req_parts, req_body) = req.into_parts();
-    let signature = req_parts.headers.get("X-Signature").ok_or_else(|| {
-        error!("Signature header not found");
-        StatusCode::BAD_REQUEST
-    })?;
-    let public_key = req_parts.headers.get("X-PublicKey").ok_or_else(|| {
-        error!("Public key header not found");
-        StatusCode::BAD_REQUEST
-    })?;
-    let signature_scheme = req_parts.headers.get("X-Scheme").ok_or_else(|| {
-        error!("Signature scheme header not found");
-        StatusCode::BAD_REQUEST
-    })?;
-    let signature_scheme_str = signature_scheme
+    let (mut req_parts, req_body) = req.into_parts();
+    let base64_signature = req_parts
+        .headers
+        .get("X-Signature")
+        .ok_or_else(|| {
+            error!("Signature header not found");
+            StatusCode::BAD_REQUEST
+        })?
         .to_str()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    let public_key_bytes = Engine::decode(&BASE64_STANDARD, public_key).map_err(|_| {
-        error!("Failed to decode public key");
-        StatusCode::BAD_REQUEST
-    })?;
-
-    let signature_bytes = Engine::decode(&BASE64_STANDARD, signature).map_err(|_| {
-        error!("Failed to decode signature");
-        StatusCode::BAD_REQUEST
-    })?;
-    let signature_scheme = SignatureScheme::from_str(signature_scheme_str).map_err(|_| {
-        error!("Failed to parse signature scheme");
-        StatusCode::BAD_REQUEST
-    })?;
-
+        .map_err(|e| {
+            error!("Failed to exract base64 signature encoding, with error: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
         .map_err(|_| {
             error!("Failed to convert body to bytes");
             StatusCode::BAD_REQUEST
         })?;
-    let body_sha256_hash = sha2::Sha256::digest(&body_bytes);
-    let body_sha256_hash_bytes = body_sha256_hash.as_slice();
+    let mut blake2b_hash = Blake2b::new();
+    blake2b_hash.update(&body_bytes);
+    let body_blake2b_hash: GenericArray<u8, U32> = blake2b_hash.finalize();
+    let body_blake2b_hash_bytes: [u8; 32] = body_blake2b_hash
+        .as_slice()
+        .try_into()
+        .expect("Invalid Blake2b hash length");
 
-    signature_scheme
-        .verify(body_sha256_hash_bytes, &signature_bytes, &public_key_bytes) // Signature second, public key third
-        .map_err(|_| {
-            error!(
-                "Failed to verify signature scheme: {}",
-                signature_scheme_str
-            );
-            StatusCode::UNAUTHORIZED
-        })?;
+    utils::verify_signature(base64_signature, &body_blake2b_hash_bytes)?;
 
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default()
+        .with_payload_hash(body_blake2b_hash_bytes);
+    req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
 
     Ok(next.run(req).await)
@@ -133,13 +150,20 @@ pub async fn signature_verification_middleware(
 /// # Headers
 /// The middleware expects the following custom headers:
 /// - `X-PublicKey`: The public key of the user, base64 encoded.
-/// - `X-Stack-Id`: The ID of the stack being used for this request.
+/// - `X-Stack-Small-Id`: The ID of the stack being used for this request.
 ///
 /// # Request Body
 /// The body should be a JSON object containing:
 /// - `model`: The name of the AI model to be used.
 /// - `messages`: An array of message objects, each containing a "content" field.
 /// - `max_completion_tokens`: The maximum number of tokens for the AI's response.
+///
+/// # Extensions
+/// This middleware adds a `RequestMetadata` extension to the request containing:
+/// - `stack_small_id`: The ID of the stack being used
+/// - `estimated_total_tokens`: The total number of tokens calculated for the request
+///
+/// This metadata can be accessed by downstream handlers using `req.extensions()`.
 ///
 /// # Errors
 /// Returns a `BAD_REQUEST` status code if:
@@ -174,7 +198,7 @@ pub async fn verify_stack_permissions(
             let encoding = hex::encode(bytes);
             format!("0x{}", encoding)
         })?;
-    let stack_small_id = req_parts.headers.get("X-Stack-Id").ok_or_else(|| {
+    let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
     })?;
@@ -272,9 +296,70 @@ pub async fn verify_stack_permissions(
         error!("No available stack with enough compute units");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    req_parts
-        .extensions
-        .insert((stack_small_id, total_num_tokens));
+    let request_metadata =
+        RequestMetadata::default().with_stack_info(stack_small_id, total_num_tokens);
+    req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
+}
+
+pub(crate) mod utils {
+    use super::*;
+    use fastcrypto::{
+        ed25519::{Ed25519PublicKey, Ed25519Signature},
+        secp256k1::{Secp256k1PublicKey, Secp256k1Signature},
+        secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
+        traits::{ToFromBytes, VerifyingKey},
+    };
+    use sui_sdk::types::crypto::{PublicKey, Signature, SignatureScheme, SuiSignature};
+
+    pub(crate) fn verify_signature(
+        base64_signature: &str,
+        body_hash: &[u8; 32],
+    ) -> Result<(), StatusCode> {
+        let signature = Signature::from_str(base64_signature).map_err(|_| {
+            error!("Failed to parse signature");
+            StatusCode::BAD_REQUEST
+        })?;
+        let signature_bytes = signature.signature_bytes();
+        let public_key_bytes = signature.public_key_bytes();
+        let signature_scheme = signature.scheme();
+        let public_key =
+            PublicKey::try_from_bytes(signature_scheme, public_key_bytes).map_err(|e| {
+                error!("Failed to extract public key from bytes, with error: {e}");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        match signature_scheme {
+            SignatureScheme::ED25519 => {
+                let public_key = Ed25519PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Ed25519Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|_| {
+                    error!("Failed to verify signature");
+                    StatusCode::UNAUTHORIZED
+                })?;
+            }
+            SignatureScheme::Secp256k1 => {
+                let public_key = Secp256k1PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Secp256k1Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|_| {
+                    error!("Failed to verify signature");
+                    StatusCode::UNAUTHORIZED
+                })?;
+            }
+            SignatureScheme::Secp256r1 => {
+                let public_key = Secp256r1PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Secp256r1Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|_| {
+                    error!("Failed to verify signature");
+                    StatusCode::UNAUTHORIZED
+                })?;
+            }
+            _ => {
+                error!("Currently unsupported signature scheme");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+        Ok(())
+    }
 }

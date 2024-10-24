@@ -9,6 +9,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use blake2::{digest::generic_array::GenericArray, Digest};
+use p256::U32;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -20,7 +22,7 @@ use tracing::{error, info, instrument};
 use utoipa::OpenApi;
 
 use crate::{
-    middleware::{signature_verification_middleware, verify_stack_permissions},
+    middleware::{signature_verification_middleware, verify_stack_permissions, RequestMetadata},
     types::{ChatCompletionsRequest, ChatCompletionsResponse},
 };
 
@@ -229,10 +231,15 @@ pub async fn health() -> impl IntoResponse {
     fields(path = CHAT_COMPLETIONS_PATH)
 )]
 pub async fn chat_completions_handler(
-    Extension((stack_small_id, estimated_total_tokens)): Extension<(i64, i64)>,
+    Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_tokens,
+        payload_hash,
+    } = request_metadata;
     let response = state
         .inference_service_client
         .post(CHAT_COMPLETIONS_PATH)
@@ -249,11 +256,13 @@ pub async fn chat_completions_handler(
     })?;
 
     // Sign the response body byte content and add the base64 encoded signature to the response body
-    let signature = utils::sign_response_body(&response_body, &state.keystore, state.address_index)
-        .map_err(|e| {
-            error!("Error signing response body: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let (response_hash, signature) =
+        utils::sign_response_body(&response_body, &state.keystore, state.address_index).map_err(
+            |e| {
+                error!("Error signing response body: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        )?;
     response_body["signature"] = json!(signature);
 
     // Extract the response total number of tokens
@@ -276,53 +285,72 @@ pub async fn chat_completions_handler(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    let mut blake2b = blake2::Blake2b::new();
+    blake2b.update([payload_hash, response_hash].concat());
+    let total_hash: GenericArray<u8, U32> = blake2b.finalize();
+    let total_hash_bytes: [u8; 32] = total_hash
+        .as_slice()
+        .try_into()
+        .expect("Invalid BLAKE2b hash length");
+    state_manager
+        .update_stack_total_hash(stack_small_id, total_hash_bytes)
+        .await
+        .map_err(|e| {
+            error!("Error updating stack total hash: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(response_body))
 }
 
 pub(crate) mod utils {
     use super::*;
-    use sha2::Digest;
+    use blake2::{digest::generic_array::GenericArray, Digest};
+    use p256::U32;
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
     /// Signs a JSON response body using the node's Sui keystore.
     ///
-    /// This function performs the following steps:
-    /// 1. Retrieves the Sui address from the keystore at the specified index
-    /// 2. Converts the JSON response body to a string
-    /// 3. Computes the SHA-256 hash of the response body bytes
-    /// 4. Signs the hash using the node's private key
-    /// 5. Returns the base64-encoded signature
+    /// This function takes a JSON response body, converts it to bytes, creates a SHA-256 hash,
+    /// and signs it using the Sui keystore with the specified address.
     ///
     /// # Arguments
     ///
-    /// * `response_body` - The JSON response body to sign
-    /// * `keystore` - The node's Sui keystore containing the signing keys
-    /// * `address_index` - The index of the Sui address to use for signing
+    /// * `response_body` - The JSON response body to be signed
+    /// * `keystore` - The Sui keystore containing the signing keys
+    /// * `address_index` - The index of the address to use for signing within the keystore
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing the base64-encoded signature string if successful,
-    /// or an error if the signing process fails.
+    /// Returns a tuple containing:
+    /// * A 32-byte array containing the SHA-256 hash of the response body
+    /// * A base64-encoded string of the signature
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
-    /// - The address index is invalid
-    /// - The signing operation fails
-    /// - The base64 encoding fails
+    /// Returns an error if:
+    /// * The keystore fails to sign the hash
+    /// * The SHA-256 hash cannot be converted to a 32-byte array
     pub(crate) fn sign_response_body(
         response_body: &Value,
         keystore: &Arc<FileBasedKeystore>,
         address_index: usize,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<([u8; 32], String), Box<dyn std::error::Error>> {
         let address = keystore.addresses()[address_index];
         let response_body_str = response_body.to_string();
         let response_body_bytes = response_body_str.as_bytes();
-        let sha256_hash = sha2::Sha256::digest(response_body_bytes);
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update(response_body_bytes);
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
         let signature = keystore
-            .sign_hashed(&address, sha256_hash.as_slice())
-            .unwrap();
-        Ok(signature.encode_base64())
+            .sign_hashed(&address, blake2b_hash.as_slice())
+            .expect("Failed to sign response body");
+        Ok((
+            blake2b_hash
+                .as_slice()
+                .try_into()
+                .expect("Invalid BLAKE2b hash length"),
+            signature.encode_base64(),
+        ))
     }
 }

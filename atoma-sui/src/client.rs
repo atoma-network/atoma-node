@@ -626,6 +626,7 @@ impl AtomaSuiClient {
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_stack_settlement_attestation_tx(
         &mut self,
         stack_small_id: u64,
