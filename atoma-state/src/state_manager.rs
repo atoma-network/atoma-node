@@ -2310,8 +2310,23 @@ mod tests {
 
         // Verify the update
         let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.total_hash.len(), 32);
         assert_eq!(updated_stack.total_hash, new_hash);
         assert_eq!(updated_stack.num_total_messages, 1);
+
+        // Update the total hash again
+        let new_hash = [84; 32];
+        state_manager
+            .update_stack_total_hash(1, new_hash)
+            .await
+            .unwrap();
+
+        // Verify the update
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.total_hash.len(), 64);
+        assert_eq!(updated_stack.total_hash[0..32], [42u8; 32]);
+        assert_eq!(updated_stack.total_hash[32..64], [84u8; 32]);
+        assert_eq!(updated_stack.num_total_messages, 2);
 
         // Test updating non-existent stack
         let result = state_manager.update_stack_total_hash(999, new_hash).await;
