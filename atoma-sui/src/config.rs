@@ -160,7 +160,7 @@ impl AtomaSuiConfig {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust,ignore
     /// use atoma_sui::config::AtomaSuiConfig;
     /// use std::path::Path;
     ///

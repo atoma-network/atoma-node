@@ -84,7 +84,7 @@ pub struct AppState {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// let app_state = AppState::new(/* ... */);
 /// let router = create_router(app_state);
 /// // Use the router to start the server
@@ -131,7 +131,7 @@ pub fn create_router(app_state: AppState) -> Router {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// let app_state = AppState::new(/* ... */);
 /// let listener = TcpListener::bind("127.0.0.1:3000").await?;
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -174,7 +174,7 @@ pub async fn run_server(
 ///
 /// This function is usually mapped to a GET endpoint, for example:
 ///
-/// ```
+/// ```rust,ignore
 /// app.route("/health", get(health_check))
 /// ```
 #[utoipa::path(
