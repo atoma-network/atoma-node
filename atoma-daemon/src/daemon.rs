@@ -11,11 +11,7 @@ use axum::{
 };
 use std::sync::Arc;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::{
-    net::TcpListener,
-    signal,
-    sync::{watch::Sender, RwLock},
-};
+use tokio::{net::TcpListener, signal, sync::RwLock};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -64,16 +60,16 @@ pub struct DaemonState {
     /// Thread-safe reference to the Sui blockchain client that handles all blockchain interactions.
     /// Wrapped in `Arc<RwLock>` to allow multiple handlers to safely access and modify the client
     /// state concurrently.
-    client: Arc<RwLock<AtomaSuiClient>>,
+    pub client: Arc<RwLock<AtomaSuiClient>>,
 
     /// Manages the persistent state of nodes, tasks, and other system components.
     /// Handles database operations and state synchronization.
-    state_manager: StateManager,
+    pub state_manager: StateManager,
 
     /// Vector of tuples containing node badge information, where each tuple contains:
     /// - `ObjectID`: The unique identifier of the node badge on the Sui blockchain
     /// - `u64`: The small ID associated with the node badge for efficient indexing
-    node_badges: Vec<(ObjectID, u64)>,
+    pub node_badges: Vec<(ObjectID, u64)>,
 }
 
 /// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
@@ -120,8 +116,7 @@ pub struct DaemonState {
 pub async fn run_daemon(
     daemon_state: DaemonState,
     tcp_listener: TcpListener,
-    shutdown_sender: Sender<bool>,
-) -> std::result::Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let daemon_router = create_daemon_router(daemon_state);
     let shutdown_signal = async {
         signal::ctrl_c()
@@ -132,7 +127,6 @@ pub async fn run_daemon(
     let server = axum::serve(tcp_listener, daemon_router.into_make_service())
         .with_graceful_shutdown(shutdown_signal);
     server.await?;
-    shutdown_sender.send(true)?;
     Ok(())
 }
 

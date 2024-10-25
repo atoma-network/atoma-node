@@ -12,7 +12,6 @@ mod middleware {
         Digest,
     };
     use hex::ToHex;
-    use reqwest::Client;
     use serde_json::json;
     use serial_test::serial;
     use std::{path::PathBuf, str::FromStr, sync::Arc};
@@ -133,9 +132,9 @@ mod middleware {
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
-                tokenizer: Arc::new(tokenizer),
+                tokenizers: Arc::new(vec![Arc::new(tokenizer)]),
                 state,
-                inference_service_client: Client::new(),
+                inference_service_url: "".to_string(),
                 keystore: Arc::new(keystore),
                 address_index: 0,
             },

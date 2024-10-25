@@ -14,6 +14,8 @@ atoma-state = { workspace = true }
 atoma-sui = { workspace = true }
 axum = { workspace = true }
 blake2 = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
 rs_merkle = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -49,24 +49,53 @@ const HEALTH_PATH: &str = "/health";
 pub struct OpenApiDoc;
 
 /// Represents the shared state of the application.
+///
+/// This struct holds various components and configurations that are shared
+/// across different parts of the application, enabling efficient resource
+/// management and communication between components.
 #[derive(Clone)]
 pub struct AppState {
     /// SQLite database connection pool.
+    ///
+    /// This pool is used to manage database connections efficiently,
+    /// allowing for concurrent access to the database by different parts
+    /// of the application.
     pub state: SqlitePool,
 
     /// Tokenizer used for processing text input.
-    pub tokenizer: Arc<Tokenizer>,
+    ///
+    /// The tokenizer is responsible for breaking down text input into
+    /// manageable tokens, which are then used in various natural language
+    /// processing tasks.
+    pub tokenizers: Arc<Vec<Arc<Tokenizer>>>,
 
     /// List of available AI models.
+    ///
+    /// This list contains the names or identifiers of AI models that
+    /// the application can use for inference tasks. It allows the
+    /// application to dynamically select and switch between different
+    /// models as needed.
     pub models: Arc<Vec<String>>,
 
-    /// URL of the node's inference service.
-    pub inference_service_client: Client,
+    /// URL of the inference service.
+    ///
+    /// This URL points to the external service responsible for performing
+    /// AI model inference. The application forwards requests to this service
+    /// to obtain AI-generated responses.
+    pub inference_service_url: String,
 
-    /// The Sui keystore of the node
+    /// The Sui keystore of the node.
+    ///
+    /// The keystore contains cryptographic keys used for signing and
+    /// verifying messages. It is essential for ensuring the security
+    /// and integrity of communications within the application.
     pub keystore: Arc<FileBasedKeystore>,
 
-    /// The Sui address index of the node within the keystore values
+    /// The Sui address index of the node within the keystore values.
+    ///
+    /// This index specifies which address in the keystore is used for
+    /// signing operations, allowing the application to manage multiple
+    /// addresses and keys efficiently.
     pub address_index: usize,
 }
 
@@ -144,7 +173,7 @@ pub async fn run_server(
     app_state: AppState,
     tcp_listener: TcpListener,
     shutdown_sender: Sender<bool>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let app = create_router(app_state);
     let shutdown_signal = async {
         signal::ctrl_c()
@@ -242,9 +271,12 @@ pub async fn chat_completions_handler(
         estimated_total_tokens,
         payload_hash,
     } = request_metadata;
-    let response = state
-        .inference_service_client
-        .post(CHAT_COMPLETIONS_PATH)
+    let client = Client::new();
+    let response = client
+        .post(format!(
+            "{}{}",
+            state.inference_service_url, CHAT_COMPLETIONS_PATH
+        ))
         .json(&payload)
         .send()
         .await

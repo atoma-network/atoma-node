@@ -50,7 +50,7 @@ pub struct AtomaSuiClient {
 
 impl AtomaSuiClient {
     /// Constructor
-    pub async fn new(config_path: &Path) -> Result<Self> {
+    pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self> {
         let config = AtomaSuiConfig::from_file_path(config_path);
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);

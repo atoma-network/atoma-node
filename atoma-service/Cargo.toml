@@ -9,11 +9,14 @@ name = "atoma-node"
 path = "../atoma-bin/atoma_node.rs"
 
 [dependencies]
+anyhow = { workspace = true }
 axum = { workspace = true }
 atoma-sui = { workspace = true }
 atoma-state = { workspace = true }
 base64 = { workspace = true }
 blake2 = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
 fastcrypto = { workspace = true }
 hex = { workspace = true }
 hyper = { workspace = true }
