@@ -11,8 +11,16 @@ use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
 use tokio::{net::TcpListener, sync::RwLock};
 use tracing::info;
-use tracing_appender::{non_blocking, rolling::{RollingFileAppender, Rotation}};
-use tracing_subscriber::{fmt::{self, format::FmtSpan, time::UtcTime}, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
+use tracing_appender::{
+    non_blocking,
+    rolling::{RollingFileAppender, Rotation},
+};
+use tracing_subscriber::{
+    fmt::{self, format::FmtSpan, time::UtcTime},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+    EnvFilter, Registry,
+};
 
 /// The directory where the logs are stored.
 const LOGS: &str = "./logs";
