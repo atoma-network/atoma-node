@@ -2,6 +2,7 @@ pub mod config;
 pub mod state_manager;
 pub mod types;
 
+pub use config::StateManagerConfig;
 use sqlx::Sqlite;
 pub use sqlx::SqlitePool;
 pub use state_manager::{StateManager, StateManagerError};
