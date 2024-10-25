@@ -8,13 +8,15 @@ use futures::stream::{self, StreamExt};
 use std::{path::Path, str::FromStr, time::Duration};
 use sui_sdk::{
     rpc_types::{EventFilter, EventPage},
-    types::event::EventID,
+    types::{event::EventID, Identifier},
     SuiClient, SuiClientBuilder,
 };
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 use tracing::{error, info, instrument, trace};
 
+/// The Atoma contract db module name.
+const DB_MODULE_NAME: &str = "db";
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 /// The default number of concurrent event handling tasks to run.
@@ -46,7 +48,10 @@ impl SuiEventSubscriber {
         database_url: String,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let filter = EventFilter::Package(config.atoma_package_id());
+        let filter = EventFilter::MoveModule {
+            package: config.atoma_package_id(),
+            module: Identifier::new(DB_MODULE_NAME).unwrap(),
+        };
         Self {
             config,
             database_url,
