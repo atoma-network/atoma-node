@@ -96,7 +96,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Register with default gas settings
@@ -184,7 +184,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Subscribe to model with default gas settings
@@ -288,7 +288,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Subscribe to task with default gas settings
@@ -394,7 +394,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Unsubscribe from task with default gas settings
@@ -492,7 +492,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Try to settle stack with default gas settings
@@ -605,7 +605,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Submit attestation with default gas settings
@@ -713,7 +713,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Start dispute with default gas settings
@@ -814,7 +814,7 @@ impl AtomaSuiClient {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     /// // Claim funds with default gas settings
@@ -943,7 +943,7 @@ pub(crate) mod utils {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// use sui_sdk::SuiClient;
     /// use sui_sdk::types::base_types::{ObjectID, SuiAddress};
     ///

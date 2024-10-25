@@ -10,8 +10,10 @@ use axum::{
     response::Response,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
-use blake2::{digest::generic_array::GenericArray, Blake2b, Digest};
-use p256::U32;
+use blake2::{
+    digest::generic_array::{typenum::U32, GenericArray},
+    Blake2b, Digest,
+};
 use serde_json::Value;
 use tracing::{error, instrument};
 

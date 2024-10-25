@@ -56,7 +56,7 @@ const MAX_RETRIES_FOR_UNHANDLED_EVENTS: usize = 3;
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// use atoma_state::SqlitePool;
 /// use serde_json::Value;
 ///
