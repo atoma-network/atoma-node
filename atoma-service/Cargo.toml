@@ -3,6 +3,11 @@ name = "atoma-service"
 version.workspace = true
 edition.workspace = true
 
+
+[[bin]]
+name = "atoma-node"
+path = "../atoma-bin/atoma-node.rs"
+
 [dependencies]
 axum = { workspace = true }
 atoma-sui = { workspace = true }

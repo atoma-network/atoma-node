@@ -3,6 +3,11 @@ name = "atoma-daemon"
 version.workspace = true
 edition.workspace = true
 
+
+[[bin]]
+name = "atoma-daemon"
+path = "../atoma-bin/atoma_daemon.rs"
+
 [dependencies]
 axum = { workspace = true }
 atoma-state = { workspace = true }
