@@ -163,8 +163,8 @@ pub async fn run_daemon(
 /// ## Stack Operations
 /// * `GET /stacks` - Get all stacks for registered nodes
 /// * `GET /stacks/:id` - Get stacks for a specific node
-/// * `GET /almost_filled_stacks/:percentage` - Get stacks filled above specified percentage
-/// * `GET /almost_filled_stacks/:id/:percentage` - Get node's stacks filled above percentage
+/// * `GET /almost_filled_stacks/:fraction` - Get stacks filled above specified fraction
+/// * `GET /almost_filled_stacks/:id/:fraction` - Get node's stacks filled above fraction
 /// * `GET /claimed_stacks` - Get all claimed stacks
 /// * `GET /claimed_stacks/:id` - Get claimed stacks for a specific node
 /// * `POST /try_settle_stack_ids` - Attempt to settle specified stacks
@@ -199,11 +199,11 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         .route("/stacks", get(get_all_node_stacks))
         .route("/stacks/:id", get(get_node_stacks))
         .route(
-            "/almost_filled_stacks/:percentage",
+            "/almost_filled_stacks/:fraction",
             get(get_all_almost_filled_stacks),
         )
         .route(
-            "/almost_filled_stacks/:id/:percentage",
+            "/almost_filled_stacks/:id/:fraction",
             get(get_node_almost_filled_stacks),
         )
         .route(
@@ -280,6 +280,29 @@ async fn get_all_node_subscriptions(
     Ok(Json(all_node_subscriptions))
 }
 
+/// Retrieves all subscriptions for a specific node identified by its small ID.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the state manager
+/// * `node_small_id` - The small ID of the node whose subscriptions should be retrieved
+///
+/// # Returns
+/// * `Result<Json<Vec<NodeSubscription>>>` - A JSON response containing a list of subscriptions
+///   - `Ok(Json<Vec<NodeSubscription>>)` - Successfully retrieved subscriptions
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve subscriptions from state manager
+///
+/// # Example Response
+/// Returns a JSON array of NodeSubscription objects for the specified node, which may include:
+/// ```json
+/// [
+///     {
+///         "node_small_id": 123,
+///         "model_name": "example_model",
+///         "echelon_id": 1,
+///         "subscription_time": "2024-03-21T12:00:00Z"
+///     }
+/// ]
+/// ```
 #[instrument(level = "trace", skip_all)]
 async fn get_node_subscriptions(
     State(daemon_state): State<DaemonState>,
@@ -384,11 +407,11 @@ async fn get_node_stacks(
     ))
 }
 
-/// Retrieves all stacks that are filled above a specified percentage threshold for all registered nodes.
+/// Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
 ///
 /// # Arguments
 /// * `daemon_state` - The shared state containing node badges and state manager
-/// * `percentage` - The percentage threshold (0.0 to 100.0) to filter stacks
+/// * `fraction` - The fraction threshold (0.0 to 100.0) to filter stacks
 ///
 /// # Returns
 /// * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
@@ -396,11 +419,11 @@ async fn get_node_stacks(
 ///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
 ///
 /// # Example Response
-/// Returns a JSON array of Stack objects that are filled above the specified percentage threshold
+/// Returns a JSON array of Stack objects that are filled above the specified fraction threshold
 #[instrument(level = "trace", skip_all)]
 async fn get_all_almost_filled_stacks(
     State(daemon_state): State<DaemonState>,
-    Path(percentage): Path<f64>,
+    Path(fraction): Path<f64>,
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
@@ -411,7 +434,7 @@ async fn get_all_almost_filled_stacks(
                     .iter()
                     .map(|(_, small_id)| *small_id as i64)
                     .collect::<Vec<_>>(),
-                percentage,
+                fraction,
             )
             .await
             .map_err(|_| {
@@ -421,12 +444,12 @@ async fn get_all_almost_filled_stacks(
     ))
 }
 
-/// Retrieves all stacks that are filled above a specified percentage threshold for a specific node.
+/// Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
 ///
 /// # Arguments
 /// * `daemon_state` - The shared state containing the state manager
 /// * `node_small_id` - The small ID of the node whose stacks should be retrieved
-/// * `percentage` - The percentage threshold (0.0 to 100.0) to filter stacks
+/// * `fraction` - The fraction threshold (0.0 to 100.0) to filter stacks
 ///
 /// # Returns
 /// * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
@@ -434,16 +457,16 @@ async fn get_all_almost_filled_stacks(
 ///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
 ///
 /// # Example Response
-/// Returns a JSON array of Stack objects for the specified node that are filled above the percentage threshold
+/// Returns a JSON array of Stack objects for the specified node that are filled above the fraction threshold
 #[instrument(level = "trace", skip_all)]
 async fn get_node_almost_filled_stacks(
     State(daemon_state): State<DaemonState>,
-    Path((node_small_id, percentage)): Path<(i64, f64)>,
+    Path((node_small_id, fraction)): Path<(i64, f64)>,
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
             .state_manager
-            .get_almost_filled_stacks(&[node_small_id], percentage)
+            .get_almost_filled_stacks(&[node_small_id], fraction)
             .await
             .map_err(|_| {
                 error!("Failed to get node almost filled stacks");
