@@ -34,7 +34,7 @@ impl SqliteConfig {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust,ignore
     /// use std::path::Path;
     /// use atoma_node::atoma_state::SqliteConfig;
     ///

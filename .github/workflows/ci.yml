@@ -40,4 +40,4 @@ jobs:
       - name: Clippy check (with lints)
         run: cargo lints clippy --all-targets
       - name: Unit tests checks
-        run: cargo test --all-targets --lib
+        run: cargo test
