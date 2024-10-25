@@ -17,10 +17,7 @@ use tracing::{error, instrument};
 use crate::{
     calculate_node_index, compute_committed_stack_proof,
     types::{
-        NodeAttestationProofRequest, NodeAttestationProofResponse, NodeModelSubscriptionRequest,
-        NodeModelSubscriptionResponse, NodeRegistrationRequest, NodeRegistrationResponse,
-        NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
-        NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
+        NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest, NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse, NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest, NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse
     },
     CommittedStackProof,
 };
@@ -77,6 +74,10 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         .route(
             "/try_settle_stack_ids",
             get(submit_node_try_settle_stacks_tx),
+        )
+        .route(
+            "/submit_stack_settlement_attestations",
+            post(submit_stack_settlement_attestations_tx),
         )
         .with_state(daemon_state)
 }
@@ -784,7 +785,7 @@ async fn submit_node_try_settle_stacks_tx(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let mut tx_digests = Vec::new();
+    let mut tx_digests: Vec<String> = Vec::with_capacity(stack_small_ids.len());
     for (stack_small_id, total_hash) in stack_small_ids.iter().zip(total_hashes.iter()) {
         let CommittedStackProof {
             root: committed_stack_proof,
@@ -854,7 +855,7 @@ async fn submit_node_try_settle_stacks_tx(
 /// 
 /// Note: The attestation node index is offset by 1 since the 0th index is reserved for the original selected node.
 #[instrument(level = "trace", skip_all)]
-async fn submit_node_attestation_proof_tx(
+async fn submit_stack_settlement_attestations_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeAttestationProofRequest>,
 ) -> Result<Json<NodeAttestationProofResponse>> {
@@ -942,4 +943,64 @@ async fn submit_node_attestation_proof_tx(
         }
     }
     Ok(Json(NodeAttestationProofResponse { tx_digests }))
+}
+
+/// Submits a transaction to claim funds for completed stacks.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the client for transaction submission
+/// * `value` - A JSON payload containing the node claim funds request details
+///
+/// # Returns
+/// * `Result<Json<NodeClaimFundsResponse>>` - A JSON response containing the transaction digest
+///   - `Ok(Json<NodeClaimFundsResponse>)` - Successfully submitted the claim funds transaction
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to submit the transaction
+///
+/// # Example Request
+/// ```json
+/// {
+///     "stack_small_ids": [123, 456],  // IDs of stacks to claim funds from
+///     "node_small_id": 789,           // Optional: specific node ID to claim for
+///     "gas": "0x789",
+///     "gas_budget": 1000,
+///     "gas_price": 10
+/// }
+/// ```
+///
+/// # Example Response
+/// ```json
+/// {
+///     "tx_digest": "0xabc"  // Transaction digest of the claim funds submission
+/// }
+/// ```
+#[instrument(level = "trace", skip_all)]
+async fn submit_claim_funds_tx(
+    State(daemon_state): State<DaemonState>,
+    Json(value): Json<NodeClaimFundsRequest>,
+) -> Result<Json<NodeClaimFundsResponse>> {
+    let NodeClaimFundsRequest {
+        stack_small_ids,
+        node_small_id,
+        gas,
+        gas_budget,
+        gas_price,
+    } = value;
+
+    let tx_digest = daemon_state
+        .client
+        .write()
+        .await
+        .submit_claim_funds_tx(
+            stack_small_ids.iter().map(|id| *id as u64).collect(),
+            node_small_id.map(|id| id as u64),
+            gas,
+            gas_budget,
+            gas_price,
+        )
+        .await
+        .map_err(|_| {
+            error!("Failed to submit node claim funds tx");
+            StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(NodeClaimFundsResponse { tx_digest }))
 }

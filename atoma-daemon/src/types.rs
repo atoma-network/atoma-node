@@ -249,3 +249,43 @@ pub struct NodeAttestationProofResponse {
     /// The transaction digests.
     pub tx_digests: Vec<String>,
 }
+
+/// Represents a request to claim funds from a stack.
+///
+/// This struct encapsulates the necessary parameters for claiming funds
+/// from a stack, including optional gas-related fields.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeClaimFundsRequest {
+    /// The small IDs of the stacks to claim funds from.
+    pub stack_small_ids: Vec<i64>,
+
+    /// Optional small ID of the node.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_small_id: Option<i64>, 
+
+    /// Optional gas object ID.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas: Option<ObjectID>,
+
+    /// Optional gas budget.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_budget: Option<u64>,
+
+    /// Optional gas price.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<u64>,
+}
+
+/// Represents a response to a node claim funds request.
+///
+/// This struct contains the transaction digest, which is a unique
+/// identifier for the transaction associated with the claim funds.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeClaimFundsResponse {
+    /// The associated transaction digest.
+    pub tx_digest: String,
+}
