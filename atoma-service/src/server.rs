@@ -9,8 +9,10 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use blake2::{digest::generic_array::GenericArray, Digest};
-use p256::U32;
+use blake2::{
+    digest::generic_array::{typenum::U32, GenericArray},
+    Digest,
+};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -84,7 +86,7 @@ pub struct AppState {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// let app_state = AppState::new(/* ... */);
 /// let router = create_router(app_state);
 /// // Use the router to start the server
@@ -131,7 +133,7 @@ pub fn create_router(app_state: AppState) -> Router {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// let app_state = AppState::new(/* ... */);
 /// let listener = TcpListener::bind("127.0.0.1:3000").await?;
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -174,7 +176,7 @@ pub async fn run_server(
 ///
 /// This function is usually mapped to a GET endpoint, for example:
 ///
-/// ```
+/// ```rust,ignore
 /// app.route("/health", get(health_check))
 /// ```
 #[utoipa::path(
@@ -304,8 +306,10 @@ pub async fn chat_completions_handler(
 
 pub(crate) mod utils {
     use super::*;
-    use blake2::{digest::generic_array::GenericArray, Digest};
-    use p256::U32;
+    use blake2::{
+        digest::generic_array::{typenum::U32, GenericArray},
+        Digest,
+    };
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
