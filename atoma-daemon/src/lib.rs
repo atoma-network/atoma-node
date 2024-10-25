@@ -213,13 +213,13 @@ pub(crate) fn calculate_node_index(
 ) -> Result<Vec<AttestationNodeIndices>, StatusCode> {
     let mut node_indices = Vec::new();
     for (i, attestation_node_id) in attestation_nodes.iter().enumerate() {
-        'inner: for (j, node_small_id) in node_small_ids.iter().enumerate() {
+        for (j, node_small_id) in node_small_ids.iter().enumerate() {
             if attestation_node_id == node_small_id {
                 node_indices.push(AttestationNodeIndices {
                     attestation_node_index: i,
                     node_small_id_index: j,
                 });
-                break 'inner;
+                break;
             }
         }
     }

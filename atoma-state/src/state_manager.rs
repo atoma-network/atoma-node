@@ -1,3 +1,4 @@
+use crate::build_query_with_in;
 use crate::types::{NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task};
 
 use sqlx::{pool::PoolConnection, Sqlite, SqlitePool};
@@ -316,22 +317,14 @@ impl StateManager {
         &self,
         node_small_ids: &[i64],
     ) -> Result<Vec<NodeSubscription>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM node_subscriptions WHERE node_small_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM node_subscriptions",
+            "node_small_id",
+            node_small_ids,
+            None,
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-
-        let subscriptions = query_builder.fetch_all(&self.db).await?;
+        let subscriptions = query_builder.build().fetch_all(&self.db).await?;
 
         subscriptions
             .into_iter()
@@ -684,20 +677,13 @@ impl StateManager {
         fields(stack_small_ids = ?stack_small_ids)
     )]
     pub async fn get_stacks(&self, stack_small_ids: &[i64]) -> Result<Vec<Stack>> {
-        let placeholders: String = (1..=stack_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stacks WHERE stack_small_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stacks",
+            "stack_small_id",
+            stack_small_ids,
+            None,
         );
-        let mut query_builder = sqlx::query(&query);
-        for id in stack_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-        let stacks = query_builder.fetch_all(&self.db).await?;
+        let stacks = query_builder.build().fetch_all(&self.db).await?;
         stacks
             .into_iter()
             .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
@@ -741,22 +727,14 @@ impl StateManager {
         fields(node_small_ids = ?node_small_ids)
     )]
     pub async fn get_stacks_by_node_small_ids(&self, node_small_ids: &[i64]) -> Result<Vec<Stack>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stacks WHERE selected_node_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stacks",
+            "selected_node_id",
+            node_small_ids,
+            None,
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-
-        let stacks = query_builder.fetch_all(&self.db).await?;
+        let stacks = query_builder.build().fetch_all(&self.db).await?;
 
         stacks
             .into_iter()
@@ -810,17 +788,17 @@ impl StateManager {
             .collect()
     }
 
-    /// Retrieves stacks that are almost filled beyond a specified percentage threshold.
+    /// Retrieves stacks that are almost filled beyond a specified fraction threshold.
     ///
     /// This method fetches all stacks from the database where:
     /// 1. The stack belongs to one of the specified nodes (`node_small_ids`)
-    /// 2. The number of already computed units exceeds the specified percentage of total compute units
-    ///    (i.e., `already_computed_units > num_compute_units * percentage`)
+    /// 2. The number of already computed units exceeds the specified fraction of total compute units
+    ///    (i.e., `already_computed_units > num_compute_units * fraction`)
     ///
     /// # Arguments
     ///
     /// * `node_small_ids` - A slice of node IDs to check for almost filled stacks.
-    /// * `percentage` - A floating-point value between 0 and 1 representing the threshold percentage.
+    /// * `fraction` - A floating-point value between 0 and 1 representing the threshold fraction.
     ///                 For example, 0.8 means stacks that are more than 80% filled.
     ///
     /// # Returns
@@ -850,27 +828,24 @@ impl StateManager {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(node_small_ids = ?node_small_ids, percentage = %percentage)
+        fields(node_small_ids = ?node_small_ids, fraction = %fraction)
     )]
     pub async fn get_almost_filled_stacks(
         &self,
         node_small_ids: &[i64],
-        percentage: f64,
+        fraction: f64,
     ) -> Result<Vec<Stack>> {
-        let placeholders: String = vec!["?"; node_small_ids.len()].join(",");
-
-        let query = format!(
-            "SELECT * FROM stacks WHERE selected_node_id IN ({}) AND (CAST(already_computed_units AS FLOAT) / CAST(num_compute_units AS FLOAT)) > ?",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stacks",
+            "selected_node_id",
+            node_small_ids,
+            Some("CAST(already_computed_units AS FLOAT) / CAST(num_compute_units AS FLOAT) > "),
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-        query_builder = query_builder.bind(percentage);
+        // Add the fraction value directly in the SQL
+        query_builder.push(fraction.to_string());
 
-        let stacks = query_builder.fetch_all(&self.db).await?;
+        let stacks = query_builder.build().fetch_all(&self.db).await?;
 
         stacks
             .into_iter()
@@ -1239,24 +1214,19 @@ impl StateManager {
         &self,
         stack_small_ids: &[i64],
     ) -> Result<Vec<StackSettlementTicket>> {
-        let placeholders: String = (1..=stack_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stack_settlement_tickets WHERE stack_small_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stack_settlement_tickets",
+            "stack_small_id",
+            stack_small_ids,
+            None,
         );
-        let mut query_builder = sqlx::query(&query);
-        for stack_small_id in stack_small_ids.iter() {
-            query_builder = query_builder.bind(stack_small_id);
-        }
-        let stack_settlement_tickets = query_builder.fetch_all(&self.db).await?;
-        Ok(stack_settlement_tickets
+
+        let stack_settlement_tickets = query_builder.build().fetch_all(&self.db).await?;
+
+        stack_settlement_tickets
             .into_iter()
-            .map(|row| StackSettlementTicket::from_row(&row).unwrap())
-            .collect())
+            .map(|row| StackSettlementTicket::from_row(&row).map_err(StateManagerError::from))
+            .collect()
     }
 
     /// Inserts a new stack settlement ticket into the database.
@@ -1490,22 +1460,15 @@ impl StateManager {
         fields(stack_small_ids = ?stack_small_ids)
     )]
     pub async fn get_all_total_hashes(&self, stack_small_ids: &[i64]) -> Result<Vec<Vec<u8>>> {
-        let placeholders: String = (1..=stack_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT total_hash FROM stacks WHERE stack_small_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT total_hash FROM stacks",
+            "stack_small_id",
+            stack_small_ids,
+            None,
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in stack_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-
         Ok(query_builder
+            .build()
             .fetch_all(&self.db)
             .await?
             .iter()
@@ -1770,23 +1733,19 @@ impl StateManager {
         &self,
         node_small_ids: &[i64],
     ) -> Result<Vec<StackSettlementTicket>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stack_settlement_tickets WHERE selected_node_id IN ({}) AND is_claimed = true",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stack_settlement_tickets",
+            "selected_node_id",
+            node_small_ids,
+            Some("is_claimed = true"),
         );
 
-        let mut query_builder = sqlx::query_as(&query);
+        let stacks = query_builder.build().fetch_all(&self.db).await?;
 
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
-
-        Ok(query_builder.fetch_all(&self.db).await?)
+        stacks
+            .into_iter()
+            .map(|row| StackSettlementTicket::from_row(&row).map_err(StateManagerError::from))
+            .collect()
     }
 
     /// Retrieves all stack attestation disputes for a given stack and attestation node.
@@ -1889,26 +1848,18 @@ impl StateManager {
         &self,
         node_small_ids: &[i64],
     ) -> Result<Vec<StackAttestationDispute>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stack_attestation_disputes WHERE original_node_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stack_attestation_disputes",
+            "original_node_id",
+            node_small_ids,
+            None,
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
+        let disputes = query_builder.build().fetch_all(&self.db).await?;
 
-        let stacks = query_builder.fetch_all(&self.db).await?;
-
-        stacks
+        disputes
             .into_iter()
-            .map(|stack| StackAttestationDispute::from_row(&stack).map_err(StateManagerError::from))
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -1952,26 +1903,18 @@ impl StateManager {
         &self,
         node_small_ids: &[i64],
     ) -> Result<Vec<StackAttestationDispute>> {
-        let placeholders: String = (1..=node_small_ids.len())
-            .map(|i| format!("${}", i))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT * FROM stack_attestation_disputes WHERE attestation_node_id IN ({})",
-            placeholders
+        let mut query_builder = build_query_with_in(
+            "SELECT * FROM stack_attestation_disputes",
+            "attestation_node_id",
+            node_small_ids,
+            None,
         );
 
-        let mut query_builder = sqlx::query(&query);
-        for id in node_small_ids {
-            query_builder = query_builder.bind(id);
-        }
+        let disputes = query_builder.build().fetch_all(&self.db).await?;
 
-        let stacks = query_builder.fetch_all(&self.db).await?;
-
-        stacks
+        disputes
             .into_iter()
-            .map(|stack| StackAttestationDispute::from_row(&stack).map_err(StateManagerError::from))
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
