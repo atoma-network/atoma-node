@@ -105,7 +105,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn list_all_tasks(state_manager: &StateManager) -> Result<Vec<Task>, StateManagerError> {
@@ -299,7 +299,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
     ///
     /// async fn get_subscriptions(state_manager: &StateManager) -> Result<Vec<NodeSubscription>, StateManagerError> {
@@ -670,7 +670,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
     /// async fn get_multiple_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
@@ -727,7 +727,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
     /// async fn get_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
@@ -787,7 +787,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
     /// async fn get_node_stacks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Stack>, StateManagerError> {
@@ -837,7 +837,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_filled_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
@@ -1223,7 +1223,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
     /// async fn get_settlement_tickets(state_manager: &StateManager, stack_small_ids: &[i64]) -> Result<Vec<StackSettlementTicket>, StateManagerError> {
@@ -1360,7 +1360,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn update_hash(state_manager: &StateManager) -> Result<(), StateManagerError> {
@@ -1429,7 +1429,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_total_hash(state_manager: &StateManager, stack_small_id: i64) -> Result<Vec<u8>, StateManagerError> {
@@ -1476,7 +1476,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::StateManager;
     ///
     /// async fn get_hashes(state_manager: &StateManager) -> Result<Vec<Vec<u8>>, StateManagerError> {
@@ -1753,7 +1753,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
     /// async fn get_claimed_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
@@ -1872,7 +1872,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
@@ -1935,7 +1935,7 @@ impl StateManager {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
     /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {

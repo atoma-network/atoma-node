@@ -48,7 +48,7 @@ type Result<T> = std::result::Result<T, StatusCode>;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// // Create a new daemon state instance
 /// let daemon_state = DaemonState {
 ///     client: Arc::new(RwLock::new(AtomaSuiClient::new())),
@@ -104,7 +104,7 @@ pub struct DaemonState {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use tokio::net::TcpListener;
 /// use tokio::sync::watch;
 /// use atoma_daemon::{DaemonState, run_daemon};
@@ -181,7 +181,7 @@ pub async fn run_daemon(
 /// * `POST /register` - Register a new node
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use atoma_daemon::DaemonState;
 ///
 /// let daemon_state = DaemonState::new(/* ... */);

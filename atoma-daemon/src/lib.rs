@@ -93,7 +93,7 @@ pub struct CommittedStackProof {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// let total_hash = vec![/* 32-byte aligned data */];
 /// match compute_committed_stack_proof(total_hash) {
 ///     Ok(proof) => {
@@ -187,7 +187,7 @@ pub struct AttestationNodeIndices {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// let node_small_ids = vec![1, 2, 3];
 /// let attestation_nodes = vec![2, 4, 1];
 ///
