@@ -85,12 +85,12 @@ pub struct NodeModelSubscriptionResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeTaskSubscriptionRequest {
     /// The small ID of the task to subscribe to.
-    pub task_small_id: u64,
+    pub task_small_id: i64,
 
     /// Optional small ID of the node.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<u64>,
+    pub node_small_id: Option<i64>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -132,12 +132,12 @@ pub struct NodeTaskSubscriptionResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeTaskUnsubscriptionRequest {
     /// The small ID of the task to unsubscribe from.
-    pub task_small_id: u64,
+    pub task_small_id: i64,
 
     /// Optional small ID of the node.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<u64>,
+    pub node_small_id: Option<i64>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -171,9 +171,9 @@ pub struct NodeTaskUnsubscriptionResponse {
 /// This struct encapsulates the necessary parameters for attempting
 /// to settle a stack, including optional gas-related fields.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeTrySettleStackRequest {
-    /// The small ID of the stack to settle.
-    pub stack_small_id: u64,
+pub struct NodeTrySettleStacksRequest {
+    /// The small IDs of the stacks to settle.
+    pub stack_small_ids: Vec<i64>,
 
     /// The number of compute units claimed.
     pub num_claimed_compute_units: u64,
@@ -181,7 +181,7 @@ pub struct NodeTrySettleStackRequest {
     /// Optional small ID of the node.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<u64>,
+    pub node_small_id: Option<i64>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -204,8 +204,48 @@ pub struct NodeTrySettleStackRequest {
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the attempt to settle a stack.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeTrySettleStackResponse {
-    /// The transaction digest.
+pub struct NodeTrySettleStacksResponse {
+    /// The transaction digests.
     /// This is a unique identifier for the transaction.
-    pub tx_digest: String,
+    pub tx_digests: Vec<String>,
+}
+
+/// Represents a request to submit a node attestation proof.
+///
+/// This struct encapsulates the necessary parameters for submitting
+/// a node attestation proof.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeAttestationProofRequest {
+    /// The small IDs of the stacks to attest to.
+    pub stack_small_ids: Vec<i64>,
+
+    /// Optional small ID of the node.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_small_id: Option<i64>,
+
+    /// Optional gas object ID.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas: Option<ObjectID>,
+
+    /// Optional gas budget.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_budget: Option<u64>,
+
+    /// Optional gas price.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<u64>,
+}
+
+/// Represents a response to a node attestation proof request.
+///
+/// This struct contains the transaction digests, which are unique
+/// identifiers for the transactions associated with the attestation proof.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeAttestationProofResponse {
+    /// The transaction digests.
+    pub tx_digests: Vec<String>,
 }

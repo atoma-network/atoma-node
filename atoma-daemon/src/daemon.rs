@@ -15,12 +15,12 @@ use tokio::sync::RwLock;
 use tracing::{error, instrument};
 
 use crate::{
-    compute_committed_stack_proof,
+    calculate_node_index, compute_committed_stack_proof,
     types::{
-        NodeModelSubscriptionRequest, NodeModelSubscriptionResponse, NodeRegistrationRequest,
-        NodeRegistrationResponse, NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse,
-        NodeTaskUnsubscriptionRequest, NodeTaskUnsubscriptionResponse, NodeTrySettleStackRequest,
-        NodeTrySettleStackResponse,
+        NodeAttestationProofRequest, NodeAttestationProofResponse, NodeModelSubscriptionRequest,
+        NodeModelSubscriptionResponse, NodeRegistrationRequest, NodeRegistrationResponse,
+        NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
+        NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
     },
     CommittedStackProof,
 };
@@ -74,7 +74,10 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
             "/task_unsubscribe",
             post(submit_node_task_unsubscription_tx),
         )
-        .route("/try_settle_stack", post(submit_node_try_settle_stack_tx))
+        .route(
+            "/try_settle_stack_ids",
+            get(submit_node_try_settle_stacks_tx),
+        )
         .with_state(daemon_state)
 }
 
@@ -654,8 +657,8 @@ async fn submit_node_task_subscription_tx(
         .write()
         .await
         .submit_node_task_subscription_tx(
-            task_small_id,
-            node_small_id,
+            task_small_id as u64,
+            node_small_id.map(|id| id as u64),
             price_per_compute_unit,
             max_num_compute_units,
             gas,
@@ -715,8 +718,8 @@ async fn submit_node_task_unsubscription_tx(
         .write()
         .await
         .submit_unsubscribe_node_from_task_tx(
-            task_small_id,
-            node_small_id,
+            task_small_id as u64,
+            node_small_id.map(|id| id as u64),
             gas,
             gas_budget,
             gas_price,
@@ -736,16 +739,16 @@ async fn submit_node_task_unsubscription_tx(
 /// * `value` - A JSON payload containing the node try settle stack request details.
 ///
 /// # Returns
-/// * `Result<Json<NodeTrySettleStackResponse>>` - A JSON response containing the transaction digest.
-///   - `Ok(Json<NodeTrySettleStackResponse>)` - Successfully submitted the try settle stack transaction.
+/// * `Result<Json<NodeTrySettleStacksResponse>>` - A JSON response containing the transaction digests.
+///   - `Ok(Json<NodeTrySettleStacksResponse>)` - Successfully submitted the try settle stacks transaction.
 ///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to submit the transaction or retrieve necessary data.
 ///
 /// # Example Request
 /// ```json
 /// {
-///     "stack_small_id": 123,
+///     "stack_small_ids": [123, 456],
 ///     "num_claimed_compute_units": 50,
-///     "node_small_id": 456,
+///     "node_small_id": 789,
 ///     "gas": "0x789",
 ///     "gas_budget": 1000,
 ///     "gas_price": 10
@@ -759,12 +762,12 @@ async fn submit_node_task_unsubscription_tx(
 /// }
 /// ```
 #[instrument(level = "trace", skip_all)]
-async fn submit_node_try_settle_stack_tx(
+async fn submit_node_try_settle_stacks_tx(
     State(daemon_state): State<DaemonState>,
-    Json(value): Json<NodeTrySettleStackRequest>,
-) -> Result<Json<NodeTrySettleStackResponse>> {
-    let NodeTrySettleStackRequest {
-        stack_small_id,
+    Json(value): Json<NodeTrySettleStacksRequest>,
+) -> Result<Json<NodeTrySettleStacksResponse>> {
+    let NodeTrySettleStacksRequest {
+        stack_small_ids,
         num_claimed_compute_units,
         node_small_id,
         gas,
@@ -772,38 +775,133 @@ async fn submit_node_try_settle_stack_tx(
         gas_price,
     } = value;
 
-    let total_hash = daemon_state
+    let total_hashes = daemon_state
         .state_manager
-        .get_stack_total_hash(stack_small_id as i64)
+        .get_all_total_hashes(&stack_small_ids)
         .await
         .map_err(|_| {
             error!("Failed to get stack total hash");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let CommittedStackProof {
-        root: committed_stack_proof,
-        leaf: stack_merkle_leaf,
-    } = compute_committed_stack_proof(total_hash)?;
+    let mut tx_digests = Vec::new();
+    for (stack_small_id, total_hash) in stack_small_ids.iter().zip(total_hashes.iter()) {
+        let CommittedStackProof {
+            root: committed_stack_proof,
+            leaf: stack_merkle_leaf,
+        } = compute_committed_stack_proof(total_hash, 0)?;
 
-    let tx_digest = daemon_state
-        .client
-        .write()
-        .await
-        .submit_try_settle_stack_tx(
-            stack_small_id,
-            node_small_id,
-            num_claimed_compute_units,
-            committed_stack_proof,
-            stack_merkle_leaf,
-            gas,
-            gas_budget,
-            gas_price,
-        )
+        let tx_digest = daemon_state
+            .client
+            .write()
+            .await
+            .submit_try_settle_stack_tx(
+                *stack_small_id as u64,
+                node_small_id.map(|id| id as u64),
+                num_claimed_compute_units,
+                committed_stack_proof,
+                stack_merkle_leaf,
+                gas,
+                gas_budget,
+                gas_price,
+            )
+            .await
+            .map_err(|_| {
+                error!("Failed to submit node try settle stack tx");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        tx_digests.push(tx_digest);
+    }
+    Ok(Json(NodeTrySettleStacksResponse { tx_digests }))
+}
+
+#[instrument(level = "trace", skip_all)]
+async fn submit_node_attestation_proof_tx(
+    State(daemon_state): State<DaemonState>,
+    Json(value): Json<NodeAttestationProofRequest>,
+) -> Result<Json<NodeAttestationProofResponse>> {
+    let NodeAttestationProofRequest {
+        stack_small_ids,
+        node_small_id,
+        gas,
+        gas_budget,
+        gas_price,
+    } = value;
+
+    let stack_settlement_tickets = daemon_state
+        .state_manager
+        .get_stack_settlement_tickets(&stack_small_ids)
         .await
         .map_err(|_| {
-            error!("Failed to submit node try settle stack tx");
+            error!("Failed to get stacks");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    Ok(Json(NodeTrySettleStackResponse { tx_digest }))
+
+    let total_hashes = daemon_state
+        .state_manager
+        .get_all_total_hashes(&stack_small_ids)
+        .await
+        .map_err(|_| {
+            error!("Failed to get stack total hash");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let node_small_ids = if let Some(node_small_id) = node_small_id {
+        vec![node_small_id]
+    } else {
+        daemon_state
+            .node_badges
+            .iter()
+            .map(|(_, id)| *id as i64)
+            .collect::<Vec<i64>>()
+    };
+
+    let mut tx_digests = Vec::new();
+    for (stack_settlement_ticket, total_hash) in
+        stack_settlement_tickets.iter().zip(total_hashes.iter())
+    {
+        let stack_small_id = stack_settlement_ticket.stack_small_id;
+        let attestation_nodes: Vec<i64> = serde_json::from_str(
+            &stack_settlement_ticket.requested_attestation_nodes,
+        )
+        .map_err(|_| {
+            error!("Failed to parse attestation nodes");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let attestation_node_indices = calculate_node_index(&node_small_ids, &attestation_nodes)?;
+
+        for attestation_node_index in attestation_node_indices {
+            // NOTE: Need to account for the fact that the 0th index is reserved for the
+            // original selected node, so we need to sum 1 to the node index
+            let CommittedStackProof {
+                root: committed_stack_proof,
+                leaf: stack_merkle_leaf,
+            } = compute_committed_stack_proof(
+                &total_hash,
+                attestation_node_index.attestation_node_index as u64 + 1,
+            )?;
+
+            let tx_digest = daemon_state
+                .client
+                .write()
+                .await
+                .submit_stack_settlement_attestation_tx(
+                    stack_small_id as u64,
+                    Some(node_small_ids[attestation_node_index.node_small_id_index] as u64),
+                    committed_stack_proof,
+                    stack_merkle_leaf,
+                    gas,
+                    gas_budget,
+                    gas_price,
+                )
+                .await
+                .map_err(|_| {
+                    error!("Failed to submit node attestation proof tx");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            tx_digests.push(tx_digest);
+        }
+    }
+    Ok(Json(NodeAttestationProofResponse { tx_digests }))
 }

@@ -647,6 +647,63 @@ impl StateManager {
         Ok(Stack::from_row(&stack)?)
     }
 
+    /// Retrieves multiple stacks from the database by their small IDs.
+    ///
+    /// This method efficiently fetches multiple stack records from the `stacks` table in a single query
+    /// by using an IN clause with the provided stack IDs.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_ids` - A slice of stack IDs to retrieve from the database.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects corresponding to the requested IDs.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue converting the database rows into `Stack` objects.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, Stack};
+    ///
+    /// async fn get_multiple_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
+    ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to retrieve
+    ///     state_manager.get_stacks(stack_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_ids = ?stack_small_ids)
+    )]
+    pub async fn get_stacks(&self, stack_small_ids: &[i64]) -> Result<Vec<Stack>> {
+        let placeholders: String = (1..=stack_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stacks WHERE stack_small_id IN ({})",
+            placeholders
+        );
+        let mut query_builder = sqlx::query(&query);
+        for id in stack_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+        let stacks = query_builder.fetch_all(&self.db).await?;
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
+            .collect()
+    }
+
     /// Retrieves all stacks associated with the given node IDs.
     ///
     /// This method fetches all stack records from the database that are associated with any
@@ -1146,6 +1203,62 @@ impl StateManager {
         Ok(StackSettlementTicket::from_row(&stack_settlement_ticket)?)
     }
 
+    /// Retrieves multiple stack settlement tickets from the database.
+    ///
+    /// This method fetches multiple settlement tickets from the `stack_settlement_tickets` table
+    /// based on the provided `stack_small_ids`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_ids` - A slice of stack IDs whose settlement tickets should be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<StackSettlementTicket>>`: A result containing a vector of `StackSettlementTicket` objects.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
+    ///
+    /// async fn get_settlement_tickets(state_manager: &StateManager, stack_small_ids: &[i64]) -> Result<Vec<StackSettlementTicket>, StateManagerError> {
+    ///     state_manager.get_stack_settlement_tickets(stack_small_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_ids = ?stack_small_ids)
+    )]
+    pub async fn get_stack_settlement_tickets(
+        &self,
+        stack_small_ids: &[i64],
+    ) -> Result<Vec<StackSettlementTicket>> {
+        let placeholders: String = (1..=stack_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT * FROM stack_settlement_tickets WHERE stack_small_id IN ({})",
+            placeholders
+        );
+        let mut query_builder = sqlx::query(&query);
+        for stack_small_id in stack_small_ids.iter() {
+            query_builder = query_builder.bind(stack_small_id);
+        }
+        let stack_settlement_tickets = query_builder.fetch_all(&self.db).await?;
+        Ok(stack_settlement_tickets
+            .into_iter()
+            .map(|row| StackSettlementTicket::from_row(&row).unwrap())
+            .collect())
+    }
+
     /// Inserts a new stack settlement ticket into the database.
     ///
     /// This method inserts a new entry into the `stack_settlement_tickets` table with the provided stack settlement ticket details.
@@ -1336,6 +1449,68 @@ impl StateManager {
         .fetch_one(&self.db)
         .await?;
         Ok(total_hash)
+    }
+
+    /// Retrieves the total hashes for multiple stacks in a single query.
+    ///
+    /// This method efficiently fetches the `total_hash` field from the `stacks` table for all
+    /// provided stack IDs in a single database query.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_ids` - A slice of stack IDs whose total hashes should be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Vec<u8>>>`: A result containing either:
+    ///   - `Ok(Vec<Vec<u8>>)`: A vector of byte vectors, where each inner vector represents
+    ///     the total hash of a stack. The order corresponds to the order of results returned
+    ///     by the database query.
+    ///   - `Err(StateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue retrieving the hash data from the result rows.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atoma_node::atoma_state::StateManager;
+    ///
+    /// async fn get_hashes(state_manager: &StateManager) -> Result<Vec<Vec<u8>>, StateManagerError> {
+    ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to fetch hashes for
+    ///     state_manager.get_all_total_hashes(stack_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_ids = ?stack_small_ids)
+    )]
+    pub async fn get_all_total_hashes(&self, stack_small_ids: &[i64]) -> Result<Vec<Vec<u8>>> {
+        let placeholders: String = (1..=stack_small_ids.len())
+            .map(|i| format!("${}", i))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT total_hash FROM stacks WHERE stack_small_id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in stack_small_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        Ok(query_builder
+            .fetch_all(&self.db)
+            .await?
+            .iter()
+            .map(|row| row.get("total_hash"))
+            .collect())
     }
 
     /// Updates a stack settlement ticket with attestation commitments.
@@ -3934,6 +4109,351 @@ mod tests {
         // Test 4: Get claimed stacks for non-existent node
         let claimed_stacks_none = state_manager.get_claimed_stacks(&[99]).await.unwrap();
         assert!(claimed_stacks_none.is_empty());
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_all_total_hashes() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Create a Task
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Test case 1: Empty input
+        let result = state_manager.get_all_total_hashes(&[]).await.unwrap();
+        assert!(result.is_empty(), "Empty input should return empty result");
+
+        // Test case 2: Single stack
+        let hash1 = vec![1u8; 32];
+        let stack1 = Stack {
+            owner_address: "owner1".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: hash1.clone(),
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(stack1).await.unwrap();
+
+        let result = state_manager.get_all_total_hashes(&[1]).await.unwrap();
+        assert_eq!(result.len(), 1, "Should return single hash");
+        assert_eq!(result[0], hash1, "Hash should match inserted value");
+
+        // Test case 3: Multiple stacks with different hash sizes
+        let hash2 = vec![2u8; 64]; // Double size hash
+        let hash3 = vec![3u8; 32]; // 32 bytes hash
+
+        let stack2 = Stack {
+            owner_address: "owner2".to_string(),
+            stack_small_id: 2,
+            stack_id: "stack2".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 200,
+            price: 2000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: hash2.clone(),
+            num_total_messages: 0,
+        };
+
+        let stack3 = Stack {
+            owner_address: "owner3".to_string(),
+            stack_small_id: 3,
+            stack_id: "stack3".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 300,
+            price: 3000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: hash3.clone(),
+            num_total_messages: 0,
+        };
+
+        state_manager.insert_new_stack(stack2).await.unwrap();
+        state_manager.insert_new_stack(stack3).await.unwrap();
+
+        let result = state_manager
+            .get_all_total_hashes(&[1, 2, 3])
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 3, "Should return three hashes");
+        assert_eq!(result[0], hash1, "First hash should match");
+        assert_eq!(result[1], hash2, "Second hash should match");
+        assert_eq!(result[2], hash3, "Third hash should match");
+
+        // Test case 4: Non-existent stacks
+        let result = state_manager
+            .get_all_total_hashes(&[999, 1000])
+            .await
+            .unwrap();
+        assert!(
+            result.is_empty(),
+            "Non-existent stacks should return empty result"
+        );
+
+        // Test case 5: Mix of existing and non-existing stacks
+        let result = state_manager
+            .get_all_total_hashes(&[1, 999, 2])
+            .await
+            .unwrap();
+        assert_eq!(
+            result.len(),
+            2,
+            "Should return only existing stacks' hashes"
+        );
+        assert_eq!(result[0], hash1, "First hash should match");
+        assert_eq!(result[1], hash2, "Second hash should match");
+
+        // Test case 6: Duplicate stack IDs
+        let result = state_manager
+            .get_all_total_hashes(&[1, 1, 1])
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1, "Duplicate IDs should return single result");
+        assert_eq!(result[0], hash1, "Hash should match for duplicate IDs");
+
+        std::fs::remove_dir_all(temp_dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_stack_settlement_tickets() {
+        let (state_manager, temp_dir) = setup_test_db().await;
+
+        // Setup: Create a task and subscribe nodes
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            optimizations: "opt1".to_string(),
+            security_level: 1,
+            task_metrics_compute_unit: 10,
+            task_metrics_time_unit: Some(5),
+            task_metrics_value: Some(100),
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+
+        // Subscribe multiple nodes
+        for node_id in 1..=3 {
+            state_manager
+                .subscribe_node_to_task(node_id, 1, 100, 1000)
+                .await
+                .unwrap();
+        }
+
+        // Create and insert multiple stacks
+        let stacks = vec![
+            Stack {
+                owner_address: "owner1".to_string(),
+                stack_small_id: 1,
+                stack_id: "stack1".to_string(),
+                task_small_id: 1,
+                selected_node_id: 1,
+                num_compute_units: 100,
+                price: 1000,
+                already_computed_units: 50,
+                in_settle_period: true,
+                total_hash: vec![],
+                num_total_messages: 0,
+            },
+            Stack {
+                owner_address: "owner2".to_string(),
+                stack_small_id: 2,
+                stack_id: "stack2".to_string(),
+                task_small_id: 1,
+                selected_node_id: 2,
+                num_compute_units: 200,
+                price: 2000,
+                already_computed_units: 150,
+                in_settle_period: true,
+                total_hash: vec![],
+                num_total_messages: 0,
+            },
+            Stack {
+                owner_address: "owner3".to_string(),
+                stack_small_id: 3,
+                stack_id: "stack3".to_string(),
+                task_small_id: 1,
+                selected_node_id: 3,
+                num_compute_units: 300,
+                price: 3000,
+                already_computed_units: 250,
+                in_settle_period: true,
+                total_hash: vec![],
+                num_total_messages: 0,
+            },
+        ];
+
+        for stack in stacks {
+            state_manager.insert_new_stack(stack).await.unwrap();
+        }
+
+        // Create settlement tickets with different characteristics
+        let tickets = vec![
+            StackSettlementTicket {
+                stack_small_id: 1,
+                selected_node_id: 1,
+                num_claimed_compute_units: 50,
+                requested_attestation_nodes: "[2,3]".to_string(),
+                committed_stack_proofs: vec![1; 32],
+                stack_merkle_leaves: vec![2; 32],
+                dispute_settled_at_epoch: None,
+                already_attested_nodes: "[2]".to_string(),
+                is_in_dispute: false,
+                user_refund_amount: 0,
+                is_claimed: false,
+            },
+            StackSettlementTicket {
+                stack_small_id: 2,
+                selected_node_id: 2,
+                num_claimed_compute_units: 150,
+                requested_attestation_nodes: "[1,3]".to_string(),
+                committed_stack_proofs: vec![3; 32],
+                stack_merkle_leaves: vec![4; 32],
+                dispute_settled_at_epoch: Some(100),
+                already_attested_nodes: "[1,3]".to_string(),
+                is_in_dispute: true,
+                user_refund_amount: 1000,
+                is_claimed: true,
+            },
+            StackSettlementTicket {
+                stack_small_id: 3,
+                selected_node_id: 3,
+                num_claimed_compute_units: 250,
+                requested_attestation_nodes: "[1,2]".to_string(),
+                committed_stack_proofs: vec![5; 32],
+                stack_merkle_leaves: vec![6; 32],
+                dispute_settled_at_epoch: None,
+                already_attested_nodes: "[]".to_string(),
+                is_in_dispute: false,
+                user_refund_amount: 0,
+                is_claimed: false,
+            },
+        ];
+
+        for ticket in tickets.clone() {
+            state_manager
+                .insert_new_stack_settlement_ticket(ticket)
+                .await
+                .unwrap();
+        }
+
+        // Test 1: Empty input
+        let empty_result = state_manager
+            .get_stack_settlement_tickets(&[])
+            .await
+            .unwrap();
+        assert!(
+            empty_result.is_empty(),
+            "Empty input should return empty result"
+        );
+
+        // Test 2: Single ticket retrieval
+        let single_result = state_manager
+            .get_stack_settlement_tickets(&[1])
+            .await
+            .unwrap();
+        assert_eq!(single_result.len(), 1, "Should return exactly one ticket");
+        assert_eq!(
+            single_result[0], tickets[0],
+            "Retrieved ticket should match original"
+        );
+
+        // Test 3: Multiple tickets retrieval
+        let multiple_result = state_manager
+            .get_stack_settlement_tickets(&[1, 2])
+            .await
+            .unwrap();
+        assert_eq!(
+            multiple_result.len(),
+            2,
+            "Should return exactly two tickets"
+        );
+        assert!(
+            multiple_result.contains(&tickets[0]) && multiple_result.contains(&tickets[1]),
+            "Should contain both requested tickets"
+        );
+
+        // Test 4: Non-existent ticket IDs
+        let non_existent = state_manager
+            .get_stack_settlement_tickets(&[999])
+            .await
+            .unwrap();
+        assert!(
+            non_existent.is_empty(),
+            "Non-existent ID should return empty result"
+        );
+
+        // Test 5: Mixed existing and non-existing IDs
+        let mixed_result = state_manager
+            .get_stack_settlement_tickets(&[1, 999, 2])
+            .await
+            .unwrap();
+        assert_eq!(mixed_result.len(), 2, "Should return only existing tickets");
+        assert!(
+            mixed_result.contains(&tickets[0]) && mixed_result.contains(&tickets[1]),
+            "Should contain only existing tickets"
+        );
+
+        // Test 6: Duplicate IDs in input
+        let duplicate_result = state_manager
+            .get_stack_settlement_tickets(&[1, 1, 1])
+            .await
+            .unwrap();
+        assert_eq!(
+            duplicate_result.len(),
+            1,
+            "Should return unique tickets only"
+        );
+        assert_eq!(
+            duplicate_result[0], tickets[0],
+            "Should return correct ticket"
+        );
+
+        // Test 7: All tickets retrieval
+        let all_result = state_manager
+            .get_stack_settlement_tickets(&[1, 2, 3])
+            .await
+            .unwrap();
+        assert_eq!(all_result.len(), 3, "Should return all tickets");
+        assert!(
+            all_result.contains(&tickets[0])
+                && all_result.contains(&tickets[1])
+                && all_result.contains(&tickets[2]),
+            "Should contain all tickets"
+        );
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }

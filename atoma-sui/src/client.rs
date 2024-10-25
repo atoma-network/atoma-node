@@ -646,7 +646,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_small_id = node_small_id.unwrap_or(
@@ -686,7 +686,7 @@ impl AtomaSuiClient {
             response.digest
         );
 
-        Ok(())
+        Ok(response.digest.to_string())
     }
 
     /// Submits a transaction to start an attestation dispute in the Atoma network.

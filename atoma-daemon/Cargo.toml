@@ -10,6 +10,7 @@ atoma-sui = { workspace = true }
 blake2 = { workspace = true }
 rs_merkle = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sui-sdk = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
