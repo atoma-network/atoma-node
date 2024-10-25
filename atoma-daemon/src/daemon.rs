@@ -815,6 +815,44 @@ async fn submit_node_try_settle_stacks_tx(
     Ok(Json(NodeTrySettleStacksResponse { tx_digests }))
 }
 
+/// Submits attestation proof transactions for one or more stacks.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the client and state manager for transaction submission
+/// * `value` - A JSON payload containing the node attestation proof request details
+///
+/// # Returns
+/// * `Result<Json<NodeAttestationProofResponse>>` - A JSON response containing the transaction digests
+///   - `Ok(Json<NodeAttestationProofResponse>)` - Successfully submitted the attestation proof transactions
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to submit transactions or retrieve necessary data
+///
+/// # Example Request
+/// ```json
+/// {
+///     "stack_small_ids": [123, 456],
+///     "node_small_id": 789,  // Optional: if not provided, uses all registered node badges
+///     "gas": "0x789",
+///     "gas_budget": 1000,
+///     "gas_price": 10
+/// }
+/// ```
+///
+/// # Example Response
+/// ```json
+/// {
+///     "tx_digests": ["0xabc", "0xdef"]  // One digest per successful attestation submission
+/// }
+/// ```
+///
+/// # Processing Flow
+/// 1. Retrieves stack settlement tickets and total hashes for the provided stack IDs
+/// 2. Determines which nodes need to submit attestations (single node or all registered nodes)
+/// 3. For each stack and attestation node combination:
+///    - Computes the committed stack proof
+///    - Submits an attestation transaction
+///    - Collects the transaction digest
+/// 
+/// Note: The attestation node index is offset by 1 since the 0th index is reserved for the original selected node.
 #[instrument(level = "trace", skip_all)]
 async fn submit_node_attestation_proof_tx(
     State(daemon_state): State<DaemonState>,
