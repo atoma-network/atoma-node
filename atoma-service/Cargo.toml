@@ -2,7 +2,7 @@
 name = "atoma-service"
 version.workspace = true
 edition.workspace = true
-
+license.workspace = true
 
 [[bin]]
 name = "atoma-node"
