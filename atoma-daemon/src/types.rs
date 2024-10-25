@@ -262,7 +262,7 @@ pub struct NodeClaimFundsRequest {
     /// Optional small ID of the node.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>, 
+    pub node_small_id: Option<i64>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.

@@ -11,26 +11,186 @@ use axum::{
 };
 use std::sync::Arc;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::sync::RwLock;
-use tracing::{error, instrument};
+use tokio::{
+    net::TcpListener,
+    signal,
+    sync::{watch::Sender, RwLock},
+};
+use tracing::{error, info, instrument};
 
 use crate::{
     calculate_node_index, compute_committed_stack_proof,
     types::{
-        NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest, NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse, NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest, NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse
+        NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest,
+        NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse,
+        NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest,
+        NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
+        NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
     },
     CommittedStackProof,
 };
 
 type Result<T> = std::result::Result<T, StatusCode>;
 
+/// State container for the Atoma daemon service that manages node operations and interactions.
+///
+/// The `DaemonState` struct serves as the central state management component for the Atoma daemon,
+/// containing essential components for interacting with the Sui blockchain and managing node state.
+/// It is designed to be shared across multiple request handlers and maintains thread-safe access
+/// to shared resources.
+///
+/// # Thread Safety
+///
+/// This struct is designed to be safely shared across multiple threads:
+/// - Implements `Clone` for easy sharing across request handlers
+/// - Uses `Arc<RwLock>` for thread-safe access to the Sui client
+/// - State manager and node badges vector use interior mutability patterns
+///
+/// # Example
+///
+/// ```rust
+/// // Create a new daemon state instance
+/// let daemon_state = DaemonState {
+///     client: Arc::new(RwLock::new(AtomaSuiClient::new())),
+///     state_manager: StateManager::new(),
+///     node_badges: vec![(ObjectID::new([0; 32]), 1)],
+/// };
+///
+/// // Clone the state for use in different handlers
+/// let handler_state = daemon_state.clone();
+/// ```
 #[derive(Clone)]
 pub struct DaemonState {
+    /// Thread-safe reference to the Sui blockchain client that handles all blockchain interactions.
+    /// Wrapped in `Arc<RwLock>` to allow multiple handlers to safely access and modify the client
+    /// state concurrently.
     client: Arc<RwLock<AtomaSuiClient>>,
+
+    /// Manages the persistent state of nodes, tasks, and other system components.
+    /// Handles database operations and state synchronization.
     state_manager: StateManager,
+
+    /// Vector of tuples containing node badge information, where each tuple contains:
+    /// - `ObjectID`: The unique identifier of the node badge on the Sui blockchain
+    /// - `u64`: The small ID associated with the node badge for efficient indexing
     node_badges: Vec<(ObjectID, u64)>,
 }
 
+/// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
+///
+/// This function initializes and runs the main daemon service that handles node operations,
+/// task management, and blockchain interactions. It sets up the HTTP server with the configured
+/// routes and implements graceful shutdown handling.
+///
+/// # Arguments
+///
+/// * `daemon_state` - The shared state container for the daemon service, containing the Sui client,
+///   state manager, and node badge information
+/// * `tcp_listener` - A pre-configured TCP listener that the HTTP server will bind to
+/// * `shutdown_sender` - A channel sender used to signal shutdown completion to other components
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) on successful shutdown, or an error if
+///   server initialization or shutdown fails
+///
+/// # Shutdown Behavior
+///
+/// The server implements graceful shutdown by:
+/// 1. Listening for a Ctrl+C signal
+/// 2. Logging shutdown initiation
+/// 3. Waiting for existing connections to complete
+/// 4. Sending a shutdown confirmation through the provided channel
+///
+/// # Example
+///
+/// ```rust
+/// use tokio::net::TcpListener;
+/// use tokio::sync::watch;
+/// use atoma_daemon::{DaemonState, run_daemon};
+///
+/// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
+///     let daemon_state = DaemonState::new(/* ... */);
+///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
+///     let (shutdown_tx, _) = watch::channel(false);
+///     
+///     run_daemon(daemon_state, listener, shutdown_tx).await
+/// }
+/// ```
+pub async fn run_daemon(
+    daemon_state: DaemonState,
+    tcp_listener: TcpListener,
+    shutdown_sender: Sender<bool>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let daemon_router = create_daemon_router(daemon_state);
+    let shutdown_signal = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to parse Ctrl+C signal");
+        info!("Shutting down server...");
+    };
+    let server = axum::serve(tcp_listener, daemon_router.into_make_service())
+        .with_graceful_shutdown(shutdown_signal);
+    server.await?;
+    shutdown_sender.send(true)?;
+    Ok(())
+}
+
+/// Creates and configures the main router for the Atoma daemon HTTP API.
+///
+/// This function sets up all API endpoints for node operations, task management, stack handling,
+/// and attestation dispute resolution. The router uses axum's routing system to handle both GET
+/// and POST requests with appropriate handler functions.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state container that will be available to all route handlers
+///
+/// # Returns
+/// * `Router` - A configured axum Router instance with all API routes and shared state
+///
+/// # API Endpoints
+///
+/// ## Subscription Management
+/// * `GET /subscriptions` - Get all subscriptions for registered nodes
+/// * `GET /subscriptions/:id` - Get subscriptions for a specific node
+/// * `POST /model_subscribe` - Subscribe a node to a model
+/// * `POST /task_subscribe` - Subscribe a node to a task
+/// * `POST /task_unsubscribe` - Unsubscribe a node from a task
+///
+/// ## Task Management
+/// * `GET /tasks` - Get all available tasks
+///
+/// ## Stack Operations
+/// * `GET /stacks` - Get all stacks for registered nodes
+/// * `GET /stacks/:id` - Get stacks for a specific node
+/// * `GET /almost_filled_stacks/:percentage` - Get stacks filled above specified percentage
+/// * `GET /almost_filled_stacks/:id/:percentage` - Get node's stacks filled above percentage
+/// * `GET /claimed_stacks` - Get all claimed stacks
+/// * `GET /claimed_stacks/:id` - Get claimed stacks for a specific node
+/// * `POST /try_settle_stack_ids` - Attempt to settle specified stacks
+/// * `POST /submit_stack_settlement_attestations` - Submit attestations for stack settlement
+/// * `POST /claim_funds` - Claim funds from completed stacks
+///
+/// ## Attestation Disputes
+/// * `GET /against_attestation_disputes` - Get disputes against registered nodes
+/// * `GET /against_attestation_disputes/:id` - Get disputes against a specific node
+/// * `GET /own_attestation_disputes` - Get disputes initiated by registered nodes
+/// * `GET /own_attestation_disputes/:id` - Get disputes initiated by a specific node
+///
+/// ## Node Registration
+/// * `POST /register` - Register a new node
+///
+/// # Example
+/// ```rust
+/// use atoma_daemon::DaemonState;
+///
+/// let daemon_state = DaemonState::new(/* ... */);
+/// let app = create_daemon_router(daemon_state);
+/// // Start the server with the configured router
+/// axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+///     .serve(app.into_make_service())
+///     .await?;
+/// ```
 pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
     Router::new()
         .route("/subscriptions", get(get_all_node_subscriptions))
@@ -73,12 +233,13 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         )
         .route(
             "/try_settle_stack_ids",
-            get(submit_node_try_settle_stacks_tx),
+            post(submit_node_try_settle_stacks_tx),
         )
         .route(
             "/submit_stack_settlement_attestations",
             post(submit_stack_settlement_attestations_tx),
         )
+        .route("/claim_funds", post(submit_claim_funds_tx))
         .with_state(daemon_state)
 }
 
@@ -852,7 +1013,7 @@ async fn submit_node_try_settle_stacks_tx(
 ///    - Computes the committed stack proof
 ///    - Submits an attestation transaction
 ///    - Collects the transaction digest
-/// 
+///
 /// Note: The attestation node index is offset by 1 since the 0th index is reserved for the original selected node.
 #[instrument(level = "trace", skip_all)]
 async fn submit_stack_settlement_attestations_tx(
@@ -917,7 +1078,7 @@ async fn submit_stack_settlement_attestations_tx(
                 root: committed_stack_proof,
                 leaf: stack_merkle_leaf,
             } = compute_committed_stack_proof(
-                &total_hash,
+                total_hash,
                 attestation_node_index.attestation_node_index as u64 + 1,
             )?;
 
@@ -1001,6 +1162,6 @@ async fn submit_claim_funds_tx(
         .map_err(|_| {
             error!("Failed to submit node claim funds tx");
             StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        })?;
     Ok(Json(NodeClaimFundsResponse { tx_digest }))
 }
