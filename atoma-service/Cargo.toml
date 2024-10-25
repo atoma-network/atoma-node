@@ -6,7 +6,7 @@ edition.workspace = true
 
 [[bin]]
 name = "atoma-node"
-path = "../atoma-bin/atoma-node.rs"
+path = "../atoma-bin/atoma_node.rs"
 
 [dependencies]
 axum = { workspace = true }
