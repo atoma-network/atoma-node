@@ -24,6 +24,11 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
+/// The directory where the logs are stored.
+const LOGS: &str = "./logs";
+/// The log file name.
+const LOG_FILE: &str = "atoma-node-service.log";
+
 /// Command line arguments for the Atoma node
 #[derive(Parser)]
 struct Args {
@@ -178,7 +183,7 @@ async fn shutdown(subscriber_handle: tokio::task::JoinHandle<Result<()>>) -> Res
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    setup_logging("./logs").context("Failed to setup logging")?;
+    setup_logging(LOGS).context("Failed to setup logging")?;
 
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
@@ -240,7 +245,7 @@ async fn main() -> Result<()> {
 /// Configure logging with JSON formatting, file output, and console output
 fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
     // Set up file appender with rotation
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, "atoma-node.log");
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
 
     // Create a non-blocking writer
     let (non_blocking_appender, _guard) = non_blocking(file_appender);
@@ -269,7 +274,7 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
 
     // Create filter from environment variable or default to info
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,atoma_service=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("info,atoma_node_service=debug"));
 
     // Combine layers with filter
     Registry::default()
