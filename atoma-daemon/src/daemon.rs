@@ -73,21 +73,17 @@ pub struct DaemonState {
 }
 
 /// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
-///
 /// This function initializes and runs the main daemon service that handles node operations,
-/// task management, and blockchain interactions. It sets up the HTTP server with the configured
-/// routes and implements graceful shutdown handling.
 ///
 /// # Arguments
 ///
 /// * `daemon_state` - The shared state container for the daemon service, containing the Sui client,
 ///   state manager, and node badge information
 /// * `tcp_listener` - A pre-configured TCP listener that the HTTP server will bind to
-/// * `shutdown_sender` - A channel sender used to signal shutdown completion to other components
 ///
 /// # Returns
 ///
-/// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) on successful shutdown, or an error if
+/// * `anyhow::Result<()>` - Ok(()) on successful shutdown, or an error if
 ///   server initialization or shutdown fails
 ///
 /// # Shutdown Behavior
@@ -96,7 +92,6 @@ pub struct DaemonState {
 /// 1. Listening for a Ctrl+C signal
 /// 2. Logging shutdown initiation
 /// 3. Waiting for existing connections to complete
-/// 4. Sending a shutdown confirmation through the provided channel
 ///
 /// # Example
 ///
@@ -108,9 +103,8 @@ pub struct DaemonState {
 /// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
 ///     let daemon_state = DaemonState::new(/* ... */);
 ///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
-///     let (shutdown_tx, _) = watch::channel(false);
 ///     
-///     run_daemon(daemon_state, listener, shutdown_tx).await
+///     run_daemon(daemon_state, listener).await
 /// }
 /// ```
 pub async fn run_daemon(
@@ -131,10 +125,6 @@ pub async fn run_daemon(
 }
 
 /// Creates and configures the main router for the Atoma daemon HTTP API.
-///
-/// This function sets up all API endpoints for node operations, task management, stack handling,
-/// and attestation dispute resolution. The router uses axum's routing system to handle both GET
-/// and POST requests with appropriate handler functions.
 ///
 /// # Arguments
 /// * `daemon_state` - The shared state container that will be available to all route handlers
