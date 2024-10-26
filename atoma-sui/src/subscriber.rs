@@ -160,86 +160,97 @@ impl SuiEventSubscriber {
         );
 
         loop {
-            if *self.shutdown_signal.borrow() {
-                info!(
-                    target = "atoma-sui-subscriber",
-                    event = "subscriber-stopped",
-                    "Shutdown signal received, gracefully stopping subscriber..."
-                );
-                break;
-            }
-
-            let event_filter = self.filter.clone();
-            let EventPage {
-                data,
-                next_cursor,
-                has_next_page,
-            } = match client
-                .event_api()
-                .query_events(event_filter, self.cursor, limit, false)
-                .await
-            {
-                Ok(page) => page,
-                Err(e) => {
-                    error!(
-                        target = "atoma-sui-subscriber",
-                        event = "subscriber-read-events-error",
-                        "Failed to read paged events, with error: {e}"
-                    );
-                    continue;
-                }
-            };
-            self.cursor = next_cursor;
-
-            for sui_event in data {
-                let event_name = sui_event.type_.name;
-                trace!(
-                    target = "atoma-sui-subscriber",
-                    event = "subscriber-received-new-event",
-                    event_name = %event_name,
-                    "Received new event: {event_name:#?}"
-                );
-                match AtomaEventIdentifier::from_str(event_name.as_str()) {
-                    Ok(atoma_event_id) => {
-                        let atoma_event =
-                            parse_event(&atoma_event_id, sui_event.parsed_json).await?;
-                        if let Some(small_ids) = self.small_ids.as_ref() {
-                            if filter_event_by_small_ids(&atoma_event, small_ids) {
-                                self.state_manager_sender
-                                    .send(atoma_event)
-                                    .map_err(Box::new)?;
+            tokio::select! {
+                    page = client.event_api().query_events(self.filter.clone(), self.cursor, limit, false) => {
+                        let EventPage {
+                            data,
+                            next_cursor,
+                            has_next_page,
+                        } = match page {
+                            Ok(page) => page,
+                            Err(e) => {
+                                error!(
+                                    target = "atoma-sui-subscriber",
+                                    event = "subscriber-read-events-error",
+                                    "Failed to read paged events, with error: {e}"
+                                );
+                                continue;
                             }
-                        } else {
-                            self.state_manager_sender
-                                .send(atoma_event)
-                                .map_err(Box::new)?;
+                        };
+                        self.cursor = next_cursor;
+
+                        for sui_event in data {
+                            let event_name = sui_event.type_.name;
+                            trace!(
+                                target = "atoma-sui-subscriber",
+                                event = "subscriber-received-new-event",
+                                event_name = %event_name,
+                                "Received new event: {event_name:#?}"
+                            );
+                            match AtomaEventIdentifier::from_str(event_name.as_str()) {
+                                Ok(atoma_event_id) => {
+                                    let atoma_event =
+                                        parse_event(&atoma_event_id, sui_event.parsed_json).await?;
+                                    if let Some(small_ids) = self.small_ids.as_ref() {
+                                        if filter_event_by_small_ids(&atoma_event, small_ids) {
+                                            self.state_manager_sender
+                                                .send(atoma_event)
+                                                .map_err(Box::new)?;
+                                        }
+                                    } else {
+                                        self.state_manager_sender
+                                            .send(atoma_event)
+                                            .map_err(Box::new)?;
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(
+                                        target = "atoma-sui-subscriber",
+                                        event = "subscriber-event-parse-error",
+                                        "Failed to parse event: {e}",
+                                    );
+                                    // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
+                                }
+                            }
+                        }
+
+                        if !has_next_page {
+                            // No new events to read, so let's wait for a while
+                            info!(
+                                target = "atoma-sui-subscriber",
+                                event = "subscriber-no-new-events",
+                                wait_duration = DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
+                                "No new events to read, the node is now synced with the Atoma protocol, waiting until the next synchronization..."
+                            );
+                            tokio::time::sleep(Duration::from_millis(
+                                DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
+                                ))
+                            .await;
                         }
                     }
-                    Err(e) => {
-                        error!(
-                            target = "atoma-sui-subscriber",
-                            event = "subscriber-event-parse-error",
-                            "Failed to parse event: {e}"
-                        );
-                        // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
+                    shutdown_signal_changed = self.shutdown_signal.changed() => {
+                        match shutdown_signal_changed {
+                            Ok(()) => {
+                                if *self.shutdown_signal.borrow() {
+                                    info!(
+                                    target = "atoma-sui-subscriber",
+                                    event = "subscriber-stopped",
+                                    "Shutdown signal received, gracefully stopping subscriber..."
+                                );
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                target = "atoma-sui-subscriber",
+                                event = "subscriber-shutdown-signal-error",
+                                "Failed to receive shutdown signal: {e}"
+                            );
+                        }
                     }
                 }
             }
-
-            if !has_next_page {
-                // No new events to read, so let's wait for a while
-                info!(
-                    target = "atoma-sui-subscriber",
-                    event = "subscriber-no-new-events",
-                    "No new events to read, the node is now synced with the Atoma protocol, let's wait {DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS} millis until the next synchronization"
-                );
-                tokio::time::sleep(Duration::from_millis(
-                    DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
-                ))
-                .await;
-            }
         }
-
         Ok(())
     }
 }
