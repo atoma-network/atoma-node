@@ -6,8 +6,8 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-atoma-state = { workspace = true }
 config = { workspace = true }
+flume = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

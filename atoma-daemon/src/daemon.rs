@@ -1,6 +1,6 @@
 use atoma_state::{
+    state_manager::AtomaState,
     types::{NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task},
-    StateManager,
 };
 use atoma_sui::client::AtomaSuiClient;
 use axum::{
@@ -48,7 +48,7 @@ type Result<T> = std::result::Result<T, StatusCode>;
 /// // Create a new daemon state instance
 /// let daemon_state = DaemonState {
 ///     client: Arc::new(RwLock::new(AtomaSuiClient::new())),
-///     state_manager: StateManager::new(),
+///     state_manager: AtomaStateManager::new(),
 ///     node_badges: vec![(ObjectID::new([0; 32]), 1)],
 /// };
 ///
@@ -64,7 +64,7 @@ pub struct DaemonState {
 
     /// Manages the persistent state of nodes, tasks, and other system components.
     /// Handles database operations and state synchronization.
-    pub state_manager: StateManager,
+    pub atoma_state: AtomaState,
 
     /// Vector of tuples containing node badge information, where each tuple contains:
     /// - `ObjectID`: The unique identifier of the node badge on the Sui blockchain
@@ -249,7 +249,7 @@ async fn get_all_node_subscriptions(
         return Err(StatusCode::NOT_FOUND);
     }
     let all_node_subscriptions = daemon_state
-        .state_manager
+        .atoma_state
         .get_all_node_subscriptions(
             &current_node_badges
                 .iter()
@@ -294,7 +294,7 @@ async fn get_node_subscriptions(
 ) -> Result<Json<Vec<NodeSubscription>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_all_node_subscriptions(&[node_small_id])
             .await
             .map_err(|_| {
@@ -319,7 +319,7 @@ async fn get_node_subscriptions(
 #[instrument(level = "trace", skip_all)]
 async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Task>>> {
     let all_tasks = daemon_state
-        .state_manager
+        .atoma_state
         .get_all_tasks()
         .await
         .map_err(|_| {
@@ -345,7 +345,7 @@ async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<V
 async fn get_all_node_stacks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_stacks_by_node_small_ids(
                 &daemon_state
                     .node_badges
@@ -381,7 +381,7 @@ async fn get_node_stacks(
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_stack_by_id(node_small_id)
             .await
             .map_err(|_| {
@@ -411,7 +411,7 @@ async fn get_all_almost_filled_stacks(
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_almost_filled_stacks(
                 &daemon_state
                     .node_badges
@@ -449,7 +449,7 @@ async fn get_node_almost_filled_stacks(
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_almost_filled_stacks(&[node_small_id], fraction)
             .await
             .map_err(|_| {
@@ -477,7 +477,7 @@ async fn get_all_against_attestation_disputes(
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_against_attestation_disputes(
                 &daemon_state
                     .node_badges
@@ -513,7 +513,7 @@ async fn get_against_attestation_dispute(
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_against_attestation_disputes(&[node_small_id])
             .await
             .map_err(|_| {
@@ -541,7 +541,7 @@ async fn get_all_own_attestation_disputes(
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_own_attestation_disputes(
                 &daemon_state
                     .node_badges
@@ -577,7 +577,7 @@ async fn get_own_attestation_dispute(
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_own_attestation_disputes(&[node_small_id])
             .await
             .map_err(|_| {
@@ -605,7 +605,7 @@ async fn get_all_claimed_stacks(
 ) -> Result<Json<Vec<StackSettlementTicket>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_claimed_stacks(
                 &daemon_state
                     .node_badges
@@ -641,7 +641,7 @@ async fn get_node_claimed_stacks(
 ) -> Result<Json<Vec<StackSettlementTicket>>> {
     Ok(Json(
         daemon_state
-            .state_manager
+            .atoma_state
             .get_claimed_stacks(&[node_small_id])
             .await
             .map_err(|_| {
@@ -945,7 +945,7 @@ async fn submit_node_try_settle_stacks_tx(
     } = value;
 
     let total_hashes = daemon_state
-        .state_manager
+        .atoma_state
         .get_all_total_hashes(&stack_small_ids)
         .await
         .map_err(|_| {
@@ -1036,7 +1036,7 @@ async fn submit_stack_settlement_attestations_tx(
     } = value;
 
     let stack_settlement_tickets = daemon_state
-        .state_manager
+        .atoma_state
         .get_stack_settlement_tickets(&stack_small_ids)
         .await
         .map_err(|_| {
@@ -1045,7 +1045,7 @@ async fn submit_stack_settlement_attestations_tx(
         })?;
 
     let total_hashes = daemon_state
-        .state_manager
+        .atoma_state
         .get_all_total_hashes(&stack_small_ids)
         .await
         .map_err(|_| {

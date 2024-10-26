@@ -14,10 +14,6 @@ pub struct AtomaSuiConfig {
     /// This is used for making HTTP requests to the Sui RPC node
     http_rpc_node_addr: String,
 
-    /// The WebSocket URL for a Sui RPC node, to which the subscriber will connect
-    /// This is used for establishing WebSocket connections for real-time events
-    ws_rpc_node_addr: String,
-
     /// The Atoma's DB object ID on the Sui network
     /// This identifies the specific Atoma's DB object to interact with
     atoma_db: ObjectID,
@@ -34,10 +30,6 @@ pub struct AtomaSuiConfig {
     /// The timeout duration for requests
     /// This sets the maximum time to wait for a response from the Sui network
     request_timeout: Option<Duration>,
-
-    /// The number of concurrent tasks to run
-    /// This sets the maximum number of tasks to run concurrently
-    num_concurrent_tasks: Option<usize>,
 
     /// The maximum number of concurrent requests to the Sui client
     max_concurrent_requests: Option<u64>,
@@ -60,27 +52,23 @@ impl AtomaSuiConfig {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         http_rpc_node_addr: String,
-        ws_rpc_node_addr: String,
         atoma_db: ObjectID,
         atoma_package_id: ObjectID,
         toma_package_id: ObjectID,
         request_timeout: Option<Duration>,
         limit: Option<usize>,
         small_ids: Vec<u64>,
-        num_concurrent_tasks: Option<usize>,
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
     ) -> Self {
         Self {
             http_rpc_node_addr,
-            ws_rpc_node_addr,
             atoma_db,
             atoma_package_id,
             toma_package_id,
             request_timeout,
             limit,
             small_ids,
-            num_concurrent_tasks,
             max_concurrent_requests,
             sui_config_path,
         }
@@ -89,11 +77,6 @@ impl AtomaSuiConfig {
     /// Getter for `http_url`
     pub fn http_rpc_node_addr(&self) -> String {
         self.http_rpc_node_addr.clone()
-    }
-
-    /// Getter for `ws_url`
-    pub fn ws_rpc_node_addr(&self) -> String {
-        self.ws_rpc_node_addr.clone()
     }
 
     /// Getter for `limit`
@@ -124,11 +107,6 @@ impl AtomaSuiConfig {
     /// Getter for `small_id`
     pub fn small_ids(&self) -> Vec<u64> {
         self.small_ids.clone()
-    }
-
-    /// Getter for `num_concurrent_tasks`
-    pub fn num_concurrent_tasks(&self) -> Option<usize> {
-        self.num_concurrent_tasks
     }
 
     /// Getter for `max_concurrent_requests`
@@ -187,7 +165,6 @@ pub mod tests {
     fn test_config() {
         let config = AtomaSuiConfig::new(
             "".to_string(),
-            "".to_string(),
             "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
                 .parse()
                 .unwrap(),
@@ -201,12 +178,11 @@ pub mod tests {
             Some(10),
             vec![0, 1, 2],
             Some(10),
-            Some(10),
             "".to_string(),
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_rpc_node_addr = \"\"\nws_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nnum_concurrent_tasks = 10\nmax_concurrent_requests = 10\nlimit = 10\nsmall_ids = [0, 1, 2]\nsui_config_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nsmall_ids = [0, 1, 2]\nsui_config_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

@@ -1,8 +1,9 @@
 mod middleware {
     use atoma_state::{
-        types::{Stack, Task},
-        SqlitePool, StateManager,
+        types::{AtomaAtomaStateManagerEvent, Stack, Task},
+        AtomaStateManager,
     };
+    use atoma_sui::events::AtomaEvent;
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
@@ -11,6 +12,7 @@ mod middleware {
         digest::generic_array::{typenum::U32, GenericArray},
         Digest,
     };
+    use flume::Sender;
     use hex::ToHex;
     use serde_json::json;
     use serial_test::serial;
@@ -19,6 +21,7 @@ mod middleware {
     use sui_sdk::types::crypto::{EncodeDecodeBase64, PublicKey, SignatureScheme};
     use tempfile::tempdir;
     use tokenizers::Tokenizer;
+    use tokio::task::JoinHandle;
     use tower::Service;
 
     use crate::{
@@ -73,7 +76,15 @@ mod middleware {
         Tokenizer::from_str(&tokenizer_json).unwrap()
     }
 
-    async fn setup_database(public_key: String) -> (SqlitePool, PathBuf) {
+    async fn setup_database(
+        public_key: String,
+    ) -> (
+        PathBuf,
+        JoinHandle<()>,
+        Sender<AtomaAtomaStateManagerEvent>,
+        tokio::sync::watch::Sender<bool>,
+        Sender<AtomaEvent>,
+    ) {
         let db_path = std::path::Path::new("./db_path").to_path_buf();
 
         std::fs::OpenOptions::new()
@@ -85,7 +96,15 @@ mod middleware {
             .unwrap();
 
         let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
-        let state_manager = StateManager::new_from_url(database_url).await.unwrap();
+        let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
+        let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+        let state_manager = AtomaStateManager::new_from_url(
+            database_url,
+            event_subscriber_receiver,
+            state_manager_receiver,
+        )
+        .await
+        .unwrap();
         let task = Task {
             task_small_id: 1,
             task_id: "1".to_string(),
@@ -101,8 +120,9 @@ mod middleware {
             valid_until_epoch: Some(1),
             deprecated_at_epoch: Some(1),
         };
-        state_manager.insert_new_task(task).await.unwrap();
+        state_manager.state.insert_new_task(task).await.unwrap();
         state_manager
+            .state
             .subscribe_node_to_task(1, 1, 100, 1000)
             .await
             .unwrap();
@@ -119,27 +139,56 @@ mod middleware {
             total_hash: vec![],
             num_total_messages: 1,
         };
-        state_manager.insert_new_stack(stack).await.unwrap();
-        (state_manager.into_pool(), db_path)
+        state_manager.state.insert_new_stack(stack).await.unwrap();
+        let (shutdown_sender, shutdown_signal) = tokio::sync::watch::channel(false);
+        let state_manager_handle = tokio::spawn(async move {
+            state_manager.run(shutdown_signal).await.unwrap();
+        });
+        // NOTE: We don't need the event subscriber sender for the tests,
+        // but we need to return it so the tests can send events to the state manager
+        // otherwise the event subscriber will be dropped and the state manager shuts down
+        (
+            db_path,
+            state_manager_handle,
+            state_manager_sender,
+            shutdown_sender,
+            _event_subscriber_sender,
+        )
     }
 
-    async fn setup_app_state() -> (AppState, PublicKey, PathBuf) {
+    async fn setup_app_state() -> (
+        AppState,
+        PublicKey,
+        PathBuf,
+        tokio::sync::watch::Sender<bool>,
+        JoinHandle<()>,
+        Sender<AtomaEvent>,
+    ) {
         let keystore = setup_keystore();
         let models = vec!["meta-llama/Llama-3.1-70B-Instruct"];
         let public_key = keystore.key_pairs().first().unwrap().public();
         let tokenizer = load_tokenizer().await;
-        let (state, db_path) = setup_database(public_key.encode_hex()).await;
+        let (
+            db_path,
+            state_manager_handle,
+            state_manager_sender,
+            shutdown_sender,
+            _event_subscriber_sender,
+        ) = setup_database(public_key.encode_hex()).await;
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer)]),
-                state,
+                state_manager_sender,
                 inference_service_url: "".to_string(),
                 keystore: Arc::new(keystore),
                 address_index: 0,
             },
             public_key,
             db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
         )
     }
 
@@ -167,8 +216,15 @@ mod middleware {
 
     #[tokio::test]
     #[serial]
-    async fn test_verify_stack_permissions() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+    async fn test_verify_stack_permissions_x() {
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         // Create request body
         let body = json!({
@@ -201,14 +257,25 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
 
+        println!("FLAG FLAG FLAG 5");
         assert_eq!(response.status(), StatusCode::OK);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_missing_public_key() {
-        let (app_state, _, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            _,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -234,13 +301,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_unsupported_model() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "unsupported-model",
@@ -266,13 +342,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_invalid_messages_format() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -295,13 +380,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_missing_max_completion_tokens() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -327,13 +421,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_invalid_stack() {
-        let (app_state, _, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            _,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -359,13 +462,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_sets_request_metadata() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -408,13 +520,22 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::OK);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_token_counting() {
-        let (app_state, public_key, db_path) = setup_app_state().await;
+        let (
+            app_state,
+            public_key,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -465,6 +586,8 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::OK);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
         std::fs::remove_file(db_path).unwrap();
     }
 

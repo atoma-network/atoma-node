@@ -5,7 +5,7 @@ use atoma_daemon::{
     config::AtomaDaemonConfig,
     daemon::{run_daemon, DaemonState},
 };
-use atoma_state::{config::StateManagerConfig, StateManager};
+use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
 use atoma_sui::client::AtomaSuiClient;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
@@ -38,18 +38,19 @@ async fn main() -> Result<()> {
     setup_logging()?;
     let args = DaemonArgs::parse();
     let daemon_config = AtomaDaemonConfig::from_file_path(args.config_file_path.clone());
-    let state_manager_config = StateManagerConfig::from_file_path(args.config_file_path.clone());
+    let state_manager_config =
+        AtomaStateManagerConfig::from_file_path(args.config_file_path.clone());
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new(args.config_file_path).await?,
     ));
 
-    info!("Starting a new StateManager instance...");
+    info!("Starting a new AtomaStateManager instance...");
 
-    let state_manager = StateManager::new_from_url(state_manager_config.database_url).await?;
+    let atoma_state = AtomaState::new_from_url(state_manager_config.database_url).await?;
     let tcp_listener = TcpListener::bind(daemon_config.service_bind_address.clone()).await?;
     let daemon_state = DaemonState {
         client,
-        state_manager,
+        atoma_state,
         node_badges: daemon_config
             .node_badges
             .iter()

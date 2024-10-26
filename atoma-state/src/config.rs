@@ -4,18 +4,18 @@ use std::path::Path;
 
 /// Configuration for SQLite database connection.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StateManagerConfig {
+pub struct AtomaStateManagerConfig {
     /// The URL of the SQLite database.
     pub database_url: String,
 }
 
-impl StateManagerConfig {
+impl AtomaStateManagerConfig {
     /// Constructor
     pub fn new(database_url: String) -> Self {
         Self { database_url }
     }
 
-    /// Creates a new `StateManagerConfig` instance from a configuration file.
+    /// Creates a new `AtomaStateManagerConfig` instance from a configuration file.
     ///
     /// # Arguments
     ///
@@ -23,7 +23,7 @@ impl StateManagerConfig {
     ///
     /// # Returns
     ///
-    /// Returns a new `StateManagerConfig` instance populated with values from the configuration file.
+    /// Returns a new `AtomaStateManagerConfig` instance populated with values from the configuration file.
     ///
     /// # Panics
     ///
@@ -36,9 +36,9 @@ impl StateManagerConfig {
     ///
     /// ```rust,ignore
     /// use std::path::Path;
-    /// use atoma_node::atoma_state::StateManagerConfig;
+    /// use atoma_node::atoma_state::AtomaStateManagerConfig;
     ///
-    /// let config = StateManagerConfig::from_file_path("path/to/config.toml");
+    /// let config = AtomaStateManagerConfig::from_file_path("path/to/config.toml");
     /// ```
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder().add_source(config::File::with_name(

@@ -1,4 +1,3 @@
-use atoma_state::types::{Stack, StackAttestationDispute, StackSettlementTicket, Task};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -10,7 +9,7 @@ pub type Result<T> = std::result::Result<T, SuiEventParseError>;
 /// This enum encapsulates all possible events across different modules of the Atoma system,
 /// including database operations, settlement processes, and specific AI task events.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum AtomaEvent {
+pub enum AtomaEventIdentifier {
     /// Events related to the database (Db) module:
 
     /// Emitted when the Atoma contract is first published.
@@ -65,7 +64,7 @@ pub enum AtomaEvent {
     Text2TextPromptEvent,
 }
 
-impl FromStr for AtomaEvent {
+impl FromStr for AtomaEventIdentifier {
     type Err = SuiEventParseError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
@@ -91,9 +90,83 @@ impl FromStr for AtomaEvent {
             "RetrySettlementEvent" => Ok(Self::RetrySettlementEvent),
             "Text2ImagePromptEvent" => Ok(Self::Text2ImagePromptEvent),
             "Text2TextPromptEvent" => Ok(Self::Text2TextPromptEvent),
+            "NodeSubscriptionUpdatedEvent" => Ok(Self::NodeSubscriptionUpdatedEvent),
             _ => Err(SuiEventParseError::UnknownEvent(s.to_string())),
         }
     }
+}
+
+/// Represents the various events that can occur within the Atoma network.
+///
+/// This enum encapsulates all possible events emitted by the Atoma contract,
+/// allowing for structured handling of different event types in the system.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum AtomaEvent {
+    /// An event emitted when the Atoma contract is first published.
+    PublishedEvent(PublishedEvent),
+
+    /// An event emitted when a new node is registered in the Atoma network.
+    NodeRegisteredEvent(NodeRegisteredEvent),
+
+    /// An event emitted when a node subscribes to a specific AI model.
+    NodeSubscribedToModelEvent(NodeSubscribedToModelEvent),
+
+    /// An event emitted when a node subscribes to a specific task.
+    NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent),
+
+    /// An event emitted when a node updates its subscription to a task.
+    NodeSubscriptionUpdatedEvent(NodeSubscriptionUpdatedEvent),
+
+    /// An event emitted when a node unsubscribes from a specific task.
+    NodeUnsubscribedFromTaskEvent(NodeUnsubscribedFromTaskEvent),
+
+    /// An event emitted when a new task is registered in the Atoma network.
+    TaskRegisteredEvent(TaskRegisteredEvent),
+
+    /// An event emitted when a task is marked as deprecated.
+    TaskDeprecationEvent(TaskDeprecationEvent),
+
+    /// An event emitted when a task is permanently removed from the Atoma network.
+    TaskRemovedEvent(TaskRemovedEvent),
+
+    /// An event emitted when a new stack (collection of tasks) is created.
+    StackCreatedEvent(StackCreatedEvent),
+
+    /// An event emitted when there's an attempt to settle a stack.
+    StackTrySettleEvent(StackTrySettleEvent),
+
+    /// An event emitted when a new attestation is made for a stack settlement.
+    NewStackSettlementAttestationEvent(NewStackSettlementAttestationEvent),
+
+    /// An event emitted when a settlement ticket is issued for a stack.
+    StackSettlementTicketEvent(StackSettlementTicketEvent),
+
+    /// An event emitted when a stack settlement ticket is claimed.
+    StackSettlementTicketClaimedEvent(StackSettlementTicketClaimedEvent),
+
+    /// An event emitted when there's a dispute in the attestation process for a stack.
+    StackAttestationDisputeEvent(StackAttestationDisputeEvent),
+
+    /// An event emitted when the first submission is made in a settlement process.
+    FirstSubmissionEvent(FirstSubmissionEvent),
+
+    /// An event emitted when a dispute occurs during settlement.
+    DisputeEvent(DisputeEvent),
+
+    /// An event emitted when new nodes are sampled for a process (e.g., for attestation).
+    NewlySampledNodesEvent(NewlySampledNodesEvent),
+
+    /// An event emitted when a settlement process is successfully completed.
+    SettledEvent(SettledEvent),
+
+    /// An event emitted when a settlement process needs to be retried.
+    RetrySettlementEvent(RetrySettlementEvent),
+
+    /// An event emitted when a text-to-image prompt is processed.
+    Text2ImagePromptEvent(Text2ImagePromptEvent),
+
+    /// An event emitted when a text-to-text prompt is processed.
+    Text2TextPromptEvent(Text2TextPromptEvent),
 }
 
 /// Represents an event that is emitted when the Atoma contract is first published.
@@ -258,29 +331,6 @@ pub struct TaskRegisteredEvent {
     pub minimum_reputation_score: Option<u8>,
 }
 
-impl From<TaskRegisteredEvent> for Task {
-    fn from(event: TaskRegisteredEvent) -> Self {
-        Task {
-            task_id: event.task_id,
-            task_small_id: event.task_small_id.inner as i64,
-            role: event.role.inner as i64,
-            model_name: event.model_name,
-            is_deprecated: event.is_deprecated,
-            valid_until_epoch: event.valid_until_epoch.map(|epoch| epoch as i64),
-            deprecated_at_epoch: event.deprecated_at_epoch.map(|epoch| epoch as i64),
-            optimizations: serde_json::to_string(&event.optimizations).unwrap(),
-            security_level: event.security_level as i64,
-            minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
-            task_metrics_compute_unit: event.task_metrics.compute_unit as i64,
-            task_metrics_time_unit: event
-                .task_metrics
-                .time_unit
-                .map(|time_unit| time_unit as i64),
-            task_metrics_value: event.task_metrics.value.map(|value| value as i64),
-        }
-    }
-}
-
 /// Represents an event that is emitted when a task is deprecated in the Atoma network.
 ///
 /// This event contains information about the deprecated task, including its identifiers
@@ -353,24 +403,6 @@ pub struct StackCreatedEvent {
     pub price: u64,
 }
 
-impl From<StackCreatedEvent> for Stack {
-    fn from(event: StackCreatedEvent) -> Self {
-        Stack {
-            owner_address: event.owner_address,
-            stack_id: event.stack_id,
-            stack_small_id: event.stack_small_id.inner as i64,
-            task_small_id: event.task_small_id.inner as i64,
-            selected_node_id: event.selected_node_id.inner as i64,
-            num_compute_units: event.num_compute_units as i64,
-            price: event.price as i64,
-            already_computed_units: 0,
-            in_settle_period: false,
-            total_hash: vec![],
-            num_total_messages: 0,
-        }
-    }
-}
-
 /// Represents an event that is emitted when an attempt is made to settle a stack in the Atoma network.
 ///
 /// This event contains information about the settlement attempt, including the stack and node identifiers,
@@ -400,40 +432,6 @@ pub struct StackTrySettleEvent {
     /// The number of compute units claimed by the selected node for processing this stack.
     /// This represents the computational resources used in executing the stack's tasks.
     pub num_claimed_compute_units: u64,
-}
-
-impl From<StackTrySettleEvent> for StackSettlementTicket {
-    fn from(event: StackTrySettleEvent) -> Self {
-        let num_attestation_nodes = event.requested_attestation_nodes.len();
-        let expanded_size = 32 * num_attestation_nodes;
-
-        let mut expanded_proofs = event.committed_stack_proof;
-        expanded_proofs.resize(expanded_size, 0);
-
-        let mut expanded_leaves = event.stack_merkle_leaf;
-        expanded_leaves.resize(expanded_size, 0);
-
-        StackSettlementTicket {
-            stack_small_id: event.stack_small_id.inner as i64,
-            selected_node_id: event.selected_node_id.inner as i64,
-            num_claimed_compute_units: event.num_claimed_compute_units as i64,
-            requested_attestation_nodes: serde_json::to_string(
-                &event
-                    .requested_attestation_nodes
-                    .into_iter()
-                    .map(|id| id.inner)
-                    .collect::<Vec<_>>(),
-            )
-            .unwrap(),
-            committed_stack_proofs: expanded_proofs,
-            stack_merkle_leaves: expanded_leaves,
-            dispute_settled_at_epoch: None,
-            already_attested_nodes: serde_json::to_string(&Vec::<i64>::new()).unwrap(),
-            is_in_dispute: false,
-            user_refund_amount: 0,
-            is_claimed: false,
-        }
-    }
 }
 
 /// Represents an event that is emitted when a new attestation is made for a stack settlement in the Atoma network.
@@ -542,18 +540,6 @@ pub struct StackAttestationDisputeEvent {
     /// The original commitment provided by the executing node.
     /// This is typically a cryptographic commitment that represents the original node's claim about the stack execution.
     pub original_commitment: Vec<u8>,
-}
-
-impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
-    fn from(event: StackAttestationDisputeEvent) -> Self {
-        StackAttestationDispute {
-            stack_small_id: event.stack_small_id.inner as i64,
-            attestation_commitment: event.attestation_commitment,
-            attestation_node_id: event.attestation_node_id.inner as i64,
-            original_node_id: event.original_node_id.inner as i64,
-            original_commitment: event.original_commitment,
-        }
-    }
 }
 
 /// Represents the parameters for a text-to-image prompt.
