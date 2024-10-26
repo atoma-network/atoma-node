@@ -35,7 +35,11 @@ pub struct SuiEventSubscriber {
     /// Node small IDs
     /// These are values used to identify the Atoma's nodes that are under control by
     /// current Sui wallet
-    small_ids: Option<Vec<u64>>,
+    node_small_ids: Option<Vec<u64>>,
+    /// Task small IDs
+    /// These are values used to identify the Atoma's tasks that are under control by
+    /// current Sui wallet
+    task_small_ids: Option<Vec<u64>>,
     /// Sender to stream each received event to the `AtomaStateManager` running task.
     state_manager_sender: Sender<AtomaEvent>,
     /// The shutdown signal.
@@ -49,10 +53,15 @@ impl SuiEventSubscriber {
         state_manager_sender: Sender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let small_ids = if config.small_ids().is_empty() {
+        let node_small_ids = if config.node_small_ids().is_empty() {
             None
         } else {
-            Some(config.small_ids())
+            Some(config.node_small_ids())
+        };
+        let task_small_ids = if config.task_small_ids().is_empty() {
+            None
+        } else {
+            Some(config.task_small_ids())
         };
         let filter = EventFilter::MoveModule {
             package: config.atoma_package_id(),
@@ -62,7 +71,8 @@ impl SuiEventSubscriber {
             config,
             filter,
             cursor: None,
-            small_ids,
+            node_small_ids,
+            task_small_ids,
             state_manager_sender,
             shutdown_signal,
         }
@@ -191,16 +201,12 @@ impl SuiEventSubscriber {
                                 Ok(atoma_event_id) => {
                                     let atoma_event =
                                         parse_event(&atoma_event_id, sui_event.parsed_json).await?;
-                                    if let Some(small_ids) = self.small_ids.as_ref() {
-                                        if filter_event_by_small_ids(&atoma_event, small_ids) {
-                                            self.state_manager_sender
-                                                .send(atoma_event)
-                                                .map_err(Box::new)?;
-                                        }
-                                    } else {
+                                    if filter_event(&atoma_event, self.node_small_ids.as_ref(), self.task_small_ids.as_ref()) {
                                         self.state_manager_sender
                                             .send(atoma_event)
                                             .map_err(Box::new)?;
+                                    } else {
+                                        continue;
                                     }
                                 }
                                 Err(e) => {
@@ -379,13 +385,14 @@ async fn parse_event(event: &AtomaEventIdentifier, value: Value) -> Result<Atoma
 /// Filters events based on a list of small IDs.
 ///
 /// This function checks if the given `AtomaEvent` is associated with any of the small IDs
-/// provided in the `small_ids` slice. It returns `true` if the event is relevant to the
-/// specified small IDs, and `false` otherwise.
+/// provided in the `node_small_ids` and `task_small_ids` options. It returns `true` if the event
+/// is relevant to the specified small IDs, and `false` otherwise.
 ///
 /// # Arguments
 ///
 /// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to filter.
-/// * `small_ids` - A slice of node IDs that are relevant for the current context.
+/// * `node_small_ids` - An optional reference to a vector of node IDs that are relevant for the current context.
+/// * `task_small_ids` - An optional reference to a vector of task IDs that are relevant for the current context.
 ///
 /// # Returns
 ///
@@ -404,46 +411,127 @@ async fn parse_event(event: &AtomaEventIdentifier, value: Value) -> Result<Atoma
 /// * `NewStackSettlementAttestationEvent`
 /// * `StackSettlementTicketEvent`
 /// * `StackSettlementTicketClaimedEvent`
+/// * `TaskDeprecationEvent`
+/// * `TaskRemovedEvent`
 ///
 /// For all other event types, the function returns `true`, indicating that they are not
 /// filtered out by small IDs.
-fn filter_event_by_small_ids(event: &AtomaEvent, small_ids: &[u64]) -> bool {
-    match event {
-        AtomaEvent::NodeSubscribedToTaskEvent(event) => {
-            small_ids.contains(&event.node_small_id.inner)
-        }
-        AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
-            small_ids.contains(&event.node_small_id.inner)
-        }
-        AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
-            small_ids.contains(&event.node_small_id.inner)
-        }
-        AtomaEvent::StackCreatedEvent(event) => small_ids.contains(&event.selected_node_id.inner),
-        AtomaEvent::StackTrySettleEvent(event) => {
-            small_ids.contains(&event.selected_node_id.inner)
-                || event
-                    .requested_attestation_nodes
-                    .iter()
-                    .any(|id| small_ids.contains(&id.inner))
-        }
-        AtomaEvent::NewStackSettlementAttestationEvent(event) => {
-            small_ids.contains(&event.attestation_node_id.inner)
-        }
-        AtomaEvent::StackSettlementTicketEvent(event) => {
-            small_ids.contains(&event.selected_node_id.inner)
-                || event
-                    .requested_attestation_nodes
-                    .iter()
-                    .any(|id| small_ids.contains(&id.inner))
-        }
-        AtomaEvent::StackSettlementTicketClaimedEvent(event) => {
-            small_ids.contains(&event.selected_node_id.inner)
-                || event
-                    .attestation_nodes
-                    .iter()
-                    .any(|id| small_ids.contains(&id.inner))
-        }
-        _ => true,
+fn filter_event(
+    event: &AtomaEvent,
+    node_small_ids: Option<&Vec<u64>>,
+    task_small_ids: Option<&Vec<u64>>,
+) -> bool {
+    match (node_small_ids, task_small_ids) {
+        (Some(node_small_ids), Some(task_small_ids)) => match event {
+            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+                    && task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+                    && task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+                    && task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::StackCreatedEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    && task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::StackTrySettleEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .requested_attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            AtomaEvent::NewStackSettlementAttestationEvent(event) => {
+                node_small_ids.contains(&event.attestation_node_id.inner)
+            }
+            AtomaEvent::StackSettlementTicketEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .requested_attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            AtomaEvent::StackSettlementTicketClaimedEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            AtomaEvent::TaskDeprecationEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::TaskRemovedEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            _ => true,
+        },
+        (Some(node_small_ids), None) => match event {
+            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+            }
+            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+            }
+            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
+                node_small_ids.contains(&event.node_small_id.inner)
+            }
+            AtomaEvent::StackCreatedEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+            }
+            AtomaEvent::StackTrySettleEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .requested_attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            AtomaEvent::NewStackSettlementAttestationEvent(event) => {
+                node_small_ids.contains(&event.attestation_node_id.inner)
+            }
+            AtomaEvent::StackSettlementTicketEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .requested_attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            AtomaEvent::StackSettlementTicketClaimedEvent(event) => {
+                node_small_ids.contains(&event.selected_node_id.inner)
+                    || event
+                        .attestation_nodes
+                        .iter()
+                        .any(|id| node_small_ids.contains(&id.inner))
+            }
+            _ => true,
+        },
+        (None, Some(task_small_ids)) => match event {
+            AtomaEvent::TaskDeprecationEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::TaskRemovedEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::StackCreatedEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
+                task_small_ids.contains(&event.task_small_id.inner)
+            }
+            _ => true,
+        },
+        (None, None) => true,
     }
 }
 
@@ -457,4 +545,172 @@ pub enum SuiEventSubscriberError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Failed to send event to state manager: {0}")]
     SendEventError(#[from] Box<flume::SendError<AtomaEvent>>),
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::events::{
+        NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, StackCreatedEvent,
+        StackSmallId, TaskMetrics, TaskRegisteredEvent, TaskRole, TaskSmallId,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_filter_event_with_both_ids() {
+        let node_small_ids = vec![1, 2, 3];
+        let task_small_ids = vec![10, 20, 30];
+
+        let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 1 },
+            task_small_id: TaskSmallId { inner: 10 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        let event_unsubscribed =
+            AtomaEvent::NodeUnsubscribedFromTaskEvent(NodeUnsubscribedFromTaskEvent {
+                node_small_id: NodeSmallId { inner: 2 },
+                task_small_id: TaskSmallId { inner: 20 },
+            });
+
+        let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 4 },
+            task_small_id: TaskSmallId { inner: 40 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        assert!(filter_event(
+            &event_subscribed,
+            Some(&node_small_ids),
+            Some(&task_small_ids)
+        ));
+        assert!(filter_event(
+            &event_unsubscribed,
+            Some(&node_small_ids),
+            Some(&task_small_ids)
+        ));
+        assert!(!filter_event(
+            &event_not_matched,
+            Some(&node_small_ids),
+            Some(&task_small_ids)
+        ));
+    }
+
+    #[test]
+    fn test_filter_event_with_only_node_ids() {
+        let node_small_ids = vec![1, 2, 3];
+
+        let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 1 },
+            task_small_id: TaskSmallId { inner: 10 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 4 },
+            task_small_id: TaskSmallId { inner: 40 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        assert!(filter_event(&event_subscribed, Some(&node_small_ids), None));
+        assert!(!filter_event(
+            &event_not_matched,
+            Some(&node_small_ids),
+            None
+        ));
+    }
+
+    #[test]
+    fn test_filter_event_with_only_task_ids() {
+        let task_small_ids = vec![10, 20, 30];
+
+        let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 4 },
+            task_small_id: TaskSmallId { inner: 10 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 5 },
+            task_small_id: TaskSmallId { inner: 50 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        assert!(filter_event(&event_subscribed, None, Some(&task_small_ids)));
+        assert!(!filter_event(
+            &event_not_matched,
+            None,
+            Some(&task_small_ids)
+        ));
+    }
+
+    #[test]
+    fn test_filter_event_with_no_ids() {
+        let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
+            node_small_id: NodeSmallId { inner: 1 },
+            task_small_id: TaskSmallId { inner: 10 },
+            price_per_compute_unit: 0,
+            max_num_compute_units: 0,
+        });
+
+        assert!(filter_event(&event_subscribed, None, None));
+    }
+
+    #[test]
+    fn test_filter_event_with_stack_created_event() {
+        let node_small_ids = vec![1, 2, 3];
+        let task_small_ids = vec![10, 20, 30];
+
+        let event = AtomaEvent::StackCreatedEvent(StackCreatedEvent {
+            selected_node_id: NodeSmallId { inner: 1 },
+            task_small_id: TaskSmallId { inner: 10 },
+            owner_address: "test".to_string(),
+            stack_id: "test".to_string(),
+            stack_small_id: StackSmallId { inner: 1 },
+            num_compute_units: 0,
+            price: 0,
+        });
+
+        assert!(filter_event(
+            &event,
+            Some(&node_small_ids),
+            Some(&task_small_ids)
+        ));
+    }
+
+    #[test]
+    fn test_filter_event_with_unrelated_event() {
+        let node_small_ids = vec![1, 2, 3];
+        let task_small_ids = vec![10, 20, 30];
+
+        let event = AtomaEvent::TaskRegisteredEvent(TaskRegisteredEvent {
+            task_small_id: TaskSmallId { inner: 40 },
+            role: TaskRole { inner: 0 },
+            model_name: Some("test".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: None,
+            deprecated_at_epoch: None,
+            optimizations: vec![],
+            security_level: 0,
+            minimum_reputation_score: Some(155),
+            task_metrics: TaskMetrics {
+                compute_unit: 0,
+                time_unit: Some(0),
+                value: Some(0),
+            },
+            task_id: "test".to_string(),
+        });
+
+        assert!(filter_event(
+            &event,
+            Some(&node_small_ids),
+            Some(&task_small_ids)
+        ));
+    }
 }
