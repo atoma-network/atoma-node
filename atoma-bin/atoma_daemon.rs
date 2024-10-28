@@ -44,7 +44,11 @@ async fn main() -> Result<()> {
         AtomaSuiClient::new(args.config_file_path).await?,
     ));
 
-    info!("Starting a new AtomaStateManager instance...");
+    info!(
+        target = "atoma_daemon",
+        event = "atoma-daemon-start",
+        "Starting a new AtomaStateManager instance..."
+    );
 
     let atoma_state = AtomaState::new_from_url(state_manager_config.database_url).await?;
     let tcp_listener = TcpListener::bind(daemon_config.service_bind_address.clone()).await?;
@@ -59,11 +63,17 @@ async fn main() -> Result<()> {
     };
 
     info!(
+        target = "atoma_daemon",
+        event = "atoma-daemon-start",
         "Starting the Atoma daemon service, on {}",
         daemon_config.service_bind_address
     );
     run_daemon(daemon_state, tcp_listener).await?;
-    info!("Atoma daemon service stopped gracefully...");
+    info!(
+        target = "atoma_daemon",
+        event = "atoma-daemon-stop",
+        "Atoma daemon service stopped gracefully..."
+    );
 
     Ok(())
 }
