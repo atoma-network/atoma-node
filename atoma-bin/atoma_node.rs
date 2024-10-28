@@ -38,10 +38,6 @@ struct Args {
     /// Path to the configuration file
     #[arg(short, long)]
     config_path: String,
-
-    /// Path to the keystore file containing account keys
-    #[arg(short, long)]
-    keystore_path: String,
 }
 
 /// Configuration for the Atoma node.
@@ -151,6 +147,16 @@ async fn main() -> Result<()> {
 
     info!(
         target = "atoma-node-service",
+        event = "keystore_path",
+        keystore_path = config.sui.sui_keystore_path(),
+        "Starting with Sui's keystore instance"
+    );
+
+    let keystore = FileBasedKeystore::new(&config.sui.sui_config_path().into())
+        .context("Failed to initialize keystore")?;
+
+    info!(
+        target = "atoma-node-service",
         event = "state_manager_service_spawn",
         database_url = config.state.database_url,
         "Spawning state manager service"
@@ -199,9 +205,6 @@ async fn main() -> Result<()> {
         );
         result.map_err(|e| anyhow::anyhow!(e))
     });
-
-    let keystore = FileBasedKeystore::new(&args.keystore_path.into())
-        .context("Failed to initialize keystore")?;
 
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions).await?;

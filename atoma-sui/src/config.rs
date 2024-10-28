@@ -50,6 +50,9 @@ pub struct AtomaSuiConfig {
 
     /// Sui's config path
     sui_config_path: String,
+
+    /// Sui's keystore path
+    sui_keystore_path: String,
 }
 
 impl AtomaSuiConfig {
@@ -66,6 +69,7 @@ impl AtomaSuiConfig {
         task_small_ids: Vec<u64>,
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
+        sui_keystore_path: String,
     ) -> Self {
         Self {
             http_rpc_node_addr,
@@ -78,6 +82,7 @@ impl AtomaSuiConfig {
             task_small_ids,
             max_concurrent_requests,
             sui_config_path,
+            sui_keystore_path,
         }
     }
 
@@ -129,6 +134,11 @@ impl AtomaSuiConfig {
     /// Getter for `keystore_path`
     pub fn sui_config_path(&self) -> String {
         self.sui_config_path.clone()
+    }
+
+    /// Getter for `sui_keystore_path`
+    pub fn sui_keystore_path(&self) -> String {
+        self.sui_keystore_path.clone()
     }
 
     /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
@@ -192,10 +202,11 @@ pub mod tests {
             vec![3, 4, 5],
             Some(10),
             "".to_string(),
+            "".to_string(),
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

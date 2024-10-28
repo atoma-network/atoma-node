@@ -1,0 +1,21 @@
+[atoma-service]
+inference_service_url = "http://localhost:8000"
+models = ["meta-llama/Llama-3.1-70b-Instruct"]
+revisions = ["main"]
+service_bind_address = "http://0.0.0.0:8080"
+
+[atoma-sui]
+http_rpc_node_addr = "https://fullnode.testnet.sui.io:443" # Current RPC node address for testnet
+atoma_db = "0x741693fc00dd8a46b6509c0c3dc6a095f325b8766e96f01ba73b668df218f859" # Current ATOMA DB object ID for testnet
+atoma_package_id = "0x0c4a52c2c74f9361deb1a1b8496698c7e25847f7ad9abfbd6f8c511e508c62a0" # Current ATOMA package ID for testnet
+toma_package_id = "0xd992f4c5bfb563a9a1ce503edb6bf518f20c52363ca4a18715f251eb2bdae3e0" # Current TOMA package ID for testnet
+request_timeout = { secs = 300, nanos = 0 } # Some reference value
+max_concurrent_requests = 10 # Some reference value
+limit = 100 # Some reference value
+node_small_ids = [0]  # List of node IDs under control
+task_small_ids = []  # List of task IDs under control
+sui_config_path = "~/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, by default (on Linux, or MacOS)
+sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, by default (on Linux, or MacOS)
+
+[atoma-state]
+database_url = "sqlite:///./atoma_state.db"
