@@ -33,6 +33,8 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"  # Expose Atoma service port
     depends_on:
       - vllm
     networks:
