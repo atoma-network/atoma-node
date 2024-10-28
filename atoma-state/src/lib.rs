@@ -1,11 +1,12 @@
 pub mod config;
+pub mod handlers;
 pub mod state_manager;
 pub mod types;
 
-pub use config::StateManagerConfig;
+pub use config::AtomaStateManagerConfig;
 use sqlx::Sqlite;
 pub use sqlx::SqlitePool;
-pub use state_manager::{StateManager, StateManagerError};
+pub use state_manager::{AtomaState, AtomaStateManager, AtomaStateManagerError};
 
 /// Builds a query with an IN clause and optional additional conditions
 ///
