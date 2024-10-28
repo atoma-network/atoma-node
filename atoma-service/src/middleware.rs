@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::server::AppState;
-use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_state::StateManager;
 use axum::{
     body::Body,
     extract::State,
@@ -15,7 +15,6 @@ use blake2::{
     Blake2b, Digest,
 };
 use serde_json::Value;
-use tokio::sync::oneshot;
 use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
@@ -294,32 +293,12 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
 
-    let (result_sender, result_receiver) = oneshot::channel();
-    state
-        .state_manager_sender
-        .send(
-            AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
-                stack_small_id,
-                public_key: public_key_hex,
-                total_num_tokens,
-                result_sender,
-            },
-        )
+    let state_manager = StateManager::new(state.state.clone());
+    let available_stack = state_manager
+        .get_available_stack_with_compute_units(stack_small_id, &public_key_hex, total_num_tokens)
+        .await
         .map_err(|err| {
             error!("Failed to get available stacks: {}", err);
-            StatusCode::UNAUTHORIZED
-        })?;
-    let available_stack = result_receiver
-        .await
-        .map_err(|_| {
-            error!("Failed to get available stack with enough compute units");
-            StatusCode::UNAUTHORIZED
-        })?
-        .map_err(|err| {
-            error!(
-                "Failed to get available stack with enough compute units: {}",
-                err
-            );
             StatusCode::UNAUTHORIZED
         })?;
     if available_stack.is_none() {

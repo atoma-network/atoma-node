@@ -5,13 +5,14 @@ use atoma_service::{
     config::AtomaServiceConfig,
     server::{run_server, AppState},
 };
-use atoma_state::{config::AtomaStateManagerConfig, AtomaStateManager};
+use atoma_state::config::StateManagerConfig;
 use atoma_sui::{AtomaSuiConfig, SuiEventSubscriber};
 use clap::Parser;
 use futures::future::try_join_all;
+use sqlx::SqlitePool;
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, sync::watch, try_join};
+use tokio::{net::TcpListener, sync::watch};
 use tracing::{error, info, instrument, warn};
 use tracing_appender::{
     non_blocking,
@@ -57,7 +58,7 @@ struct Config {
     service: AtomaServiceConfig,
 
     /// Configuration for the state manager component.
-    state: AtomaStateManagerConfig,
+    state: StateManagerConfig,
 }
 
 impl Config {
@@ -65,7 +66,7 @@ impl Config {
         Self {
             sui: AtomaSuiConfig::from_file_path(path.clone()),
             service: AtomaServiceConfig::from_file_path(path.clone()),
-            state: AtomaStateManagerConfig::from_file_path(path),
+            state: StateManagerConfig::from_file_path(path),
         }
     }
 }
@@ -136,6 +137,50 @@ async fn initialize_tokenizers(
     try_join_all(fetch_futures).await
 }
 
+/// Gracefully shuts down the Atoma node service by awaiting the completion of the subscriber task.
+///
+/// This function handles the shutdown process by waiting for the subscriber task to complete
+/// and properly handling different shutdown scenarios:
+/// - Normal completion: Returns the subscriber's result with added context
+/// - Cancellation: Logs a warning and returns success
+/// - Other errors: Returns the error with added context
+///
+/// # Arguments
+///
+/// * `subscriber_handle` - A `JoinHandle` for the Sui event subscriber task that needs to be
+///   shut down gracefully
+///
+/// # Returns
+///
+/// Returns a `Result<()>` where:
+/// - `Ok(())` indicates successful shutdown
+/// - `Err(_)` indicates a failure during the shutdown process
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use tokio;
+/// use anyhow::Result;
+///
+/// #[tokio::main]
+/// async fn example() -> Result<()> {
+///     let subscriber_handle = tokio::spawn(async { Ok(()) });
+///     shutdown(subscriber_handle).await?;
+///     Ok(())
+/// }
+/// ```
+#[instrument(level = "info", skip(subscriber_handle))]
+async fn shutdown(subscriber_handle: tokio::task::JoinHandle<Result<()>>) -> Result<()> {
+    match subscriber_handle.await {
+        Ok(result) => result.context("Subscriber failed during shutdown"),
+        Err(e) if e.is_cancelled() => {
+            warn!("Subscriber was cancelled during shutdown");
+            Ok(())
+        }
+        Err(e) => Err(e).context("Error while shutting down subscriber"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging(LOGS).context("Failed to setup logging")?;
@@ -146,68 +191,28 @@ async fn main() -> Result<()> {
     info!("Starting Atoma node service");
 
     let (shutdown_sender, shutdown_receiver) = watch::channel(false);
-    let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
-    let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+    let subscriber = SuiEventSubscriber::new(config.sui, String::new(), shutdown_receiver.clone());
 
-    info!(
-        target = "atoma-node-service",
-        event = "state_manager_service_spawn",
-        database_url = config.state.database_url,
-        "Spawning state manager service"
-    );
-    let state_manager_shutdown_receiver = shutdown_receiver.clone();
-    let state_manager_handle = tokio::spawn(async move {
-        let state_manager = AtomaStateManager::new_from_url(
-            config.state.database_url,
-            event_subscriber_receiver,
-            state_manager_receiver,
-        )
-        .await?;
-        state_manager.run(state_manager_shutdown_receiver).await?;
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let package_id = config.sui.atoma_package_id();
-    info!(
-        target = "atoma-node-service",
-        event = "subscriber_service_spawn",
-        package_id = package_id.to_string(),
-        "Spawning subscriber service"
-    );
-    let subscriber =
-        SuiEventSubscriber::new(config.sui, event_subscriber_sender, shutdown_receiver);
-
-    info!(
-        target = "atoma-node-service",
-        event = "subscriber_service_spawn",
-        package_id = package_id.to_string(),
-        "Subscribing to Sui events"
-    );
+    info!("Subscribing to Sui events");
     let subscriber_handle = tokio::spawn(async move {
-        info!(
-            target = "atoma-node-service",
-            event = "subscriber_service_run",
-            package_id = package_id.to_string(),
-            "Running Sui event subscriber"
-        );
+        info!("Running Sui event subscriber");
         let result = subscriber.run().await;
-        info!(
-            target = "atoma-node-service",
-            event = "subscriber_service_finished",
-            package_id = package_id.to_string(),
-            "Sui event subscriber finished"
-        );
+        info!("Sui event subscriber finished");
         result.map_err(|e| anyhow::anyhow!(e))
     });
 
     let keystore = FileBasedKeystore::new(&args.keystore_path.into())
         .context("Failed to initialize keystore")?;
 
+    let sqlite_pool = SqlitePool::connect(&config.state.database_url)
+        .await
+        .context("Failed to connect to SQLite database")?;
+
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions).await?;
 
     let app_state = AppState {
-        state_manager_sender,
+        state: sqlite_pool,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(vec![]),
         inference_service_url: config
@@ -222,25 +227,18 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to bind TCP listener")?;
 
-    info!(
-        target = "atoma-node-service",
-        event = "atoma_node_service_spawn",
-        bind_address = config.service.service_bind_address,
-        "Starting Atoma node service"
-    );
+    info!("Starting server on {}", config.service.service_bind_address);
 
     let server_handle = tokio::spawn(run_server(app_state, tcp_listener, shutdown_sender));
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result) =
-        try_join!(subscriber_handle, state_manager_handle, server_handle)?;
-    handle_tasks_results(subscriber_result, state_manager_result, server_result)?;
+    shutdown(subscriber_handle).await?;
 
-    info!(
-        target = "atoma-node-service",
-        event = "atoma_node_service_shutdown",
-        "Atoma node service shut down successfully"
-    );
+    if let Err(e) = server_handle.await {
+        error!("Server terminated with error: {:?}", e);
+    }
+
+    info!("Atoma node service shut down successfully");
     Ok(())
 }
 
@@ -285,48 +283,5 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with(file_layer)
         .init();
 
-    Ok(())
-}
-
-/// Handles the results of various tasks (subscriber, state manager, and server).
-///
-/// This function checks the results of the subscriber, state manager, and server tasks.
-/// If any of the tasks return an error, it logs the error and returns it.
-/// This is useful for ensuring that the application can gracefully handle failures
-/// in any of its components and provide appropriate logging for debugging.
-///
-/// # Arguments
-///
-/// * `subscriber_result` - The result of the subscriber task, which may contain an error.
-/// * `state_manager_result` - The result of the state manager task, which may contain an error.
-/// * `server_result` - The result of the server task, which may contain an error.
-///
-/// # Returns
-///
-/// Returns a `Result<()>`, which is `Ok(())` if all tasks succeeded, or an error if any task failed.
-#[instrument(
-    level = "info",
-    skip(subscriber_result, state_manager_result, server_result)
-)]
-fn handle_tasks_results(
-    subscriber_result: Result<()>,
-    state_manager_result: Result<()>,
-    server_result: Result<()>,
-) -> Result<()> {
-    let result_handler = |result: Result<()>, message: &str| {
-        if let Err(e) = result {
-            error!(
-                target = "atoma-node-service",
-                event = "atoma_node_service_shutdown",
-                error = ?e,
-                "{message}"
-            );
-            return Err(e);
-        }
-        Ok(())
-    };
-    result_handler(subscriber_result, "Subscriber terminated abruptly")?;
-    result_handler(state_manager_result, "State manager terminated abruptly")?;
-    result_handler(server_result, "Server terminated abruptly")?;
     Ok(())
 }

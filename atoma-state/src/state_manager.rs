@@ -1,184 +1,61 @@
 use crate::build_query_with_in;
-use crate::handlers::{handle_atoma_event, handle_state_manager_event};
-use crate::types::{
-    AtomaAtomaStateManagerEvent, NodeSubscription, Stack, StackAttestationDispute,
-    StackSettlementTicket, Task,
-};
+use crate::types::{NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task};
 
-use atoma_sui::events::AtomaEvent;
-use flume::Receiver as FlumeReceiver;
+use sqlx::{pool::PoolConnection, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
-use sqlx::{Sqlite, SqlitePool};
 use thiserror::Error;
-use tokio::sync::watch::Receiver;
 
-pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
+pub type Result<T> = std::result::Result<T, StateManagerError>;
 
-/// AtomaStateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
+/// StateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
 ///
 /// It provides an interface to interact with the SQLite database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
-pub struct AtomaStateManager {
-    /// The SQLite connection pool used for database operations.
-    pub state: AtomaState,
-    /// Receiver channel from the SuiEventSubscriber
-    pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
-    /// Atoma service receiver
-    pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-}
-
-impl AtomaStateManager {
-    /// Constructor
-    pub fn new(
-        db: SqlitePool,
-        event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
-        state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-    ) -> Self {
-        Self {
-            state: AtomaState::new(db),
-            event_subscriber_receiver,
-            state_manager_receiver,
-        }
-    }
-
-    /// Creates a new `AtomaStateManager` instance from a database URL.
-    ///
-    /// This method establishes a connection to the SQLite database using the provided URL,
-    /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
-    pub async fn new_from_url(
-        database_url: String,
-        event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
-        state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-    ) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
-        queries::create_all_tables(&db).await?;
-        Ok(Self {
-            state: AtomaState::new(db),
-            event_subscriber_receiver,
-            state_manager_receiver,
-        })
-    }
-
-    /// Runs the state manager, listening for events from the event subscriber and state manager receivers.
-    ///
-    /// This method continuously processes incoming events from the event subscriber and state manager receivers
-    /// until a shutdown signal is received. It uses asynchronous select to handle multiple event sources concurrently.
-    ///
-    /// # Arguments
-    ///
-    /// * `shutdown_signal` - A `Receiver<bool>` that signals when the state manager should shut down.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - An error occurs while handling events from the event subscriber or state manager receivers.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
-    ///
-    /// async fn start_state_manager(state_manager: AtomaStateManager) -> Result<(), AtomaStateManagerError> {
-    ///     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    ///     state_manager.run(shutdown_rx).await
-    /// }
-    /// ```
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn run(self, mut shutdown_signal: Receiver<bool>) -> Result<()> {
-        loop {
-            tokio::select! {
-                atoma_event = self.event_subscriber_receiver.recv_async() => {
-                    match atoma_event {
-                        Ok(atoma_event) => {
-                            tracing::trace!(
-                                target = "atoma-state-manager",
-                                event = "event_subscriber_receiver",
-                                "Event received from event subscriber receiver"
-                            );
-                            handle_atoma_event(atoma_event, &self).await?;
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                target = "atoma-state-manager",
-                                event = "event_subscriber_receiver_error",
-                                error = %e,
-                                "All event subscriber senders have been dropped, terminating the state manager running process"
-                            );
-                            break;
-                        }
-                    }
-                }
-                state_manager_event = self.state_manager_receiver.recv_async() => {
-                    match state_manager_event {
-                        Ok(state_manager_event) => {
-                            handle_state_manager_event(&self, state_manager_event).await?;
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                target = "atoma-state-manager",
-                                event = "state_manager_receiver_error",
-                                error = %e,
-                                "All state manager senders have been dropped, we will not be able to handle any more events from the Atoma node inference service"
-                            );
-                            // NOTE: We continue the loop, as the inference service might be shutting down,
-                            // but we want to keep the state manager running
-                            // for event synchronization with the Atoma Network protocol.
-                            continue;
-                        }
-                    }
-                }
-                shutdown_signal_changed = shutdown_signal.changed() => {
-                    match shutdown_signal_changed {
-                        Ok(()) => {
-                            if *shutdown_signal.borrow() {
-                                tracing::trace!(
-                                    target = "atoma-state-manager",
-                                    event = "shutdown_signal",
-                                    "Shutdown signal received, shutting down"
-                                );
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                target = "atoma-state-manager",
-                                event = "shutdown_signal_error",
-                                error = %e,
-                                "Shutdown signal channel closed"
-                            );
-                            // NOTE: We want to break here as well, since no one can signal shutdown anymore
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// AtomaState is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
 #[derive(Clone)]
-pub struct AtomaState {
+pub struct StateManager {
     /// The SQLite connection pool used for database operations.
     pub db: SqlitePool,
 }
 
-impl AtomaState {
+impl StateManager {
     /// Constructor
     pub fn new(db: SqlitePool) -> Self {
         Self { db }
     }
 
-    /// Creates a new `AtomaState` instance from a database URL.
+    /// Creates a new `StateManager` instance from a database URL.
+    ///
+    /// This method establishes a connection to the SQLite database using the provided URL,
+    /// creates all necessary tables in the database, and returns a new `StateManager` instance.
     pub async fn new_from_url(database_url: String) -> Result<Self> {
         let db = SqlitePool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
+    }
+
+    pub fn into_pool(self) -> SqlitePool {
+        self.db
+    }
+
+    /// Acquires a connection from the SQLite connection pool.
+    ///
+    /// This method is used to obtain a connection from the pool for database operations.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<PoolConnection<Sqlite>>`: A result containing either:
+    ///   - `Ok(PoolConnection<Sqlite>)`: A successful connection from the pool.
+    ///   - `Err(StateManagerError)`: An error if the connection acquisition fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the connection pool is unable to
+    /// provide a connection, which could happen due to various reasons such as
+    /// connection timeouts or pool exhaustion.
+    #[tracing::instrument(level = "debug", skip(self), fields(function = "get_connection"))]
+    pub async fn get_connection(&self) -> Result<PoolConnection<Sqlite>> {
+        let conn = self.db.acquire().await?;
+        Ok(conn)
     }
 
     /// Get a task by its unique identifier.
@@ -193,7 +70,7 @@ impl AtomaState {
     ///
     /// - `Result<Task>`: A result containing either:
     ///   - `Ok(Task)`: The task with the specified `task_id`.
-    ///   - `Err(AtomaStateManagerError)`: An error if the task is not found or other database operation fails.
+    ///   - `Err(StateManagerError)`: An error if the task is not found or other database operation fails.
     ///
     /// # Errors
     ///
@@ -219,7 +96,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Task>>`: A result containing either:
     ///   - `Ok(Vec<Task>)`: A vector of all `Task` objects in the database.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -230,9 +107,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn list_all_tasks(state_manager: &AtomaStateManager) -> Result<Vec<Task>, AtomaStateManagerError> {
+    /// async fn list_all_tasks(state_manager: &StateManager) -> Result<Vec<Task>, StateManagerError> {
     ///     state_manager.get_all_tasks().await
     /// }
     /// ```
@@ -243,7 +120,7 @@ impl AtomaState {
             .await?;
         tasks
             .into_iter()
-            .map(|task| Task::from_row(&task).map_err(AtomaStateManagerError::from))
+            .map(|task| Task::from_row(&task).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -258,7 +135,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -269,9 +146,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Task};
+    /// use atoma_node::atoma_state::{StateManager, Task};
     ///
-    /// async fn add_task(state_manager: &mut AtomaStateManager, task: Task) -> Result<(), AtomaStateManagerError> {
+    /// async fn add_task(state_manager: &mut StateManager, task: Task) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_task(task).await
     /// }
     /// ```
@@ -319,7 +196,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -330,9 +207,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn deprecate_task(state_manager: &AtomaStateManager, task_small_id: i64) -> Result<(), AtomaStateManagerError> {
+    /// async fn deprecate_task(state_manager: &StateManager, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.deprecate_task(task_small_id).await
     /// }
     /// ```
@@ -363,7 +240,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Task>>`: A result containing either:
     ///   - `Ok(Vec<Task>)`: A vector of `Task` objects representing all tasks subscribed to by the node.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -374,9 +251,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn get_node_tasks(state_manager: &AtomaStateManager, node_small_id: i64) -> Result<Vec<Task>, AtomaStateManagerError> {
+    /// async fn get_node_tasks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Task>, StateManagerError> {
     ///     state_manager.get_subscribed_tasks(node_small_id).await
     /// }
     /// ```
@@ -396,7 +273,7 @@ impl AtomaState {
         .await?;
         tasks
             .into_iter()
-            .map(|task| Task::from_row(&task).map_err(AtomaStateManagerError::from))
+            .map(|task| Task::from_row(&task).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -413,7 +290,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<NodeSubscription>>`: A result containing either:
     ///   - `Ok(Vec<NodeSubscription>)`: A vector of `NodeSubscription` objects representing all found subscriptions.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -424,9 +301,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, NodeSubscription};
+    /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
     ///
-    /// async fn get_subscriptions(state_manager: &AtomaStateManager) -> Result<Vec<NodeSubscription>, AtomaStateManagerError> {
+    /// async fn get_subscriptions(state_manager: &StateManager) -> Result<Vec<NodeSubscription>, StateManagerError> {
     ///     let node_ids = vec![1, 2, 3];
     ///     state_manager.get_all_node_subscriptions(&node_ids).await
     /// }
@@ -452,7 +329,7 @@ impl AtomaState {
         subscriptions
             .into_iter()
             .map(|subscription| {
-                NodeSubscription::from_row(&subscription).map_err(AtomaStateManagerError::from)
+                NodeSubscription::from_row(&subscription).map_err(StateManagerError::from)
             })
             .collect()
     }
@@ -472,7 +349,7 @@ impl AtomaState {
     /// - `Result<bool>`: A result containing either:
     ///   - `Ok(true)` if the node is subscribed to the task.
     ///   - `Ok(false)` if the node is not subscribed to the task.
-    ///   - `Err(AtomaStateManagerError)` if there's a database error.
+    ///   - `Err(StateManagerError)` if there's a database error.
     ///
     /// # Errors
     ///
@@ -481,9 +358,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn check_subscription(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64) -> Result<bool, AtomaStateManagerError> {
+    /// async fn check_subscription(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<bool, StateManagerError> {
     ///     state_manager.is_node_subscribed_to_task(node_small_id, task_small_id).await
     /// }
     /// ```
@@ -522,7 +399,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -533,9 +410,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn subscribe_node_to_task(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), AtomaStateManagerError> {
+    /// async fn subscribe_node_to_task(state_manager: &StateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), StateManagerError> {
     ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
     /// }
     /// ```
@@ -583,7 +460,7 @@ impl AtomaState {
     ///
     /// - `Result<NodeSubscription>`: A result containing either:
     ///   - `Ok(NodeSubscription)`: A `NodeSubscription` object representing the subscription details.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -595,9 +472,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, NodeSubscription};
+    /// use atoma_node::atoma_state::{StateManager, NodeSubscription};
     ///
-    /// async fn get_subscription(state_manager: &AtomaStateManager, task_small_id: i64) -> Result<NodeSubscription, AtomaStateManagerError> {
+    /// async fn get_subscription(state_manager: &StateManager, task_small_id: i64) -> Result<NodeSubscription, StateManagerError> {
     ///     state_manager.get_node_subscription_by_task_small_id(task_small_id).await
     /// }
     /// ```
@@ -632,7 +509,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -643,9 +520,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn update_subscription(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    /// async fn update_subscription(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     state_manager.update_node_subscription(1, 2, 100, 1000).await
     /// }
     /// ```
@@ -689,7 +566,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     /// # Errors
     ///
     /// This function will return an error if the database query fails to execute.
@@ -697,9 +574,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn unsubscribe_node(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64) -> Result<(), AtomaStateManagerError> {
+    /// async fn unsubscribe_node(state_manager: &StateManager, node_small_id: i64, task_small_id: i64) -> Result<(), StateManagerError> {
     ///     state_manager.unsubscribe_node_from_task(node_small_id, task_small_id).await
     /// }
     /// ```
@@ -733,7 +610,7 @@ impl AtomaState {
     ///
     /// - `Result<Stack>`: A result containing either:
     ///   - `Ok(Stack)`: A `Stack` object representing the stack.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -744,9 +621,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn get_stack(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Stack, AtomaStateManagerError> {  
+    /// async fn get_stack(state_manager: &StateManager, stack_small_id: i64) -> Result<Stack, StateManagerError> {  
     ///     state_manager.get_stack(stack_id).await
     /// }
     /// ```
@@ -776,7 +653,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Stack>>`: A result containing either:
     ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects corresponding to the requested IDs.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -787,9 +664,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
-    /// async fn get_multiple_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    /// async fn get_multiple_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
     ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to retrieve
     ///     state_manager.get_stacks(stack_ids).await
     /// }
@@ -809,7 +686,7 @@ impl AtomaState {
         let stacks = query_builder.build().fetch_all(&self.db).await?;
         stacks
             .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -826,7 +703,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Stack>>`: A result containing either:
     ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all stacks found.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -837,9 +714,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
-    /// async fn get_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    /// async fn get_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
     ///     let node_ids = &[1, 2, 3];
     ///     state_manager.get_all_stacks(node_ids).await
     /// }
@@ -861,7 +738,7 @@ impl AtomaState {
 
         stacks
             .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -878,7 +755,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Stack>>`: A result containing either:
     ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects associated with the given node ID.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -889,9 +766,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
-    /// async fn get_node_stacks(state_manager: &AtomaStateManager, node_small_id: i64) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    /// async fn get_node_stacks(state_manager: &StateManager, node_small_id: i64) -> Result<Vec<Stack>, StateManagerError> {
     ///     state_manager.get_stack_by_id(node_small_id).await
     /// }
     /// ```
@@ -907,7 +784,7 @@ impl AtomaState {
             .await?;
         stacks
             .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -928,7 +805,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Stack>>`: A result containing either:
     ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects that meet the filling criteria.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -939,9 +816,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn get_filled_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    /// async fn get_filled_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
     ///     let node_ids = &[1, 2, 3];  // Check stacks for these nodes
     ///     let threshold = 0.8;        // Look for stacks that are 80% or more filled
     ///     
@@ -972,7 +849,7 @@ impl AtomaState {
 
         stacks
             .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .map(|stack| Stack::from_row(&stack).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -993,7 +870,7 @@ impl AtomaState {
     /// - `Result<Option<Stack>>`: A result containing either:
     ///   - `Ok(Some(Stack))`: If the stack was successfully updated, returns the updated stack.
     ///   - `Ok(None)`: If the stack couldn't be updated (e.g., insufficient compute units or stack in settle period).
-    ///   - `Err(AtomaStateManagerError)`: If there was an error during the database operation.
+    ///   - `Err(StateManagerError)`: If there was an error during the database operation.
     ///
     /// # Errors
     ///
@@ -1018,9 +895,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
-    /// async fn reserve_compute_units(state_manager: &AtomaStateManager) -> Result<Option<Stack>, AtomaStateManagerError> {
+    /// async fn reserve_compute_units(state_manager: &StateManager) -> Result<Option<Stack>, StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let public_key = "owner_public_key";
     ///     let num_compute_units = 100;
@@ -1099,7 +976,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1110,9 +987,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn insert_stack(state_manager: &AtomaStateManager, stack: Stack) -> Result<(), AtomaStateManagerError> {
+    /// async fn insert_stack(state_manager: &StateManager, stack: Stack) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack(stack).await
     /// }   
     /// ```
@@ -1160,7 +1037,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1171,9 +1048,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn update_computed_units(state_manager: &AtomaStateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), AtomaStateManagerError> {
+    /// async fn update_computed_units(state_manager: &StateManager, stack_small_id: i64, already_computed_units: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
     /// }
     /// ```
@@ -1208,7 +1085,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1218,9 +1095,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn update_stack_num_tokens(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), AtomaStateManagerError> {
+    /// async fn update_stack_num_tokens(state_manager: &StateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), StateManagerError> {
     ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
     /// }
     /// ```
@@ -1247,7 +1124,7 @@ impl AtomaState {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AtomaStateManagerError::StackNotFound);
+            return Err(StateManagerError::StackNotFound);
         }
 
         Ok(())
@@ -1266,7 +1143,7 @@ impl AtomaState {
     ///
     /// - `Result<StackSettlementTicket>`: A result containing either:
     ///   - `Ok(StackSettlementTicket)`: A `StackSettlementTicket` object representing the stack settlement ticket.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -1278,9 +1155,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
-    /// async fn get_settlement_ticket(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<StackSettlementTicket, AtomaStateManagerError> {
+    /// async fn get_settlement_ticket(state_manager: &StateManager, stack_small_id: i64) -> Result<StackSettlementTicket, StateManagerError> {
     ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
     /// }
     /// ```
@@ -1322,9 +1199,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
-    /// async fn get_settlement_tickets(state_manager: &AtomaStateManager, stack_small_ids: &[i64]) -> Result<Vec<StackSettlementTicket>, AtomaStateManagerError> {
+    /// async fn get_settlement_tickets(state_manager: &StateManager, stack_small_ids: &[i64]) -> Result<Vec<StackSettlementTicket>, StateManagerError> {
     ///     state_manager.get_stack_settlement_tickets(stack_small_ids).await
     /// }
     /// ```
@@ -1348,7 +1225,7 @@ impl AtomaState {
 
         stack_settlement_tickets
             .into_iter()
-            .map(|row| StackSettlementTicket::from_row(&row).map_err(AtomaStateManagerError::from))
+            .map(|row| StackSettlementTicket::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -1362,7 +1239,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1373,9 +1250,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackSettlementTicket};
+    /// use atoma_node::atoma_state::{StateManager, StackSettlementTicket};
     ///
-    /// async fn insert_settlement_ticket(state_manager: &AtomaStateManager, stack_settlement_ticket: StackSettlementTicket) -> Result<(), AtomaStateManagerError> {
+    /// async fn insert_settlement_ticket(state_manager: &StateManager, stack_settlement_ticket: StackSettlementTicket) -> Result<(), StateManagerError> {
     ///     state_manager.insert_new_stack_settlement_ticket(stack_settlement_ticket).await
     /// }
     /// ```
@@ -1443,7 +1320,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1454,9 +1331,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn update_hash(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    /// async fn update_hash(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let new_hash = [0u8; 32]; // Example hash
     ///
@@ -1481,7 +1358,7 @@ impl AtomaState {
         .bind(stack_small_id)
         .fetch_one(&mut *transaction)
         .await
-        .map_err(|_| AtomaStateManagerError::StackNotFound)?;
+        .map_err(|_| StateManagerError::StackNotFound)?;
 
         let total_hash = [existing_hash, new_hash.to_vec()].concat();
 
@@ -1513,7 +1390,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<u8>>`: A result containing either:
     ///   - `Ok(Vec<u8>)`: A byte vector representing the total hash of the stack.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///   - `Err(StateManagerError)`: An error if the database query fails.
     ///
     /// # Errors
     ///
@@ -1523,9 +1400,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn get_total_hash(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Vec<u8>, AtomaStateManagerError> {
+    /// async fn get_total_hash(state_manager: &StateManager, stack_small_id: i64) -> Result<Vec<u8>, StateManagerError> {
     ///     state_manager.get_stack_total_hash(stack_small_id).await
     /// }
     /// ```
@@ -1559,7 +1436,7 @@ impl AtomaState {
     ///   - `Ok(Vec<Vec<u8>>)`: A vector of byte vectors, where each inner vector represents
     ///     the total hash of a stack. The order corresponds to the order of results returned
     ///     by the database query.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///   - `Err(StateManagerError)`: An error if the database query fails.
     ///
     /// # Errors
     ///
@@ -1570,9 +1447,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn get_hashes(state_manager: &AtomaStateManager) -> Result<Vec<Vec<u8>>, AtomaStateManagerError> {
+    /// async fn get_hashes(state_manager: &StateManager) -> Result<Vec<Vec<u8>>, StateManagerError> {
     ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to fetch hashes for
     ///     state_manager.get_all_total_hashes(stack_ids).await
     /// }
@@ -1614,7 +1491,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1628,9 +1505,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn update_settlement_ticket(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    /// async fn update_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let committed_stack_proof = vec![1, 2, 3, 4];
     ///     let stack_merkle_leaf = vec![5, 6, 7, 8];
@@ -1677,16 +1554,16 @@ impl AtomaState {
         let index = requested_nodes
             .iter()
             .position(|&id| id == attestation_node_id)
-            .ok_or_else(|| AtomaStateManagerError::AttestationNodeNotFound(attestation_node_id))?;
+            .ok_or_else(|| StateManagerError::AttestationNodeNotFound(attestation_node_id))?;
 
         // Update the corresponding 32-byte range in the stack_merkle_leaves
         let start = (index + 1) * 32;
         let end = start + 32;
         if end > current_merkle_leaves.len() {
-            return Err(AtomaStateManagerError::InvalidMerkleLeafLength);
+            return Err(StateManagerError::InvalidMerkleLeafLength);
         }
         if end > committed_stack_proofs.len() {
-            return Err(AtomaStateManagerError::InvalidCommittedStackProofLength);
+            return Err(StateManagerError::InvalidCommittedStackProofLength);
         }
 
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
@@ -1720,7 +1597,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1731,9 +1608,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn settle_ticket(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    /// async fn settle_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let dispute_settled_at_epoch = 10;
     ///
@@ -1771,7 +1648,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -1782,9 +1659,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use atoma_node::atoma_state::StateManager;
     ///
-    /// async fn claim_settlement_ticket(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    /// async fn claim_settlement_ticket(state_manager: &StateManager) -> Result<(), StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let user_refund_amount = 1000;
     ///
@@ -1829,7 +1706,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<Stack>>`: A result containing either:
     ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all claimed stacks found.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -1840,9 +1717,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use atoma_node::atoma_state::{StateManager, Stack};
     ///
-    /// async fn get_claimed_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    /// async fn get_claimed_stacks(state_manager: &StateManager) -> Result<Vec<Stack>, StateManagerError> {
     ///     let node_ids = &[1, 2, 3]; // IDs of nodes to fetch claimed stacks for
     ///     state_manager.get_claimed_stacks(node_ids).await
     /// }
@@ -1867,7 +1744,7 @@ impl AtomaState {
 
         stacks
             .into_iter()
-            .map(|row| StackSettlementTicket::from_row(&row).map_err(AtomaStateManagerError::from))
+            .map(|row| StackSettlementTicket::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -1885,7 +1762,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
     ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of `StackAttestationDispute` objects representing all disputes found.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -1896,9 +1773,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
-    /// async fn get_disputes(state_manager: &AtomaStateManager) -> Result<Vec<StackAttestationDispute>, AtomaStateManagerError> {
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
     ///     let stack_small_id = 1;
     ///     let attestation_node_id = 42;
     ///     state_manager.get_stack_attestation_disputes(stack_small_id, attestation_node_id).await
@@ -1926,9 +1803,7 @@ impl AtomaState {
 
         disputes
             .into_iter()
-            .map(|row| {
-                StackAttestationDispute::from_row(&row).map_err(AtomaStateManagerError::from)
-            })
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -1946,7 +1821,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
     ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of all disputes found against the specified nodes.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -1957,9 +1832,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
-    /// async fn get_disputes(state_manager: &AtomaStateManager) -> Result<Vec<StackAttestationDispute>, AtomaStateManagerError> {
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
     ///     let node_ids = &[1, 2, 3]; // IDs of nodes to check for disputes against
     ///     state_manager.get_against_attestation_disputes(node_ids).await
     /// }
@@ -1984,9 +1859,7 @@ impl AtomaState {
 
         disputes
             .into_iter()
-            .map(|row| {
-                StackAttestationDispute::from_row(&row).map_err(AtomaStateManagerError::from)
-            })
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -2003,7 +1876,7 @@ impl AtomaState {
     ///
     /// - `Result<Vec<StackAttestationDispute>>`: A result containing either:
     ///   - `Ok(Vec<StackAttestationDispute>)`: A vector of all disputes where the specified nodes are attestation providers.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///   - `Err(StateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// # Errors
     ///
@@ -2014,9 +1887,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
-    /// async fn get_disputes(state_manager: &AtomaStateManager) -> Result<Vec<StackAttestationDispute>, AtomaStateManagerError> {
+    /// async fn get_disputes(state_manager: &StateManager) -> Result<Vec<StackAttestationDispute>, StateManagerError> {
     ///     let node_ids = &[1, 2, 3]; // IDs of nodes to check for disputes as attestation providers
     ///     state_manager.get_own_attestation_disputes(node_ids).await
     /// }
@@ -2041,9 +1914,7 @@ impl AtomaState {
 
         disputes
             .into_iter()
-            .map(|row| {
-                StackAttestationDispute::from_row(&row).map_err(AtomaStateManagerError::from)
-            })
+            .map(|row| StackAttestationDispute::from_row(&row).map_err(StateManagerError::from))
             .collect()
     }
 
@@ -2057,7 +1928,7 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(StateManagerError)).
     ///
     /// # Errors
     ///
@@ -2068,9 +1939,9 @@ impl AtomaState {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, StackAttestationDispute};
+    /// use atoma_node::atoma_state::{StateManager, StackAttestationDispute};
     ///
-    /// async fn add_dispute(state_manager: &AtomaStateManager, dispute: StackAttestationDispute) -> Result<(), AtomaStateManagerError> {
+    /// async fn add_dispute(state_manager: &StateManager, dispute: StackAttestationDispute) -> Result<(), StateManagerError> {
     ///     state_manager.insert_stack_attestation_dispute(dispute).await
     /// }
     /// ```
@@ -2103,7 +1974,7 @@ impl AtomaState {
 }
 
 #[derive(Error, Debug)]
-pub enum AtomaStateManagerError {
+pub enum StateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
     #[error("Stack not found")]
@@ -2118,8 +1989,6 @@ pub enum AtomaStateManagerError {
     JsonParseError(#[from] serde_json::Error),
     #[error("Failed to retrieve existing total hash for stack: `{0}`")]
     FailedToRetrieveExistingTotalHash(i64),
-    #[error("Failed to send result to channel")]
-    ChannelSendError,
 }
 
 pub(crate) mod queries {
@@ -2380,13 +2249,13 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    async fn setup_test_db() -> (AtomaState, TempDir) {
+    async fn setup_test_db() -> (StateManager, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
         std::fs::create_dir_all(temp_dir.path()).unwrap();
         std::fs::File::create(&db_path).unwrap();
         let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
-        let state_manager = AtomaState::new_from_url(database_url).await.unwrap();
+        let state_manager = StateManager::new_from_url(database_url).await.unwrap();
         (state_manager, temp_dir)
     }
 
@@ -3121,7 +2990,7 @@ mod tests {
 
         // Test updating non-existent stack
         let result = state_manager.update_stack_total_hash(999, new_hash).await;
-        assert!(matches!(result, Err(AtomaStateManagerError::StackNotFound)));
+        assert!(matches!(result, Err(StateManagerError::StackNotFound)));
 
         std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
