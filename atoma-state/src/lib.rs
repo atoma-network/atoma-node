@@ -18,12 +18,12 @@ pub use state_manager::{AtomaState, AtomaStateManager, AtomaStateManagerError};
 ///
 /// # Returns
 /// A QueryBuilder configured with the IN clause and ready for additional bindings
-pub(crate) fn build_query_with_in<'a, T: sqlx::Type<Sqlite> + sqlx::Encode<'a, Sqlite>>(
+pub(crate) fn build_query_with_in<'a, T: sqlx::Type<Any> + sqlx::Encode<'a, Any>>(
     base_query: &str,
     column: &str,
     values: &'a [T],
     additional_conditions: Option<&str>,
-) -> sqlx::QueryBuilder<'a, Sqlite> {
+) -> sqlx::QueryBuilder<'a, Any> {
     let mut builder = sqlx::QueryBuilder::new(base_query);
 
     if values.is_empty() {
