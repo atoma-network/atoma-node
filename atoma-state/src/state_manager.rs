@@ -1453,9 +1453,9 @@ impl AtomaState {
     ) -> Result<()> {
         let rows_affected = sqlx::query(
             "UPDATE stacks 
-            SET total_hash = total_hash || ?,
+            SET total_hash = total_hash || $1,
                 num_total_messages = num_total_messages + 1
-            WHERE stack_small_id = ?",
+            WHERE stack_small_id = $2",
         )
         .bind(&new_hash[..])
         .bind(stack_small_id)
