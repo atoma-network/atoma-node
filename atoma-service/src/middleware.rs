@@ -252,6 +252,14 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
 
+    let tokenizer_index = state
+        .models
+        .iter()
+        .position(|m| m == model)
+        .ok_or_else(|| {
+            error!("Model not supported");
+            StatusCode::BAD_REQUEST
+        })?;
     let mut total_num_tokens = 0;
     for message in messages {
         let content = message.get("content").ok_or_else(|| {
@@ -262,8 +270,7 @@ pub async fn verify_stack_permissions(
             error!("Message content is not a string");
             StatusCode::BAD_REQUEST
         })?;
-        let num_tokens = state
-            .tokenizer
+        let num_tokens = state.tokenizers[tokenizer_index]
             .encode(content_str, true)
             .map_err(|_| {
                 error!("Failed to encode message content");

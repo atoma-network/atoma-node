@@ -11,11 +11,7 @@ use axum::{
 };
 use std::sync::Arc;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::{
-    net::TcpListener,
-    signal,
-    sync::{watch::Sender, RwLock},
-};
+use tokio::{net::TcpListener, signal, sync::RwLock};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -64,34 +60,30 @@ pub struct DaemonState {
     /// Thread-safe reference to the Sui blockchain client that handles all blockchain interactions.
     /// Wrapped in `Arc<RwLock>` to allow multiple handlers to safely access and modify the client
     /// state concurrently.
-    client: Arc<RwLock<AtomaSuiClient>>,
+    pub client: Arc<RwLock<AtomaSuiClient>>,
 
     /// Manages the persistent state of nodes, tasks, and other system components.
     /// Handles database operations and state synchronization.
-    state_manager: StateManager,
+    pub state_manager: StateManager,
 
     /// Vector of tuples containing node badge information, where each tuple contains:
     /// - `ObjectID`: The unique identifier of the node badge on the Sui blockchain
     /// - `u64`: The small ID associated with the node badge for efficient indexing
-    node_badges: Vec<(ObjectID, u64)>,
+    pub node_badges: Vec<(ObjectID, u64)>,
 }
 
 /// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
-///
 /// This function initializes and runs the main daemon service that handles node operations,
-/// task management, and blockchain interactions. It sets up the HTTP server with the configured
-/// routes and implements graceful shutdown handling.
 ///
 /// # Arguments
 ///
 /// * `daemon_state` - The shared state container for the daemon service, containing the Sui client,
 ///   state manager, and node badge information
 /// * `tcp_listener` - A pre-configured TCP listener that the HTTP server will bind to
-/// * `shutdown_sender` - A channel sender used to signal shutdown completion to other components
 ///
 /// # Returns
 ///
-/// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) on successful shutdown, or an error if
+/// * `anyhow::Result<()>` - Ok(()) on successful shutdown, or an error if
 ///   server initialization or shutdown fails
 ///
 /// # Shutdown Behavior
@@ -100,7 +92,6 @@ pub struct DaemonState {
 /// 1. Listening for a Ctrl+C signal
 /// 2. Logging shutdown initiation
 /// 3. Waiting for existing connections to complete
-/// 4. Sending a shutdown confirmation through the provided channel
 ///
 /// # Example
 ///
@@ -112,16 +103,14 @@ pub struct DaemonState {
 /// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
 ///     let daemon_state = DaemonState::new(/* ... */);
 ///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
-///     let (shutdown_tx, _) = watch::channel(false);
 ///     
-///     run_daemon(daemon_state, listener, shutdown_tx).await
+///     run_daemon(daemon_state, listener).await
 /// }
 /// ```
 pub async fn run_daemon(
     daemon_state: DaemonState,
     tcp_listener: TcpListener,
-    shutdown_sender: Sender<bool>,
-) -> std::result::Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let daemon_router = create_daemon_router(daemon_state);
     let shutdown_signal = async {
         signal::ctrl_c()
@@ -132,15 +121,10 @@ pub async fn run_daemon(
     let server = axum::serve(tcp_listener, daemon_router.into_make_service())
         .with_graceful_shutdown(shutdown_signal);
     server.await?;
-    shutdown_sender.send(true)?;
     Ok(())
 }
 
 /// Creates and configures the main router for the Atoma daemon HTTP API.
-///
-/// This function sets up all API endpoints for node operations, task management, stack handling,
-/// and attestation dispute resolution. The router uses axum's routing system to handle both GET
-/// and POST requests with appropriate handler functions.
 ///
 /// # Arguments
 /// * `daemon_state` - The shared state container that will be available to all route handlers

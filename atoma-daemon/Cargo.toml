@@ -2,17 +2,27 @@
 name = "atoma-daemon"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "atoma-daemon"
+path = "../atoma-bin/atoma_daemon.rs"
 
 [dependencies]
-axum = { workspace = true }
+anyhow = { workspace = true }
 atoma-state = { workspace = true }
 atoma-sui = { workspace = true }
+axum = { workspace = true }
 blake2 = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
 rs_merkle = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sui-sdk = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json"] }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
