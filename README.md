@@ -28,6 +28,35 @@ This repository contains the node software that enables node operators to partic
 - 🐦 [Twitter](https://x.com/Atoma_Network)
 - 💬 [Discord](https://discord.com/channels/1172593757586214964/1258484557083054081)
 
+## Spawn an Atoma Node
+
+### 1. Installing Rust
+
+Install Rust using rustup:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Follow the prompts and restart your terminal. Verify the installation:
+
+```bash
+rustc --version
+cargo --version
+```
+
+### 2. Cloning the Repository
+
+```bash
+git clone https://github.com/atoma-network/atoma-node.git
+cd atoma-node
+```
+
+### 3. Configuring the Node
+
+Create a `config.toml` file in the project root:
+
+
 ## Run a node
 
 In order to run an Atoma node, you should provide enough evidence of holding a powerful enough machine for AI inference. We
