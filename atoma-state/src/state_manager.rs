@@ -1046,45 +1046,23 @@ impl AtomaState {
         public_key: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
-        // First, begin a transaction to ensure atomicity
-        let mut transaction = self.db.begin().await?;
-
-        // First try to update the row
-        let rows_affected = sqlx::query(
+        // Single query that updates and returns the modified row
+        let maybe_stack = sqlx::query_as::<_, Stack>(
             r#"
             UPDATE stacks
-            SET already_computed_units = already_computed_units + ?1
-            WHERE stack_small_id = ?2
-            AND owner_address = ?3
-            AND num_compute_units - already_computed_units >= ?1
+            SET already_computed_units = already_computed_units + $1
+            WHERE stack_small_id = $2
+            AND owner_address = $3
+            AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
+            RETURNING *
             "#,
         )
-        .bind(num_compute_units)
-        .bind(stack_small_id)
-        .bind(public_key)
-        .execute(&mut *transaction)
-        .await?;
-
-        // If update was successful, get the updated row
-        let maybe_stack = if rows_affected.rows_affected() > 0 {
-            sqlx::query_as::<_, Stack>(
-                r#"
-                SELECT * FROM stacks
-                WHERE stack_small_id = ?1
-                AND owner_address = ?2
-                "#,
-            )
+            .bind(num_compute_units)
             .bind(stack_small_id)
             .bind(public_key)
-            .fetch_optional(&mut *transaction)
-            .await?
-        } else {
-            None
-        };
-
-        // Commit the transaction
-        transaction.commit().await?;
+            .fetch_optional(&self.db)
+            .await?;
 
         Ok(maybe_stack)
     }
@@ -1408,19 +1386,19 @@ impl AtomaState {
                     is_claimed) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(stack_settlement_ticket.stack_small_id)
-        .bind(stack_settlement_ticket.selected_node_id)
-        .bind(stack_settlement_ticket.num_claimed_compute_units)
-        .bind(stack_settlement_ticket.requested_attestation_nodes)
-        .bind(stack_settlement_ticket.committed_stack_proofs)
-        .bind(stack_settlement_ticket.stack_merkle_leaves)
-        .bind(stack_settlement_ticket.dispute_settled_at_epoch)
-        .bind(stack_settlement_ticket.already_attested_nodes)
-        .bind(stack_settlement_ticket.is_in_dispute)
-        .bind(stack_settlement_ticket.user_refund_amount)
-        .bind(stack_settlement_ticket.is_claimed)
-        .execute(&mut *tx)
-        .await?;
+            .bind(stack_settlement_ticket.stack_small_id)
+            .bind(stack_settlement_ticket.selected_node_id)
+            .bind(stack_settlement_ticket.num_claimed_compute_units)
+            .bind(stack_settlement_ticket.requested_attestation_nodes)
+            .bind(stack_settlement_ticket.committed_stack_proofs)
+            .bind(stack_settlement_ticket.stack_merkle_leaves)
+            .bind(stack_settlement_ticket.dispute_settled_at_epoch)
+            .bind(stack_settlement_ticket.already_attested_nodes)
+            .bind(stack_settlement_ticket.is_in_dispute)
+            .bind(stack_settlement_ticket.user_refund_amount)
+            .bind(stack_settlement_ticket.is_claimed)
+            .execute(&mut *tx)
+            .await?;
 
         // Also update the stack to set in_settle_period to true
         sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = ?")
@@ -1473,31 +1451,22 @@ impl AtomaState {
         stack_small_id: i64,
         new_hash: [u8; 32],
     ) -> Result<()> {
-        let mut transaction = self.db.begin().await?;
-
-        let existing_hash = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT total_hash, num_total_messages FROM stacks WHERE stack_small_id = ?",
-        )
-        .bind(stack_small_id)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(|_| AtomaStateManagerError::StackNotFound)?;
-
-        let total_hash = [existing_hash, new_hash.to_vec()].concat();
-
-        // NOTE: also update the num_total_messages
-        sqlx::query(
+        let rows_affected = sqlx::query(
             "UPDATE stacks 
-                    SET total_hash = ?,
-                    num_total_messages = num_total_messages + 1
-                    WHERE stack_small_id = ?",
+            SET total_hash = total_hash || ?,
+                num_total_messages = num_total_messages + 1
+            WHERE stack_small_id = ?"
         )
-        .bind(total_hash)
-        .bind(stack_small_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
+            .bind(&new_hash[..])
+            .bind(stack_small_id)
+            .execute(&self.db)
+            .await?
+            .rows_affected();
+        
+        if rows_affected == 0 {
+            return Err(AtomaStateManagerError::StackNotFound);
+        }
+    
         Ok(())
     }
 
@@ -1658,27 +1627,27 @@ impl AtomaState {
         attestation_node_id: i64,
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
-
+    
         let row = sqlx::query(
             "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes 
              FROM stack_settlement_tickets 
-             WHERE stack_small_id = ?",
+             WHERE stack_small_id = $1",
         )
         .bind(stack_small_id)
         .fetch_one(&mut *tx)
         .await?;
-
+    
         let mut committed_stack_proofs: Vec<u8> = row.get("committed_stack_proofs");
         let mut current_merkle_leaves: Vec<u8> = row.get("stack_merkle_leaves");
         let requested_nodes: String = row.get("requested_attestation_nodes");
         let requested_nodes: Vec<i64> = serde_json::from_str(&requested_nodes)?;
-
+    
         // Find the index of the attestation_node_id
         let index = requested_nodes
             .iter()
             .position(|&id| id == attestation_node_id)
             .ok_or_else(|| AtomaStateManagerError::AttestationNodeNotFound(attestation_node_id))?;
-
+    
         // Update the corresponding 32-byte range in the stack_merkle_leaves
         let start = (index + 1) * 32;
         let end = start + 32;
@@ -1688,23 +1657,27 @@ impl AtomaState {
         if end > committed_stack_proofs.len() {
             return Err(AtomaStateManagerError::InvalidCommittedStackProofLength);
         }
-
+    
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
         committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
+    
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-             SET committed_stack_proofs = ?,
-                 stack_merkle_leaves = ?, 
-                 already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
-             WHERE stack_small_id = ?",
+             SET committed_stack_proofs = $1,
+                 stack_merkle_leaves = $2, 
+                 already_attested_nodes = CASE 
+                     WHEN already_attested_nodes IS NULL THEN json_array($3)
+                     ELSE json_insert(already_attested_nodes, '$[#]', $3)
+                 END
+             WHERE stack_small_id = $4",
         )
-        .bind(committed_stack_proofs)
-        .bind(current_merkle_leaves)
-        .bind(attestation_node_id)
-        .bind(stack_small_id)
-        .execute(&mut *tx)
-        .await?;
-
+            .bind(committed_stack_proofs)
+            .bind(current_merkle_leaves)
+            .bind(attestation_node_id)
+            .bind(stack_small_id)
+            .execute(&mut *tx)
+            .await?;
+    
         tx.commit().await?;
         Ok(())
     }
