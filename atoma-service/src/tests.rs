@@ -257,7 +257,6 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
 
-        println!("FLAG FLAG FLAG 5");
         assert_eq!(response.status(), StatusCode::OK);
 
         shutdown_sender.send(true).unwrap();
