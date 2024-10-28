@@ -30,7 +30,16 @@ This repository contains the node software that enables node operators to partic
 
 ## Spawn an Atoma Node
 
+### Install the Sui client locally
+
+The first step in setting up an Atoma node is installing the Sui client locally. Please refer to the [Sui installation guide](https://docs.sui.io/build/install) for more information.
+
+Once you have the Sui client installed, locally, you need to connect to a Sui RPC node to be able to interact with the Sui blockchain and therefore the Atoma smart contract. Please refer to the [Connect to a Sui Network guide](https://docs.sui.io/guides/developer/getting-started/connect) for more information.
+
+You then need to create a wallet and fund it with some testnet SUI. Please refer to the [Sui wallet guide](https://docs.sui.io/guides/developer/getting-started/get-address) for more information. If you are plan to run the Atoma node on Sui's testnet, you can request testnet SUI tokens by following the docs [Sui ](https://docs.sui.io/guides/developer/getting-started/get-coins).
+
 ### Docker Deployment
+
 #### Prerequisites
 - Docker and Docker Compose installed
 - NVIDIA Container Toolkit installed (for GPU support)
