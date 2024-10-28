@@ -30,7 +30,9 @@ This repository contains the node software that enables node operators to partic
 
 ## Spawn an Atoma Node
 
-### 1. Installing Rust
+### Manual deployment 
+
+#### 1. Installing Rust
 
 Install Rust using rustup:
 
@@ -45,18 +47,18 @@ rustc --version
 cargo --version
 ```
 
-### 2. Cloning the Repository
+#### 2. Cloning the Repository
 
 ```bash
 git clone https://github.com/atoma-network/atoma-node.git
 cd atoma-node
 ```
 
-### 3. Configuring the Node
+#### 3. Configuring the Node
 
 The application uses a TOML configuration file with the following sections:
 
-### `[atoma-service]`
+##### `[atoma-service]`
 - `inference_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
 - `embeddings_service_url` (optional): Endpoint URL for the embeddings service. At least one of the service URLs must be provided.
 - `multimodal_service_url` (optional): Endpoint URL for the multimodal service. At least one of the service URLs must be provided.
@@ -64,7 +66,7 @@ The application uses a TOML configuration file with the following sections:
 - `revisions`: List of model revisions supported by the service
 - `service_bind_address`: Address and port for the Atoma Service to bind to
 
-### `[atoma-sui]`
+##### `[atoma-sui]`
 - `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
 - `atoma_db`: ObjectID for Atoma's DB on the Sui network
 - `atoma_package_id`: ObjectID for Atoma's package on the Sui network
@@ -77,10 +79,10 @@ The application uses a TOML configuration file with the following sections:
 - `sui_config_path`: Path to the Sui configuration file
 - `sui_keystore_path`: Path to the Sui keystore file, it should be at the same directory level as the Sui configuration file.
 
-### `[atoma-state]`
+##### `[atoma-state]`
 - `database_url`: SQLite database connection URL
 
-### Example Configuration
+##### Example Configuration
 
 ```toml
 [atoma-service]
@@ -108,7 +110,7 @@ sui_keystore_path = "<PATH_TO_SUI_KEYSTORE>" # Example: "~/.sui/sui_config/sui.k
 database_url = "sqlite:///<PATH_TO_DATABASE>"
 ```
 
-### 4. Running the Atoma Node
+#### 4. Running the Atoma Node
 
 After configuring your node, you can run it using the following command:
 
@@ -131,20 +133,20 @@ Command line arguments:
 - `--config-path` (`-c`): Path to your TOML configuration file
 - `--address-index` (`-a`): Index of the address to use from the keystore (defaults to 0)
 
-### 5. Managing Logs
+#### 5. Managing Logs
 
 The Atoma node uses a comprehensive logging system that writes to both console and files:
 
-#### Log Location
+##### Log Location
 - Logs are stored in the `./logs` directory
 - The main log file is named `atoma-node-service.log`
 - Logs rotate daily to prevent excessive file sizes
 
-#### Log Formats
+##### Log Formats
 - **Console Output**: Human-readable format with pretty printing, ideal for development
 - **File Output**: JSON format with detailed metadata, perfect for log aggregation systems
 
-#### Log Levels
+##### Log Levels
 The default logging level is `info`, but you can adjust it using the `RUST_LOG` environment variable:
 
 ```bash
@@ -162,7 +164,7 @@ Common log levels (from most to least verbose):
 - `warn`: Warning messages
 - `error`: Error messages
 
-#### Viewing Logs
+##### Viewing Logs
 You can use standard Unix tools to view and analyze logs:
 
 ```bash
@@ -176,7 +178,7 @@ grep "event_name" ./logs/atoma-node-service.log
 cat ./logs/atoma-node-service.log | jq '.'
 ```
 
-#### Log Rotation
+##### Log Rotation
 - Logs automatically rotate daily
 - Old logs are preserved with the date appended to the filename
 - You may want to set up log cleanup periodically to manage disk space:
