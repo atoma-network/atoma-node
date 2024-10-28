@@ -11,7 +11,7 @@
 
 Atoma is a decentralized cloud compute network for AI that enables:
 
-- **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc.
+- **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc, through Atoma's novel Sampling Consensus algorithm (see [paper](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf))
 - **Private Inference**: Secure processing with strong privacy guarantees, through the use of secure hardware enclaves (see [Atoma's private compute paper](https://arxiv.org/abs/2410.13752))
 - **Decentralized Infrastructure**: A permissionless network of compute nodes, orchestrated by Atoma's smart contract on the Sui blockchain (see [repo](https://github.com/atoma-network/atoma-contracts))
 - **LLM Focus**: Specialized in serving Large Language Models compute.
