@@ -2,6 +2,11 @@
 
 ![Atoma Logo](https://github.com/atoma-network/atoma-node/blob/atoma-image/atoma-assets/atoma-symbol.jpg)
 
+[![Discord](https://dcbadge.vercel.app/api/server/1172593757586214964)](https://discord.com/channels/1172593757586214964/1258484557083054081)
+[![Documentation](https://img.shields.io/badge/docs-gitbook-blue)](https://atoma.gitbook.io/atoma-docs)
+[![Twitter](https://img.shields.io/twitter/follow/Atoma_Network?style=social)](https://x.com/Atoma_Network)
+[![License](https://img.shields.io/github/license/atoma-network/atoma-node)](LICENSE)
+
 ## Introduction
 
 Atoma is a decentralized cloud compute network for AI that enables:
