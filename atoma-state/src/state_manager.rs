@@ -1058,11 +1058,11 @@ impl AtomaState {
             RETURNING *
             "#,
         )
-            .bind(num_compute_units)
-            .bind(stack_small_id)
-            .bind(public_key)
-            .fetch_optional(&self.db)
-            .await?;
+        .bind(num_compute_units)
+        .bind(stack_small_id)
+        .bind(public_key)
+        .fetch_optional(&self.db)
+        .await?;
 
         Ok(maybe_stack)
     }
@@ -1386,19 +1386,19 @@ impl AtomaState {
                     is_claimed) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-            .bind(stack_settlement_ticket.stack_small_id)
-            .bind(stack_settlement_ticket.selected_node_id)
-            .bind(stack_settlement_ticket.num_claimed_compute_units)
-            .bind(stack_settlement_ticket.requested_attestation_nodes)
-            .bind(stack_settlement_ticket.committed_stack_proofs)
-            .bind(stack_settlement_ticket.stack_merkle_leaves)
-            .bind(stack_settlement_ticket.dispute_settled_at_epoch)
-            .bind(stack_settlement_ticket.already_attested_nodes)
-            .bind(stack_settlement_ticket.is_in_dispute)
-            .bind(stack_settlement_ticket.user_refund_amount)
-            .bind(stack_settlement_ticket.is_claimed)
-            .execute(&mut *tx)
-            .await?;
+        .bind(stack_settlement_ticket.stack_small_id)
+        .bind(stack_settlement_ticket.selected_node_id)
+        .bind(stack_settlement_ticket.num_claimed_compute_units)
+        .bind(stack_settlement_ticket.requested_attestation_nodes)
+        .bind(stack_settlement_ticket.committed_stack_proofs)
+        .bind(stack_settlement_ticket.stack_merkle_leaves)
+        .bind(stack_settlement_ticket.dispute_settled_at_epoch)
+        .bind(stack_settlement_ticket.already_attested_nodes)
+        .bind(stack_settlement_ticket.is_in_dispute)
+        .bind(stack_settlement_ticket.user_refund_amount)
+        .bind(stack_settlement_ticket.is_claimed)
+        .execute(&mut *tx)
+        .await?;
 
         // Also update the stack to set in_settle_period to true
         sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = ?")
@@ -1455,18 +1455,18 @@ impl AtomaState {
             "UPDATE stacks 
             SET total_hash = total_hash || ?,
                 num_total_messages = num_total_messages + 1
-            WHERE stack_small_id = ?"
+            WHERE stack_small_id = ?",
         )
-            .bind(&new_hash[..])
-            .bind(stack_small_id)
-            .execute(&self.db)
-            .await?
-            .rows_affected();
-        
+        .bind(&new_hash[..])
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?
+        .rows_affected();
+
         if rows_affected == 0 {
             return Err(AtomaStateManagerError::StackNotFound);
         }
-    
+
         Ok(())
     }
 
@@ -1627,7 +1627,7 @@ impl AtomaState {
         attestation_node_id: i64,
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
-    
+
         let row = sqlx::query(
             "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes 
              FROM stack_settlement_tickets 
@@ -1636,18 +1636,18 @@ impl AtomaState {
         .bind(stack_small_id)
         .fetch_one(&mut *tx)
         .await?;
-    
+
         let mut committed_stack_proofs: Vec<u8> = row.get("committed_stack_proofs");
         let mut current_merkle_leaves: Vec<u8> = row.get("stack_merkle_leaves");
         let requested_nodes: String = row.get("requested_attestation_nodes");
         let requested_nodes: Vec<i64> = serde_json::from_str(&requested_nodes)?;
-    
+
         // Find the index of the attestation_node_id
         let index = requested_nodes
             .iter()
             .position(|&id| id == attestation_node_id)
             .ok_or_else(|| AtomaStateManagerError::AttestationNodeNotFound(attestation_node_id))?;
-    
+
         // Update the corresponding 32-byte range in the stack_merkle_leaves
         let start = (index + 1) * 32;
         let end = start + 32;
@@ -1657,10 +1657,10 @@ impl AtomaState {
         if end > committed_stack_proofs.len() {
             return Err(AtomaStateManagerError::InvalidCommittedStackProofLength);
         }
-    
+
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
         committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
-    
+
         sqlx::query(
             "UPDATE stack_settlement_tickets 
              SET committed_stack_proofs = $1,
@@ -1671,13 +1671,13 @@ impl AtomaState {
                  END
              WHERE stack_small_id = $4",
         )
-            .bind(committed_stack_proofs)
-            .bind(current_merkle_leaves)
-            .bind(attestation_node_id)
-            .bind(stack_small_id)
-            .execute(&mut *tx)
-            .await?;
-    
+        .bind(committed_stack_proofs)
+        .bind(current_merkle_leaves)
+        .bind(attestation_node_id)
+        .bind(stack_small_id)
+        .execute(&mut *tx)
+        .await?;
+
         tx.commit().await?;
         Ok(())
     }
