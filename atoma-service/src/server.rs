@@ -343,10 +343,7 @@ pub async fn chat_completions_handler(
 
 pub(crate) mod utils {
     use super::*;
-    use blake2::{
-        digest::generic_array::{typenum::U32, GenericArray},
-        Digest,
-    };
+    
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
