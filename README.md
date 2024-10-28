@@ -30,6 +30,20 @@ This repository contains the node software that enables node operators to partic
 
 ## Spawn an Atoma Node
 
+### Docker Deployment
+
+#### Quickstart
+
+1. Configure `.env`, using as a template `.env.example`
+
+2. Fill the `config.toml` file, using `config.example.toml` as a template
+
+3. Start container
+
+```
+docker compose up
+```
+
 ### Manual deployment 
 
 #### 1. Installing Rust
@@ -133,7 +147,16 @@ Command line arguments:
 - `--config-path` (`-c`): Path to your TOML configuration file
 - `--address-index` (`-a`): Index of the address to use from the keystore (defaults to 0)
 
-#### 5. Managing Logs
+#### 5. Spawn the background inference service
+
+We currenlty support the following inference services:
+
+- [atoma-inference-service](https://github.com/atoma-network/atoma-inference-service)
+- [vLLM](https://github.com/vllm-project/vllm)
+
+Please refer to the documentation of the inference service you want to use to spawn the service. Make sure to set the correct inference service URL in the Atoma Node configuration, above.
+
+#### 6. Managing Logs
 
 The Atoma node uses a comprehensive logging system that writes to both console and files:
 
