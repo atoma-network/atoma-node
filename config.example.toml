@@ -1,5 +1,9 @@
 [atoma-service]
+<<<<<<< HEAD
 inference_service_url = "http://vllm:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
+=======
+inference_service_url = "http://localhost:8000"
+>>>>>>> main
 models = ["meta-llama/Llama-3.1-70b-Instruct"]
 revisions = ["main"]
 service_bind_address = "http://0.0.0.0:8080"
@@ -18,4 +22,8 @@ sui_config_path = "~/.sui/sui_config/client.yaml" # Path to the Sui client confi
 sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, by default (on Linux, or MacOS)
 
 [atoma-state]
+<<<<<<< HEAD
 database_url = "sqlite:///./atoma_state.db" # Path to the SQLite database file, some reference value
+=======
+database_url = "sqlite:///./atoma_state.db"
+>>>>>>> main
