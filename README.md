@@ -67,9 +67,7 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 
 3. Configure `config.toml`, using `config.example.toml` as template:
 ```toml
-[
-atoma-service
-]
+[atoma-service]
 inference_service_url = "http://vllm:8000"    # Internal Docker network URL
 embeddings_service_url = ""
 multimodal_service_url = ""
@@ -77,9 +75,7 @@ models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = [""]
 service_bind_address = "0.0.0.0:3000"         # Bind to all interfaces
 
-[
-atoma-sui
-]
+[atoma-sui]
 http_rpc_node_addr = ""
 atoma_db = ""
 atoma_package_id = ""
@@ -92,9 +88,7 @@ task_small_ids = []         # List of task IDs under control
 sui_config_path = "/root/.sui/sui_config/client.yaml"
 sui_keystore_path = "/root/.sui/sui_config/sui.keystore"
 
-[
-atoma-state
-]
+[atoma-state]
 database_url = "sqlite:///app/data/atoma.db"
 ```
 
