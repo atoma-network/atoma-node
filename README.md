@@ -24,6 +24,7 @@ This repository contains the node software that enables node operators to partic
 
 ### Community Links
 - 🌐 [Official Website](https://www.atoma.network)
+- 📖 [Documentation](https://atoma.gitbook.io/atoma-docs)
 - 🐦 [Twitter](https://x.com/Atoma_Network)
 - 💬 [Discord](https://discord.com/channels/1172593757586214964/1258484557083054081)
 
