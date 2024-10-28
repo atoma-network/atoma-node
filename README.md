@@ -54,9 +54,57 @@ cd atoma-node
 
 ### 3. Configuring the Node
 
-Create a `config.toml` file in the project root:
+The application uses a TOML configuration file with the following sections:
 
+### `[atoma-service]`
+- `inference_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
+- `embeddings_service_url` (optional): Endpoint URL for the embeddings service. At least one of the service URLs must be provided.
+- `multimodal_service_url` (optional): Endpoint URL for the multimodal service. At least one of the service URLs must be provided.
+- `models`: List of model names deployed by the Atoma Service
+- `revisions`: List of model revisions supported by the service
+- `service_bind_address`: Address and port for the Atoma Service to bind to
 
+### `[atoma-sui]`
+- `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
+- `atoma_db`: ObjectID for Atoma's DB on the Sui network
+- `atoma_package_id`: ObjectID for Atoma's package on the Sui network
+- `toma_package_id`: ObjectID for Atoma's TOMA token package
+- `request_timeout` (optional): Duration for request timeouts
+- `max_concurrent_requests` (optional): Maximum number of concurrent Sui client requests
+- `limit` (optional): Limit for dynamic fields retrieval per event subscriber loop
+- `node_small_ids`: List of node small IDs controlled by the current Sui wallet. Node small IDs are assigned to each node upon registration on the Atoma's smart contract.
+- `task_small_ids`: List of task small IDs controlled by the current Sui wallet. Recommended to be an empty list.
+- `sui_config_path`: Path to the Sui configuration file
+
+### `[atoma-state]`
+- `database_url`: SQLite database connection URL
+
+### Example Configuration
+
+```toml
+[atoma-service]
+inference_service_url = "<INFERENCE_SERVICE_URL>"
+embeddings_service_url = "<EMBEDDINGS_SERVICE_URL>"
+multimodal_service_url = "<MULTIMODAL_SERVICE_URL>"
+models = ["<MODEL_1>", "<MODEL_2>"]
+revisions = ["<REVISION_1>", "<REVISION_2>"]
+service_bind_address = "<HOST>:<PORT>"
+
+[atoma-sui]
+http_rpc_node_addr = "<SUI_RPC_NODE_URL>"
+atoma_db = "<ATOMA_DB_OBJECT_ID>"
+atoma_package_id = "<ATOMA_PACKAGE_OBJECT_ID>"
+toma_package_id = "<TOMA_PACKAGE_OBJECT_ID>"
+request_timeout = { secs = 300, nanos = 0 }
+max_concurrent_requests = 10
+limit = 100
+node_small_ids = [0, 1, 2]  # List of node IDs under control
+task_small_ids = []  # List of task IDs under control
+sui_config_path = "<PATH_TO_SUI_CONFIG>"
+
+[atoma-state]
+database_url = "sqlite:///<PATH_TO_DATABASE>"
+```
 ## Run a node
 
 In order to run an Atoma node, you should provide enough evidence of holding a powerful enough machine for AI inference. We
