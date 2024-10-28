@@ -1046,45 +1046,23 @@ impl AtomaState {
         public_key: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
-        // First, begin a transaction to ensure atomicity
-        let mut transaction = self.db.begin().await?;
-
-        // First try to update the row
-        let rows_affected = sqlx::query(
+        // Single query that updates and returns the modified row
+        let maybe_stack = sqlx::query_as::<_, Stack>(
             r#"
             UPDATE stacks
-            SET already_computed_units = already_computed_units + ?1
-            WHERE stack_small_id = ?2
-            AND owner_address = ?3
-            AND num_compute_units - already_computed_units >= ?1
+            SET already_computed_units = already_computed_units + $1
+            WHERE stack_small_id = $2
+            AND owner_address = $3
+            AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
+            RETURNING *
             "#,
         )
         .bind(num_compute_units)
         .bind(stack_small_id)
         .bind(public_key)
-        .execute(&mut *transaction)
+        .fetch_optional(&self.db)
         .await?;
-
-        // If update was successful, get the updated row
-        let maybe_stack = if rows_affected.rows_affected() > 0 {
-            sqlx::query_as::<_, Stack>(
-                r#"
-                SELECT * FROM stacks
-                WHERE stack_small_id = ?1
-                AND owner_address = ?2
-                "#,
-            )
-            .bind(stack_small_id)
-            .bind(public_key)
-            .fetch_optional(&mut *transaction)
-            .await?
-        } else {
-            None
-        };
-
-        // Commit the transaction
-        transaction.commit().await?;
 
         Ok(maybe_stack)
     }
@@ -1473,31 +1451,22 @@ impl AtomaState {
         stack_small_id: i64,
         new_hash: [u8; 32],
     ) -> Result<()> {
-        let mut transaction = self.db.begin().await?;
-
-        let existing_hash = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT total_hash, num_total_messages FROM stacks WHERE stack_small_id = ?",
-        )
-        .bind(stack_small_id)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(|_| AtomaStateManagerError::StackNotFound)?;
-
-        let total_hash = [existing_hash, new_hash.to_vec()].concat();
-
-        // NOTE: also update the num_total_messages
-        sqlx::query(
+        let rows_affected = sqlx::query(
             "UPDATE stacks 
-                    SET total_hash = ?,
-                    num_total_messages = num_total_messages + 1
-                    WHERE stack_small_id = ?",
+            SET total_hash = total_hash || $1,
+                num_total_messages = num_total_messages + 1
+            WHERE stack_small_id = $2",
         )
-        .bind(total_hash)
+        .bind(&new_hash[..])
         .bind(stack_small_id)
-        .execute(&mut *transaction)
-        .await?;
+        .execute(&self.db)
+        .await?
+        .rows_affected();
 
-        transaction.commit().await?;
+        if rows_affected == 0 {
+            return Err(AtomaStateManagerError::StackNotFound);
+        }
+
         Ok(())
     }
 
@@ -1662,7 +1631,7 @@ impl AtomaState {
         let row = sqlx::query(
             "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes 
              FROM stack_settlement_tickets 
-             WHERE stack_small_id = ?",
+             WHERE stack_small_id = $1",
         )
         .bind(stack_small_id)
         .fetch_one(&mut *tx)
@@ -1691,12 +1660,16 @@ impl AtomaState {
 
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
         committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
+
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-             SET committed_stack_proofs = ?,
-                 stack_merkle_leaves = ?, 
-                 already_attested_nodes = json_insert(already_attested_nodes, '$[#]', ?)
-             WHERE stack_small_id = ?",
+             SET committed_stack_proofs = $1,
+                 stack_merkle_leaves = $2, 
+                 already_attested_nodes = CASE 
+                     WHEN already_attested_nodes IS NULL THEN json_array($3)
+                     ELSE json_insert(already_attested_nodes, '$[#]', $3)
+                 END
+             WHERE stack_small_id = $4",
         )
         .bind(committed_stack_proofs)
         .bind(current_merkle_leaves)

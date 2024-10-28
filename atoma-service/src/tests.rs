@@ -216,7 +216,7 @@ mod middleware {
 
     #[tokio::test]
     #[serial]
-    async fn test_verify_stack_permissions_x() {
+    async fn test_verify_stack_permissions() {
         let (
             app_state,
             public_key,
