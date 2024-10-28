@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use atoma_state::StateManager;
+use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -13,9 +13,9 @@ use blake2::{
     digest::generic_array::{typenum::U32, GenericArray},
     Digest,
 };
+use flume::Sender as FlumeSender;
 use reqwest::Client;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
 use tokio::{net::TcpListener, signal, sync::watch::Sender};
@@ -55,12 +55,12 @@ pub struct OpenApiDoc;
 /// management and communication between components.
 #[derive(Clone)]
 pub struct AppState {
-    /// SQLite database connection pool.
+    /// Channel sender for managing application events.
     ///
-    /// This pool is used to manage database connections efficiently,
-    /// allowing for concurrent access to the database by different parts
-    /// of the application.
-    pub state: SqlitePool,
+    /// This sender is used to communicate events and state changes to the
+    /// state manager, allowing for efficient handling of application state
+    /// updates and notifications across different components.
+    pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
 
     /// Tokenizer used for processing text input.
     ///
@@ -307,13 +307,15 @@ pub async fn chat_completions_handler(
         .map(|n| n as i64)
         .unwrap_or(0);
 
-    let state_manager = StateManager::new(state.state.clone());
-
     // NOTE: We need to update the stack num tokens, because the inference response might have produced
     // less tokens than estimated what we initially estimated, from the middleware.
-    state_manager
-        .update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens)
-        .await
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
+            stack_small_id,
+            estimated_total_tokens,
+            total_tokens,
+        })
         .map_err(|e| {
             error!("Error updating stack num tokens: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -326,9 +328,12 @@ pub async fn chat_completions_handler(
         .as_slice()
         .try_into()
         .expect("Invalid BLAKE2b hash length");
-    state_manager
-        .update_stack_total_hash(stack_small_id, total_hash_bytes)
-        .await
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
+            stack_small_id,
+            total_hash: total_hash_bytes,
+        })
         .map_err(|e| {
             error!("Error updating stack total hash: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -338,10 +343,7 @@ pub async fn chat_completions_handler(
 
 pub(crate) mod utils {
     use super::*;
-    use blake2::{
-        digest::generic_array::{typenum::U32, GenericArray},
-        Digest,
-    };
+
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 

@@ -234,7 +234,6 @@ pub(crate) fn calculate_node_index(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
 
     #[test]
     fn test_empty_total_hash() {
