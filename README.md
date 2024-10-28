@@ -4,11 +4,23 @@
 
 ## Introduction
 
-The present repository contains the logic to run an Atoma node. Atoma nodes empower the Atoma Network, a decentralized network
-for verifiable AI inference. Nodes can lend their GPU compute to the protocol, so large language models (LLMs for short) can be
-run across a decentralized network, at a cheaper cost. Moreover, nodes can be organized in order to provide verifiability guarantees
-of the correctness of their generated outputs. This means that the Atoma Network can empower smart contracts, deployed on any blockchain,
-to run verifiable inference and guarantee an intelligence layer to Web3. 
+Atoma is a decentralized cloud compute network for AI that enables:
+
+- **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc.
+- **Private Inference**: Secure processing with strong privacy guarantees, through the use of secure hardware enclaves (see [Atoma's private compute paper](https://arxiv.org/abs/2410.13752))
+- **Decentralized Infrastructure**: A permissionless network of compute nodes, orchestrated by Atoma's smart contract on the Sui blockchain (see [repo](https://github.com/atoma-network/atoma-contracts))
+- **LLM Focus**: Specialized in serving Large Language Models compute.
+
+This repository contains the node software that enables node operators to participate in the Atoma Network. By running an Atoma node, you can:
+
+1. Contribute with your hardware to provide computing power to the network;
+2. Earn rewards for processing AI workloads;    
+3. Help build a more accessible and democratic AI infrastructure.
+
+### Community Links
+- 🌐 [Official Website](https://www.atoma.network)
+- 🐦 [Twitter](https://x.com/Atoma_Network)
+- 💬 [Discord](https://discord.com/channels/1172593757586214964/1258484557083054081)
 
 ## Run a node
 
