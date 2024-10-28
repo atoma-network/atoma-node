@@ -1,6 +1,6 @@
 # Atoma Node infrastructure
 
-![Atoma Logo](https://github.com/atoma-network/atoma-node/blob/atoma-image/atoma-assets/atoma-symbol.jpg)
+<img src="https://github.com/atoma-network/atoma-node/main/atoma-assets/atoma-pfp.jpg" alt="Logo" height="500"/>
 
 [![Discord](https://img.shields.io/discord/1172593757586214964?label=Discord&logo=discord&logoColor=white)]
 [![Twitter](https://img.shields.io/twitter/follow/Atoma_Network?style=social)](https://x.com/Atoma_Network)
