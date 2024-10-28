@@ -75,6 +75,7 @@ The application uses a TOML configuration file with the following sections:
 - `node_small_ids`: List of node small IDs controlled by the current Sui wallet. Node small IDs are assigned to each node upon registration on the Atoma's smart contract.
 - `task_small_ids`: List of task small IDs controlled by the current Sui wallet. Recommended to be an empty list.
 - `sui_config_path`: Path to the Sui configuration file
+- `sui_keystore_path`: Path to the Sui keystore file, it should be at the same directory level as the Sui configuration file.
 
 ### `[atoma-state]`
 - `database_url`: SQLite database connection URL
@@ -100,11 +101,91 @@ max_concurrent_requests = 10
 limit = 100
 node_small_ids = [0, 1, 2]  # List of node IDs under control
 task_small_ids = []  # List of task IDs under control
-sui_config_path = "<PATH_TO_SUI_CONFIG>"
+sui_config_path = "<PATH_TO_SUI_CONFIG>" # Example: "~/.sui/sui_config/client.yaml" (default)
+sui_keystore_path = "<PATH_TO_SUI_KEYSTORE>" # Example: "~/.sui/sui_config/sui.keystore" (default)
 
 [atoma-state]
 database_url = "sqlite:///<PATH_TO_DATABASE>"
 ```
+
+### 4. Running the Atoma Node
+
+After configuring your node, you can run it using the following command:
+
+```bash
+cargo run --bin atoma -- \
+  --config-path /path/to/config.toml \
+  --address-index 0 # Optional, defaults to 0
+```
+
+Or if you've built the binary:
+
+```bash
+./target/release/atoma \
+  --config-path /path/to/config.toml \
+  --keystore-path /path/to/sui.keystore \
+  --address-index 0 # Optional, defaults to 0
+```
+
+Command line arguments:
+- `--config-path` (`-c`): Path to your TOML configuration file
+- `--address-index` (`-a`): Index of the address to use from the keystore (defaults to 0)
+
+### 5. Managing Logs
+
+The Atoma node uses a comprehensive logging system that writes to both console and files:
+
+#### Log Location
+- Logs are stored in the `./logs` directory
+- The main log file is named `atoma-node-service.log`
+- Logs rotate daily to prevent excessive file sizes
+
+#### Log Formats
+- **Console Output**: Human-readable format with pretty printing, ideal for development
+- **File Output**: JSON format with detailed metadata, perfect for log aggregation systems
+
+#### Log Levels
+The default logging level is `info`, but you can adjust it using the `RUST_LOG` environment variable:
+
+```bash
+# Set specific log levels
+export RUST_LOG=debug,atoma_node_service=trace
+
+# Run with custom log level
+RUST_LOG=debug cargo run --bin atoma -- [args]
+```
+
+Common log levels (from most to least verbose):
+- `trace`: Very detailed debugging information
+- `debug`: Useful debugging information
+- `info`: General information about operation
+- `warn`: Warning messages
+- `error`: Error messages
+
+#### Viewing Logs
+You can use standard Unix tools to view and analyze logs:
+
+```bash
+# View latest logs
+tail -f ./logs/atoma-node-service.log
+
+# Search for specific events
+grep "event_name" ./logs/atoma-node-service.log
+
+# View JSON logs in a more readable format (requires jq)
+cat ./logs/atoma-node-service.log | jq '.'
+```
+
+#### Log Rotation
+- Logs automatically rotate daily
+- Old logs are preserved with the date appended to the filename
+- You may want to set up log cleanup periodically to manage disk space:
+
+```bash
+# Example cleanup script for logs older than 30 days
+find ./logs -name "atoma-node-service.log.*" -mtime +30 -delete
+```
+
 ## Run a node
 
 In order to run an Atoma node, you should provide enough evidence of holding a powerful enough machine for AI inference. We

@@ -50,6 +50,9 @@ pub struct AtomaSuiConfig {
 
     /// Sui's config path
     sui_config_path: String,
+
+    /// Sui's keystore path
+    sui_keystore_path: String,
 }
 
 impl AtomaSuiConfig {
@@ -66,6 +69,7 @@ impl AtomaSuiConfig {
         task_small_ids: Vec<u64>,
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
+        sui_keystore_path: String,
     ) -> Self {
         Self {
             http_rpc_node_addr,
@@ -78,6 +82,7 @@ impl AtomaSuiConfig {
             task_small_ids,
             max_concurrent_requests,
             sui_config_path,
+            sui_keystore_path,
         }
     }
 
@@ -129,6 +134,11 @@ impl AtomaSuiConfig {
     /// Getter for `keystore_path`
     pub fn sui_config_path(&self) -> String {
         self.sui_config_path.clone()
+    }
+
+    /// Getter for `sui_keystore_path`
+    pub fn sui_keystore_path(&self) -> String {
+        self.sui_keystore_path.clone()
     }
 
     /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
@@ -191,6 +201,7 @@ pub mod tests {
             vec![0, 1, 2],
             vec![3, 4, 5],
             Some(10),
+            "".to_string(),
             "".to_string(),
         );
 
