@@ -2351,7 +2351,6 @@ pub(crate) mod queries {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     async fn setup_test_db() -> AtomaState {
         let state_manager = AtomaState::new_from_url("sqlite::memory:".to_string()).await.unwrap();
