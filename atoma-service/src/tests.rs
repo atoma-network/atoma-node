@@ -95,11 +95,10 @@ mod middleware {
             .open(&db_path)
             .unwrap();
 
-        let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
-            database_url,
+            "sqlite::memory:".to_string(),
             event_subscriber_receiver,
             state_manager_receiver,
         )
