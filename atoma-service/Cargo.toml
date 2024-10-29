@@ -17,6 +17,7 @@ base64 = { workspace = true }
 blake2 = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
+dotenv = { workspace = true }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

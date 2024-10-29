@@ -582,6 +582,7 @@ dependencies = [
  "blake2",
  "clap",
  "config",
+ "dotenv",
  "fastcrypto 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "flume",
  "futures",
@@ -1960,6 +1961,12 @@ dependencies = [
  "quote 1.0.37",
  "syn 2.0.85",
 ]
+
+[[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "dotenvy"

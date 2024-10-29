@@ -8,6 +8,7 @@ use atoma_service::{
 use atoma_state::{config::AtomaStateManagerConfig, AtomaStateManager};
 use atoma_sui::{AtomaSuiConfig, SuiEventSubscriber};
 use clap::Parser;
+use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
@@ -24,6 +25,8 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
+/// The name of the environment variable for the Hugging Face token
+const HF_TOKEN: &str = "HF_TOKEN";
 /// The directory where the logs are stored.
 const LOGS: &str = "./logs";
 /// The log file name.
@@ -102,9 +105,12 @@ impl Config {
 async fn initialize_tokenizers(
     models: &[String],
     revisions: &[String],
-    hf_token: String
+    hf_token: String,
 ) -> Result<Vec<Arc<Tokenizer>>> {
-    let api = ApiBuilder::new().with_progress(true).with_token(Some(hf_token)).build()?;
+    let api = ApiBuilder::new()
+        .with_progress(true)
+        .with_token(Some(hf_token))
+        .build()?;
     let fetch_futures: Vec<_> = models
         .iter()
         .zip(revisions.iter())
@@ -139,6 +145,7 @@ async fn initialize_tokenizers(
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging(LOGS).context("Failed to setup logging")?;
+    dotenv().ok();
 
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
@@ -210,8 +217,10 @@ async fn main() -> Result<()> {
         result.map_err(|e| anyhow::anyhow!(e))
     });
 
+    let hf_token = std::env::var(HF_TOKEN)
+        .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
     let tokenizers =
-        initialize_tokenizers(&config.service.models, &config.service.revisions, config.service.hf_token).await?;
+        initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
 
     let app_state = AppState {
         state_manager_sender,
