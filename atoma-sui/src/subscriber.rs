@@ -271,7 +271,7 @@ impl SuiEventSubscriber {
 ///
 /// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to handle
 /// * `value` - The serialized event data as a `serde_json::Value`
-/// * `db` - A reference to the SQLite connection pool for database operations
+/// * `db` - A reference to the any connection pool for database operations
 /// * `node_small_ids` - A slice of node IDs that are relevant for the current context
 ///
 /// # Returns
@@ -300,10 +300,10 @@ impl SuiEventSubscriber {
 /// # Examples
 ///
 /// ```ignore
-/// use atoma_state::SqlitePool;
+/// use atoma_state::AnyPool;
 /// use serde_json::Value;
 ///
-/// async fn example(event: AtomaEvent, value: Value, db: &SqlitePool, node_ids: &[u64]) {
+/// async fn example(event: AtomaEvent, value: Value, db: &AnyPool, node_ids: &[u64]) {
 ///     match handle_atoma_event(&event, value, db, node_ids).await {
 ///         Ok(()) => println!("Event handled successfully"),
 ///         Err(e) => eprintln!("Error handling event: {}", e),

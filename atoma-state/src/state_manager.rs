@@ -7,19 +7,20 @@ use crate::types::{
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::any::install_default_drivers;
 use sqlx::{FromRow, Row};
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::{AnyPool};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
-/// AtomaStateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
+/// AtomaStateManager is a wrapper around a Any connection pool, responsible for managing the state of the Atoma system.
 ///
-/// It provides an interface to interact with the SQLite database, handling operations
+/// It provides an interface to interact with the any database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
 pub struct AtomaStateManager {
-    /// The SQLite connection pool used for database operations.
+    /// The Any connection pool used for database operations.
     pub state: AtomaState,
     /// Receiver channel from the SuiEventSubscriber
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
@@ -30,7 +31,7 @@ pub struct AtomaStateManager {
 impl AtomaStateManager {
     /// Constructor
     pub fn new(
-        db: SqlitePool,
+        db: AnyPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Self {
@@ -43,14 +44,15 @@ impl AtomaStateManager {
 
     /// Creates a new `AtomaStateManager` instance from a database URL.
     ///
-    /// This method establishes a connection to the SQLite database using the provided URL,
+    /// This method establishes a connection to the any database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
     pub async fn new_from_url(
         database_url: String,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+        install_default_drivers();
+        let db = AnyPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
@@ -161,22 +163,22 @@ impl AtomaStateManager {
     }
 }
 
-/// AtomaState is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
+/// AtomaState is a wrapper around a any connection pool, responsible for managing the state of the Atoma system.
 #[derive(Clone)]
 pub struct AtomaState {
-    /// The SQLite connection pool used for database operations.
-    pub db: SqlitePool,
+    /// The any connection pool used for database operations.
+    pub db: AnyPool,
 }
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: SqlitePool) -> Self {
+    pub fn new(db: AnyPool) -> Self {
         Self { db }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
     pub async fn new_from_url(database_url: String) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+        let db = AnyPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
     }
@@ -2096,8 +2098,6 @@ pub enum AtomaStateManagerError {
 }
 
 pub(crate) mod queries {
-    use sqlx::Pool;
-
     use super::*;
 
     /// Generates the SQL query to create the `tasks` table.
@@ -2308,7 +2308,7 @@ pub(crate) mod queries {
     ///
     /// # Arguments
     ///
-    /// * `db` - A reference to the SQLite database pool.
+    /// * `db` - A reference to the Any database pool.
     ///
     /// # Returns
     ///
@@ -2325,15 +2325,15 @@ pub(crate) mod queries {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use sqlx::SqlitePool;
+    /// use sqlx::AnyPool;
     /// use atoma_node::atoma_state::queries;
     ///
-    /// async fn setup_database(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    /// async fn setup_database(pool: &AnyPool) -> Result<(), Box<dyn std::error::Error>> {
     ///     queries::create_all_tables(pool).await?;
     ///     Ok(())
     /// }
     /// ```
-    pub(crate) async fn create_all_tables(db: &Pool<Sqlite>) -> Result<()> {
+    pub(crate) async fn create_all_tables(db: &AnyPool) -> Result<()> {
         sqlx::query("PRAGMA foreign_keys = ON;").execute(db).await?;
 
         sqlx::query(&create_tasks_table_query()).execute(db).await?;

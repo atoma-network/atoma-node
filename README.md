@@ -94,7 +94,7 @@ The application uses a TOML configuration file with the following sections:
 - `sui_keystore_path`: Path to the Sui keystore file, it should be at the same directory level as the Sui configuration file.
 
 ##### `[atoma-state]`
-- `database_url`: SQLite database connection URL
+- `database_url`: any database connection URL
 
 ##### Example Configuration
 

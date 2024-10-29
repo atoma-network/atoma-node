@@ -2,7 +2,7 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Configuration for SQLite database connection.
+/// Configuration for any database connection.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AtomaStateManagerConfig {
     /// The URL of the SQLite database.
