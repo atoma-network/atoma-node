@@ -1,6 +1,5 @@
 # Builder stage
 FROM rust:1.76 as builder
-
 WORKDIR /usr/src/atoma-node
 COPY . .
 
@@ -8,16 +7,15 @@ COPY . .
 RUN cargo build --release
 
 # Final stage
-FROM ubuntu:22.04
+FROM alpine:3.19
 
 # Install necessary dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     ca-certificates \
-    sqlite3 \
-    && rm -rf /var/lib/apt/lists/*
+    sqlite \
+    libgcc # Required for Rust binaries
 
 WORKDIR /app
-
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs
 
