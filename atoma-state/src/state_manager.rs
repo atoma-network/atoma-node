@@ -2331,6 +2331,7 @@ pub(crate) mod queries {
     /// }
     /// ```
     pub(crate) async fn create_all_tables(db: &DBPool) -> Result<()> {
+        #[cfg(feature = "sqlite")]
         sqlx::query("PRAGMA foreign_keys = ON;").execute(db).await?;
 
         sqlx::query(&create_tasks_table_query()).execute(db).await?;
