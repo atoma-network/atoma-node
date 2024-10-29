@@ -43,6 +43,11 @@ pub struct AtomaServiceConfig {
     ///
     /// This field specifies the address and port on which the Atoma Service will bind.
     pub service_bind_address: String,
+
+    /// Token for the Hugging Face API.
+    ///
+    /// This field specifies the token used to authenticate with the Hugging Face API. That is used to fetch the models tokenizers.
+    pub hf_token: String,
 }
 
 impl AtomaServiceConfig {

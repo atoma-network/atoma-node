@@ -3,6 +3,7 @@ inference_service_url = "http://localhost:8000"
 models = ["meta-llama/Llama-3.1-70b-Instruct"]
 revisions = ["main"]
 service_bind_address = "http://0.0.0.0:8080"
+hf_token = "you hugging face api token"
 
 [atoma-sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443" # Current RPC node address for testnet
