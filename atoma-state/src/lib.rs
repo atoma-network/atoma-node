@@ -6,15 +6,14 @@ pub mod types;
 pub use config::AtomaStateManagerConfig;
 pub use state_manager::{AtomaState, AtomaStateManager, AtomaStateManagerError};
 
-
-#[cfg(feature="sqlite")]
+#[cfg(feature = "sqlite")]
 pub type DB = sqlx::Sqlite;
-#[cfg(feature="sqlite")]
+#[cfg(feature = "sqlite")]
 pub type DBPool = sqlx::SqlitePool;
 
-#[cfg(not(feature="sqlite"))]
+#[cfg(not(feature = "sqlite"))]
 pub type DB = sqlx::Postgres;
-#[cfg(not(feature="sqlite"))]
+#[cfg(not(feature = "sqlite"))]
 pub type DBPool = sqlx::PgPool;
 
 /// Builds a query with an IN clause and optional additional conditions

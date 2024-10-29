@@ -1,9 +1,9 @@
-use crate::{build_query_with_in, DBPool};
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
+use crate::{build_query_with_in, DBPool};
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
@@ -2160,8 +2160,8 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `node_subscriptions` table.
-    pub(crate) fn subscribed_tasks_query() -> String {
-        "CREATE TABLE IF NOT EXISTS node_subscriptions (
+    pub(crate) fn subscribed_tasks_query() -> Vec<String> {
+        vec!["CREATE TABLE IF NOT EXISTS node_subscriptions (
             task_small_id INTEGER NOT NULL,
             node_small_id INTEGER NOT NULL,
             price_per_compute_unit INTEGER NOT NULL,
@@ -2169,9 +2169,9 @@ pub(crate) mod queries {
             valid BOOLEAN NOT NULL,
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
-        );
-        CREATE INDEX IF NOT EXISTS retrieval_index ON node_subscriptions (task_small_id, node_small_id);"
-        .to_string()
+        );".to_string(),
+        "CREATE INDEX IF NOT EXISTS retrieval_index ON node_subscriptions (task_small_id, node_small_id);".to_string()
+        ]
     }
 
     /// Generates the SQL query to create the `stacks` table.
@@ -2196,8 +2196,8 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `stacks` table.
-    pub(crate) fn stacks() -> String {
-        "CREATE TABLE IF NOT EXISTS stacks (
+    pub(crate) fn stacks() -> Vec<String> {
+        vec!["CREATE TABLE IF NOT EXISTS stacks (
                 stack_small_id INTEGER PRIMARY KEY,
                 owner_address TEXT NOT NULL,
                 stack_id TEXT UNIQUE NOT NULL,
@@ -2210,10 +2210,10 @@ pub(crate) mod queries {
                 total_hash BLOB NOT NULL,
                 num_total_messages INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
-            );
-            CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);
-            CREATE INDEX IF NOT EXISTS stack_small_id_index ON stacks (stack_small_id);"
-        .to_string()
+            );".to_string(),
+            "CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);".to_string(),
+            "CREATE INDEX IF NOT EXISTS stack_small_id_index ON stacks (stack_small_id);".to_string()
+        ]
     }
 
     /// Generates the SQL query to create the `stack_settlement_tickets` table.
@@ -2244,8 +2244,8 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
-    pub(crate) fn stack_settlement_tickets() -> String {
-        "CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
+    pub(crate) fn stack_settlement_tickets() -> Vec<String> {
+        vec!["CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
             stack_small_id INTEGER PRIMARY KEY,
             selected_node_id INTEGER NOT NULL,
             num_claimed_compute_units INTEGER NOT NULL,
@@ -2257,9 +2257,8 @@ pub(crate) mod queries {
             is_in_dispute BOOLEAN NOT NULL,
             user_refund_amount INTEGER NOT NULL,
             is_claimed BOOLEAN NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS stack_small_id_index ON stack_settlement_tickets (stack_small_id);"
-        .to_string()
+        );".to_string(),
+         "CREATE INDEX IF NOT EXISTS stack_small_id_index ON stack_settlement_tickets (stack_small_id);".to_string()]
     }
 
     /// Generates the SQL query to create the `stack_attestation_disputes` table.
@@ -2335,9 +2334,15 @@ pub(crate) mod queries {
         sqlx::query("PRAGMA foreign_keys = ON;").execute(db).await?;
 
         sqlx::query(&create_tasks_table_query()).execute(db).await?;
-        sqlx::query(&subscribed_tasks_query()).execute(db).await?;
-        sqlx::query(&stacks()).execute(db).await?;
-        sqlx::query(&stack_settlement_tickets()).execute(db).await?;
+        for query in &subscribed_tasks_query() {
+            sqlx::query(query).execute(db).await?;
+        }
+        for query in &stacks() {
+            sqlx::query(query).execute(db).await?;
+        }
+        for query in &stack_settlement_tickets() {
+            sqlx::query(query).execute(db).await?;
+        }
         sqlx::query(&stack_attestation_disputes())
             .execute(db)
             .await?;
