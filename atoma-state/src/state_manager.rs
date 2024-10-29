@@ -2353,19 +2353,14 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    async fn setup_test_db() -> (AtomaState, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join("test.db");
-        std::fs::create_dir_all(temp_dir.path()).unwrap();
-        std::fs::File::create(&db_path).unwrap();
-        let database_url = format!("sqlite:{}", db_path.to_str().unwrap());
-        let state_manager = AtomaState::new_from_url(database_url).await.unwrap();
-        (state_manager, temp_dir)
+    async fn setup_test_db() -> AtomaState {
+        let state_manager = AtomaState::new_from_url("sqlite::memory:".to_string()).await.unwrap();
+        state_manager
     }
 
     #[tokio::test]
     async fn test_insert_and_get_task() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         let task = Task {
             task_small_id: 1,
@@ -2386,13 +2381,11 @@ mod tests {
         state_manager.insert_new_task(task.clone()).await.unwrap();
         let retrieved_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert_eq!(task, retrieved_task);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_deprecate_task() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         let task = Task {
             task_small_id: 1,
@@ -2415,13 +2408,11 @@ mod tests {
 
         let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert!(deprecated_task.is_deprecated);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_subscribed_tasks() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert two tasks
         let task1 = Task {
@@ -2466,13 +2457,11 @@ mod tests {
         let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
         assert_eq!(subscribed_tasks.len(), 1);
         assert_eq!(subscribed_tasks[0], task1);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_node_subscription() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert a task
         let task = Task {
@@ -2519,13 +2508,11 @@ mod tests {
             .unwrap();
         assert_eq!(subscription.price_per_compute_unit, 200);
         assert_eq!(subscription.max_num_compute_units, 2000);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_insert_and_get_stack() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert a task and subscribe a node
         let task = Task {
@@ -2568,13 +2555,11 @@ mod tests {
         // Get the stack and verify
         let retrieved_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(stack, retrieved_stack);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_computed_units() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert a task, subscribe a node, and create a stack
         let task = Task {
@@ -2622,13 +2607,11 @@ mod tests {
         // Verify the update
         let updated_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 15);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_insert_and_get_stack_settlement_ticket() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert a task, subscribe a node, and create a stack
         let task = Task {
@@ -2688,13 +2671,11 @@ mod tests {
         // Verify the insertion (you'll need to implement a method to get a settlement ticket)
         let retrieved_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(ticket, retrieved_ticket);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_stack_settlement_ticket() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and initial settlement ticket
         let task = Task {
@@ -2788,13 +2769,11 @@ mod tests {
         let claimed_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(claimed_ticket.user_refund_amount, user_refund_amount);
         assert!(claimed_ticket.is_claimed);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_stack_attestation_disputes() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and settlement ticket
         let task = Task {
@@ -2900,13 +2879,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(disputes.len(), 1);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_available_stack_with_compute_units() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert a task and subscribe a node
         let task = Task {
@@ -3019,13 +2996,11 @@ mod tests {
             .await
             .unwrap();
         assert!(result.is_none());
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_update_stack_total_hash() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert necessary task and subscription
         let task = Task {
@@ -3095,13 +3070,11 @@ mod tests {
         // Test updating non-existent stack
         let result = state_manager.update_stack_total_hash(999, new_hash).await;
         assert!(matches!(result, Err(AtomaStateManagerError::StackNotFound)));
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_all_node_subscriptions() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Insert a task first (required for foreign key constraint)
         let task = Task {
@@ -3197,13 +3170,11 @@ mod tests {
         assert_eq!(subscription.price_per_compute_unit, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
         assert!(subscription.valid);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_stacks_by_node_small_ids_comprehensive() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert a task first (required for foreign key constraint)
         let task = Task {
@@ -3397,14 +3368,11 @@ mod tests {
             result.iter().any(|s| !s.in_settle_period),
             "Should find stack not in settle period"
         );
-
-        // Cleanup
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_stack_by_id() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // First create a task and subscription since they're required foreign keys
         let task = Task {
@@ -3478,13 +3446,11 @@ mod tests {
         // Test retrieving stacks for non-existent node_id
         let empty_stacks = state_manager.get_stack_by_id(999).await.unwrap();
         assert!(empty_stacks.is_empty());
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_stack_by_id_with_multiple_nodes() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Create task
         let task = Task {
@@ -3560,13 +3526,11 @@ mod tests {
         let node2_stacks = state_manager.get_stack_by_id(2).await.unwrap();
         assert_eq!(node2_stacks.len(), 1);
         assert_eq!(node2_stacks[0], stack2);
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_almost_filled_stacks() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Create a task and node subscription first
         let task = Task {
@@ -3724,14 +3688,11 @@ mod tests {
         assert!(specific_nodes_stacks
             .iter()
             .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));
-
-        // Cleanup
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_almost_filled_stacks_edge_cases() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Create a task and node subscription
         let task = Task {
@@ -3808,14 +3769,11 @@ mod tests {
                 stacks.len()
             );
         }
-
-        // Cleanup
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_against_attestation_disputes() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and disputes
         let task = Task {
@@ -3894,13 +3852,11 @@ mod tests {
             .await
             .unwrap();
         assert!(disputes.is_empty());
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_own_attestation_disputes() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert task, subscription, stack, and disputes
         let task = Task {
@@ -4005,13 +3961,11 @@ mod tests {
             .await
             .unwrap();
         assert!(disputes.is_empty());
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_claimed_stacks() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Insert a task and subscribe nodes
         let task = Task {
@@ -4156,13 +4110,11 @@ mod tests {
         // Test 4: Get claimed stacks for non-existent node
         let claimed_stacks_none = state_manager.get_claimed_stacks(&[99]).await.unwrap();
         assert!(claimed_stacks_none.is_empty());
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_all_total_hashes() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Create a Task
         let task = Task {
@@ -4286,13 +4238,11 @@ mod tests {
             .unwrap();
         assert_eq!(result.len(), 1, "Duplicate IDs should return single result");
         assert_eq!(result[0], hash1, "Hash should match for duplicate IDs");
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 
     #[tokio::test]
     async fn test_get_stack_settlement_tickets() {
-        let (state_manager, temp_dir) = setup_test_db().await;
+        let state_manager = setup_test_db().await;
 
         // Setup: Create a task and subscribe nodes
         let task = Task {
@@ -4501,7 +4451,5 @@ mod tests {
                 && all_result.contains(&tickets[2]),
             "Should contain all tickets"
         );
-
-        std::fs::remove_dir_all(temp_dir.path()).unwrap();
     }
 }
