@@ -25,7 +25,6 @@ hyper = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { workspace = true }
 sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
 tokenizers = { workspace = true }
@@ -42,3 +41,4 @@ utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 rand = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
+atoma-state = { workspace = true, features = ["sqlite"] }

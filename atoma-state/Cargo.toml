@@ -10,7 +10,14 @@ config = { workspace = true }
 flume = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sqlx = { workspace = true, features = ["runtime-tokio-native-tls", "sqlite"] }
+sqlx = { workspace = true, features = ["runtime-tokio-native-tls", "postgres"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
+
+
+[dev-dependencies]
+sqlx = { workspace = true, features = ["sqlite"] }
+
+[features]
+sqlite = ["sqlx/sqlite"]

@@ -592,7 +592,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sqlx",
  "sui-keys",
  "sui-sdk",
  "tempfile",

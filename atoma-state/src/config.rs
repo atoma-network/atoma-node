@@ -2,10 +2,10 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Configuration for SQLite database connection.
+/// Configuration for Postgres database connection.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AtomaStateManagerConfig {
-    /// The URL of the SQLite database.
+    /// The URL of the Postgres database.
     pub database_url: String,
 }
 
