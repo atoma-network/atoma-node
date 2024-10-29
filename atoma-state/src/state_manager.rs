@@ -2173,7 +2173,7 @@ pub(crate) mod queries {
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
         );
-        CREATE INDEX IF NOT EXISTS retrieval_index ON node_subscriptions (task_small_id, node_small_id);"
+        CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id ON node_subscriptions (task_small_id, node_small_id);"
         .to_string()
     }
 
@@ -2214,8 +2214,8 @@ pub(crate) mod queries {
                 num_total_messages INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
             );
-            CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);
-            CREATE INDEX IF NOT EXISTS stack_small_id_index ON stacks (stack_small_id);"
+            CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);
+            CREATE INDEX IF NOT EXISTS idx_stacks_stack_small_id ON stacks (stack_small_id);"
         .to_string()
     }
 
@@ -2261,7 +2261,7 @@ pub(crate) mod queries {
             user_refund_amount INTEGER NOT NULL,
             is_claimed BOOLEAN NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS stack_small_id_index ON stack_settlement_tickets (stack_small_id);"
+        CREATE INDEX IF NOT EXISTS idx_stack_settlement_tickets_stack_small_id ON stack_settlement_tickets (stack_small_id);"
         .to_string()
     }
 
