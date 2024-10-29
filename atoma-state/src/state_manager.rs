@@ -2353,8 +2353,9 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> AtomaState {
-        let state_manager = AtomaState::new_from_url("sqlite::memory:".to_string()).await.unwrap();
-        state_manager
+        AtomaState::new_from_url("sqlite::memory:".to_string())
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
