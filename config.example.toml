@@ -13,7 +13,7 @@ request_timeout = { secs = 300, nanos = 0 } # Some reference value
 max_concurrent_requests = 10 # Some reference value
 limit = 100 # Some reference value
 node_small_ids = [1]  # List of node IDs under control of the node wallet
-task_small_ids = []  # List of task IDs under control of the node wallet
+task_small_ids = []  # List of task IDs under control of the node wallet, for most cases it can be left empty
 sui_config_path = "~/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, by default (on Linux, or MacOS)
 sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, by default (on Linux, or MacOS)
 
