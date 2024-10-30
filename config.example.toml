@@ -2,7 +2,7 @@
 inference_service_url = "http://vllm:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
 models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = ["main"]
-service_bind_address = "http://0.0.0.0:8080"
+service_bind_address = "0.0.0.0:8080"
 
 [atoma-sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443" # Current RPC node address for testnet
