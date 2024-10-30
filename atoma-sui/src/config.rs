@@ -41,12 +41,12 @@ pub struct AtomaSuiConfig {
     /// A list of node small IDs
     /// These are values used to identify the Atoma's nodes that are under control by
     /// current Sui wallet
-    node_small_ids: Vec<u64>,
+    node_small_ids: Option<Vec<u64>>,
 
     /// A list of task small IDs
     /// These are values used to identify the Atoma's tasks that are under control by
     /// current Sui wallet
-    task_small_ids: Vec<u64>,
+    task_small_ids: Option<Vec<u64>>,
 
     /// Sui's config path
     sui_config_path: String,
@@ -68,8 +68,8 @@ impl AtomaSuiConfig {
         toma_package_id: ObjectID,
         request_timeout: Option<Duration>,
         limit: Option<usize>,
-        node_small_ids: Vec<u64>,
-        task_small_ids: Vec<u64>,
+        node_small_ids: Option<Vec<u64>>,
+        task_small_ids: Option<Vec<u64>>,
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
         sui_keystore_path: String,
@@ -122,12 +122,12 @@ impl AtomaSuiConfig {
     }
 
     /// Getter for `small_id`
-    pub fn node_small_ids(&self) -> Vec<u64> {
+    pub fn node_small_ids(&self) -> Option<Vec<u64>> {
         self.node_small_ids.clone()
     }
 
     /// Getter for `task_small_ids`
-    pub fn task_small_ids(&self) -> Vec<u64> {
+    pub fn task_small_ids(&self) -> Option<Vec<u64>> {
         self.task_small_ids.clone()
     }
 
@@ -208,8 +208,8 @@ pub mod tests {
                 .unwrap(),
             Some(Duration::from_secs(5 * 60)),
             Some(10),
-            vec![0, 1, 2],
-            vec![3, 4, 5],
+            Some(vec![0, 1, 2]),
+            Some(vec![3, 4, 5]),
             Some(10),
             "".to_string(),
             "".to_string(),
