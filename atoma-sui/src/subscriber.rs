@@ -18,6 +18,8 @@ use tracing::{error, info, instrument, trace};
 const DB_MODULE_NAME: &str = "db";
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
+/// The amount of main loop iterations in order to update the cursor file.
+const CURSOR_FILE_UPDATE_ITERATIONS: u64 = 10;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
@@ -167,6 +169,7 @@ impl SuiEventSubscriber {
         );
 
         let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
+        let mut cursor_update_iteration_count = 0;
         loop {
             tokio::select! {
                     page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
@@ -186,6 +189,9 @@ impl SuiEventSubscriber {
                             }
                         };
                         cursor = next_cursor;
+                        if cursor_update_iteration_count % CURSOR_FILE_UPDATE_ITERATIONS == 0 {
+                            write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
+                        }
 
                         for sui_event in data {
                             let event_name = sui_event.type_.name;
@@ -216,6 +222,7 @@ impl SuiEventSubscriber {
                                     // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                                 }
                             }
+                            cursor_update_iteration_count += 1;
                         }
 
                         if !has_next_page {
