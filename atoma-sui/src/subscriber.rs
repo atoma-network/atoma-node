@@ -30,8 +30,6 @@ pub struct SuiEventSubscriber {
     config: AtomaSuiConfig,
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
-    /// The ID of the last processed event, used for pagination.
-    cursor: Option<EventID>,
     /// Node small IDs
     /// These are values used to identify the Atoma's nodes that are under control by
     /// current Sui wallet
@@ -70,7 +68,6 @@ impl SuiEventSubscriber {
         Self {
             config,
             filter,
-            cursor: None,
             node_small_ids,
             task_small_ids,
             state_manager_sender,
@@ -169,9 +166,10 @@ impl SuiEventSubscriber {
             "Starting to run events subscriber, for package: {package_id}"
         );
 
+        let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
         loop {
             tokio::select! {
-                    page = client.event_api().query_events(self.filter.clone(), self.cursor, limit, false) => {
+                    page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
                         let EventPage {
                             data,
                             next_cursor,
@@ -187,7 +185,7 @@ impl SuiEventSubscriber {
                                 continue;
                             }
                         };
-                        self.cursor = next_cursor;
+                        cursor = next_cursor;
 
                         for sui_event in data {
                             let event_name = sui_event.type_.name;
@@ -243,6 +241,8 @@ impl SuiEventSubscriber {
                                     event = "subscriber-stopped",
                                     "Shutdown signal received, gracefully stopping subscriber..."
                                 );
+                                // Update the config file with the current cursor
+                                write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
                                 break;
                             }
                         }
@@ -259,6 +259,84 @@ impl SuiEventSubscriber {
         }
         Ok(())
     }
+}
+
+/// Reads an event cursor from a TOML file.
+///
+/// This function attempts to read and parse an event cursor from the specified file path.
+/// If the file doesn't exist, it will create an empty file and return `None`. If the file
+/// exists, it will attempt to parse its contents as an `EventID`.
+///
+/// # Arguments
+///
+/// * `path` - A string slice containing the path to the TOML file
+///
+/// # Returns
+///
+/// * `Result<Option<EventID>>` - Returns:
+///   * `Ok(Some(EventID))` if the file exists and was successfully parsed
+///   * `Ok(None)` if the file doesn't exist (and was created)
+///   * `Err(SuiEventSubscriberError)` if:
+///     * The file exists but couldn't be read
+///     * The file contents couldn't be parsed as TOML
+///     * The file couldn't be created when not found
+///
+/// # Examples
+///
+/// ```no_run
+/// let path = "cursor.toml";
+/// match read_cursor_from_toml_file(path) {
+///     Ok(Some(cursor)) => println!("Read cursor: {:?}", cursor),
+///     Ok(None) => println!("No cursor found, created empty file"),
+///     Err(e) => eprintln!("Error reading cursor: {}", e),
+/// }
+/// ```
+fn read_cursor_from_toml_file(path: &str) -> Result<Option<EventID>> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let cursor: EventID = toml::from_str(&content)?;
+            Ok(Some(cursor))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Create the file if it doesn't exist
+            std::fs::write(path, "")?;
+            Ok(None)
+        }
+        Err(e) => Err(SuiEventSubscriberError::CursorFileError(e)),
+    }
+}
+
+/// Writes an event cursor to a TOML file.
+///
+/// This function takes an optional event cursor and writes it to the specified file path
+/// in TOML format. If the cursor is `None`, no file will be written.
+///
+/// # Arguments
+///
+/// * `cursor` - An `Option<EventID>` representing the event cursor to be written
+/// * `path` - A string slice containing the path where the TOML file should be written
+///
+/// # Returns
+///
+/// * `Result<()>` - Returns `Ok(())` if the write was successful, or an error if:
+///   * The cursor serialization to TOML fails
+///   * The file write operation fails
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use sui_sdk::types::event::EventID;
+///
+/// let cursor = Some(EventID::default());
+/// let path = "cursor.toml";
+/// write_cursor_to_toml_file(cursor, path).expect("Failed to write cursor");
+/// ```
+fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> {
+    if let Some(cursor) = cursor {
+        let toml_str = toml::to_string(&cursor)?;
+        std::fs::write(path, toml_str)?;
+    }
+    Ok(())
 }
 
 /// Handles various Atoma events by delegating to specific handler functions based on the event type.
@@ -545,6 +623,12 @@ pub enum SuiEventSubscriberError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Failed to send event to state manager: {0}")]
     SendEventError(#[from] Box<flume::SendError<AtomaEvent>>),
+    #[error("Failed to read/write cursor to file: {0}")]
+    CursorFileError(#[from] std::io::Error),
+    #[error("Failed to serialize cursor: {0}")]
+    SerializeCursorError(#[from] toml::ser::Error),
+    #[error("Failed to deserialize cursor: {0}")]
+    DeserializeCursorError(#[from] toml::de::Error),
 }
 
 #[cfg(test)]
