@@ -284,8 +284,7 @@ pub struct NodeUnsubscribedFromTaskEvent {
 /// Represents an event that is emitted when a new task is registered in the Atoma network.
 ///
 /// This event contains comprehensive information about the newly registered task, including its
-/// identifiers, role, associated model, deprecation status, optimizations, security level,
-/// performance metrics, and minimum reputation requirements.
+/// identifiers, role, associated model, security level and minimum reputation requirements.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TaskRegisteredEvent {
     /// The unique identifier of the task.
@@ -304,27 +303,9 @@ pub struct TaskRegisteredEvent {
     /// This field is optional as not all tasks may be tied to a specific model.
     pub model_name: Option<String>,
 
-    /// Indicates whether the task is deprecated.
-    /// If true, the task is considered outdated but may still be accessible for historical reasons.
-    pub is_deprecated: bool,
-
-    /// The epoch at which the task will be deprecated.
-    pub valid_until_epoch: Option<u64>,
-
-    /// The epoch at which the task was deprecated.
-    pub deprecated_at_epoch: Option<u64>,
-
-    /// A list of optimization flags or identifiers applied to this task.
-    /// These optimizations may affect how the task is processed or executed.
-    pub optimizations: Vec<u16>,
-
     /// The security level required for this task.
     /// Higher values typically indicate stricter security measures or clearance levels.
-    pub security_level: u16,
-
-    /// Performance metrics associated with this task.
-    /// This may include information such as expected completion time, resource usage, etc.
-    pub task_metrics: TaskMetrics,
+    pub security_level: SecurityLevel,
 
     /// The minimum reputation score required for a node to work on this task, if applicable.
     /// This helps ensure that only sufficiently trusted nodes can participate in certain tasks.
@@ -784,15 +765,15 @@ pub struct TaskRole {
     pub inner: u16,
 }
 
-/// Represents the metrics of a task in the Atoma network.
+/// Represents the security level of a task in the Atoma network.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TaskMetrics {
-    /// The number of compute units used by the task.
-    pub compute_unit: u16,
-    /// The number of time units used by the task.
-    pub time_unit: Option<u16>,
-    /// The value of the task.
-    pub value: Option<u64>,
+pub struct SecurityLevel {
+    /// The unique numerical identifier for the security level.
+    /// Possible values are:
+    /// - 0: No security
+    /// - 1: Sampling Consensus
+    /// - 2: Confidential compute (through trusted hardware)
+    pub inner: u16,
 }
 
 /// Represents information about a timeout in the Atoma network.
@@ -929,14 +910,7 @@ mod tests {
             "task_small_id": {"inner": 7},
             "role": {"inner": 1},
             "model_name": "gpt-3",
-            "is_deprecated": false,
-            "optimizations": [1, 2, 3],
-            "security_level": 2,
-            "task_metrics": {
-                "compute_unit": 10,
-                "time_unit": 5,
-                "value": 100
-            },
+            "security_level": {"inner": 2},
             "minimum_reputation_score": 80
         });
         let event: TaskRegisteredEvent = serde_json::from_value(json).unwrap();
@@ -944,12 +918,7 @@ mod tests {
         assert_eq!(event.task_small_id.inner, 7);
         assert_eq!(event.role.inner, 1);
         assert_eq!(event.model_name, Some("gpt-3".to_string()));
-        assert!(!event.is_deprecated);
-        assert_eq!(event.optimizations, vec![1, 2, 3]);
-        assert_eq!(event.security_level, 2);
-        assert_eq!(event.task_metrics.compute_unit, 10);
-        assert_eq!(event.task_metrics.time_unit, Some(5));
-        assert_eq!(event.task_metrics.value, Some(100));
+        assert_eq!(event.security_level.inner, 2);
         assert_eq!(event.minimum_reputation_score, Some(80));
     }
 

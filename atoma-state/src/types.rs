@@ -24,16 +24,8 @@ pub struct Task {
     pub valid_until_epoch: Option<i64>,
     /// Optional epoch timestamp when the task was deprecated
     pub deprecated_at_epoch: Option<i64>,
-    /// String representation of task optimizations
-    pub optimizations: String,
     /// Security level of the task (encoded as an integer)
     pub security_level: i64,
-    /// Compute units required for the task
-    pub task_metrics_compute_unit: i64,
-    /// Optional time units for task metrics
-    pub task_metrics_time_unit: Option<i64>,
-    /// Optional value for task metrics
-    pub task_metrics_value: Option<i64>,
     /// Optional minimum reputation score required for the task
     pub minimum_reputation_score: Option<i64>,
 }
@@ -45,18 +37,11 @@ impl From<TaskRegisteredEvent> for Task {
             task_small_id: event.task_small_id.inner as i64,
             role: event.role.inner as i64,
             model_name: event.model_name,
-            is_deprecated: event.is_deprecated,
-            valid_until_epoch: event.valid_until_epoch.map(|epoch| epoch as i64),
-            deprecated_at_epoch: event.deprecated_at_epoch.map(|epoch| epoch as i64),
-            optimizations: serde_json::to_string(&event.optimizations).unwrap(),
-            security_level: event.security_level as i64,
+            is_deprecated: false,
+            valid_until_epoch: None,
+            deprecated_at_epoch: None,
+            security_level: event.security_level.inner as i64,
             minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
-            task_metrics_compute_unit: event.task_metrics.compute_unit as i64,
-            task_metrics_time_unit: event
-                .task_metrics
-                .time_unit
-                .map(|time_unit| time_unit as i64),
-            task_metrics_value: event.task_metrics.value.map(|value| value as i64),
         }
     }
 }

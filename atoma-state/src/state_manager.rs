@@ -284,11 +284,8 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO tasks (
                 task_small_id, task_id, role, model_name, is_deprecated,
-                valid_until_epoch, deprecated_at_epoch, optimizations,
-                security_level, task_metrics_compute_unit,
-                task_metrics_time_unit, task_metrics_value,
-                minimum_reputation_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                valid_until_epoch, security_level, minimum_reputation_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.task_small_id)
         .bind(task.task_id)
@@ -296,12 +293,7 @@ impl AtomaState {
         .bind(task.model_name)
         .bind(task.is_deprecated)
         .bind(task.valid_until_epoch)
-        .bind(task.deprecated_at_epoch)
-        .bind(task.optimizations)
         .bind(task.security_level)
-        .bind(task.task_metrics_compute_unit)
-        .bind(task.task_metrics_time_unit)
-        .bind(task.task_metrics_value)
         .bind(task.minimum_reputation_score)
         .execute(&self.db)
         .await?;
@@ -2112,11 +2104,7 @@ pub(crate) mod queries {
     /// - `is_deprecated`: BOOLEAN NOT NULL - Indicates whether the task is deprecated.
     /// - `valid_until_epoch`: INTEGER - The epoch until which the task is valid (nullable).
     /// - `deprecated_at_epoch`: INTEGER - The epoch when the task was deprecated (nullable).
-    /// - `optimizations`: TEXT NOT NULL - A string representing task optimizations.
     /// - `security_level`: INTEGER NOT NULL - The security level of the task.
-    /// - `task_metrics_compute_unit`: INTEGER NOT NULL - The compute unit metric for the task.
-    /// - `task_metrics_time_unit`: INTEGER - The time unit metric for the task (nullable).
-    /// - `task_metrics_value`: INTEGER - The value metric for the task (nullable).
     /// - `minimum_reputation_score`: INTEGER - The minimum reputation score required (nullable).
     ///
     /// # Primary Key
@@ -2136,11 +2124,7 @@ pub(crate) mod queries {
                 is_deprecated BOOLEAN NOT NULL,
                 valid_until_epoch INTEGER,
                 deprecated_at_epoch INTEGER,
-                optimizations TEXT NOT NULL,
                 security_level INTEGER NOT NULL,
-                task_metrics_compute_unit INTEGER NOT NULL,
-                task_metrics_time_unit INTEGER,
-                task_metrics_value INTEGER,
                 minimum_reputation_score INTEGER
             )"
         .to_string()
@@ -2370,11 +2354,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
 
@@ -2395,11 +2375,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
 
@@ -2423,11 +2399,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         let task2 = Task {
@@ -2438,11 +2410,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt2".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task1.clone()).await.unwrap();
@@ -2472,11 +2440,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2523,11 +2487,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2570,11 +2530,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2622,11 +2578,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2686,11 +2638,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2784,11 +2732,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2894,11 +2838,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3011,11 +2951,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3085,11 +3021,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3185,11 +3117,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3383,11 +3311,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3461,11 +3385,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3541,11 +3461,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3703,11 +3619,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3784,11 +3696,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3867,11 +3775,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3976,11 +3880,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -4125,11 +4025,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -4253,11 +4149,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();

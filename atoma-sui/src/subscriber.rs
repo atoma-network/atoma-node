@@ -636,8 +636,8 @@ pub enum SuiEventSubscriberError {
 #[cfg(test)]
 mod tests {
     use crate::events::{
-        NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, StackCreatedEvent,
-        StackSmallId, TaskMetrics, TaskRegisteredEvent, TaskRole, TaskSmallId,
+        NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, SecurityLevel,
+        StackCreatedEvent, StackSmallId, TaskRegisteredEvent, TaskRole, TaskSmallId,
     };
     use sui_sdk::types::digests::TransactionDigest;
     use tempfile::NamedTempFile;
@@ -781,17 +781,8 @@ mod tests {
             task_small_id: TaskSmallId { inner: 40 },
             role: TaskRole { inner: 0 },
             model_name: Some("test".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: None,
-            deprecated_at_epoch: None,
-            optimizations: vec![],
-            security_level: 0,
+            security_level: SecurityLevel { inner: 0 },
             minimum_reputation_score: Some(155),
-            task_metrics: TaskMetrics {
-                compute_unit: 0,
-                time_unit: Some(0),
-                value: Some(0),
-            },
             task_id: "test".to_string(),
         });
 
