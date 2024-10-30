@@ -15,6 +15,11 @@ if [ "${EMBEDDINGS_ON}" = "true" ]; then
         PROFILES="$PROFILES --profile embeddings_tei"
     fi
 fi
+if [ "${IMAGE_GENERATIONS_ON}" = "true" ]; then
+    if [ "${IMAGE_GENERATIONS_BACKEND}" = "mistralrs" ]; then
+        PROFILES="$PROFILES --profile image_generations_mistral"
+    fi
+fi
 
 # Start docker compose with the selected profiles
 if [ -z "$PROFILES" ]; then
