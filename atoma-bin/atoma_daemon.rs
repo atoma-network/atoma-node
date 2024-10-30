@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     let state_manager_config =
         AtomaStateManagerConfig::from_file_path(args.config_file_path.clone());
     let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new(args.config_file_path).await?,
+        AtomaSuiClient::new_from_config(args.config_file_path).await?,
     ));
 
     info!(

@@ -50,8 +50,7 @@ pub struct AtomaSuiClient {
 
 impl AtomaSuiClient {
     /// Constructor
-    pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self> {
-        let config = AtomaSuiConfig::from_file_path(config_path);
+    pub async fn new(config: AtomaSuiConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
         let mut wallet_ctx = WalletContext::new(
@@ -70,6 +69,29 @@ impl AtomaSuiClient {
             wallet_ctx,
             node_badge,
         })
+    }
+
+    /// Creates a new `AtomaSuiClient` instance from a configuration file.
+    ///
+    /// This method reads the configuration from the specified file path and initializes
+    /// a new `AtomaSuiClient` with the loaded configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_path` - A path-like type that represents the location of the configuration file.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - A Result containing the new `AtomaSuiClient` instance if successful,
+    ///   or an error if the configuration couldn't be read.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * The configuration file cannot be read or parsed.
+    pub async fn new_from_config<P: AsRef<Path>>(config_path: P) -> Result<Self> {
+        let config = AtomaSuiConfig::from_file_path(config_path);
+        Self::new(config).await
     }
 
     /// Submits a transaction to register a node in the Atoma network.
