@@ -1,6 +1,6 @@
 [atoma-service]
 inference_service_url = "http://vllm:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
-models = ["meta-llama/Llama-3.1-70b-Instruct"]
+models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = ["main"]
 service_bind_address = "http://0.0.0.0:8080"
 
