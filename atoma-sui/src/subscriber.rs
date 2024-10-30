@@ -32,14 +32,6 @@ pub struct SuiEventSubscriber {
     config: AtomaSuiConfig,
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
-    /// Node small IDs
-    /// These are values used to identify the Atoma's nodes that are under control by
-    /// current Sui wallet
-    node_small_ids: Option<Vec<u64>>,
-    /// Task small IDs
-    /// These are values used to identify the Atoma's tasks that are under control by
-    /// current Sui wallet
-    task_small_ids: Option<Vec<u64>>,
     /// Sender to stream each received event to the `AtomaStateManager` running task.
     state_manager_sender: Sender<AtomaEvent>,
     /// The shutdown signal.
@@ -53,16 +45,6 @@ impl SuiEventSubscriber {
         state_manager_sender: Sender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let node_small_ids = if config.node_small_ids().is_empty() {
-            None
-        } else {
-            Some(config.node_small_ids())
-        };
-        let task_small_ids = if config.task_small_ids().is_empty() {
-            None
-        } else {
-            Some(config.task_small_ids())
-        };
         let filter = EventFilter::MoveModule {
             package: config.atoma_package_id(),
             module: Identifier::new(DB_MODULE_NAME).unwrap(),
@@ -70,8 +52,6 @@ impl SuiEventSubscriber {
         Self {
             config,
             filter,
-            node_small_ids,
-            task_small_ids,
             state_manager_sender,
             shutdown_signal,
         }
@@ -205,7 +185,11 @@ impl SuiEventSubscriber {
                                 Ok(atoma_event_id) => {
                                     let atoma_event =
                                         parse_event(&atoma_event_id, sui_event.parsed_json).await?;
-                                    if filter_event(&atoma_event, self.node_small_ids.as_ref(), self.task_small_ids.as_ref()) {
+                                    if filter_event(
+                                        &atoma_event,
+                                        self.config.node_small_ids().as_ref(),
+                                        self.config.task_small_ids().as_ref(),
+                                    ) {
                                         self.state_manager_sender
                                             .send(atoma_event)
                                             .map_err(Box::new)?;
