@@ -297,7 +297,7 @@ fn read_cursor_from_toml_file(path: &str) -> Result<Option<EventID>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(SuiEventSubscriberError::CursorFileError(e)),
     };
-    
+
     Ok(Some(toml::from_str(&content)?))
 }
 
