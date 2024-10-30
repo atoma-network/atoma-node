@@ -89,9 +89,7 @@ impl AtomaSuiClient {
     ///
     /// This function will return an error if:
     /// * The configuration file cannot be read or parsed.
-    pub async fn new_from_config<P: AsRef<Path>>(
-        config_path: P,
-    ) -> Result<Self> {
+    pub async fn new_from_config<P: AsRef<Path>>(config_path: P) -> Result<Self> {
         let config = AtomaSuiConfig::from_file_path(config_path);
         Self::new(config).await
     }
