@@ -8,7 +8,7 @@ use sui_sdk::types::base_types::ObjectID;
 ///
 /// This struct holds the necessary configuration parameters for connecting to and
 /// interacting with a Sui network, including URLs, package ID, timeout, and small IDs.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AtomaSuiConfig {
     /// The HTTP URL for a Sui RPC node, to which the subscriber will connect
     /// This is used for making HTTP requests to the Sui RPC node
