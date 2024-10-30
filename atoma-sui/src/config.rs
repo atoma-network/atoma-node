@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use config::Config;
 use serde::{Deserialize, Serialize};
-use sui_sdk::types::base_types::ObjectID;
+use sui_sdk::types::{base_types::ObjectID, event::EventID};
 
 /// Configuration for the Sui Event Subscriber
 ///
@@ -53,6 +53,9 @@ pub struct AtomaSuiConfig {
 
     /// Sui's keystore path
     sui_keystore_path: String,
+
+    /// Node's current Sui network event cursor (if available)
+    cursor: Option<EventID>,
 }
 
 impl AtomaSuiConfig {
@@ -70,6 +73,7 @@ impl AtomaSuiConfig {
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
         sui_keystore_path: String,
+        cursor: Option<EventID>,
     ) -> Self {
         Self {
             http_rpc_node_addr,
@@ -83,6 +87,7 @@ impl AtomaSuiConfig {
             max_concurrent_requests,
             sui_config_path,
             sui_keystore_path,
+            cursor,
         }
     }
 
@@ -139,6 +144,11 @@ impl AtomaSuiConfig {
     /// Getter for `sui_keystore_path`
     pub fn sui_keystore_path(&self) -> String {
         self.sui_keystore_path.clone()
+    }
+
+    /// Getter for `cursor`
+    pub fn cursor(&self) -> Option<EventID> {
+        self.cursor
     }
 
     /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
@@ -203,6 +213,7 @@ pub mod tests {
             Some(10),
             "".to_string(),
             "".to_string(),
+            None,
         );
 
         let toml_str = toml::to_string(&config).unwrap();
