@@ -264,7 +264,7 @@ impl SuiEventSubscriber {
 /// Reads an event cursor from a TOML file.
 ///
 /// This function attempts to read and parse an event cursor from the specified file path.
-/// If the file doesn't exist, it will create an empty file and return `None`. If the file
+/// If the file doesn't exist, it will return `None`. If the file
 /// exists, it will attempt to parse its contents as an `EventID`.
 ///
 /// # Arguments
@@ -283,7 +283,7 @@ impl SuiEventSubscriber {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```rust,ignore
 /// let path = "cursor.toml";
 /// match read_cursor_from_toml_file(path) {
 ///     Ok(Some(cursor)) => println!("Read cursor: {:?}", cursor),
@@ -292,18 +292,13 @@ impl SuiEventSubscriber {
 /// }
 /// ```
 fn read_cursor_from_toml_file(path: &str) -> Result<Option<EventID>> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => {
-            let cursor: EventID = toml::from_str(&content)?;
-            Ok(Some(cursor))
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // Create the file if it doesn't exist
-            std::fs::write(path, "")?;
-            Ok(None)
-        }
-        Err(e) => Err(SuiEventSubscriberError::CursorFileError(e)),
-    }
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(SuiEventSubscriberError::CursorFileError(e)),
+    };
+    
+    Ok(Some(toml::from_str(&content)?))
 }
 
 /// Writes an event cursor to a TOML file.
@@ -637,6 +632,8 @@ mod tests {
         NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, StackCreatedEvent,
         StackSmallId, TaskMetrics, TaskRegisteredEvent, TaskRole, TaskSmallId,
     };
+    use sui_sdk::types::digests::TransactionDigest;
+    use tempfile::NamedTempFile;
 
     use super::*;
 
@@ -795,6 +792,106 @@ mod tests {
             &event,
             Some(&node_small_ids),
             Some(&task_small_ids)
+        ));
+    }
+
+    #[test]
+    fn test_read_cursor_from_empty_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::DeserializeCursorError(_)
+        ));
+    }
+
+    #[test]
+    fn test_read_cursor_from_valid_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Create a valid EventID and write it to file
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let toml_str = toml::to_string(&event_id).unwrap();
+        std::fs::write(path, toml_str).unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
+    }
+
+    #[test]
+    fn test_read_cursor_from_invalid_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Write invalid TOML content
+        std::fs::write(path, "invalid toml content").unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::DeserializeCursorError(_)
+        ));
+    }
+
+    #[test]
+    fn test_write_cursor_none() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = write_cursor_to_toml_file(None, path);
+        assert!(result.is_ok());
+
+        // File should be empty
+        let content = std::fs::read_to_string(path).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_write_cursor_some() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let result = write_cursor_to_toml_file(Some(event_id), path);
+        assert!(result.is_ok());
+
+        // Verify written content
+        let content = std::fs::read_to_string(path).unwrap();
+        let read_event_id: EventID = toml::from_str(&content).unwrap();
+        assert_eq!(read_event_id, event_id);
+    }
+
+    #[test]
+    fn test_write_cursor_to_readonly_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Make file read-only
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(path, perms).unwrap();
+
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let result = write_cursor_to_toml_file(Some(event_id), path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::CursorFileError(_)
         ));
     }
 }
