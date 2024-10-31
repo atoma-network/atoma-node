@@ -9,8 +9,8 @@ use crate::types::{
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::{sqlite::SqliteConnectOptions, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
-use sqlx::{Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 
@@ -53,8 +53,8 @@ impl AtomaStateManager {
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let connect_options = SqliteConnectOptions::from_str(&database_url)?
-            .create_if_missing(true);
+        let connect_options =
+            SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
         let db = SqlitePool::connect_with(connect_options).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
