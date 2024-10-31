@@ -1095,7 +1095,7 @@ async fn submit_stack_settlement_attestations_tx(
                 .iter()
                 .find(|(_, ns)| *ns as i64 == node_small_id)
                 .map(|(nb, _)| *nb)
-                .unwrap();  
+                .unwrap();
 
             let tx_digest = daemon_state
                 .client
