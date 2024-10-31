@@ -1,6 +1,10 @@
 # Builder stage
 FROM rust:1.76-alpine as builder
 
+# Add build argument for binary selection
+ARG BINARY
+RUN test -n "$BINARY" || (echo "BINARY is not set" && false)
+
 # Install build dependencies
 RUN apk add --no-cache \
     build-base \
@@ -26,6 +30,10 @@ RUN cargo build --release
 
 # Final stage
 FROM alpine:3.19
+
+# Add build argument for binary selection
+ARG BINARY
+RUN test -n "$BINARY" || (echo "BINARY is not set" && false)
 
 # Install runtime dependencies
 RUN apk add --no-cache \
