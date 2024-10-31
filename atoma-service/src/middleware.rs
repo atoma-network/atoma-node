@@ -9,12 +9,12 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
 use blake2::{
     digest::generic_array::{typenum::U32, GenericArray},
     Blake2b, Digest,
 };
 use serde_json::Value;
+use sui_sdk::types::crypto::{Signature, SuiSignature};
 use tokio::sync::oneshot;
 use tracing::{error, instrument};
 
@@ -188,19 +188,24 @@ pub async fn verify_stack_permissions(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
-    let public_key = req_parts.headers.get("X-PublicKey").ok_or_else(|| {
-        error!("Public key header not found");
+    let base64_signature = req_parts
+        .headers
+        .get("X-Signature")
+        .ok_or_else(|| {
+            error!("Signature header not found");
+            StatusCode::BAD_REQUEST
+        })?
+        .to_str()
+        .map_err(|_| {
+            error!("Failed to convert signature to string");
+            StatusCode::BAD_REQUEST
+        })?;
+    let signature = Signature::from_str(base64_signature).map_err(|_| {
+        error!("Failed to parse signature");
         StatusCode::BAD_REQUEST
     })?;
-    let public_key_hex = Engine::decode(&BASE64_STANDARD, public_key)
-        .map_err(|_| {
-            error!("Failed to decode public key");
-            StatusCode::BAD_REQUEST
-        })
-        .map(|bytes| {
-            let encoding = hex::encode(bytes);
-            format!("0x{}", encoding)
-        })?;
+    let public_key_bytes = signature.public_key_bytes();
+    let public_key_hex = format!("0x{}", hex::encode(public_key_bytes));
     let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
@@ -341,7 +346,7 @@ pub(crate) mod utils {
         secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
         traits::{ToFromBytes, VerifyingKey},
     };
-    use sui_sdk::types::crypto::{PublicKey, Signature, SignatureScheme, SuiSignature};
+    use sui_sdk::types::crypto::{PublicKey, SignatureScheme, SuiSignature};
 
     pub(crate) fn verify_signature(
         base64_signature: &str,

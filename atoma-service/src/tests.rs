@@ -18,7 +18,7 @@ mod middleware {
     use serial_test::serial;
     use std::{path::PathBuf, str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
-    use sui_sdk::types::crypto::{EncodeDecodeBase64, PublicKey, SignatureScheme};
+    use sui_sdk::types::crypto::{EncodeDecodeBase64, PublicKey, Signature, SignatureScheme};
     use tempfile::tempdir;
     use tokenizers::Tokenizer;
     use tokio::task::JoinHandle;
@@ -122,7 +122,7 @@ mod middleware {
             .await
             .unwrap();
         let stack = Stack {
-            owner_address: format!("0x00{}", public_key),
+            owner_address: format!("0x{}", public_key),
             stack_small_id: 1,
             stack_id: "1".to_string(),
             task_small_id: 1,
@@ -154,6 +154,7 @@ mod middleware {
     async fn setup_app_state() -> (
         AppState,
         PublicKey,
+        Signature,
         PathBuf,
         tokio::sync::watch::Sender<bool>,
         JoinHandle<()>,
@@ -162,6 +163,12 @@ mod middleware {
         let keystore = setup_keystore();
         let models = vec!["meta-llama/Llama-3.1-70B-Instruct"];
         let public_key = keystore.key_pairs().first().unwrap().public();
+        let mut blake2b = blake2::Blake2b::new();
+        blake2b.update(TEST_MESSAGE.as_bytes());
+        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let signature = keystore
+            .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
+            .expect("Failed to sign message");
         let tokenizer = load_tokenizer().await;
         let (
             db_path,
@@ -180,6 +187,7 @@ mod middleware {
                 address_index: 0,
             },
             public_key,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -214,7 +222,8 @@ mod middleware {
     async fn test_verify_stack_permissions() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -239,7 +248,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -265,6 +274,7 @@ mod middleware {
         let (
             app_state,
             _,
+            _,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -283,7 +293,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            // Intentionally omitting X-PublicKey header
+            // Intentionally omitting X-Signature header
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -305,7 +315,8 @@ mod middleware {
     async fn test_verify_stack_permissions_unsupported_model() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -324,7 +335,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -346,7 +357,8 @@ mod middleware {
     async fn test_verify_stack_permissions_invalid_messages_format() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -362,7 +374,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -384,7 +396,8 @@ mod middleware {
     async fn test_verify_stack_permissions_missing_max_completion_tokens() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -403,7 +416,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -426,6 +439,7 @@ mod middleware {
         let (
             app_state,
             _,
+            _,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -444,7 +458,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", "invalid_key_here") // Invalid public key
+            .header("X-Signature", "invalid signature here") // Invalid signature
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -466,7 +480,8 @@ mod middleware {
     async fn test_verify_stack_permissions_sets_request_metadata() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -485,7 +500,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
@@ -524,7 +539,8 @@ mod middleware {
     async fn test_verify_stack_permissions_token_counting() {
         let (
             app_state,
-            public_key,
+            _,
+            signature,
             db_path,
             shutdown_sender,
             state_manager_handle,
@@ -549,7 +565,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-PublicKey", public_key.encode_base64())
+            .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
