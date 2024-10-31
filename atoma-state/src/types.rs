@@ -77,7 +77,7 @@ pub struct Stack {
 impl From<StackCreatedEvent> for Stack {
     fn from(event: StackCreatedEvent) -> Self {
         Stack {
-            owner_address: event.owner_address,
+            owner_address: event.owner,
             stack_id: event.stack_id,
             stack_small_id: event.stack_small_id.inner as i64,
             task_small_id: event.task_small_id.inner as i64,

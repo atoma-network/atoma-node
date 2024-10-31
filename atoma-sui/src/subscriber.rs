@@ -752,7 +752,7 @@ mod tests {
         let event = AtomaEvent::StackCreatedEvent(StackCreatedEvent {
             selected_node_id: NodeSmallId { inner: 1 },
             task_small_id: TaskSmallId { inner: 10 },
-            owner_address: "test".to_string(),
+            owner: "test".to_string(),
             stack_id: "test".to_string(),
             stack_small_id: StackSmallId { inner: 1 },
             num_compute_units: 0,
