@@ -24,7 +24,7 @@ const NODE_TASK_SUBSCRIPTION_METHOD: &str = "subscribe_node_to_task";
 /// The Atoma's contract method name for node task unsubscription
 const NODE_TASK_UNSUBSCRIPTION_METHOD: &str = "unsubscribe_node_from_task";
 /// The Atoma's contract method name for trying to settle a stack
-const TRY_SETLE_STACK_METHOD: &str = "try_settle_stack";
+const TRY_SETTLE_STACK_METHOD: &str = "try_settle_stack";
 /// The Atoma's contract method name for stack settlement attestation
 const STACK_SETTLEMENT_ATTESTATION_METHOD: &str = "submit_stack_settlement_attestation";
 /// The Atoma's contract method name for starting an attestation dispute
@@ -574,7 +574,7 @@ impl AtomaSuiClient {
                 active_address,
                 self.config.atoma_package_id(),
                 MODULE_ID,
-                TRY_SETLE_STACK_METHOD,
+                TRY_SETTLE_STACK_METHOD,
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
@@ -937,8 +937,6 @@ pub(crate) mod utils {
 
     /// The name of the Atoma's contract node badge type
     const DB_NODE_TYPE_NAME: &str = "NodeBadge";
-    /// The page size for querying a user's owned objects
-    const PAGE_SIZE: usize = 100;
 
     /// Retrieves the node badge (ObjectID and small_id) associated with a given address.
     ///
@@ -1013,7 +1011,7 @@ pub(crate) mod utils {
                         }),
                     }),
                     cursor,
-                    Some(PAGE_SIZE),
+                    None,
                 )
                 .await
             {
