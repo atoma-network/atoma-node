@@ -372,8 +372,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(task_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
                     SuiJsonValue::new(max_num_compute_units.to_string().into())?,
                 ],
@@ -469,8 +469,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(task_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(task_small_id.to_string().into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -578,8 +578,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(num_claimed_compute_units.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                     SuiJsonValue::new(stack_merkle_leaf.into())?,
@@ -687,8 +687,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                     SuiJsonValue::new(stack_merkle_leaf.into())?,
                 ],
@@ -791,8 +791,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                 ],
                 gas,
@@ -889,7 +889,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
                     SuiJsonValue::new(settled_ticket_ids.into())?,
                 ],
                 gas,
