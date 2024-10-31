@@ -55,8 +55,6 @@ services:
       - .env
     ports:
       - "${ATOMA_DAEMON_PORT:-3001}:3001"  # Expose Atoma daemon port
-    depends_on:
-      - atoma-node
     networks:
       - atoma-network
 
