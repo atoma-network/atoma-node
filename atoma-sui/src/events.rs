@@ -373,7 +373,7 @@ pub struct TaskRemovedEvent {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StackCreatedEvent {
     /// The address of the owner of the stack.
-    pub owner_address: String,
+    pub owner: String,
 
     /// The unique identifier of the created stack.
     /// This is typically a longer, more descriptive ID for the stack.
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn test_stack_created_event_deserialization() {
         let json = json!({
-            "owner_address": "0x123",
+            "owner": "0x123",
             "stack_id": "stack-001",
             "stack_small_id": {"inner": "10"},
             "task_small_id": {"inner": "3"},
@@ -1004,7 +1004,7 @@ mod tests {
             "price": "1000"
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
-        assert_eq!(event.owner_address, "0x123");
+        assert_eq!(event.owner, "0x123");
         assert_eq!(event.stack_id, "stack-001");
         assert_eq!(event.stack_small_id.inner, 10);
         assert_eq!(event.task_small_id.inner, 3);
