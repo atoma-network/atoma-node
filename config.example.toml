@@ -19,3 +19,9 @@ cursor_path = "./cursor.toml" # Path to the Sui events cursor file
 
 [atoma-state]
 database_url = "sqlite:///app/data/atoma.db"  # Path inside the container
+
+[atoma-daemon]
+service_bind_address = "127.0.0.1:3000"
+node_badges = [
+    ["0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600", 1]
+] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
