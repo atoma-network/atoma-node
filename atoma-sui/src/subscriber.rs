@@ -195,6 +195,7 @@ impl SuiEventSubscriber {
                                             continue;
                                         }
                                     };
+                                    dbg!(&atoma_event);
                                     if filter_event(
                                         &atoma_event,
                                         self.config.node_small_ids().as_ref(),
