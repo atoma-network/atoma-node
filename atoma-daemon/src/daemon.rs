@@ -814,7 +814,7 @@ async fn submit_node_task_subscription_tx(
 ) -> Result<Json<NodeTaskSubscriptionResponse>> {
     let NodeTaskSubscriptionRequest {
         task_small_id,
-        node_small_id,
+        node_badge_id,
         price_per_compute_unit,
         max_num_compute_units,
         gas,
@@ -827,7 +827,7 @@ async fn submit_node_task_subscription_tx(
         .await
         .submit_node_task_subscription_tx(
             task_small_id as u64,
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             price_per_compute_unit,
             max_num_compute_units,
             gas,
@@ -877,7 +877,7 @@ async fn submit_node_task_unsubscription_tx(
 ) -> Result<Json<NodeTaskUnsubscriptionResponse>> {
     let NodeTaskUnsubscriptionRequest {
         task_small_id,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -888,7 +888,7 @@ async fn submit_node_task_unsubscription_tx(
         .await
         .submit_unsubscribe_node_from_task_tx(
             task_small_id as u64,
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             gas,
             gas_budget,
             gas_price,
@@ -938,7 +938,7 @@ async fn submit_node_try_settle_stacks_tx(
     let NodeTrySettleStacksRequest {
         stack_small_ids,
         num_claimed_compute_units,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -966,7 +966,7 @@ async fn submit_node_try_settle_stacks_tx(
             .await
             .submit_try_settle_stack_tx(
                 *stack_small_id as u64,
-                node_small_id.map(|id| id as u64),
+                node_badge_id,
                 num_claimed_compute_units,
                 committed_stack_proof,
                 stack_merkle_leaf,
@@ -1089,13 +1089,21 @@ async fn submit_stack_settlement_attestations_tx(
                 attestation_node_index.attestation_node_index as u64 + 1,
             )?;
 
+            let node_small_id = node_small_ids[attestation_node_index.node_small_id_index];
+            let node_badge_id = daemon_state
+                .node_badges
+                .iter()
+                .find(|(_, ns)| *ns as i64 == node_small_id)
+                .map(|(nb, _)| *nb)
+                .unwrap();  
+
             let tx_digest = daemon_state
                 .client
                 .write()
                 .await
                 .submit_stack_settlement_attestation_tx(
                     stack_small_id as u64,
-                    Some(node_small_ids[attestation_node_index.node_small_id_index] as u64),
+                    Some(node_badge_id),
                     committed_stack_proof,
                     stack_merkle_leaf,
                     gas,
@@ -1148,7 +1156,7 @@ async fn submit_claim_funds_tx(
 ) -> Result<Json<NodeClaimFundsResponse>> {
     let NodeClaimFundsRequest {
         stack_small_ids,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -1160,7 +1168,7 @@ async fn submit_claim_funds_tx(
         .await
         .submit_claim_funds_tx(
             stack_small_ids.iter().map(|id| *id as u64).collect(),
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             gas,
             gas_budget,
             gas_price,

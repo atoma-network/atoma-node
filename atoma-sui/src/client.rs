@@ -31,6 +31,8 @@ const STACK_SETTLEMENT_ATTESTATION_METHOD: &str = "submit_stack_settlement_attes
 const START_ATTESTATION_DISPUTE_METHOD: &str = "start_attestation_dispute";
 /// The Atoma's contract method name for claiming funds
 const CLAIM_FUNDS_METHOD: &str = "claim_funds";
+/// The Atoma's contract method name for updating a node task subscription
+const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
 /// A client for interacting with the Atoma network using the Sui blockchain.
 ///
@@ -294,7 +296,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `task_small_id` - The small ID of the task to subscribe to
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `price_per_compute_unit` - The price per compute unit the node is willing to charge
     /// * `max_num_compute_units` - Maximum number of compute units the node is willing to provide
     /// * `gas` - Optional ObjectID to use as gas for the transaction
@@ -347,7 +349,7 @@ impl AtomaSuiClient {
     pub async fn submit_node_task_subscription_tx(
         &mut self,
         task_small_id: u64,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         price_per_compute_unit: u64,
         max_num_compute_units: u64,
         gas: Option<ObjectID>,
@@ -356,11 +358,11 @@ impl AtomaSuiClient {
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -372,7 +374,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
                     SuiJsonValue::new(max_num_compute_units.to_string().into())?,
@@ -394,6 +396,90 @@ impl AtomaSuiClient {
         Ok(response.digest.to_string())
     }
 
+    /// Submits a transaction to update a node's task subscription in the Atoma network.
+    ///
+    /// This method creates and submits a transaction that updates a node's task subscription
+    /// with new pricing parameters. The node must have a valid node badge to perform this operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `task_small_id` - The small ID of the task to update the subscription for
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `price_per_compute_unit` - The new price per compute unit for the task subscription
+    /// * `max_num_compute_units` - The new maximum number of compute units for the task subscription
+    /// * `gas` - Optional ObjectID to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the update is successful, or an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// # use sui_sdk::types::base_types::ObjectID;
+    /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
+    /// ```
+    #[instrument(level = "info", skip_all, fields(
+        method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
+        task_small_id = %task_small_id,
+        price_per_compute_unit = %price_per_compute_unit,
+        max_num_compute_units = %max_num_compute_units,
+        address = %self.wallet_ctx.active_address().unwrap()
+    ))]
+    pub async fn submit_update_node_task_subscription_tx(
+        &mut self,
+        task_small_id: u64,
+        node_badge_id: Option<ObjectID>,
+        price_per_compute_unit: u64,
+        max_num_compute_units: u64,
+        gas: Option<ObjectID>,
+        gas_budget: Option<u64>,
+        gas_price: Option<u64>,
+    ) -> Result<String> {
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
+        let node_badge_id = node_badge_id.unwrap_or(
+            self.node_badge
+                .as_ref()
+                .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
+                .0,
+        );
+        let tx = client
+            .transaction_builder()
+            .move_call(
+                active_address,
+                self.config.atoma_package_id(),
+                MODULE_ID,
+                UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
+                vec![],
+                vec![
+                    SuiJsonValue::from_object_id(self.config.atoma_db()),
+                    SuiJsonValue::from_object_id(node_badge_id),
+                    SuiJsonValue::new(task_small_id.to_string().into())?,
+                    SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
+                    SuiJsonValue::new(max_num_compute_units.to_string().into())?,
+                ],
+                gas,
+                gas_budget.unwrap_or(GAS_BUDGET),
+                gas_price,
+            )
+            .await?;
+        info!("Submitting node task update subscription transaction...");
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+
+        info!(
+            "Node task update subscription transaction submitted successfully. Transaction digest: {:?}",
+            response.digest
+        );
+        Ok(response.digest.to_string())
+    }
+
     /// Submits a transaction to unsubscribe a node from a specific task in the Atoma network.
     ///
     /// This method creates and submits a transaction that unsubscribes a node from a task they were
@@ -402,7 +488,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `task_small_id` - The small ID of the task to unsubscribe from
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `gas` - Optional ObjectID to use as gas for the transaction
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
     /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
@@ -422,7 +508,7 @@ impl AtomaSuiClient {
     /// // Unsubscribe from task with default gas settings
     /// client.submit_unsubscribe_node_from_task_tx(
     ///     123,                    // task_small_id
-    ///     None,                   // use stored node_small_id
+    ///     None,                   // use stored node_badge_id
     ///     None,                   // default gas
     ///     None,                   // default gas budget
     ///     None                    // default gas price
@@ -432,10 +518,10 @@ impl AtomaSuiClient {
     /// let gas_object = ObjectID::new([1; 32]);
     /// client.submit_unsubscribe_node_from_task_tx(
     ///     123,                    // task_small_id
-    ///     Some(456),              // specific node_small_id
-    ///     Some(gas_object),       // specific gas object
-    ///     Some(10_000_000),       // 0.01 SUI gas budget
-    ///     Some(1000)              // specific gas price
+    ///     Some("0xabc123"),        // specific node_badge_id
+    ///     Some(gas_object),         // specific gas object
+    ///     Some(10_000_000),         // 0.01 SUI gas budget
+    ///     Some(1000)                // specific gas price
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -446,18 +532,18 @@ impl AtomaSuiClient {
     pub async fn submit_unsubscribe_node_from_task_tx(
         &mut self,
         task_small_id: u64,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -469,7 +555,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
                 ],
                 gas,
@@ -497,7 +583,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack to settle
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `num_claimed_compute_units` - The number of compute units being claimed for this stack
     /// * `committed_stack_proof` - The proof data for the committed stack
     /// * `stack_merkle_leaf` - The merkle leaf data for the stack
@@ -520,7 +606,7 @@ impl AtomaSuiClient {
     /// // Try to settle stack with default gas settings
     /// client.submit_try_settle_stack_tx(
     ///     123,                    // stack_small_id
-    ///     None,                   // use stored node_small_id
+    ///     None,                   // use stored node_badge_id
     ///     1000,                   // num_claimed_compute_units
     ///     vec![1, 2, 3],         // committed_stack_proof
     ///     vec![4, 5, 6],         // stack_merkle_leaf
@@ -533,7 +619,7 @@ impl AtomaSuiClient {
     /// let gas_object = ObjectID::new([1; 32]);
     /// client.submit_try_settle_stack_tx(
     ///     123,                    // stack_small_id
-    ///     Some(456),              // specific node_small_id
+    ///     Some(456),              // specific node_badge_id
     ///     1000,                   // num_claimed_compute_units
     ///     vec![1, 2, 3],         // committed_stack_proof
     ///     vec![4, 5, 6],         // stack_merkle_leaf
@@ -552,7 +638,7 @@ impl AtomaSuiClient {
     pub async fn submit_try_settle_stack_tx(
         &mut self,
         stack_small_id: u64,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         num_claimed_compute_units: u64,
         committed_stack_proof: Vec<u8>,
         stack_merkle_leaf: Vec<u8>,
@@ -562,11 +648,11 @@ impl AtomaSuiClient {
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -578,7 +664,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(num_claimed_compute_units.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
@@ -611,7 +697,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack being attested
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `committed_stack_proof` - The proof data for the committed stack
     /// * `stack_merkle_leaf` - The merkle leaf data for the stack
     /// * `gas` - Optional ObjectID to use as gas for the transaction
@@ -633,7 +719,7 @@ impl AtomaSuiClient {
     /// // Submit attestation with default gas settings
     /// client.submit_stack_settlement_attestation_tx(
     ///     123,                    // stack_small_id
-    ///     None,                   // use stored node_small_id
+    ///     None,                   // use stored node_badge_id
     ///     vec![1, 2, 3],         // committed_stack_proof
     ///     vec![4, 5, 6],         // stack_merkle_leaf
     ///     None,                   // default gas
@@ -662,7 +748,7 @@ impl AtomaSuiClient {
     pub async fn submit_stack_settlement_attestation_tx(
         &mut self,
         stack_small_id: u64,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         committed_stack_proof: Vec<u8>,
         stack_merkle_leaf: Vec<u8>,
         gas: Option<ObjectID>,
@@ -671,11 +757,11 @@ impl AtomaSuiClient {
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -687,7 +773,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                     SuiJsonValue::new(stack_merkle_leaf.into())?,
@@ -720,7 +806,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack being disputed
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `committed_stack_proof` - The proof data for the committed stack that supports the dispute
     /// * `gas` - Optional ObjectID to use as gas for the transaction
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
@@ -741,7 +827,7 @@ impl AtomaSuiClient {
     /// // Start dispute with default gas settings
     /// client.submit_start_attestation_dispute_tx(
     ///     123,                    // stack_small_id
-    ///     None,                   // use stored node_small_id
+    ///     None,                   // use stored node_badge_id
     ///     vec![1, 2, 3],         // committed_stack_proof
     ///     None,                   // default gas
     ///     None,                   // default gas budget
@@ -752,7 +838,7 @@ impl AtomaSuiClient {
     /// let gas_object = ObjectID::new([1; 32]);
     /// client.submit_start_attestation_dispute_tx(
     ///     123,                    // stack_small_id
-    ///     Some(456),              // specific node_small_id
+    ///     Some(0xabc123),          // specific node_badge_id
     ///     vec![1, 2, 3],         // committed_stack_proof
     ///     Some(gas_object),       // specific gas object
     ///     Some(10_000_000),       // 0.01 SUI gas budget
@@ -767,7 +853,7 @@ impl AtomaSuiClient {
     pub async fn submit_start_attestation_dispute_tx(
         &mut self,
         stack_small_id: u64,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         committed_stack_proof: Vec<u8>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
@@ -775,11 +861,11 @@ impl AtomaSuiClient {
     ) -> Result<()> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -791,7 +877,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                 ],
@@ -822,7 +908,7 @@ impl AtomaSuiClient {
     /// # Arguments
     ///
     /// * `settled_ticket_ids` - A vector of ticket IDs that have been settled and are ready for claiming
-    /// * `node_small_id` - Optional small ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
     /// * `gas` - Optional ObjectID to use as gas for the transaction
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
     /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
@@ -842,7 +928,7 @@ impl AtomaSuiClient {
     /// // Claim funds with default gas settings
     /// client.submit_claim_funds_tx(
     ///     vec![123, 456],         // settled_ticket_ids
-    ///     None,                   // use stored node_small_id
+    ///     None,                   // use stored node_badge_id
     ///     None,                   // default gas
     ///     None,                   // default gas budget
     ///     None                    // default gas price
@@ -852,7 +938,7 @@ impl AtomaSuiClient {
     /// let gas_object = ObjectID::new([1; 32]);
     /// client.submit_claim_funds_tx(
     ///     vec![123, 456],         // settled_ticket_ids
-    ///     Some(789),              // specific node_small_id
+    ///     Some(0xabc123),          // specific node_badge_id
     ///     Some(gas_object),       // specific gas object
     ///     Some(10_000_000),       // 0.01 SUI gas budget
     ///     Some(1000)              // specific gas price
@@ -866,18 +952,18 @@ impl AtomaSuiClient {
     pub async fn submit_claim_funds_tx(
         &mut self,
         settled_ticket_ids: Vec<u64>,
-        node_small_id: Option<u64>,
+        node_badge_id: Option<ObjectID>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let node_small_id = node_small_id.unwrap_or(
+        let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
-                .1,
+                .0,
         );
         let tx = client
             .transaction_builder()
@@ -889,7 +975,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(settled_ticket_ids.into())?,
                 ],
                 gas,

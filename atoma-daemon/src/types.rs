@@ -87,10 +87,10 @@ pub struct NodeTaskSubscriptionRequest {
     /// The small ID of the task to subscribe to.
     pub task_small_id: i64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -134,10 +134,10 @@ pub struct NodeTaskUnsubscriptionRequest {
     /// The small ID of the task to unsubscribe from.
     pub task_small_id: i64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -178,10 +178,10 @@ pub struct NodeTrySettleStacksRequest {
     /// The number of compute units claimed.
     pub num_claimed_compute_units: u64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -219,7 +219,7 @@ pub struct NodeAttestationProofRequest {
     /// The small IDs of the stacks to attest to.
     pub stack_small_ids: Vec<i64>,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_small_id: Option<i64>,
@@ -259,10 +259,10 @@ pub struct NodeClaimFundsRequest {
     /// The small IDs of the stacks to claim funds from.
     pub stack_small_ids: Vec<i64>,
 
-    /// Optional small ID of the node.
+    /// Optional node badge IDs.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
