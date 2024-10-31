@@ -266,6 +266,7 @@ pub async fn chat_completions_handler(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    info!("Received chat completions request, with payload: {payload}");
     let RequestMetadata {
         stack_small_id,
         estimated_total_tokens,
