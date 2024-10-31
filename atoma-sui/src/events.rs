@@ -169,6 +169,16 @@ pub enum AtomaEvent {
     Text2TextPromptEvent(Text2TextPromptEvent),
 }
 
+fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+    T: FromStr,
+    T::Err: std::fmt::Display,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse::<T>().map_err(serde::de::Error::custom)
+}
+
 /// Represents an event that is emitted when the Atoma contract is first published.
 ///
 /// This event contains information about the newly published AtomaDb object id and
@@ -236,10 +246,12 @@ pub struct NodeSubscribedToTaskEvent {
     /// The price per compute unit that the node is offering for this task.
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub price_per_compute_unit: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub max_num_compute_units: u64,
 }
 
@@ -260,10 +272,12 @@ pub struct NodeSubscriptionUpdatedEvent {
     /// The new price per compute unit that the node is offering for this task.
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub price_per_compute_unit: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub max_num_compute_units: u64,
 }
 
@@ -328,6 +342,7 @@ pub struct TaskDeprecationEvent {
 
     /// The epoch at which the task was deprecated.
     /// An epoch represents a specific point in time or a block height in the network.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
 }
 
@@ -347,6 +362,7 @@ pub struct TaskRemovedEvent {
 
     /// The epoch at which the task was permanently removed from the network.
     /// An epoch represents a specific point in time or a block height in the network.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub removed_at_epoch: u64,
 }
 
@@ -377,10 +393,12 @@ pub struct StackCreatedEvent {
 
     /// The number of compute units allocated for this stack.
     /// This represents the computational resources reserved for processing the stack's tasks.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub num_compute_units: u64,
 
     /// The price associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub price: u64,
 }
 
@@ -412,6 +430,7 @@ pub struct StackTrySettleEvent {
 
     /// The number of compute units claimed by the selected node for processing this stack.
     /// This represents the computational resources used in executing the stack's tasks.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub num_claimed_compute_units: u64,
 }
 
@@ -454,6 +473,7 @@ pub struct StackSettlementTicketEvent {
 
     /// The number of compute units claimed by the selected node for processing this stack.
     /// This represents the computational resources used in executing the stack's tasks.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub num_claimed_compute_units: u64,
 
     /// A list of small IDs of nodes that were requested to attest to the stack's execution.
@@ -462,6 +482,7 @@ pub struct StackSettlementTicketEvent {
 
     /// The epoch at which any disputes related to this stack settlement were resolved.
     /// An epoch represents a specific point in time or a block height in the network.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub dispute_settled_at_epoch: u64,
 
     /// The committed proof of the stack's execution.
@@ -489,10 +510,12 @@ pub struct StackSettlementTicketClaimedEvent {
 
     /// The number of compute units claimed by the selected node for processing this stack.
     /// This represents the computational resources used in executing the stack's tasks.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub num_claimed_compute_units: u64,
 
     /// The amount of refund, if any, issued to the user for this stack settlement.
     /// This is represented as a vector of bytes, likely to accommodate different currency representations.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub user_refund_amount: u64,
 }
 
@@ -531,6 +554,7 @@ pub struct Text2ImagePromptParams {
     pub guidance_scale: u32,
 
     /// The height of the generated image in pixels.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub height: u64,
 
     /// Optional input image for image-to-image generation, stored as bytes.
@@ -546,10 +570,12 @@ pub struct Text2ImagePromptParams {
 
     /// The number of denoising steps to perform during the diffusion process.
     /// More steps generally result in higher quality images but take longer to generate.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub n_steps: u64,
 
     /// The number of images to generate.
     /// The user pays for each image generated.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub num_samples: u64,
 
     /// The destination where the generated image(s) will be stored, represented as a byte vector.
@@ -560,12 +586,14 @@ pub struct Text2ImagePromptParams {
 
     /// A seed value for the random number generator used in image generation.
     /// Using the same seed with the same input will produce deterministic results.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub random_seed: u64,
 
     /// The unconditional prompt (negative prompt) used to guide what should not appear in the image, stored as a byte vector.
     pub uncond_prompt: Vec<u8>,
 
     /// The width of the generated image in pixels.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub width: u64,
 }
 
@@ -580,6 +608,7 @@ pub struct Text2ImagePromptEvent {
 
     /// Determines into how many chunks the nodes split the output when
     /// they generate proof hashes.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub chunks_count: u64,
 
     /// The list of nodes that may be used to evaluate the prompt.
@@ -638,9 +667,9 @@ pub struct RetrySettlementEvent {
     pub ticket_id: String,
 
     /// The number of nodes in the echelon that should be used to retry the settlement.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub how_many_nodes_in_echelon: u64,
 }
-
 /// Represents the parameters for a text-to-text prompt in the Atoma network.
 ///
 /// This struct encapsulates all the necessary configuration options for executing
@@ -648,6 +677,7 @@ pub struct RetrySettlementEvent {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Text2TextPromptParams {
     /// The maximum number of tokens to generate in the output.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub max_tokens: u64,
 
     /// The name or identifier of the AI model to be used for text generation.
@@ -666,10 +696,12 @@ pub struct Text2TextPromptParams {
 
     /// A seed value for the random number generator used in text generation.
     /// Using the same seed with the same input will produce deterministic results.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub random_seed: u64,
 
     /// The number of previous tokens to consider when applying the repeat penalty.
     /// This helps prevent the model from repeating the same phrases too frequently.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub repeat_last_n: u64,
 
     /// The penalty applied to repeated tokens, stored as a 32-bit float in little-endian byte order.
@@ -687,6 +719,7 @@ pub struct Text2TextPromptParams {
 
     /// The number of highest probability vocabulary tokens to keep for top-k filtering.
     /// This helps control the diversity of the generated text.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub top_k: u64,
 
     /// The cumulative probability threshold for top-p (nucleus) filtering,
@@ -694,6 +727,7 @@ pub struct Text2TextPromptParams {
     /// Only the most probable tokens with cumulative probability less than this value are considered.
     pub top_p: u32,
 }
+
 /// Represents an event emitted when a text-to-text prompt is submitted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Text2TextPromptEvent {
@@ -705,6 +739,7 @@ pub struct Text2TextPromptEvent {
 
     /// Determines into how many chunks the nodes split the output when
     /// they generate proof hashes.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub chunks_count: u64,
 
     /// The list of nodes that may be used to evaluate the prompt.
@@ -723,7 +758,8 @@ pub struct Text2TextPromptEvent {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EchelonId {
     /// The unique numerical identifier for the echelon.
-    pub inner: u64,
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub id: u64,
 }
 
 /// Represents a compact identifier for a node in the Atoma network.
@@ -733,6 +769,7 @@ pub struct EchelonId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeSmallId {
     /// The unique numerical identifier for the node.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub inner: u64,
 }
 
@@ -744,6 +781,7 @@ pub struct NodeSmallId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StackSmallId {
     /// The unique numerical identifier for the stack.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub inner: u64,
 }
 
@@ -755,6 +793,7 @@ pub struct StackSmallId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TaskSmallId {
     /// The unique numerical identifier for the task.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub inner: u64,
 }
 
@@ -786,17 +825,21 @@ pub struct TimeoutInfo {
     /// How many times has the settlement timed out.
     /// Once this reaches a threshold `MaxTicketTimeouts`, the ticket
     /// will be disputed.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub timed_out_count: u64,
 
     /// If the settlement takes more than this, the settlement can be cut
     /// short.
     /// See the `try_to_settle` endpoint.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub timeout_ms: u64,
 
     /// Will be relevant for timeouting.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub started_in_epoch: u64,
 
     /// Will be relevant for timeouting.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub started_at_epoch_timestamp_ms: u64,
 }
 
@@ -813,6 +856,7 @@ pub struct MapNodeToChunk {
 
     /// The order or position of this chunk within the overall task or dataset.
     /// This helps maintain the correct sequence when processing or reassembling distributed work.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub order: u64,
 }
 
@@ -842,7 +886,7 @@ mod tests {
     fn test_node_registered_event_deserialization() {
         let json = json!({
             "badge_id": "0x789",
-            "node_small_id": {"inner": 42}
+            "node_small_id": {"inner": "42"}
         });
         let event: NodeRegisteredEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.badge_id, "0x789");
@@ -852,23 +896,23 @@ mod tests {
     #[test]
     fn test_node_subscribed_to_model_event_deserialization() {
         let json = json!({
-            "node_small_id": {"inner": 1},
+            "node_small_id": {"inner": "1"},
             "model_name": "gpt-3",
-            "echelon_id": {"inner": 2}
+            "echelon_id": {"id": "2"}
         });
         let event: NodeSubscribedToModelEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.node_small_id.inner, 1);
         assert_eq!(event.model_name, "gpt-3");
-        assert_eq!(event.echelon_id.inner, 2);
+        assert_eq!(event.echelon_id.id, 2);
     }
 
     #[test]
     fn test_node_subscribed_to_task_event_deserialization() {
         let json = json!({
-            "task_small_id": {"inner": 3},
-            "node_small_id": {"inner": 4},
-            "price_per_compute_unit": 100,
-            "max_num_compute_units": 1000
+            "task_small_id": {"inner": "3"},
+            "node_small_id": {"inner": "4"},
+            "price_per_compute_unit": "100",
+            "max_num_compute_units": "1000"
         });
         let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
@@ -880,10 +924,10 @@ mod tests {
     #[test]
     fn test_node_subscription_updated_event_deserialization() {
         let json = json!({
-            "task_small_id": {"inner": 3},
-            "node_small_id": {"inner": 4},
-            "price_per_compute_unit": 150,
-            "max_num_compute_units": 1500
+            "task_small_id": {"inner": "3"},
+            "node_small_id": {"inner": "4"},
+            "price_per_compute_unit": "150",
+            "max_num_compute_units": "1500"
         });
         let event: NodeSubscriptionUpdatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
@@ -895,8 +939,8 @@ mod tests {
     #[test]
     fn test_node_unsubscribed_from_task_event_deserialization() {
         let json = json!({
-            "task_small_id": {"inner": 5},
-            "node_small_id": {"inner": 6}
+            "task_small_id": {"inner": "5"},
+            "node_small_id": {"inner": "6"}
         });
         let event: NodeUnsubscribedFromTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 5);
@@ -907,7 +951,7 @@ mod tests {
     fn test_task_registered_event_deserialization() {
         let json = json!({
             "task_id": "task-001",
-            "task_small_id": {"inner": 7},
+            "task_small_id": {"inner": "7"},
             "role": {"inner": 1},
             "model_name": "gpt-3",
             "security_level": {"inner": 2},
@@ -926,8 +970,8 @@ mod tests {
     fn test_task_deprecation_event_deserialization() {
         let json = json!({
             "task_id": "task-002",
-            "task_small_id": {"inner": 8},
-            "epoch": 1000
+            "task_small_id": {"inner": "8"},
+            "epoch": "1000"
         });
         let event: TaskDeprecationEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_id, "task-002");
@@ -939,8 +983,8 @@ mod tests {
     fn test_task_removed_event_deserialization() {
         let json = json!({
             "task_id": "task-003",
-            "task_small_id": {"inner": 9},
-            "removed_at_epoch": 2000
+            "task_small_id": {"inner": "9"},
+            "removed_at_epoch": "2000"
         });
         let event: TaskRemovedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_id, "task-003");
@@ -953,11 +997,11 @@ mod tests {
         let json = json!({
             "owner_address": "0x123",
             "stack_id": "stack-001",
-            "stack_small_id": {"inner": 10},
-            "task_small_id": {"inner": 3},
-            "selected_node_id": {"inner": 11},
-            "num_compute_units": 5,
-            "price": 1000
+            "stack_small_id": {"inner": "10"},
+            "task_small_id": {"inner": "3"},
+            "selected_node_id": {"inner": "11"},
+            "num_compute_units": "5",
+            "price": "1000"
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.owner_address, "0x123");
@@ -972,12 +1016,12 @@ mod tests {
     #[test]
     fn test_stack_try_settle_event_deserialization() {
         let json = json!({
-            "stack_small_id": {"inner": 12},
-            "selected_node_id": {"inner": 13},
-            "requested_attestation_nodes": [{"inner": 14}, {"inner": 15}],
+            "stack_small_id": {"inner": "12"},
+            "selected_node_id": {"inner": "13"},
+            "requested_attestation_nodes": [{"inner": "14"}, {"inner": "15"}],
             "committed_stack_proof": [1, 2, 3],
             "stack_merkle_leaf": [4, 5, 6],
-            "num_claimed_compute_units": 100
+            "num_claimed_compute_units": "100"
         });
         let event: StackTrySettleEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_small_id.inner, 12);
@@ -993,8 +1037,8 @@ mod tests {
     #[test]
     fn test_new_stack_settlement_attestation_event_deserialization() {
         let json = json!({
-            "stack_small_id": {"inner": 16},
-            "attestation_node_id": {"inner": 17},
+            "stack_small_id": {"inner": "16"},
+            "attestation_node_id": {"inner": "17"},
             "committed_stack_proof": [1, 2, 3],
             "stack_merkle_leaf": [4, 5, 6]
         });
@@ -1008,11 +1052,11 @@ mod tests {
     #[test]
     fn test_stack_settlement_ticket_event_deserialization() {
         let json = json!({
-            "stack_small_id": {"inner": 19},
-            "selected_node_id": {"inner": 20},
-            "num_claimed_compute_units": 300,
-            "requested_attestation_nodes": [{"inner": 21}, {"inner": 22}],
-            "dispute_settled_at_epoch": 3000,
+            "stack_small_id": {"inner": "19"},
+            "selected_node_id": {"inner": "20"},
+            "num_claimed_compute_units": "300",
+            "requested_attestation_nodes": [{"inner": "21"}, {"inner": "22"}],
+            "dispute_settled_at_epoch": "3000",
             "committed_stack_proof": [7, 8, 9]
         });
         let event: StackSettlementTicketEvent = serde_json::from_value(json).unwrap();
@@ -1029,11 +1073,11 @@ mod tests {
     #[test]
     fn test_stack_settlement_ticket_claimed_event_deserialization() {
         let json = json!({
-            "stack_small_id": {"inner": 23},
-            "selected_node_id": {"inner": 24},
-            "attestation_nodes": [{"inner": 25}, {"inner": 26}],
-            "num_claimed_compute_units": 400,
-            "user_refund_amount": 100
+            "stack_small_id": {"inner": "23"},
+            "selected_node_id": {"inner": "24"},
+            "attestation_nodes": [{"inner": "25"}, {"inner": "26"}],
+            "num_claimed_compute_units": "400",
+            "user_refund_amount": "100"
         });
         let event: StackSettlementTicketClaimedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.stack_small_id.inner, 23);
@@ -1048,10 +1092,10 @@ mod tests {
     #[test]
     fn test_stack_attestation_dispute_event_deserialization() {
         let json = json!({
-            "stack_small_id": {"inner": 27},
+            "stack_small_id": {"inner": "27"},
             "attestation_commitment": [13, 14, 15],
-            "attestation_node_id": {"inner": 28},
-            "original_node_id": {"inner": 29},
+            "attestation_node_id": {"inner": "28"},
+            "original_node_id": {"inner": "29"},
             "original_commitment": [16, 17, 18]
         });
         let event: StackAttestationDisputeEvent = serde_json::from_value(json).unwrap();
@@ -1066,7 +1110,7 @@ mod tests {
     fn test_first_submission_event_deserialization() {
         let json = json!({
             "ticket_id": "ticket-003",
-            "node_id": {"inner": 30}
+            "node_id": {"inner": "30"}
         });
         let event: FirstSubmissionEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.ticket_id, "ticket-003");
@@ -1078,10 +1122,10 @@ mod tests {
         let json = json!({
             "ticket_id": "ticket-004",
             "timeout": {
-                "timed_out_count": 2,
-                "timeout_ms": 5000,
-                "started_in_epoch": 4000,
-                "started_at_epoch_timestamp_ms": 162000
+                "timed_out_count": "2",
+                "timeout_ms": "5000",
+                "started_in_epoch": "4000",
+                "started_at_epoch_timestamp_ms": "162000"
             }
         });
         let event: DisputeEvent = serde_json::from_value(json).unwrap();
@@ -1099,8 +1143,8 @@ mod tests {
         let json = json!({
             "ticket_id": "ticket-005",
             "new_nodes": [
-                {"node_id": {"inner": 31}, "order": 0},
-                {"node_id": {"inner": 32}, "order": 1}
+                {"node_id": {"inner": "31"}, "order": "0"},
+                {"node_id": {"inner": "32"}, "order": "1"}
             ]
         });
         let event: NewlySampledNodesEvent = serde_json::from_value(json).unwrap();
@@ -1116,7 +1160,7 @@ mod tests {
     fn test_settled_event_deserialization() {
         let json = json!({
             "ticket_id": "ticket-006",
-            "oracle_node_id": {"inner": 33}
+            "oracle_node_id": {"inner": "33"}
         });
         let event: SettledEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.ticket_id, "ticket-006");
@@ -1128,7 +1172,7 @@ mod tests {
     fn test_retry_settlement_event_deserialization() {
         let json = json!({
             "ticket_id": "ticket-007",
-            "how_many_nodes_in_echelon": 5
+            "how_many_nodes_in_echelon": "5"
         });
         let event: RetrySettlementEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.ticket_id, "ticket-007");
@@ -1141,20 +1185,20 @@ mod tests {
             "ticket_id": "ticket-001",
             "params": {
                 "guidance_scale": 7,
-                "height": 512,
+                "height": "512",
                 "img2img": null,
                 "img2img_strength": 0,
                 "model": "stable-diffusion-v1-5",
-                "n_steps": 50,
-                "num_samples": 1,
+                "n_steps": "50",
+                "num_samples": "1",
                 "output_destination": [1, 2, 3],
                 "prompt": [65, 66, 67],
-                "random_seed": 42,
+                "random_seed": "42",
                 "uncond_prompt": [68, 69, 70],
-                "width": 512
+                "width": "512"
             },
-            "chunks_count": 4,
-            "nodes": [{"inner": 1}, {"inner": 2}],
+            "chunks_count": "4",
+            "nodes": [{"inner": "1"}, {"inner": "2"}],
             "output_destination": [4, 5, 6]
         });
         let event: Text2ImagePromptEvent = serde_json::from_value(json).unwrap();
@@ -1174,21 +1218,21 @@ mod tests {
         let json = json!({
             "ticket_id": "ticket-002",
             "params": {
-                "max_tokens": 100,
+                "max_tokens": "100",
                 "model": "gpt-3",
                 "pre_prompt_tokens": [1, 2, 3],
                 "prepend_output_with_input": true,
                 "prompt": [65, 66, 67],
-                "random_seed": 42,
-                "repeat_last_n": 64,
+                "random_seed": "42",
+                "repeat_last_n": "64",
                 "repeat_penalty": 1065353216,  // 1.0 in IEEE 754 single-precision float
                 "should_stream_output": false,
                 "temperature": 1065353216,  // 1.0 in IEEE 754 single-precision float
-                "top_k": 50,
+                "top_k": "50",
                 "top_p": 1065353216  // 1.0 in IEEE 754 single-precision float
             },
-            "chunks_count": 2,
-            "nodes": [{"inner": 3}, {"inner": 4}],
+            "chunks_count": "2",
+            "nodes": [{"inner": "3"}, {"inner": "4"}],
             "output_destination": [7, 8, 9]
         });
         let event: Text2TextPromptEvent = serde_json::from_value(json).unwrap();

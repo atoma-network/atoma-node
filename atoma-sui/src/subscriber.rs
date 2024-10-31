@@ -136,7 +136,7 @@ impl SuiEventSubscriber {
     /// * There's a failure in building the Sui client.
     /// * Event querying encounters an error.
     /// * Event processing or handling fails (though these are currently logged and not propagated).
-    #[instrument(level = "info", skip_all, fields(package_id))]
+    #[instrument(level = "trace", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
         let package_id = self.config.atoma_package_id();
         let limit = self.config.limit();
@@ -183,8 +183,18 @@ impl SuiEventSubscriber {
                             );
                             match AtomaEventIdentifier::from_str(event_name.as_str()) {
                                 Ok(atoma_event_id) => {
-                                    let atoma_event =
-                                        parse_event(&atoma_event_id, sui_event.parsed_json).await?;
+                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json).await {
+                                        Ok(atoma_event) => atoma_event,
+                                        Err(e) => {
+                                            error!(
+                                                target = "atoma-sui-subscriber",
+                                                event = "subscriber-event-parse-error",
+                                                event_name = %event_name,
+                                                "Failed to parse event: {e}",
+                                            );
+                                            continue;
+                                        }
+                                    };
                                     if filter_event(
                                         &atoma_event,
                                         self.config.node_small_ids().as_ref(),
@@ -211,7 +221,7 @@ impl SuiEventSubscriber {
 
                         if !has_next_page {
                             // No new events to read, so let's wait for a while
-                            info!(
+                            trace!(
                                 target = "atoma-sui-subscriber",
                                 event = "subscriber-no-new-events",
                                 wait_duration = DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,

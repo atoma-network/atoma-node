@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
@@ -7,8 +9,8 @@ use crate::types::{
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::{sqlite::SqliteConnectOptions, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
-use sqlx::{Sqlite, SqlitePool};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 
@@ -50,7 +52,10 @@ impl AtomaStateManager {
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+        // Create connection options with create_if_missing enabled
+        let connect_options =
+            SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
+        let db = SqlitePool::connect_with(connect_options).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
@@ -2085,6 +2090,8 @@ pub enum AtomaStateManagerError {
     FailedToRetrieveExistingTotalHash(i64),
     #[error("Failed to send result to channel")]
     ChannelSendError,
+    #[error("Failed to create database directory")]
+    FailedToCreateDatabaseDirectory(#[from] std::io::Error),
 }
 
 pub(crate) mod queries {

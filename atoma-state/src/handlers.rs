@@ -4,14 +4,14 @@ use atoma_sui::events::{
     StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
     StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
-use tracing::{info, instrument, trace};
+use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result, types::AtomaAtomaStateManagerEvent, AtomaStateManager,
     AtomaStateManagerError,
 };
 
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub async fn handle_atoma_event(
     event: AtomaEvent,
     state_manager: &AtomaStateManager,
@@ -114,12 +114,12 @@ pub async fn handle_atoma_event(
 /// This function will return an error if:
 /// * The `value` cannot be deserialized into a `TaskRegisteredEvent`.
 /// * The `AtomaStateManager` fails to insert the new task into the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_new_task_event(
     state_manager: &AtomaStateManager,
     event: TaskRegisteredEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-new-task-event",
         "Processing new task event"
@@ -155,12 +155,12 @@ pub(crate) async fn handle_new_task_event(
 /// 1. Deserializes the input `value` into a `TaskDeprecationEvent`.
 /// 2. Extracts the `task_small_id` and `epoch` from the event.
 /// 3. Calls the `deprecate_task` method on the `AtomaStateManager` to update the task's status in the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_task_deprecation_event(
     state_manager: &AtomaStateManager,
     event: TaskDeprecationEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-task-deprecation-event",
         "Processing task deprecation event"
@@ -199,12 +199,12 @@ pub(crate) async fn handle_task_deprecation_event(
 /// The function performs the following steps:
 /// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_compute_unit`, and `max_num_compute_units` from the event.
 /// 2. Calls the `subscribe_node_to_task` method on the `AtomaStateManager` to update the node's subscription in the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_node_task_subscription_event(
     state_manager: &AtomaStateManager,
     event: NodeSubscribedToTaskEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-node-task-subscription-event",
         "Processing node subscription event"
@@ -250,12 +250,12 @@ pub(crate) async fn handle_node_task_subscription_event(
 /// The function performs the following steps:
 /// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_compute_unit`, and `max_num_compute_units` from the event.
 /// 2. Calls the `update_node_subscription` method on the `AtomaStateManager` to update the node's subscription in the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_node_task_subscription_updated_event(
     state_manager: &AtomaStateManager,
     event: NodeSubscriptionUpdatedEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-node-task-subscription-updated-event",
         "Processing node subscription updated event"
@@ -301,12 +301,12 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
 /// The function performs the following steps:
 /// 1. Extracts the `node_small_id` and `task_small_id` from the event.
 /// 2. Calls the `unsubscribe_node_from_task` method on the `AtomaStateManager` to update the node's subscription status in the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_node_task_unsubscription_event(
     state_manager: &AtomaStateManager,
     event: NodeUnsubscribedFromTaskEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-node-task-unsubscription-event",
         "Processing node unsubscription event"
@@ -348,18 +348,18 @@ pub(crate) async fn handle_node_task_unsubscription_event(
 /// 1. Extracts the `selected_node_id` from the event.
 /// 2. Checks if the `selected_node_id` is present in the `node_small_ids` slice.
 /// 3. If the node is valid, it converts the event into a stack object and inserts it into the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-created-event",
         "Processing stack created event"
     );
     let node_small_id = event.selected_node_id.inner;
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-created-event",
         "Stack selected current node, with id {node_small_id}, inserting new stack"
@@ -394,12 +394,12 @@ pub(crate) async fn handle_stack_created_event(
 /// The function performs the following steps:
 /// 1. Converts the `StackTrySettleEvent` into a stack settlement ticket.
 /// 2. Calls the `insert_new_stack_settlement_ticket` method on the `AtomaStateManager` to insert the ticket into the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_stack_try_settle_event(
     state_manager: &AtomaStateManager,
     event: StackTrySettleEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-try-settle-event",
         "Processing stack try settle event"
@@ -437,12 +437,12 @@ pub(crate) async fn handle_stack_try_settle_event(
 /// The function performs the following steps:
 /// 1. Extracts the `stack_small_id`, `attestation_node_id`, `committed_stack_proof`, and `stack_merkle_leaf` from the event.
 /// 2. Calls the `update_stack_settlement_ticket_with_attestation_commitments` method on the `AtomaStateManager` to update the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_new_stack_settlement_attestation_event(
     state_manager: &AtomaStateManager,
     event: NewStackSettlementAttestationEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-new-stack-settlement-attestation-event",
         "Processing new stack settlement attestation event"
@@ -489,12 +489,12 @@ pub(crate) async fn handle_new_stack_settlement_attestation_event(
 /// The function performs the following steps:
 /// 1. Extracts the `stack_small_id` and `dispute_settled_at_epoch` from the event.
 /// 2. Calls the `settle_stack_settlement_ticket` method on the `AtomaStateManager` to update the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_stack_settlement_ticket_event(
     state_manager: &AtomaStateManager,
     event: StackSettlementTicketEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-settlement-ticket-event",
         "Processing stack settlement ticket event"
@@ -533,12 +533,12 @@ pub(crate) async fn handle_stack_settlement_ticket_event(
 /// The function performs the following steps:
 /// 1. Extracts the `stack_small_id` and `user_refund_amount` from the event.
 /// 2. Calls the `update_stack_settlement_ticket_with_claim` method on the `AtomaStateManager` to update the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_stack_settlement_ticket_claimed_event(
     state_manager: &AtomaStateManager,
     event: StackSettlementTicketClaimedEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-settlement-ticket-claimed-event",
         "Processing stack settlement ticket claimed event"
@@ -577,12 +577,12 @@ pub(crate) async fn handle_stack_settlement_ticket_claimed_event(
 /// The function performs the following steps:
 /// 1. Converts the `StackAttestationDisputeEvent` into a stack attestation dispute object.
 /// 2. Calls the `insert_stack_attestation_dispute` method on the `AtomaStateManager` to insert the dispute into the database.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_stack_attestation_dispute_event(
     state_manager: &AtomaStateManager,
     event: StackAttestationDisputeEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-stack-attestation-dispute-event",
         "Processing stack attestation dispute event"
@@ -623,12 +623,12 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
 /// 2. For `GetAvailableStackWithComputeUnits`, it retrieves the available stack and sends the result.
 /// 3. For `UpdateStackNumTokens`, it updates the number of tokens for the specified stack.
 /// 4. For `UpdateStackTotalHash`, it updates the total hash for the specified stack.
-#[instrument(level = "trace", skip_all)]
+#[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_state_manager_event(
     state_manager: &AtomaStateManager,
     event: AtomaAtomaStateManagerEvent,
 ) -> Result<()> {
-    trace!(
+    info!(
         target = "atoma-state-handlers",
         event = "handle-state-manager-event",
         "Processing state manager event"
