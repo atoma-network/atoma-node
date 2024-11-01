@@ -712,6 +712,7 @@ async fn submit_node_registration_tx(
             error!("Failed to submit node registration tx");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+    info!("Node registration tx submitted: {}", tx_digest);
     Ok(Json(NodeRegistrationResponse { tx_digest }))
 }
 

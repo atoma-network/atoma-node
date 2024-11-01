@@ -41,13 +41,20 @@ const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 /// and managing transactions. It maintains a wallet context and optionally stores
 /// a node badge representing the client's node registration status.
 pub struct AtomaSuiClient {
+    
     /// Configuration settings for the Atoma client, including paths and timeouts.
     config: AtomaSuiConfig,
+   
     /// The wallet context used for managing blockchain interactions.
     wallet_ctx: WalletContext,
+    
     /// An optional tuple containing the ObjectID and small ID of the node badge,
     /// which represents the node's registration in the Atoma network.
     node_badge: Option<(ObjectID, u64)>,
+
+    /// The ObjectID of the Toma wallet address
+    /// for the current operator
+    toma_wallet_id: Option<ObjectID>,
 }
 
 impl AtomaSuiClient {
@@ -70,6 +77,7 @@ impl AtomaSuiClient {
             config,
             wallet_ctx,
             node_badge,
+            toma_wallet_id: None,
         })
     }
 
@@ -147,6 +155,7 @@ impl AtomaSuiClient {
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
+        let toma_wallet_address = self.get_or_load_toma_wallet_object_id().await?;
         let tx = client
             .transaction_builder()
             .move_call(
@@ -157,7 +166,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::from_object_id(self.config.toma_package_id()),
+                    SuiJsonValue::from_object_id(toma_wallet_address),
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -996,6 +1005,50 @@ impl AtomaSuiClient {
 
         Ok(response.digest.to_string())
     }
+
+    /// Get or load the TOMA wallet object ID
+    ///
+    /// This method checks if the TOMA wallet object ID is already loaded and returns it if so.
+    /// Otherwise, it loads the TOMA wallet object ID by finding the most balance TOMA coin for the active address.
+    ///
+    /// # Returns
+    ///
+    /// Returns the TOMA wallet object ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no TOMA wallet is found for the active address.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let mut client = AtomaProxy::new(config).await?;
+    /// let toma_wallet_id = client.get_or_load_toma_wallet_object_id().await?;
+    /// ```
+    #[instrument(level = "info", skip_all, fields(
+        endpoint = "get_or_load_toma_wallet_object_id",
+        address = %self.wallet_ctx.active_address().unwrap()
+    ))]
+    pub async fn get_or_load_toma_wallet_object_id(&mut self) -> Result<ObjectID> {
+        if let Some(toma_wallet_id) = self.toma_wallet_id {
+            Ok(toma_wallet_id)
+        } else {
+            let active_address = self.wallet_ctx.active_address()?;
+            match utils::find_toma_token_wallet(
+                &self.wallet_ctx.get_client().await?,
+                self.config.toma_package_id(),
+                active_address,
+            )
+            .await
+            {
+                Ok(toma_wallet) => {
+                    self.toma_wallet_id = Some(toma_wallet);
+                    Ok(toma_wallet)
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -1010,6 +1063,10 @@ pub enum AtomaSuiClientError {
     AtomaSuiClientError(#[from] sui_sdk::error::Error),
     #[error("Node is not subscribed to model {0}")]
     NodeNotSubscribedToModel(String),
+    #[error("No TOMA wallet found")]
+    NoTomaWalletFound,
+    #[error("No TOMA tokens found")]
+    NoTomaTokensFound,
 }
 
 pub(crate) mod utils {
@@ -1143,5 +1200,39 @@ pub(crate) mod utils {
             cursor = next_cursor;
         }
         None
+    }
+
+    /// Find the TOMA token wallet for the given address
+    ///
+    /// # Returns
+    ///
+    /// Returns the TOMA token wallet object ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no TOMA wallet is found for the active address.
+    #[instrument(level = "info", skip_all, fields(
+        endpoint = "find_toma_token_wallet",
+        address = %active_address
+    ))]
+    pub(crate) async fn find_toma_token_wallet(
+        client: &SuiClient,
+        toma_package: ObjectID,
+        active_address: SuiAddress,
+    ) -> Result<ObjectID> {
+        let Page { data: coins, .. } = client
+            .coin_read_api()
+            .get_coins(
+                active_address,
+                Some(format!("{toma_package}::toma::TOMA")),
+                None,
+                None,
+            )
+            .await?;
+        coins
+            .into_iter()
+            .max_by_key(|coin| coin.balance)
+            .map(|coin| coin.coin_object_id)
+            .ok_or_else(|| AtomaSuiClientError::NoTomaTokensFound)
     }
 }
