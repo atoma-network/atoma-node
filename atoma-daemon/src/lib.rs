@@ -1,7 +1,5 @@
 pub mod config;
 pub mod daemon;
-#[cfg(test)]
-pub mod tests;
 pub mod types;
 
 use axum::http::StatusCode;
@@ -234,7 +232,7 @@ pub(crate) fn calculate_node_index(
 }
 
 #[cfg(test)]
-mod unit_tests {
+mod tests {
     use super::*;
 
     #[test]
