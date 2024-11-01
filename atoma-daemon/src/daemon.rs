@@ -141,6 +141,7 @@ pub async fn run_daemon(
 /// * `GET /subscriptions/:id` - Get subscriptions for a specific node
 /// * `POST /model_subscribe` - Subscribe a node to a model
 /// * `POST /task_subscribe` - Subscribe a node to a task
+/// * `POST /task_update_subscription` - Updates an already existing subscription to a task
 /// * `POST /task_unsubscribe` - Unsubscribe a node from a task
 ///
 /// ## Task Management
@@ -213,6 +214,10 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         .route("/register", post(submit_node_registration_tx))
         .route("/model_subscribe", post(submit_node_model_subscription_tx))
         .route("/task_subscribe", post(submit_node_task_subscription_tx))
+        .route(
+            "/task_update_subscription",
+            post(submit_update_node_task_subscription_tx),
+        )
         .route(
             "/task_unsubscribe",
             post(submit_node_task_unsubscription_tx),
@@ -845,6 +850,36 @@ async fn submit_node_task_subscription_tx(
     Ok(Json(NodeTaskSubscriptionResponse { tx_digest }))
 }
 
+/// Submits a node task update subscription transaction.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the client for transaction submission.
+/// * `value` - A JSON payload containing the node task subscription request details.
+///
+/// # Returns
+/// * `Result<Json<NodeTaskUpdateSubscriptionResponse>>` - A JSON response containing the transaction digest.
+///   - `Ok(Json<NodeTaskSubscriptionResponse>)` - Successfully submitted the node task subscription transaction.
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to submit the transaction.
+///
+/// # Example Request
+/// ```json
+/// {
+///     "task_small_id": 123,
+///     "node_small_id": 456,
+///     "price_per_compute_unit": 10,
+///     "max_num_compute_units": 100,
+///     "gas": "0x789",
+///     "gas_budget": 1000,
+///     "gas_price": 10
+/// }
+/// ```
+///
+/// # Example Response
+/// ```json
+/// {
+///     "tx_digest": "0xabc"
+/// }
+/// ```
 #[instrument(level = "trace", skip_all)]
 pub async fn submit_update_node_task_subscription_tx(
     State(daemon_state): State<DaemonState>,
