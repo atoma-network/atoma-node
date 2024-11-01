@@ -434,11 +434,11 @@ impl AtomaSuiClient {
     /// ```
     #[instrument(level = "info", skip_all, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
-        task_small_id = %task_small_id,
         price_per_compute_unit = %price_per_compute_unit,
         max_num_compute_units = %max_num_compute_units,
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_update_node_task_subscription_tx(
         &mut self,
         task_small_id: u64,
