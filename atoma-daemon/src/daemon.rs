@@ -21,7 +21,9 @@ use crate::{
         NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse,
         NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest,
         NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
-        NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
+        NodeTaskUnsubscriptionResponse, NodeTaskUpdateSubscriptionRequest,
+        NodeTaskUpdateSubscriptionResponse, NodeTrySettleStacksRequest,
+        NodeTrySettleStacksResponse,
     },
     CommittedStackProof,
 };
@@ -841,6 +843,41 @@ async fn submit_node_task_subscription_tx(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(NodeTaskSubscriptionResponse { tx_digest }))
+}
+
+#[instrument(level = "trace", skip_all)]
+pub async fn submit_update_node_task_subscription_tx(
+    State(daemon_state): State<DaemonState>,
+    Json(request): Json<NodeTaskUpdateSubscriptionRequest>,
+) -> Result<Json<NodeTaskUpdateSubscriptionResponse>> {
+    let NodeTaskUpdateSubscriptionRequest {
+        task_small_id,
+        node_badge_id,
+        price_per_compute_unit,
+        max_num_compute_units,
+        gas,
+        gas_budget,
+        gas_price,
+    } = request;
+    let tx_digest = daemon_state
+        .client
+        .write()
+        .await
+        .submit_update_node_task_subscription_tx(
+            task_small_id as u64,
+            node_badge_id,
+            price_per_compute_unit,
+            max_num_compute_units,
+            gas,
+            gas_budget,
+            gas_price,
+        )
+        .await
+        .map_err(|_| {
+            error!("Failed to submit node task update subscription");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(NodeTaskUpdateSubscriptionResponse { tx_digest }))
 }
 
 /// Submits a node task unsubscription transaction.
