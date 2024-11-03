@@ -11,8 +11,8 @@
 
 Atoma is a decentralized cloud compute network for AI that enables:
 
-- **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc, through Atoma's novel Sampling Consensus algorithm (see [paper](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf))
-- **Private Inference**: Secure processing with strong privacy guarantees, through the use of secure hardware enclaves (see [Atoma's private compute paper](https://arxiv.org/abs/2410.13752))
+- **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc, through Atoma's novel Sampling Consensus algorithm (see Atoma's [whitepaper](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf))
+- **Private Inference**: Secure processing with strong privacy guarantees, through the use of secure hardware enclaves (see [Atoma's confidential compute paper](https://arxiv.org/abs/2410.13752))
 - **Decentralized Infrastructure**: A permissionless network of compute nodes, orchestrated by Atoma's smart contract on the Sui blockchain (see [repo](https://github.com/atoma-network/atoma-contracts))
 - **LLM Focus**: Specialized in serving Large Language Models compute.
 
@@ -30,19 +30,179 @@ This repository contains the node software that enables node operators to partic
 
 ## Spawn an Atoma Node
 
+### Install the Sui client locally
+
+The first step in setting up an Atoma node is installing the Sui client locally. Please refer to the [Sui installation guide](https://docs.sui.io/build/install) for more information.
+
+Once you have the Sui client installed, locally, you need to connect to a Sui RPC node to be able to interact with the Sui blockchain and therefore the Atoma smart contract. Please refer to the [Connect to a Sui Network guide](https://docs.sui.io/guides/developer/getting-started/connect) for more information.
+
+You then need to create a wallet and fund it with some testnet SUI. Please refer to the [Sui wallet guide](https://docs.sui.io/guides/developer/getting-started/get-address) for more information. If you are plan to run the Atoma node on Sui's testnet, you can request testnet SUI tokens by following the [docs](https://docs.sui.io/guides/developer/getting-started/get-coins).
+
 ### Docker Deployment
+
+#### Prerequisites
+- Docker and Docker Compose installed
+- NVIDIA Container Toolkit installed (for GPU support)
+- Access to HuggingFace models (and token if using gated models)
+- Sui wallet configuration
 
 #### Quickstart
 
-1. Configure `.env`, using as a template `.env.example`
-
-2. Fill the `config.toml` file, using `config.example.toml` as a template
-
-3. Start container
-
+1. Clone the repository
+```bash
+git clone https://github.com/atoma-network/atoma-node.git
+cd atoma-node
 ```
-docker compose up
+
+2. Configure environment variables by creating `.env` file:
+```bash
+# Hugging Face Configuration
+HF_CACHE_PATH=~/.cache/huggingface
+HF_TOKEN=   # Required for gated models
+
+# Inference Server Configuration
+INFERENCE_SERVER_PORT=50000    # External port for vLLM service
+MODEL=meta-llama/Llama-3.1-70B-Instruct
+MAX_MODEL_LEN=4096            # Context length
+GPU_COUNT=1                   # Number of GPUs to use
+TENSOR_PARALLEL_SIZE=1        # Should be equal to GPU_COUNT
+
+# Sui Configuration
+SUI_CONFIG_PATH=~/.sui/sui_config
+
+# Atoma Node Service Configuration
+ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 ```
+
+3. Configure `config.toml`, using `config.example.toml` as template:
+```toml
+[atoma-service]
+inference_service_url = "http://vllm:8000"    # Internal Docker network URL
+embeddings_service_url = ""
+multimodal_service_url = ""
+models = ["meta-llama/Llama-3.1-70B-Instruct"]
+revisions = [""]
+service_bind_address = "0.0.0.0:3000"         # Bind to all interfaces
+
+[atoma-sui]
+http_rpc_node_addr = ""
+atoma_db = ""
+atoma_package_id = ""
+toma_package_id = ""
+request_timeout = { secs = 300, nanos = 0 }
+max_concurrent_requests = 10
+limit = 100
+node_small_ids = [0, 1, 2]  # List of node IDs under control
+task_small_ids = []         # List of task IDs under control
+sui_config_path = "/root/.sui/sui_config/client.yaml"
+sui_keystore_path = "/root/.sui/sui_config/sui.keystore"
+
+[atoma-state]
+database_url = "sqlite:///app/data/atoma.db"
+```
+
+4. Create required directories
+```bash
+mkdir -p data logs
+```
+
+5. Start the containers
+```bash
+# Build and start all services
+docker compose up --build
+
+# Or run in detached mode
+docker compose up -d --build
+```
+
+#### Container Architecture
+The deployment consists of two main services:
+- **vLLM Service**: Handles the AI model inference
+- **Atoma Node**: Manages the node operations and connects to the Atoma Network
+
+#### Service URLs
+- vLLM Service: `http://localhost:50000` (configured via INFERENCE_SERVER_PORT)
+- Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT)
+
+#### Volume Mounts
+- HuggingFace cache: `~/.cache/huggingface:/root/.cache/huggingface`
+- Sui configuration: `~/.sui/sui_config:/root/.sui/sui_config`
+- Logs: `./logs:/app/logs`
+- SQLite database: `./data:/app/data`
+
+#### Managing the Deployment
+
+Check service status:
+```bash
+docker compose ps
+```
+
+View logs:
+```bash
+# All services
+docker compose logs
+
+# Specific service
+docker compose logs atoma-node
+docker compose logs vllm
+
+# Follow logs
+docker compose logs -f
+```
+
+Stop services:
+```bash
+docker compose down
+```
+
+#### Troubleshooting
+
+1. Check if services are running:
+```bash
+docker compose ps
+```
+
+2. Test vLLM service:
+```bash
+curl http://localhost:50000/health
+```
+
+3. Test Atoma Node service:
+```bash
+curl http://localhost:3000/health
+```
+
+4. Check GPU availability:
+```bash
+docker compose exec vllm nvidia-smi
+```
+
+5. View container networks:
+```bash
+docker network ls
+docker network inspect atoma-network
+```
+
+#### Security Considerations
+
+1. Firewall Configuration
+```bash
+# Allow Atoma service port
+sudo ufw allow 3000/tcp
+
+# Allow vLLM service port
+sudo ufw allow 50000/tcp
+```
+
+2. HuggingFace Token
+- Store HF_TOKEN in .env file
+- Never commit .env file to version control
+- Consider using Docker secrets for production deployments
+
+3. Sui Configuration
+- Ensure Sui configuration files have appropriate permissions
+- Keep keystore file secure and never commit to version control
+
 
 ### Manual deployment 
 

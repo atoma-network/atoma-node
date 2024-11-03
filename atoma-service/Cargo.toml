@@ -17,10 +17,12 @@ base64 = { workspace = true }
 blake2 = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
+dotenv = { workspace = true }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+hf-hub = { workspace = true }
 hyper = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }

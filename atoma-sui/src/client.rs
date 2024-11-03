@@ -24,7 +24,7 @@ const NODE_TASK_SUBSCRIPTION_METHOD: &str = "subscribe_node_to_task";
 /// The Atoma's contract method name for node task unsubscription
 const NODE_TASK_UNSUBSCRIPTION_METHOD: &str = "unsubscribe_node_from_task";
 /// The Atoma's contract method name for trying to settle a stack
-const TRY_SETLE_STACK_METHOD: &str = "try_settle_stack";
+const TRY_SETTLE_STACK_METHOD: &str = "try_settle_stack";
 /// The Atoma's contract method name for stack settlement attestation
 const STACK_SETTLEMENT_ATTESTATION_METHOD: &str = "submit_stack_settlement_attestation";
 /// The Atoma's contract method name for starting an attestation dispute
@@ -50,8 +50,7 @@ pub struct AtomaSuiClient {
 
 impl AtomaSuiClient {
     /// Constructor
-    pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self> {
-        let config = AtomaSuiConfig::from_file_path(config_path);
+    pub async fn new(config: AtomaSuiConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
         let mut wallet_ctx = WalletContext::new(
@@ -70,6 +69,29 @@ impl AtomaSuiClient {
             wallet_ctx,
             node_badge,
         })
+    }
+
+    /// Creates a new `AtomaSuiClient` instance from a configuration file.
+    ///
+    /// This method reads the configuration from the specified file path and initializes
+    /// a new `AtomaSuiClient` with the loaded configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_path` - A path-like type that represents the location of the configuration file.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - A Result containing the new `AtomaSuiClient` instance if successful,
+    ///   or an error if the configuration couldn't be read.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * The configuration file cannot be read or parsed.
+    pub async fn new_from_config<P: AsRef<Path>>(config_path: P) -> Result<Self> {
+        let config = AtomaSuiConfig::from_file_path(config_path);
+        Self::new(config).await
     }
 
     /// Submits a transaction to register a node in the Atoma network.
@@ -350,8 +372,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(task_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
                     SuiJsonValue::new(max_num_compute_units.to_string().into())?,
                 ],
@@ -447,8 +469,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(task_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(task_small_id.to_string().into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -552,12 +574,12 @@ impl AtomaSuiClient {
                 active_address,
                 self.config.atoma_package_id(),
                 MODULE_ID,
-                TRY_SETLE_STACK_METHOD,
+                TRY_SETTLE_STACK_METHOD,
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(num_claimed_compute_units.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                     SuiJsonValue::new(stack_merkle_leaf.into())?,
@@ -665,8 +687,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                     SuiJsonValue::new(stack_merkle_leaf.into())?,
                 ],
@@ -769,8 +791,8 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
-                    SuiJsonValue::new(stack_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
+                    SuiJsonValue::new(stack_small_id.to_string().into())?,
                     SuiJsonValue::new(committed_stack_proof.into())?,
                 ],
                 gas,
@@ -867,7 +889,7 @@ impl AtomaSuiClient {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::new(node_small_id.into())?,
+                    SuiJsonValue::new(node_small_id.to_string().into())?,
                     SuiJsonValue::new(settled_ticket_ids.into())?,
                 ],
                 gas,
@@ -915,8 +937,6 @@ pub(crate) mod utils {
 
     /// The name of the Atoma's contract node badge type
     const DB_NODE_TYPE_NAME: &str = "NodeBadge";
-    /// The page size for querying a user's owned objects
-    const PAGE_SIZE: usize = 100;
 
     /// Retrieves the node badge (ObjectID and small_id) associated with a given address.
     ///
@@ -991,7 +1011,7 @@ pub(crate) mod utils {
                         }),
                     }),
                     cursor,
-                    Some(PAGE_SIZE),
+                    None,
                 )
                 .await
             {

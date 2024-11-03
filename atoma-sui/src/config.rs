@@ -8,7 +8,7 @@ use sui_sdk::types::base_types::ObjectID;
 ///
 /// This struct holds the necessary configuration parameters for connecting to and
 /// interacting with a Sui network, including URLs, package ID, timeout, and small IDs.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AtomaSuiConfig {
     /// The HTTP URL for a Sui RPC node, to which the subscriber will connect
     /// This is used for making HTTP requests to the Sui RPC node
@@ -41,18 +41,21 @@ pub struct AtomaSuiConfig {
     /// A list of node small IDs
     /// These are values used to identify the Atoma's nodes that are under control by
     /// current Sui wallet
-    node_small_ids: Vec<u64>,
+    node_small_ids: Option<Vec<u64>>,
 
     /// A list of task small IDs
     /// These are values used to identify the Atoma's tasks that are under control by
     /// current Sui wallet
-    task_small_ids: Vec<u64>,
+    task_small_ids: Option<Vec<u64>>,
 
     /// Sui's config path
     sui_config_path: String,
 
     /// Sui's keystore path
     sui_keystore_path: String,
+
+    /// Path to the cursor file where the cursor is stored
+    cursor_path: String,
 }
 
 impl AtomaSuiConfig {
@@ -65,11 +68,12 @@ impl AtomaSuiConfig {
         toma_package_id: ObjectID,
         request_timeout: Option<Duration>,
         limit: Option<usize>,
-        node_small_ids: Vec<u64>,
-        task_small_ids: Vec<u64>,
+        node_small_ids: Option<Vec<u64>>,
+        task_small_ids: Option<Vec<u64>>,
         max_concurrent_requests: Option<u64>,
         sui_config_path: String,
         sui_keystore_path: String,
+        cursor_path: String,
     ) -> Self {
         Self {
             http_rpc_node_addr,
@@ -83,6 +87,7 @@ impl AtomaSuiConfig {
             max_concurrent_requests,
             sui_config_path,
             sui_keystore_path,
+            cursor_path,
         }
     }
 
@@ -117,12 +122,12 @@ impl AtomaSuiConfig {
     }
 
     /// Getter for `small_id`
-    pub fn node_small_ids(&self) -> Vec<u64> {
+    pub fn node_small_ids(&self) -> Option<Vec<u64>> {
         self.node_small_ids.clone()
     }
 
     /// Getter for `task_small_ids`
-    pub fn task_small_ids(&self) -> Vec<u64> {
+    pub fn task_small_ids(&self) -> Option<Vec<u64>> {
         self.task_small_ids.clone()
     }
 
@@ -139,6 +144,11 @@ impl AtomaSuiConfig {
     /// Getter for `sui_keystore_path`
     pub fn sui_keystore_path(&self) -> String {
         self.sui_keystore_path.clone()
+    }
+
+    /// Getter for `cursor_path`
+    pub fn cursor_path(&self) -> String {
+        self.cursor_path.clone()
     }
 
     /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
@@ -198,15 +208,16 @@ pub mod tests {
                 .unwrap(),
             Some(Duration::from_secs(5 * 60)),
             Some(10),
-            vec![0, 1, 2],
-            vec![3, 4, 5],
+            Some(vec![0, 1, 2]),
+            Some(vec![3, 4, 5]),
             Some(10),
+            "".to_string(),
             "".to_string(),
             "".to_string(),
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\ncursor_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }
