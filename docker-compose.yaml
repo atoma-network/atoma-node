@@ -16,6 +16,7 @@ services:
     networks: atoma-network
 
   vllm:
+    container_name: chat-completions
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.6.3
     runtime: nvidia
@@ -36,6 +37,7 @@ services:
     networks: atoma-network
 
   tei:
+    container_name: embeddings
     profiles: [embeddings_tei]
     image: ${TEI_IMAGE}
     runtime: nvidia
