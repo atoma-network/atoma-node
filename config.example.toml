@@ -2,7 +2,7 @@
 inference_service_url = "http://vllm:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
 models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = ["main"]
-service_bind_address = "0.0.0.0:8080"
+service_bind_address = "0.0.0.0:3000"
 
 [atoma-sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443" # Current RPC node address for testnet
@@ -19,3 +19,9 @@ cursor_path = "./cursor.toml" # Path to the Sui events cursor file
 
 [atoma-state]
 database_url = "sqlite:///app/data/atoma.db"  # Path inside the container
+
+[atoma-daemon]
+service_bind_address = "127.0.0.1:3001"
+node_badges = [
+    ["0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600", 1]
+] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself

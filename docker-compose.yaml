@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BINARY: atoma-node
     volumes:
       - ./config.toml:/app/config.toml
       - ./logs:/app/logs
@@ -35,6 +37,24 @@ services:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"  # Expose Atoma service port
     depends_on:
       - vllm
+    networks:
+      - atoma-network
+
+  atoma-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: atoma-daemon
+    volumes:
+      - ./config.toml:/app/config.toml
+      - ./logs:/app/logs
+      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+      - ./data:/app/data
+    env_file:
+      - .env
+    ports:
+      - "${ATOMA_DAEMON_PORT:-3001}:3001"  # Expose Atoma daemon port
     networks:
       - atoma-network
 
