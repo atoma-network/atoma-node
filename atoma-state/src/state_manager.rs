@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
@@ -7,8 +9,8 @@ use crate::types::{
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::{sqlite::SqliteConnectOptions, Sqlite, SqlitePool};
 use sqlx::{FromRow, Row};
-use sqlx::{Sqlite, SqlitePool};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 
@@ -50,7 +52,10 @@ impl AtomaStateManager {
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+        // Create connection options with create_if_missing enabled
+        let connect_options =
+            SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
+        let db = SqlitePool::connect_with(connect_options).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
@@ -284,11 +289,8 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO tasks (
                 task_small_id, task_id, role, model_name, is_deprecated,
-                valid_until_epoch, deprecated_at_epoch, optimizations,
-                security_level, task_metrics_compute_unit,
-                task_metrics_time_unit, task_metrics_value,
-                minimum_reputation_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                valid_until_epoch, security_level, minimum_reputation_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.task_small_id)
         .bind(task.task_id)
@@ -296,12 +298,7 @@ impl AtomaState {
         .bind(task.model_name)
         .bind(task.is_deprecated)
         .bind(task.valid_until_epoch)
-        .bind(task.deprecated_at_epoch)
-        .bind(task.optimizations)
         .bind(task.security_level)
-        .bind(task.task_metrics_compute_unit)
-        .bind(task.task_metrics_time_unit)
-        .bind(task.task_metrics_value)
         .bind(task.minimum_reputation_score)
         .execute(&self.db)
         .await?;
@@ -2093,6 +2090,8 @@ pub enum AtomaStateManagerError {
     FailedToRetrieveExistingTotalHash(i64),
     #[error("Failed to send result to channel")]
     ChannelSendError,
+    #[error("Failed to create database directory")]
+    FailedToCreateDatabaseDirectory(#[from] std::io::Error),
 }
 
 pub(crate) mod queries {
@@ -2112,11 +2111,7 @@ pub(crate) mod queries {
     /// - `is_deprecated`: BOOLEAN NOT NULL - Indicates whether the task is deprecated.
     /// - `valid_until_epoch`: INTEGER - The epoch until which the task is valid (nullable).
     /// - `deprecated_at_epoch`: INTEGER - The epoch when the task was deprecated (nullable).
-    /// - `optimizations`: TEXT NOT NULL - A string representing task optimizations.
     /// - `security_level`: INTEGER NOT NULL - The security level of the task.
-    /// - `task_metrics_compute_unit`: INTEGER NOT NULL - The compute unit metric for the task.
-    /// - `task_metrics_time_unit`: INTEGER - The time unit metric for the task (nullable).
-    /// - `task_metrics_value`: INTEGER - The value metric for the task (nullable).
     /// - `minimum_reputation_score`: INTEGER - The minimum reputation score required (nullable).
     ///
     /// # Primary Key
@@ -2136,11 +2131,7 @@ pub(crate) mod queries {
                 is_deprecated BOOLEAN NOT NULL,
                 valid_until_epoch INTEGER,
                 deprecated_at_epoch INTEGER,
-                optimizations TEXT NOT NULL,
                 security_level INTEGER NOT NULL,
-                task_metrics_compute_unit INTEGER NOT NULL,
-                task_metrics_time_unit INTEGER,
-                task_metrics_value INTEGER,
                 minimum_reputation_score INTEGER
             )"
         .to_string()
@@ -2173,7 +2164,7 @@ pub(crate) mod queries {
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
         );
-        CREATE INDEX IF NOT EXISTS retrieval_index ON node_subscriptions (task_small_id, node_small_id);"
+        CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id ON node_subscriptions (task_small_id, node_small_id);"
         .to_string()
     }
 
@@ -2214,8 +2205,8 @@ pub(crate) mod queries {
                 num_total_messages INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
             );
-            CREATE INDEX IF NOT EXISTS owner_address_index ON stacks (owner_address);
-            CREATE INDEX IF NOT EXISTS stack_small_id_index ON stacks (stack_small_id);"
+            CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);
+            CREATE INDEX IF NOT EXISTS idx_stacks_stack_small_id ON stacks (stack_small_id);"
         .to_string()
     }
 
@@ -2261,7 +2252,7 @@ pub(crate) mod queries {
             user_refund_amount INTEGER NOT NULL,
             is_claimed BOOLEAN NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS stack_small_id_index ON stack_settlement_tickets (stack_small_id);"
+        CREATE INDEX IF NOT EXISTS idx_stack_settlement_tickets_stack_small_id ON stack_settlement_tickets (stack_small_id);"
         .to_string()
     }
 
@@ -2370,11 +2361,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
 
@@ -2395,11 +2382,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
 
@@ -2423,11 +2406,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         let task2 = Task {
@@ -2438,11 +2417,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt2".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task1.clone()).await.unwrap();
@@ -2472,11 +2447,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2523,11 +2494,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2570,11 +2537,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2622,11 +2585,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2686,11 +2645,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2784,11 +2739,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -2894,11 +2845,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3011,11 +2958,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3085,11 +3028,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3185,11 +3124,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3383,11 +3318,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3461,11 +3392,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3541,11 +3468,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3703,11 +3626,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3784,11 +3703,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3867,11 +3782,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -3976,11 +3887,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -4125,11 +4032,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();
@@ -4253,11 +4156,7 @@ mod tests {
             is_deprecated: false,
             valid_until_epoch: Some(100),
             deprecated_at_epoch: None,
-            optimizations: "opt1".to_string(),
             security_level: 1,
-            task_metrics_compute_unit: 10,
-            task_metrics_time_unit: Some(5),
-            task_metrics_value: Some(100),
             minimum_reputation_score: Some(50),
         };
         state_manager.insert_new_task(task).await.unwrap();

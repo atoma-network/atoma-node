@@ -18,6 +18,8 @@ use tracing::{error, info, instrument, trace};
 const DB_MODULE_NAME: &str = "db";
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
+/// The amount of main loop iterations in order to update the cursor file.
+const CURSOR_FILE_UPDATE_ITERATIONS: u64 = 10;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
@@ -30,16 +32,6 @@ pub struct SuiEventSubscriber {
     config: AtomaSuiConfig,
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
-    /// The ID of the last processed event, used for pagination.
-    cursor: Option<EventID>,
-    /// Node small IDs
-    /// These are values used to identify the Atoma's nodes that are under control by
-    /// current Sui wallet
-    node_small_ids: Option<Vec<u64>>,
-    /// Task small IDs
-    /// These are values used to identify the Atoma's tasks that are under control by
-    /// current Sui wallet
-    task_small_ids: Option<Vec<u64>>,
     /// Sender to stream each received event to the `AtomaStateManager` running task.
     state_manager_sender: Sender<AtomaEvent>,
     /// The shutdown signal.
@@ -53,16 +45,6 @@ impl SuiEventSubscriber {
         state_manager_sender: Sender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let node_small_ids = if config.node_small_ids().is_empty() {
-            None
-        } else {
-            Some(config.node_small_ids())
-        };
-        let task_small_ids = if config.task_small_ids().is_empty() {
-            None
-        } else {
-            Some(config.task_small_ids())
-        };
         let filter = EventFilter::MoveModule {
             package: config.atoma_package_id(),
             module: Identifier::new(DB_MODULE_NAME).unwrap(),
@@ -70,9 +52,6 @@ impl SuiEventSubscriber {
         Self {
             config,
             filter,
-            cursor: None,
-            node_small_ids,
-            task_small_ids,
             state_manager_sender,
             shutdown_signal,
         }
@@ -157,7 +136,7 @@ impl SuiEventSubscriber {
     /// * There's a failure in building the Sui client.
     /// * Event querying encounters an error.
     /// * Event processing or handling fails (though these are currently logged and not propagated).
-    #[instrument(level = "info", skip_all, fields(package_id))]
+    #[instrument(level = "trace", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
         let package_id = self.config.atoma_package_id();
         let limit = self.config.limit();
@@ -169,9 +148,11 @@ impl SuiEventSubscriber {
             "Starting to run events subscriber, for package: {package_id}"
         );
 
+        let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
+        let mut cursor_update_iteration_count = 0;
         loop {
             tokio::select! {
-                    page = client.event_api().query_events(self.filter.clone(), self.cursor, limit, false) => {
+                    page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
                         let EventPage {
                             data,
                             next_cursor,
@@ -187,7 +168,10 @@ impl SuiEventSubscriber {
                                 continue;
                             }
                         };
-                        self.cursor = next_cursor;
+                        cursor = next_cursor;
+                        if cursor_update_iteration_count % CURSOR_FILE_UPDATE_ITERATIONS == 0 {
+                            write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
+                        }
 
                         for sui_event in data {
                             let event_name = sui_event.type_.name;
@@ -199,9 +183,23 @@ impl SuiEventSubscriber {
                             );
                             match AtomaEventIdentifier::from_str(event_name.as_str()) {
                                 Ok(atoma_event_id) => {
-                                    let atoma_event =
-                                        parse_event(&atoma_event_id, sui_event.parsed_json).await?;
-                                    if filter_event(&atoma_event, self.node_small_ids.as_ref(), self.task_small_ids.as_ref()) {
+                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json).await {
+                                        Ok(atoma_event) => atoma_event,
+                                        Err(e) => {
+                                            error!(
+                                                target = "atoma-sui-subscriber",
+                                                event = "subscriber-event-parse-error",
+                                                event_name = %event_name,
+                                                "Failed to parse event: {e}",
+                                            );
+                                            continue;
+                                        }
+                                    };
+                                    if filter_event(
+                                        &atoma_event,
+                                        self.config.node_small_ids().as_ref(),
+                                        self.config.task_small_ids().as_ref(),
+                                    ) {
                                         self.state_manager_sender
                                             .send(atoma_event)
                                             .map_err(Box::new)?;
@@ -218,11 +216,12 @@ impl SuiEventSubscriber {
                                     // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                                 }
                             }
+                            cursor_update_iteration_count += 1;
                         }
 
                         if !has_next_page {
                             // No new events to read, so let's wait for a while
-                            info!(
+                            trace!(
                                 target = "atoma-sui-subscriber",
                                 event = "subscriber-no-new-events",
                                 wait_duration = DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
@@ -243,6 +242,8 @@ impl SuiEventSubscriber {
                                     event = "subscriber-stopped",
                                     "Shutdown signal received, gracefully stopping subscriber..."
                                 );
+                                // Update the config file with the current cursor
+                                write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
                                 break;
                             }
                         }
@@ -259,6 +260,79 @@ impl SuiEventSubscriber {
         }
         Ok(())
     }
+}
+
+/// Reads an event cursor from a TOML file.
+///
+/// This function attempts to read and parse an event cursor from the specified file path.
+/// If the file doesn't exist, it will return `None`. If the file
+/// exists, it will attempt to parse its contents as an `EventID`.
+///
+/// # Arguments
+///
+/// * `path` - A string slice containing the path to the TOML file
+///
+/// # Returns
+///
+/// * `Result<Option<EventID>>` - Returns:
+///   * `Ok(Some(EventID))` if the file exists and was successfully parsed
+///   * `Ok(None)` if the file doesn't exist (and was created)
+///   * `Err(SuiEventSubscriberError)` if:
+///     * The file exists but couldn't be read
+///     * The file contents couldn't be parsed as TOML
+///     * The file couldn't be created when not found
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let path = "cursor.toml";
+/// match read_cursor_from_toml_file(path) {
+///     Ok(Some(cursor)) => println!("Read cursor: {:?}", cursor),
+///     Ok(None) => println!("No cursor found, created empty file"),
+///     Err(e) => eprintln!("Error reading cursor: {}", e),
+/// }
+/// ```
+fn read_cursor_from_toml_file(path: &str) -> Result<Option<EventID>> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(SuiEventSubscriberError::CursorFileError(e)),
+    };
+
+    Ok(Some(toml::from_str(&content)?))
+}
+
+/// Writes an event cursor to a TOML file.
+///
+/// This function takes an optional event cursor and writes it to the specified file path
+/// in TOML format. If the cursor is `None`, no file will be written.
+///
+/// # Arguments
+///
+/// * `cursor` - An `Option<EventID>` representing the event cursor to be written
+/// * `path` - A string slice containing the path where the TOML file should be written
+///
+/// # Returns
+///
+/// * `Result<()>` - Returns `Ok(())` if the write was successful, or an error if:
+///   * The cursor serialization to TOML fails
+///   * The file write operation fails
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use sui_sdk::types::event::EventID;
+///
+/// let cursor = Some(EventID::default());
+/// let path = "cursor.toml";
+/// write_cursor_to_toml_file(cursor, path).expect("Failed to write cursor");
+/// ```
+fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> {
+    if let Some(cursor) = cursor {
+        let toml_str = toml::to_string(&cursor)?;
+        std::fs::write(path, toml_str)?;
+    }
+    Ok(())
 }
 
 /// Handles various Atoma events by delegating to specific handler functions based on the event type.
@@ -545,14 +619,22 @@ pub enum SuiEventSubscriberError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Failed to send event to state manager: {0}")]
     SendEventError(#[from] Box<flume::SendError<AtomaEvent>>),
+    #[error("Failed to read/write cursor to file: {0}")]
+    CursorFileError(#[from] std::io::Error),
+    #[error("Failed to serialize cursor: {0}")]
+    SerializeCursorError(#[from] toml::ser::Error),
+    #[error("Failed to deserialize cursor: {0}")]
+    DeserializeCursorError(#[from] toml::de::Error),
 }
 
 #[cfg(test)]
 mod tests {
     use crate::events::{
-        NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, StackCreatedEvent,
-        StackSmallId, TaskMetrics, TaskRegisteredEvent, TaskRole, TaskSmallId,
+        NodeSmallId, NodeSubscribedToTaskEvent, NodeUnsubscribedFromTaskEvent, SecurityLevel,
+        StackCreatedEvent, StackSmallId, TaskRegisteredEvent, TaskRole, TaskSmallId,
     };
+    use sui_sdk::types::digests::TransactionDigest;
+    use tempfile::NamedTempFile;
 
     use super::*;
 
@@ -670,7 +752,7 @@ mod tests {
         let event = AtomaEvent::StackCreatedEvent(StackCreatedEvent {
             selected_node_id: NodeSmallId { inner: 1 },
             task_small_id: TaskSmallId { inner: 10 },
-            owner_address: "test".to_string(),
+            owner: "test".to_string(),
             stack_id: "test".to_string(),
             stack_small_id: StackSmallId { inner: 1 },
             num_compute_units: 0,
@@ -693,17 +775,8 @@ mod tests {
             task_small_id: TaskSmallId { inner: 40 },
             role: TaskRole { inner: 0 },
             model_name: Some("test".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: None,
-            deprecated_at_epoch: None,
-            optimizations: vec![],
-            security_level: 0,
+            security_level: SecurityLevel { inner: 0 },
             minimum_reputation_score: Some(155),
-            task_metrics: TaskMetrics {
-                compute_unit: 0,
-                time_unit: Some(0),
-                value: Some(0),
-            },
             task_id: "test".to_string(),
         });
 
@@ -711,6 +784,106 @@ mod tests {
             &event,
             Some(&node_small_ids),
             Some(&task_small_ids)
+        ));
+    }
+
+    #[test]
+    fn test_read_cursor_from_empty_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::DeserializeCursorError(_)
+        ));
+    }
+
+    #[test]
+    fn test_read_cursor_from_valid_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Create a valid EventID and write it to file
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let toml_str = toml::to_string(&event_id).unwrap();
+        std::fs::write(path, toml_str).unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
+    }
+
+    #[test]
+    fn test_read_cursor_from_invalid_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Write invalid TOML content
+        std::fs::write(path, "invalid toml content").unwrap();
+
+        let result = read_cursor_from_toml_file(path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::DeserializeCursorError(_)
+        ));
+    }
+
+    #[test]
+    fn test_write_cursor_none() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = write_cursor_to_toml_file(None, path);
+        assert!(result.is_ok());
+
+        // File should be empty
+        let content = std::fs::read_to_string(path).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_write_cursor_some() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let result = write_cursor_to_toml_file(Some(event_id), path);
+        assert!(result.is_ok());
+
+        // Verify written content
+        let content = std::fs::read_to_string(path).unwrap();
+        let read_event_id: EventID = toml::from_str(&content).unwrap();
+        assert_eq!(read_event_id, event_id);
+    }
+
+    #[test]
+    fn test_write_cursor_to_readonly_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Make file read-only
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(path, perms).unwrap();
+
+        let event_id = EventID {
+            tx_digest: TransactionDigest::default(),
+            event_seq: 0,
+        };
+        let result = write_cursor_to_toml_file(Some(event_id), path);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SuiEventSubscriberError::CursorFileError(_)
         ));
     }
 }

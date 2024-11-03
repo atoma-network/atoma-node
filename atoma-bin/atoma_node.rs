@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use atoma_service::{
@@ -8,7 +8,9 @@ use atoma_service::{
 use atoma_state::{config::AtomaStateManagerConfig, AtomaStateManager};
 use atoma_sui::{AtomaSuiConfig, SuiEventSubscriber};
 use clap::Parser;
+use dotenv::dotenv;
 use futures::future::try_join_all;
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
 use tokio::{net::TcpListener, sync::watch, try_join};
@@ -23,6 +25,8 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
+/// The name of the environment variable for the Hugging Face token
+const HF_TOKEN: &str = "HF_TOKEN";
 /// The directory where the logs are stored.
 const LOGS: &str = "./logs";
 /// The log file name.
@@ -101,31 +105,37 @@ impl Config {
 async fn initialize_tokenizers(
     models: &[String],
     revisions: &[String],
+    hf_token: String,
 ) -> Result<Vec<Arc<Tokenizer>>> {
+    let api = ApiBuilder::new()
+        .with_progress(true)
+        .with_token(Some(hf_token))
+        .build()?;
     let fetch_futures: Vec<_> = models
         .iter()
         .zip(revisions.iter())
-        .map(|(model, revision)| async move {
-            let url = format!(
-                "https://huggingface.co/{}/blob/{}/tokenizer.json",
-                model, revision
-            );
+        .map(|(model, revision)| {
+            let api = api.clone();
+            async move {
+                let repo = api.repo(Repo::with_revision(
+                    model.clone(),
+                    RepoType::Model,
+                    revision.clone(),
+                ));
 
-            let tokenizer_json = reqwest::get(&url)
-                .await
-                .context(format!("Failed to fetch tokenizer from {}", url))?
-                .text()
-                .await
-                .context("Failed to read tokenizer content")?;
+                let tokenizer_filename = repo
+                    .get("tokenizer.json")
+                    .expect("Failed to get tokenizer.json");
 
-            Tokenizer::from_str(&tokenizer_json)
-                .map_err(|e| {
-                    anyhow::anyhow!(format!(
-                        "Failed to parse tokenizer for model {}, with error: {}",
-                        model, e
-                    ))
-                })
-                .map(Arc::new)
+                Tokenizer::from_file(tokenizer_filename)
+                    .map_err(|e| {
+                        anyhow::anyhow!(format!(
+                            "Failed to parse tokenizer for model {}, with error: {}",
+                            model, e
+                        ))
+                    })
+                    .map(Arc::new)
+            }
         })
         .collect();
 
@@ -135,6 +145,7 @@ async fn initialize_tokenizers(
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging(LOGS).context("Failed to setup logging")?;
+    dotenv().ok();
 
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
@@ -206,8 +217,10 @@ async fn main() -> Result<()> {
         result.map_err(|e| anyhow::anyhow!(e))
     });
 
+    let hf_token = std::env::var(HF_TOKEN)
+        .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
     let tokenizers =
-        initialize_tokenizers(&config.service.models, &config.service.revisions).await?;
+        initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
 
     let app_state = AppState {
         state_manager_sender,
