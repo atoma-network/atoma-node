@@ -19,10 +19,11 @@ Atoma is a decentralized cloud compute network for AI that enables:
 This repository contains the node software that enables node operators to participate in the Atoma Network. By running an Atoma node, you can:
 
 1. Contribute with your hardware to provide computing power to the network;
-2. Earn rewards for processing AI workloads;    
+2. Earn rewards for processing AI workloads;
 3. Help build a more accessible and democratic AI infrastructure.
 
 ### Community Links
+
 - 🌐 [Official Website](https://www.atoma.network)
 - 📖 [Documentation](https://atoma.gitbook.io/atoma-docs)
 - 🐦 [Twitter](https://x.com/Atoma_Network)
@@ -41,6 +42,7 @@ You then need to create a wallet and fund it with some testnet SUI. Please refer
 ### Docker Deployment
 
 #### Prerequisites
+
 - Docker and Docker Compose installed
 - NVIDIA Container Toolkit installed (for GPU support)
 - Access to HuggingFace models (and token if using gated models)
@@ -49,12 +51,14 @@ You then need to create a wallet and fund it with some testnet SUI. Please refer
 #### Quickstart
 
 1. Clone the repository
+
 ```bash
 git clone https://github.com/atoma-network/atoma-node.git
 cd atoma-node
 ```
 
 2. Configure environment variables by creating `.env` file:
+
 ```bash
 # Hugging Face Configuration
 HF_CACHE_PATH=~/.cache/huggingface
@@ -75,9 +79,10 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 ```
 
 3. Configure `config.toml`, using `config.example.toml` as template:
+
 ```toml
 [atoma-service]
-inference_service_url = "http://vllm:8000"    # Internal Docker network URL
+inference_service_url = "http://chat-completions:8000"    # Internal Docker network URL
 embeddings_service_url = ""
 multimodal_service_url = ""
 models = ["meta-llama/Llama-3.1-70B-Instruct"]
@@ -102,11 +107,13 @@ database_url = "sqlite:///app/data/atoma.db"
 ```
 
 4. Create required directories
+
 ```bash
 mkdir -p data logs
 ```
 
 5. Start the containers
+
 ```bash
 # Build and start all services
 docker compose up --build
@@ -116,15 +123,19 @@ docker compose up -d --build
 ```
 
 #### Container Architecture
+
 The deployment consists of two main services:
+
 - **vLLM Service**: Handles the AI model inference
 - **Atoma Node**: Manages the node operations and connects to the Atoma Network
 
 #### Service URLs
+
 - vLLM Service: `http://localhost:50000` (configured via INFERENCE_SERVER_PORT)
 - Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT)
 
 #### Volume Mounts
+
 - HuggingFace cache: `~/.cache/huggingface:/root/.cache/huggingface`
 - Sui configuration: `~/.sui/sui_config:/root/.sui/sui_config`
 - Logs: `./logs:/app/logs`
@@ -133,11 +144,13 @@ The deployment consists of two main services:
 #### Managing the Deployment
 
 Check service status:
+
 ```bash
 docker compose ps
 ```
 
 View logs:
+
 ```bash
 # All services
 docker compose logs
@@ -151,6 +164,7 @@ docker compose logs -f
 ```
 
 Stop services:
+
 ```bash
 docker compose down
 ```
@@ -158,26 +172,31 @@ docker compose down
 #### Troubleshooting
 
 1. Check if services are running:
+
 ```bash
 docker compose ps
 ```
 
 2. Test vLLM service:
+
 ```bash
 curl http://localhost:50000/health
 ```
 
 3. Test Atoma Node service:
+
 ```bash
 curl http://localhost:3000/health
 ```
 
 4. Check GPU availability:
+
 ```bash
 docker compose exec vllm nvidia-smi
 ```
 
 5. View container networks:
+
 ```bash
 docker network ls
 docker network inspect atoma-network
@@ -186,6 +205,7 @@ docker network inspect atoma-network
 #### Security Considerations
 
 1. Firewall Configuration
+
 ```bash
 # Allow Atoma service port
 sudo ufw allow 3000/tcp
@@ -195,16 +215,17 @@ sudo ufw allow 50000/tcp
 ```
 
 2. HuggingFace Token
+
 - Store HF_TOKEN in .env file
 - Never commit .env file to version control
 - Consider using Docker secrets for production deployments
 
 3. Sui Configuration
+
 - Ensure Sui configuration files have appropriate permissions
 - Keep keystore file secure and never commit to version control
 
-
-### Manual deployment 
+### Manual deployment
 
 #### 1. Installing Rust
 
@@ -233,6 +254,7 @@ cd atoma-node
 The application uses a TOML configuration file with the following sections:
 
 ##### `[atoma-service]`
+
 - `inference_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
 - `embeddings_service_url` (optional): Endpoint URL for the embeddings service. At least one of the service URLs must be provided.
 - `multimodal_service_url` (optional): Endpoint URL for the multimodal service. At least one of the service URLs must be provided.
@@ -241,6 +263,7 @@ The application uses a TOML configuration file with the following sections:
 - `service_bind_address`: Address and port for the Atoma Service to bind to
 
 ##### `[atoma-sui]`
+
 - `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
 - `atoma_db`: ObjectID for Atoma's DB on the Sui network
 - `atoma_package_id`: ObjectID for Atoma's package on the Sui network
@@ -254,6 +277,7 @@ The application uses a TOML configuration file with the following sections:
 - `sui_keystore_path`: Path to the Sui keystore file, it should be at the same directory level as the Sui configuration file.
 
 ##### `[atoma-state]`
+
 - `database_url`: SQLite database connection URL
 
 ##### Example Configuration
@@ -304,6 +328,7 @@ Or if you've built the binary:
 ```
 
 Command line arguments:
+
 - `--config-path` (`-c`): Path to your TOML configuration file
 - `--address-index` (`-a`): Index of the address to use from the keystore (defaults to 0)
 
@@ -321,15 +346,18 @@ Please refer to the documentation of the inference service you want to use to sp
 The Atoma node uses a comprehensive logging system that writes to both console and files:
 
 ##### Log Location
+
 - Logs are stored in the `./logs` directory
 - The main log file is named `atoma-node-service.log`
 - Logs rotate daily to prevent excessive file sizes
 
 ##### Log Formats
+
 - **Console Output**: Human-readable format with pretty printing, ideal for development
 - **File Output**: JSON format with detailed metadata, perfect for log aggregation systems
 
 ##### Log Levels
+
 The default logging level is `info`, but you can adjust it using the `RUST_LOG` environment variable:
 
 ```bash
@@ -341,6 +369,7 @@ RUST_LOG=debug cargo run --bin atoma -- [args]
 ```
 
 Common log levels (from most to least verbose):
+
 - `trace`: Very detailed debugging information
 - `debug`: Useful debugging information
 - `info`: General information about operation
@@ -348,6 +377,7 @@ Common log levels (from most to least verbose):
 - `error`: Error messages
 
 ##### Viewing Logs
+
 You can use standard Unix tools to view and analyze logs:
 
 ```bash
@@ -362,6 +392,7 @@ cat ./logs/atoma-node-service.log | jq '.'
 ```
 
 ##### Log Rotation
+
 - Logs automatically rotate daily
 - Old logs are preserved with the date appended to the filename
 - You may want to set up log cleanup periodically to manage disk space:
