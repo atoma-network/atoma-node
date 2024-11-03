@@ -55,6 +55,7 @@ services:
     networks: atoma-network
 
   mistralrs:
+    container_name: image-generations
     profiles: [image_generations_mistral]
     image: ${MISTRALRS_IMAGE}
     runtime: nvidia
