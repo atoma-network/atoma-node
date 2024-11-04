@@ -50,7 +50,7 @@ pub async fn image_generations_handler(
 ) -> Result<Json<Value>, StatusCode> {
     let client = Client::new();
     let response = client
-        .post("http://image-generator:3000/v1/images/generations")
+        .post("http://image-generations:3000/v1/images/generations")
         .json(&payload)
         .send()
         .await
