@@ -5,9 +5,9 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::handlers::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
 use crate::handlers::embeddings::{EmbeddingsOpenApi, EMBEDDINGS_PATH};
 use crate::handlers::image_generations::{ImageGenerationsOpenApi, IMAGE_GENERATIONS_PATH};
-use crate::server::{AppState, HealthOpenApi, HEALTH_PATH};
+use crate::server::{HealthOpenApi, HEALTH_PATH};
 
-pub fn openapi_routes() -> Router<AppState> {
+pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
         //modifiers(&SecurityAddon),

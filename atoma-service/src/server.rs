@@ -107,7 +107,6 @@ pub fn create_router(app_state: AppState) -> Router {
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
         .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
-        .merge(openapi_routes())
         .layer(
             ServiceBuilder::new()
                 .layer(from_fn(signature_verification_middleware))
@@ -119,6 +118,7 @@ pub fn create_router(app_state: AppState) -> Router {
         )
         .with_state(app_state)
         .route(HEALTH_PATH, get(health))
+        .merge(openapi_routes())
 }
 
 /// Starts and runs the HTTP server with graceful shutdown handling.
