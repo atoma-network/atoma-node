@@ -68,7 +68,7 @@ pub(crate) struct ChatCompletionsOpenApi;
 /// - Token usage update fails
 #[utoipa::path(
     post,
-    path = "/v1/chat/completions",
+    path = "",
     tag = "chat",
     request_body = ChatCompletionsRequest,
     responses(

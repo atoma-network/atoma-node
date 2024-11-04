@@ -22,7 +22,11 @@ use utoipa::OpenApi;
 
 use crate::{
     components::openapi::openapi_routes,
-    handlers::chat_completions::{chat_completions_handler, CHAT_COMPLETIONS_PATH},
+    handlers::{
+        chat_completions::{chat_completions_handler, CHAT_COMPLETIONS_PATH},
+        embeddings::{embeddings_handler, EMBEDDINGS_PATH},
+        image_generations::{image_generations_handler, IMAGE_GENERATIONS_PATH},
+    },
     middleware::{signature_verification_middleware, verify_stack_permissions},
 };
 
@@ -101,6 +105,8 @@ pub struct AppState {
 pub fn create_router(app_state: AppState) -> Router {
     Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
         .merge(openapi_routes())
         .layer(
             ServiceBuilder::new()
@@ -195,7 +201,7 @@ pub(crate) struct HealthOpenApi;
 
 #[utoipa::path(
     get,
-    path = HEALTH_PATH,
+    path = "",
     tag = "health",
     responses(
         (status = OK, description = "Service is healthy", body = Value)

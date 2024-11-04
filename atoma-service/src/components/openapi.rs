@@ -3,6 +3,8 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handlers::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
+use crate::handlers::embeddings::{EmbeddingsOpenApi, EMBEDDINGS_PATH};
+use crate::handlers::image_generations::{ImageGenerationsOpenApi, IMAGE_GENERATIONS_PATH};
 use crate::server::{AppState, HealthOpenApi, HEALTH_PATH};
 
 pub fn openapi_routes() -> Router<AppState> {
@@ -12,14 +14,17 @@ pub fn openapi_routes() -> Router<AppState> {
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi),
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi),
-
+            (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi),
+            (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi),
         ),
         tags(
             (name = "health", description = "Health check"),
             (name = "chat", description = "Chat completions"),
+            (name = "embeddings", description = "Embeddings"),
+            (name = "images", description = "Image generations"),
         ),
         servers(
-            (url = "http://localhost:30000"),
+            (url = "http://localhost:8080"),
         )
     )]
     struct ApiDoc;

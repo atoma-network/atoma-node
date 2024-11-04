@@ -6,9 +6,9 @@ info:
     name: Apache-2.0
   version: 0.1.0
 servers:
-- url: http://localhost:30000
+- url: http://localhost:8080
 paths:
-  /health/health:
+  /health:
     get:
       tags:
       - health
@@ -19,7 +19,7 @@ paths:
           content:
             application/json:
               schema: {}
-  /v1/chat/completions/v1/chat/completions:
+  /v1/chat/completions:
     post:
       tags:
       - chat
@@ -63,6 +63,78 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatCompletionsResponse'
+        '500':
+          description: Internal server error
+  /v1/embeddings:
+    post:
+      tags:
+      - embeddings
+      summary: Handles embedding requests by proxying them to the embeddings service.
+      description: |-
+        This handler simply forwards the request to the embeddings service and returns the response.
+
+        # Arguments
+
+        * `state` - Application state containing service URLs
+        * `payload` - The embedding request body
+
+        # Returns
+
+        Returns the JSON response from the embeddings service
+
+        # Errors
+
+        Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+        - The embeddings service request fails
+        - Response parsing fails
+      operationId: embeddings_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Embeddings generated successfully
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Internal server error
+  /v1/images/generations:
+    post:
+      tags:
+      - images
+      summary: Handles image generation requests by proxying them to the image generations service.
+      description: |-
+        This handler simply forwards the request to the image generations service and returns the response.
+
+        # Arguments
+
+        * `state` - Application state containing service URLs
+        * `payload` - The image generation request body
+
+        # Returns
+
+        Returns the JSON response from the image generations service
+
+        # Errors
+
+        Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+        - The image generations service request fails
+        - Response parsing fails
+      operationId: image_generations_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Images generated successfully
+          content:
+            application/json:
+              schema: {}
         '500':
           description: Internal server error
 components:
@@ -485,3 +557,7 @@ tags:
   description: Health check
 - name: chat
   description: Chat completions
+- name: embeddings
+  description: Embeddings
+- name: images
+  description: Image generations
