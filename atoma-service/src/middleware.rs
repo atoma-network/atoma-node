@@ -107,7 +107,7 @@ pub async fn signature_verification_middleware(
         })?
         .to_str()
         .map_err(|e| {
-            error!("Failed to exract base64 signature encoding, with error: {e}");
+            error!("Failed to extract base64 signature encoding, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
