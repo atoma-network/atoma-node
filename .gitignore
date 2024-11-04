@@ -4,3 +4,5 @@ target/
 config.toml
 
 .env
+
+logs/
