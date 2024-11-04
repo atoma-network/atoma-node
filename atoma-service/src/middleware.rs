@@ -97,6 +97,12 @@ pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Skip verification for swagger-ui requests
+    #[cfg(debug_assertions)]
+    if req.uri().path().starts_with("/swagger-ui") || req.uri().path().starts_with("/api-docs") {
+        return Ok(next.run(req).await);
+    }
+
     let (mut req_parts, req_body) = req.into_parts();
     let base64_signature = req_parts
         .headers
@@ -187,6 +193,12 @@ pub async fn verify_stack_permissions(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Skip verification for swagger-ui requests
+    #[cfg(debug_assertions)]
+    if req.uri().path().starts_with("/swagger-ui") || req.uri().path().starts_with("/api-docs") {
+        return Ok(next.run(req).await);
+    }
+
     let (mut req_parts, req_body) = req.into_parts();
     let base64_signature = req_parts
         .headers
