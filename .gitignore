@@ -6,3 +6,4 @@ config.toml
 .env
 
 logs/
+./cursor.toml
