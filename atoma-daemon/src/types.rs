@@ -87,10 +87,10 @@ pub struct NodeTaskSubscriptionRequest {
     /// The small ID of the task to subscribe to.
     pub task_small_id: i64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -125,6 +125,49 @@ pub struct NodeTaskSubscriptionResponse {
     pub tx_digest: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeTaskUpdateSubscriptionRequest {
+    /// The small ID of the task to subscribe to.
+    pub task_small_id: i64,
+
+    /// Optional node badge ID.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_badge_id: Option<ObjectID>,
+
+    /// The price per compute unit.
+    pub price_per_compute_unit: u64,
+
+    /// The maximum number of compute units.
+    pub max_num_compute_units: u64,
+
+    /// Optional gas object ID.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas: Option<ObjectID>,
+
+    /// Optional gas budget.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_budget: Option<u64>,
+
+    /// Optional gas price.
+    /// If not provided, the default is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<u64>,
+}
+
+/// Represents a response to a node task update subscription request.
+///
+/// This struct contains the transaction digest, which is a unique
+/// identifier for the transaction associated with the node task subscription.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeTaskUpdateSubscriptionResponse {
+    /// The transaction digest.
+    /// This is a unique identifier for the transaction.
+    pub tx_digest: String,
+}
+
 /// Represents a request to unsubscribe from a node task.
 ///
 /// This struct encapsulates the necessary parameters for unsubscribing
@@ -134,10 +177,10 @@ pub struct NodeTaskUnsubscriptionRequest {
     /// The small ID of the task to unsubscribe from.
     pub task_small_id: i64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -178,10 +221,10 @@ pub struct NodeTrySettleStacksRequest {
     /// The number of compute units claimed.
     pub num_claimed_compute_units: u64,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -219,7 +262,7 @@ pub struct NodeAttestationProofRequest {
     /// The small IDs of the stacks to attest to.
     pub stack_small_ids: Vec<i64>,
 
-    /// Optional small ID of the node.
+    /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_small_id: Option<i64>,
@@ -259,10 +302,10 @@ pub struct NodeClaimFundsRequest {
     /// The small IDs of the stacks to claim funds from.
     pub stack_small_ids: Vec<i64>,
 
-    /// Optional small ID of the node.
+    /// Optional node badge IDs.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_small_id: Option<i64>,
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.

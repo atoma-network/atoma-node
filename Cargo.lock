@@ -558,6 +558,7 @@ dependencies = [
  "blake2",
  "clap",
  "config",
+ "reqwest",
  "rs_merkle",
  "serde",
  "serde_json",
