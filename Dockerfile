@@ -16,7 +16,7 @@ RUN apk add --no-cache \
     make \
     linux-headers
 
-WORKDIR /usr/src/atoma-node
+WORKDIR /usr/src/app
 COPY . .
 
 # Set environment variables for SSL
@@ -47,13 +47,14 @@ WORKDIR /app
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs
 
-# Copy the built binary from builder stage
-COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node
+# Copy the built binary from builder stage using the BINARY argument
+COPY --from=builder /usr/src/app/target/release/${BINARY} /usr/local/bin/${BINARY}
 
 # Copy configuration file
-COPY --from=builder /usr/src/atoma-node/config.toml ./config.toml
+COPY --from=builder /usr/src/app/config.toml ./config.toml
 
 # Set executable permissions explicitly
-RUN chmod +x /usr/local/bin/atoma-node
+RUN chmod +x /usr/local/bin/${BINARY}
 
-CMD ["atoma-node", "--config-path", "/app/config.toml"]
+# Use the BINARY argument in the CMD instruction
+CMD ["sh", "-c", "exec /usr/local/bin/${BINARY} --config-path /app/config.toml"]

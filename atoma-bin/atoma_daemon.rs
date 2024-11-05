@@ -30,18 +30,18 @@ const LOG_FILE: &str = "atoma-daemon-service.log";
 #[derive(Parser)]
 struct DaemonArgs {
     #[arg(short, long)]
-    config_file_path: String,
+    config_path: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging()?;
     let args = DaemonArgs::parse();
-    let daemon_config = AtomaDaemonConfig::from_file_path(args.config_file_path.clone());
+    let daemon_config = AtomaDaemonConfig::from_file_path(args.config_path.clone());
     let state_manager_config =
-        AtomaStateManagerConfig::from_file_path(args.config_file_path.clone());
+        AtomaStateManagerConfig::from_file_path(args.config_path.clone());
     let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_file_path).await?,
+        AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
 
     info!(
