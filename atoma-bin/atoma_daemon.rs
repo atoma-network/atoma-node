@@ -38,8 +38,7 @@ async fn main() -> Result<()> {
     setup_logging()?;
     let args = DaemonArgs::parse();
     let daemon_config = AtomaDaemonConfig::from_file_path(args.config_path.clone());
-    let state_manager_config =
-        AtomaStateManagerConfig::from_file_path(args.config_path.clone());
+    let state_manager_config = AtomaStateManagerConfig::from_file_path(args.config_path.clone());
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));

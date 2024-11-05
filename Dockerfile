@@ -57,4 +57,4 @@ COPY --from=builder /usr/src/app/config.toml ./config.toml
 RUN chmod +x /usr/local/bin/${BINARY}
 
 # Use the BINARY argument in the CMD instruction
-CMD ["sh", "-c", "exec /usr/local/bin/${BINARY} --config-path /app/config.toml"]
+CMD ["/app/${BINARY}", "--config-path", "/app/config.toml"]
