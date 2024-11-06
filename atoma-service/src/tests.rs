@@ -98,7 +98,7 @@ mod middleware {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
-            "sqlite::memory:".to_string(),
+            "sqlite::memory:",
             event_subscriber_receiver,
             state_manager_receiver,
         )

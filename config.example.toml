@@ -13,15 +13,15 @@ request_timeout = { secs = 300, nanos = 0 } # Some reference value
 max_concurrent_requests = 10 # Some reference value
 limit = 100 # Some reference value
 node_small_ids = [1]  # List of node IDs under control of the node wallet
-sui_config_path = "~/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, by default (on Linux, or MacOS)
-sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, by default (on Linux, or MacOS)
+sui_config_path = "/root/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
+sui_keystore_path = "/root/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
 cursor_path = "./cursor.toml" # Path to the Sui events cursor file
 
 [atoma-state]
 database_url = "sqlite:///app/data/atoma.db"  # Path inside the container
 
 [atoma-daemon]
-service_bind_address = "127.0.0.1:3001"
+service_bind_address = "0.0.0.0:3001"
 node_badges = [
     ["0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600", 1]
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself

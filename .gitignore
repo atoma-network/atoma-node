@@ -2,5 +2,6 @@ target/
 .vscode/
 /models/
 config.toml
+cursor.toml
 
 .env
