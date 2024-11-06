@@ -13,7 +13,6 @@ RUN apk add --no-cache \
     linux-headers
 
 WORKDIR /usr/src/atoma-node
-
 COPY . .
 
 # Set environment variables for SSL
