@@ -232,6 +232,7 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         )
         .route("/claim_funds", post(submit_claim_funds_tx))
         .with_state(daemon_state)
+        .route("/health", get(health))
 }
 
 /// Retrieves all node subscriptions for the currently registered node badges.
@@ -334,6 +335,15 @@ async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<V
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(all_tasks))
+}
+
+/// Health check endpoint for the daemon.
+///
+/// # Returns
+/// * `StatusCode::OK` - Always returns OK
+#[instrument(level = "trace", skip_all)]
+async fn health() -> StatusCode {
+    StatusCode::OK
 }
 
 /// Retrieves all stacks associated with the currently registered node badges.
@@ -1166,7 +1176,13 @@ async fn submit_stack_settlement_attestations_tx(
             let node_badge_id = daemon_state
                 .node_badges
                 .iter()
-                .find_map(|(nb, ns)| if *ns as i64 == node_small_id { Some(*nb) } else { None })
+                .find_map(|(nb, ns)| {
+                    if *ns as i64 == node_small_id {
+                        Some(*nb)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap();
 
             let tx_digest = daemon_state

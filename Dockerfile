@@ -1,10 +1,6 @@
 # Builder stage
 FROM rust:1.76-alpine as builder
 
-# Add build argument for binary selection
-ARG BINARY
-RUN test -n "$BINARY" || (echo "BINARY is not set" && false)
-
 # Install build dependencies
 RUN apk add --no-cache \
     build-base \
@@ -16,7 +12,8 @@ RUN apk add --no-cache \
     make \
     linux-headers
 
-WORKDIR /usr/src/app
+WORKDIR /usr/src/atoma-node
+
 COPY . .
 
 # Set environment variables for SSL
@@ -31,10 +28,6 @@ RUN cargo build --release
 # Final stage
 FROM alpine:3.19
 
-# Add build argument for binary selection
-ARG BINARY
-RUN test -n "$BINARY" || (echo "BINARY is not set" && false)
-
 # Install runtime dependencies
 RUN apk add --no-cache \
     ca-certificates \
@@ -47,14 +40,13 @@ WORKDIR /app
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs
 
-# Copy the built binary from builder stage using the BINARY argument
-COPY --from=builder /usr/src/app/target/release/${BINARY} /usr/local/bin/${BINARY}
+# Copy the built binary from builder stage
+COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node+
 
 # Copy configuration file
-COPY --from=builder /usr/src/app/config.toml ./config.toml
+COPY --from=builder /usr/src/atoma-node/config.toml ./config.toml
 
 # Set executable permissions explicitly
-RUN chmod +x /usr/local/bin/${BINARY}
+RUN chmod +x /usr/local/bin/atoma-node
 
-# Use the BINARY argument in the CMD instruction
-CMD ["/app/${BINARY}", "--config-path", "/app/config.toml"]
+CMD ["atoma-node", "--config-path", "/app/config.toml"]

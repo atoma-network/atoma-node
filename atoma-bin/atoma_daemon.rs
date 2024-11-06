@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         "Starting a new AtomaStateManager instance..."
     );
 
-    let atoma_state = AtomaState::new_from_url(state_manager_config.database_url).await?;
+    let atoma_state = AtomaState::new_from_url(&state_manager_config.database_url).await?;
     let tcp_listener = TcpListener::bind(daemon_config.service_bind_address.clone()).await?;
     let daemon_state = DaemonState {
         client,

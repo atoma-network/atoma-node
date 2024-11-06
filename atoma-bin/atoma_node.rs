@@ -1,19 +1,25 @@
-use std::{path::Path, sync::Arc};
+use std::{path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
+use atoma_daemon::{daemon::run_daemon, AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
     server::{run_server, AppState},
 };
-use atoma_state::{config::AtomaStateManagerConfig, AtomaStateManager};
-use atoma_sui::{AtomaSuiConfig, SuiEventSubscriber};
+use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
+use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
 use clap::Parser;
 use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
+use sui_sdk::types::base_types::ObjectID;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, sync::watch, try_join};
+use tokio::{
+    net::TcpListener,
+    sync::{watch, RwLock},
+    try_join,
+};
 use tracing::{error, info, instrument, warn};
 use tracing_appender::{
     non_blocking,
@@ -29,8 +35,10 @@ use tracing_subscriber::{
 const HF_TOKEN: &str = "HF_TOKEN";
 /// The directory where the logs are stored.
 const LOGS: &str = "./logs";
-/// The log file name.
-const LOG_FILE: &str = "atoma-node-service.log";
+/// The log file name for the node service.
+const NODE_LOG_FILE: &str = "atoma-node.log";
+/// The log file name for the daemon service.
+const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 
 /// Command line arguments for the Atoma node
 #[derive(Parser)]
@@ -58,14 +66,17 @@ struct Config {
 
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
+
+    daemon: AtomaDaemonConfig,
 }
 
 impl Config {
-    async fn load(path: String) -> Self {
+    async fn load(path: &str) -> Self {
         Self {
-            sui: AtomaSuiConfig::from_file_path(path.clone()),
-            service: AtomaServiceConfig::from_file_path(path.clone()),
+            sui: AtomaSuiConfig::from_file_path(path),
+            service: AtomaServiceConfig::from_file_path(path),
             state: AtomaStateManagerConfig::from_file_path(path),
+            daemon: AtomaDaemonConfig::from_file_path(path),
         }
     }
 }
@@ -148,7 +159,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let args = Args::parse();
-    let config = Config::load(args.config_path).await;
+    let config = Config::load(&args.config_path).await;
 
     info!("Starting Atoma node service");
 
@@ -173,9 +184,10 @@ async fn main() -> Result<()> {
         "Spawning state manager service"
     );
     let state_manager_shutdown_receiver = shutdown_receiver.clone();
+    let database_url = config.state.database_url.clone();
     let state_manager_handle = tokio::spawn(async move {
         let state_manager = AtomaStateManager::new_from_url(
-            config.state.database_url,
+            &database_url,
             event_subscriber_receiver,
             state_manager_receiver,
         )
@@ -234,9 +246,26 @@ async fn main() -> Result<()> {
         address_index: args.address_index,
     };
 
+    let client = Arc::new(RwLock::new(
+        AtomaSuiClient::new_from_config(args.config_path).await?,
+    ));
+    let daemon_app_state = DaemonState {
+        atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
+        client,
+        node_badges: config
+            .daemon
+            .node_badges
+            .iter()
+            .map(|(id, value)| (ObjectID::from_str(id).unwrap(), *value))
+            .collect(),
+    };
+
     let tcp_listener = TcpListener::bind(&config.service.service_bind_address)
         .await
         .context("Failed to bind TCP listener")?;
+    let daemon_tcp_listener = TcpListener::bind(&config.daemon.service_bind_address)
+        .await
+        .context("Failed to bind daemon TCP listener")?;
 
     info!(
         target = "atoma-node-service",
@@ -246,11 +275,21 @@ async fn main() -> Result<()> {
     );
 
     let server_handle = tokio::spawn(run_server(app_state, tcp_listener, shutdown_sender));
+    let daemon_handle = tokio::spawn(run_daemon(daemon_app_state, daemon_tcp_listener));
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result) =
-        try_join!(subscriber_handle, state_manager_handle, server_handle)?;
-    handle_tasks_results(subscriber_result, state_manager_result, server_result)?;
+    let (subscriber_result, state_manager_result, server_result, daemon_result) = try_join!(
+        subscriber_handle,
+        state_manager_handle,
+        server_handle,
+        daemon_handle
+    )?;
+    handle_tasks_results(
+        subscriber_result,
+        state_manager_result,
+        server_result,
+        daemon_result,
+    )?;
 
     info!(
         target = "atoma-node-service",
@@ -262,14 +301,17 @@ async fn main() -> Result<()> {
 
 /// Configure logging with JSON formatting, file output, and console output
 fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
-    // Set up file appender with rotation
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
+    // Set up file appenders with rotation for both services
+    let node_appender = RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), NODE_LOG_FILE);
+    let daemon_appender =
+        RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), DAEMON_LOG_FILE);
 
-    // Create a non-blocking writer
-    let (non_blocking_appender, _guard) = non_blocking(file_appender);
+    // Create non-blocking writers
+    let (node_non_blocking, _node_guard) = non_blocking(node_appender);
+    let (daemon_non_blocking, _daemon_guard) = non_blocking(daemon_appender);
 
-    // Create JSON formatter for file output
-    let file_layer = fmt::layer()
+    // Create JSON formatter for node service
+    let node_layer = fmt::layer()
         .json()
         .with_timer(UtcTime::rfc_3339())
         .with_thread_ids(true)
@@ -279,7 +321,22 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with_file(true)
         .with_current_span(true)
         .with_span_list(true)
-        .with_writer(non_blocking_appender);
+        .with_writer(node_non_blocking)
+        .with_filter(EnvFilter::new("atoma_node=debug"));
+
+    // Create JSON formatter for daemon service
+    let daemon_layer = fmt::layer()
+        .json()
+        .with_timer(UtcTime::rfc_3339())
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_target(true)
+        .with_line_number(true)
+        .with_file(true)
+        .with_current_span(true)
+        .with_span_list(true)
+        .with_writer(daemon_non_blocking)
+        .with_filter(EnvFilter::new("atoma_daemon=debug"));
 
     // Create console formatter for development
     let console_layer = fmt::layer()
@@ -291,14 +348,14 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with_span_events(FmtSpan::ENTER);
 
     // Create filter from environment variable or default to info
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,atoma_node_service=debug"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     // Combine layers with filter
     Registry::default()
         .with(env_filter)
         .with(console_layer)
-        .with(file_layer)
+        .with(node_layer)
+        .with(daemon_layer)
         .init();
 
     Ok(())
@@ -328,6 +385,7 @@ fn handle_tasks_results(
     subscriber_result: Result<()>,
     state_manager_result: Result<()>,
     server_result: Result<()>,
+    daemon_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -344,5 +402,6 @@ fn handle_tasks_results(
     result_handler(subscriber_result, "Subscriber terminated abruptly")?;
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
+    result_handler(daemon_result, "Daemon terminated abruptly")?;
     Ok(())
 }

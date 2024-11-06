@@ -576,6 +576,7 @@ name = "atoma-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "atoma-daemon",
  "atoma-state",
  "atoma-sui",
  "axum",

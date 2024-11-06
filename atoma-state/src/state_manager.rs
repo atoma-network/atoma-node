@@ -48,13 +48,12 @@ impl AtomaStateManager {
     /// This method establishes a connection to the SQLite database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
     pub async fn new_from_url(
-        database_url: String,
+        database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let connect_options =
-            SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
+        let connect_options = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
         let db = SqlitePool::connect_with(connect_options).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
@@ -180,8 +179,8 @@ impl AtomaState {
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
-    pub async fn new_from_url(database_url: String) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+    pub async fn new_from_url(database_url: &str) -> Result<Self> {
+        let db = SqlitePool::connect(database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
     }
@@ -2344,9 +2343,7 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> AtomaState {
-        AtomaState::new_from_url("sqlite::memory:".to_string())
-            .await
-            .unwrap()
+        AtomaState::new_from_url("sqlite::memory:").await.unwrap()
     }
 
     #[tokio::test]
