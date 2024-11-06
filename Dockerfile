@@ -41,7 +41,7 @@ WORKDIR /app
 RUN mkdir -p /app/data /app/logs
 
 # Copy the built binary from builder stage
-COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node+
+COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node
 
 # Copy configuration file
 COPY --from=builder /usr/src/atoma-node/config.toml ./config.toml
