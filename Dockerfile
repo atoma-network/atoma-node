@@ -21,8 +21,8 @@ ENV SSL_CERT_DIR=/etc/ssl/certs
 ENV OPENSSL_LIB_DIR=/usr/lib
 ENV OPENSSL_INCLUDE_DIR=/usr/include
 
-# Build the application
-RUN cargo build --release
+# Build the application with static linking
+RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release
 
 # Final stage
 FROM alpine:3.19
@@ -48,4 +48,9 @@ COPY --from=builder /usr/src/atoma-node/config.toml ./config.toml
 # Set executable permissions explicitly
 RUN chmod +x /usr/local/bin/atoma-node
 
-CMD ["atoma-node", "--config-path", "/app/config.toml"]
+# Verify the binary exists and is executable
+RUN ls -l /usr/local/bin/atoma-node && \
+    ldd /usr/local/bin/atoma-node || true
+
+# Use full path in CMD
+CMD ["/usr/local/bin/atoma-node", "--config-path", "/app/config.toml"]
