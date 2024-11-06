@@ -38,6 +38,7 @@ services:
     #   - vllm
     networks:
       - atoma-network
+    command: ["tail", "-f", "/dev/null"]
 
 networks:
   atoma-network:
