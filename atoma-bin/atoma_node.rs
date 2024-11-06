@@ -174,7 +174,7 @@ async fn main() -> Result<()> {
         "Starting with Sui's keystore instance"
     );
 
-    let keystore = FileBasedKeystore::new(&config.sui.sui_config_path().into())
+    let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
 
     info!(
