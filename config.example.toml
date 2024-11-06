@@ -13,8 +13,8 @@ request_timeout = { secs = 300, nanos = 0 } # Some reference value
 max_concurrent_requests = 10 # Some reference value
 limit = 100 # Some reference value
 node_small_ids = [1]  # List of node IDs under control of the node wallet
-sui_config_path = "~/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, by default (on Linux, or MacOS)
-sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, by default (on Linux, or MacOS)
+sui_config_path = "/root/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
+sui_keystore_path = "/root/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
 cursor_path = "./cursor.toml" # Path to the Sui events cursor file
 
 [atoma-state]

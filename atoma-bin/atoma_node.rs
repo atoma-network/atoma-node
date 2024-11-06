@@ -275,6 +275,13 @@ async fn main() -> Result<()> {
     );
 
     let server_handle = tokio::spawn(run_server(app_state, tcp_listener, shutdown_sender));
+    
+    info!(
+        target = "atoma-daemon-service",
+        event = "atoma_daemon_service_spawn",
+        bind_address = config.daemon.service_bind_address,
+        "Starting Atoma daemon service"
+    );
     let daemon_handle = tokio::spawn(run_daemon(daemon_app_state, daemon_tcp_listener));
 
     // Wait for shutdown signal and handle cleanup

@@ -1,6 +1,8 @@
 # Builder stage
 FROM rust:1.76-slim-bullseye as builder
 
+ARG TRACE_LEVEL
+
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -14,7 +16,7 @@ WORKDIR /usr/src/atoma-node
 COPY . .
 
 # Build the application
-RUN cargo build --release --bin atoma-node
+RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node
 
 # Final stage
 FROM debian:bullseye-slim
@@ -37,8 +39,14 @@ COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin
 # Copy configuration file
 COPY config.toml ./config.toml
 
-# Set executable permissions explicitly
 RUN chmod +x /usr/local/bin/atoma-node
+
+# Copy and set up entrypoint script
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Copy host client.yaml and modify keystore path
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Use full path in CMD
 CMD ["/usr/local/bin/atoma-node", "--config-path", "/app/config.toml"]

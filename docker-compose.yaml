@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
     volumes:
       - ./config.toml:/app/config.toml
       - ./logs:/app/logs
