@@ -14,7 +14,10 @@ use blake2::{
     Blake2b, Digest,
 };
 use serde_json::Value;
-use sui_sdk::types::crypto::{Signature, SuiSignature};
+use sui_sdk::types::{
+    base_types::SuiAddress,
+    crypto::{PublicKey, Signature, SuiSignature},
+};
 use tokio::sync::oneshot;
 use tracing::{error, instrument};
 
@@ -205,7 +208,12 @@ pub async fn verify_stack_permissions(
         StatusCode::BAD_REQUEST
     })?;
     let public_key_bytes = signature.public_key_bytes();
-    let public_key_hex = format!("0x{}", hex::encode(public_key_bytes));
+    let public_key =
+        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+            error!("Failed to extract public key from bytes, with error: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+    let sui_address = SuiAddress::from(&public_key);
     let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
@@ -305,7 +313,7 @@ pub async fn verify_stack_permissions(
         .send(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
-                public_key: public_key_hex,
+                sui_address: sui_address.to_string(),
                 total_num_tokens,
                 result_sender,
             },
