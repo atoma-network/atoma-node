@@ -237,7 +237,7 @@ async fn main() -> Result<()> {
     let app_state = AppState {
         state_manager_sender,
         tokenizers: Arc::new(tokenizers),
-        models: Arc::new(vec![]),
+        models: Arc::new(config.service.models),
         inference_service_url: config
             .service
             .inference_service_url
