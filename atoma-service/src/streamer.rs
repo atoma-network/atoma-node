@@ -78,7 +78,36 @@ impl Streamer {
         }
     }
 
-    /// Signs the response and updates state with usage information
+    /// Processes the final chunk of a streaming response, performing signature generation,
+    /// token counting, and state updates.
+    ///
+    /// This method:
+    /// 1. Signs the accumulated response data
+    /// 2. Extracts and validates token usage information
+    /// 3. Updates the state manager with token counts
+    /// 4. Calculates a total hash combining payload and response hashes
+    /// 5. Updates the state manager with the total hash
+    /// 6. Creates a final SSE message containing signature and metadata
+    ///
+    /// # Arguments
+    ///
+    /// * `usage` - A JSON Value containing token usage information, expected to have a
+    ///             "total_tokens" field with an integer value
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Event, Error>` where:
+    /// * `Event` - An SSE event containing the final message with signature
+    /// * `Error` - An error that can occur during:
+    ///   - Response signing
+    ///   - Token usage extraction
+    ///   - JSON serialization
+    ///
+    /// # State Updates
+    ///
+    /// This method sends two events to the state manager:
+    /// * `UpdateStackNumTokens` - Updates the token count for the stack
+    /// * `UpdateStackTotalHash` - Updates the combined hash of payload and response
     #[instrument(
         level = "info",
         skip(self, usage),
