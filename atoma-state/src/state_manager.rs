@@ -1032,14 +1032,14 @@ impl AtomaState {
         skip_all,
         fields(
             stack_small_id = %stack_small_id,
-            public_key = %public_key,
+            sui_address = %sui_address,
             num_compute_units = %num_compute_units
         )
     )]
     pub async fn get_available_stack_with_compute_units(
         &self,
         stack_small_id: i64,
-        public_key: &str,
+        sui_address: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
         // Single query that updates and returns the modified row
@@ -1056,7 +1056,7 @@ impl AtomaState {
         )
         .bind(num_compute_units)
         .bind(stack_small_id)
-        .bind(public_key)
+        .bind(sui_address)
         .fetch_optional(&self.db)
         .await?;
 
