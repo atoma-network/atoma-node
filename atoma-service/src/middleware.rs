@@ -20,7 +20,7 @@ use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
-const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
+const MAX_TOKENS: &str = "max_tokens";
 const MESSAGES: &str = "messages";
 const MODEL: &str = "model";
 
@@ -159,7 +159,7 @@ pub async fn signature_verification_middleware(
 /// The body should be a JSON object containing:
 /// - `model`: The name of the AI model to be used.
 /// - `messages`: An array of message objects, each containing a "content" field.
-/// - `max_completion_tokens`: The maximum number of tokens for the AI's response.
+/// - `max_tokens`: The maximum number of tokens for the AI's response.
 ///
 /// # Extensions
 /// This middleware adds a `RequestMetadata` extension to the request containing:
@@ -292,10 +292,10 @@ pub async fn verify_stack_permissions(
     }
 
     total_num_tokens += body_json
-        .get(MAX_COMPLETION_TOKENS)
+        .get(MAX_TOKENS)
         .and_then(|value| value.as_i64())
         .ok_or_else(|| {
-            error!("Max completion tokens not found in body");
+            error!("Max tokens not found in body");
             StatusCode::BAD_REQUEST
         })?;
 

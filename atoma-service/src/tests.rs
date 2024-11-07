@@ -241,7 +241,7 @@ mod middleware {
                 "role": "user",
                 "content": "What is the capital of the moon?"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         // Build request
@@ -287,7 +287,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -329,7 +329,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -368,7 +368,7 @@ mod middleware {
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
             "messages": "not-an-array", // Invalid messages format
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -393,7 +393,7 @@ mod middleware {
 
     #[tokio::test]
     #[serial]
-    async fn test_verify_stack_permissions_missing_max_completion_tokens() {
+    async fn test_verify_stack_permissions_missing_max_tokens() {
         let (
             app_state,
             _,
@@ -410,7 +410,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            // Intentionally omitting max_completion_tokens
+            // Intentionally omitting max_tokens
         });
 
         let req = Request::builder()
@@ -452,7 +452,7 @@ mod middleware {
                 "role": "system",
                 "content": "You are a helpful assistant."
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -494,7 +494,7 @@ mod middleware {
                 "role": "system",
                 "content": "You are a helpful assistant."
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -559,7 +559,7 @@ mod middleware {
                     "content": "Longer message with more tokens to count"
                 }
             ],
-            "max_completion_tokens": 50,
+            "max_tokens": 50,
         });
 
         let req = Request::builder()
@@ -579,9 +579,9 @@ mod middleware {
 
             // Verify token counting logic:
             // 1. Should include tokens from both messages
-            // 2. Should include max_completion_tokens (50)
+            // 2. Should include max_tokens (50)
             // 3. Should include safety margins (3 tokens per message)
-            assert!(metadata.estimated_total_tokens > 50); // At least more than max_completion_tokens
+            assert!(metadata.estimated_total_tokens > 50); // At least more than max_tokens
 
             // You could add more specific assertions based on your tokenizer's behavior
             // For example, if you know the exact token counts:
