@@ -23,8 +23,11 @@ use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+/// The key for the max tokens in the request body
 const MAX_TOKENS: &str = "max_tokens";
+/// The key for the messages in the request body
 const MESSAGES: &str = "messages";
+/// The key for the model in the request body
 const MODEL: &str = "model";
 
 /// Metadata extracted from the request
@@ -356,6 +359,32 @@ pub(crate) mod utils {
     };
     use sui_sdk::types::crypto::{PublicKey, SignatureScheme, SuiSignature};
 
+    /// Verifies the authenticity of a request by checking its signature against the provided hash.
+    ///
+    /// # Arguments
+    /// * `base64_signature` - A base64-encoded signature string that contains:
+    ///   - The signature itself
+    ///   - The public key
+    ///   - The signature scheme used
+    /// * `body_hash` - A 32-byte Blake2b hash of the request body
+    ///
+    /// # Returns
+    /// * `Ok(())` if the signature is valid
+    /// * `Err(StatusCode)` if:
+    ///   - The signature cannot be parsed (`BAD_REQUEST`)
+    ///   - The public key is invalid (`BAD_REQUEST`)
+    ///   - The signature scheme is unsupported (`BAD_REQUEST`)
+    ///   - The signature verification fails (`UNAUTHORIZED`)
+    ///
+    /// # Supported Signature Schemes
+    /// - ED25519
+    /// - Secp256k1
+    /// - Secp256r1
+    ///
+    /// # Security Note
+    /// This function is critical for ensuring request authenticity. It verifies that:
+    /// 1. The request was signed by the owner of the public key
+    /// 2. The request body hasn't been tampered with since signing
     pub(crate) fn verify_signature(
         base64_signature: &str,
         body_hash: &[u8; 32],

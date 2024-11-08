@@ -21,11 +21,11 @@ pub struct AtomaServiceConfig {
     /// for the embeddings service used by the Atoma Service.
     pub embeddings_service_url: Option<String>,
 
-    /// URL for the multimodal service.
+    /// URL for the multi-modal service.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
-    /// for the multimodal service used by the Atoma Service.
-    pub multimodal_service_url: Option<String>,
+    /// for the multi-modal service used by the Atoma Service.
+    pub multi_modal_service_url: Option<String>,
 
     /// List of model names.
     ///
