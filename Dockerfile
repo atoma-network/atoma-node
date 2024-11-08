@@ -1,5 +1,5 @@
 # Builder stage
-FROM rust:1.76-slim-bullseye as builder
+FROM rust:1.76-slim-bullseye AS builder
 
 ARG TRACE_LEVEL
 
