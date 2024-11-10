@@ -636,7 +636,7 @@ pub(crate) async fn handle_state_manager_event(
     match event {
         AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
             stack_small_id,
-            public_key,
+            sui_address,
             total_num_tokens,
             result_sender,
         } => {
@@ -644,7 +644,7 @@ pub(crate) async fn handle_state_manager_event(
                 .state
                 .get_available_stack_with_compute_units(
                     stack_small_id,
-                    &public_key,
+                    &sui_address,
                     total_num_tokens,
                 )
                 .await;

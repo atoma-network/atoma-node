@@ -13,12 +13,14 @@ mod middleware {
         Digest,
     };
     use flume::Sender;
-    use hex::ToHex;
     use serde_json::json;
     use serial_test::serial;
     use std::{path::PathBuf, str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
-    use sui_sdk::types::crypto::{EncodeDecodeBase64, PublicKey, Signature, SignatureScheme};
+    use sui_sdk::types::{
+        base_types::SuiAddress,
+        crypto::{EncodeDecodeBase64, PublicKey, Signature, SignatureScheme},
+    };
     use tempfile::tempdir;
     use tokenizers::Tokenizer;
     use tokio::task::JoinHandle;
@@ -77,7 +79,7 @@ mod middleware {
     }
 
     async fn setup_database(
-        public_key: String,
+        public_key: PublicKey,
     ) -> (
         PathBuf,
         JoinHandle<()>,
@@ -98,7 +100,7 @@ mod middleware {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
-            "sqlite::memory:".to_string(),
+            "sqlite::memory:",
             event_subscriber_receiver,
             state_manager_receiver,
         )
@@ -121,8 +123,9 @@ mod middleware {
             .subscribe_node_to_task(1, 1, 100, 1000)
             .await
             .unwrap();
+        let sui_address = SuiAddress::from(&public_key);
         let stack = Stack {
-            owner_address: format!("0x{}", public_key),
+            owner_address: sui_address.to_string(),
             stack_small_id: 1,
             stack_id: "1".to_string(),
             task_small_id: 1,
@@ -176,7 +179,7 @@ mod middleware {
             state_manager_sender,
             shutdown_sender,
             _event_subscriber_sender,
-        ) = setup_database(public_key.encode_hex()).await;
+        ) = setup_database(public_key.clone()).await;
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
@@ -241,7 +244,7 @@ mod middleware {
                 "role": "user",
                 "content": "What is the capital of the moon?"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         // Build request
@@ -287,7 +290,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -329,7 +332,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -368,7 +371,7 @@ mod middleware {
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
             "messages": "not-an-array", // Invalid messages format
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -393,7 +396,7 @@ mod middleware {
 
     #[tokio::test]
     #[serial]
-    async fn test_verify_stack_permissions_missing_max_completion_tokens() {
+    async fn test_verify_stack_permissions_missing_max_tokens() {
         let (
             app_state,
             _,
@@ -410,7 +413,7 @@ mod middleware {
                 "role": "user",
                 "content": "Hello"
             }],
-            // Intentionally omitting max_completion_tokens
+            // Intentionally omitting max_tokens
         });
 
         let req = Request::builder()
@@ -452,7 +455,7 @@ mod middleware {
                 "role": "system",
                 "content": "You are a helpful assistant."
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -494,7 +497,7 @@ mod middleware {
                 "role": "system",
                 "content": "You are a helpful assistant."
             }],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         });
 
         let req = Request::builder()
@@ -559,7 +562,7 @@ mod middleware {
                     "content": "Longer message with more tokens to count"
                 }
             ],
-            "max_completion_tokens": 50,
+            "max_tokens": 50,
         });
 
         let req = Request::builder()
@@ -579,9 +582,9 @@ mod middleware {
 
             // Verify token counting logic:
             // 1. Should include tokens from both messages
-            // 2. Should include max_completion_tokens (50)
+            // 2. Should include max_tokens (50)
             // 3. Should include safety margins (3 tokens per message)
-            assert!(metadata.estimated_total_tokens > 50); // At least more than max_completion_tokens
+            assert!(metadata.estimated_total_tokens > 50); // At least more than max_tokens
 
             // You could add more specific assertions based on your tokenizer's behavior
             // For example, if you know the exact token counts:

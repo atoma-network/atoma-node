@@ -216,8 +216,8 @@ pub enum AtomaAtomaStateManagerEvent {
     GetAvailableStackWithComputeUnits {
         /// Unique small integer identifier for the stack
         stack_small_id: i64,
-        /// Public key of the user
-        public_key: String,
+        /// Sui address of the user
+        sui_address: String,
         /// Total number of tokens
         total_num_tokens: i64,
         /// Oneshot channel to send the result back to the sender channel

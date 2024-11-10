@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        BINARY: atoma-node
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
     volumes:
       - ./config.toml:/app/config.toml
       - ./logs:/app/logs
@@ -13,6 +13,7 @@ services:
     env_file: .env
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"  # Expose Atoma service port
+      - "${ATOMA_DAEMON_PORT:-3001}:3001"  # Expose Atoma daemon port
     depends_on:
       - vllm
     networks: atoma-networks
