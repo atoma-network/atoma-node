@@ -82,8 +82,8 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 
 ```toml
 [atoma-service]
-inference_service_url = "http://chat-completions:8000"    # Internal Docker network URL
-embeddings_service_url = ""
+chat_completions_service_url = "http://chat-completions:8000"    # Internal Docker network URL
+embeddings_service_url = "http://embeddings:80"
 multimodal_service_url = ""
 models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = [""]

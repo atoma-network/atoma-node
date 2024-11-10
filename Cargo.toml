@@ -15,6 +15,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 anyhow = "1.0.81"
+atoma-daemon = { path = "./atoma-daemon" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { path = "./atoma-sui" }
 axum = "0.7.5"

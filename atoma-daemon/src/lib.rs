@@ -2,6 +2,8 @@ pub mod config;
 pub mod daemon;
 pub mod types;
 
+pub use crate::{config::AtomaDaemonConfig, daemon::DaemonState};
+
 use axum::http::StatusCode;
 use blake2::{
     digest::generic_array::{typenum::U32, GenericArray},
