@@ -1,6 +1,6 @@
 [atoma-service]
-inference_service_url = "http://chat-completions:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
-models = ["meta-llama/Llama-3.1-70B-Instruct"]
+chat_completions_service_url = "http://chat-completions:8000" # Internal Docker network URL
+embeddings_service_url = "http://embeddings:80"
 revisions = ["main"]
 service_bind_address = "0.0.0.0:3000"
 
