@@ -1,5 +1,5 @@
 # Base configuration for Atoma services
-x-atoma-service: &atoma-service
+x-atoma-node: &atoma-node
   build:
     context: .
     dockerfile: Dockerfile
@@ -31,7 +31,7 @@ x-inference-service: &inference-service
 services:
   # Updated atoma-node service
   atoma-node:
-    <<: *atoma-service
+    <<: *atoma-node
     build:
       args:
         BINARY: atoma-node
