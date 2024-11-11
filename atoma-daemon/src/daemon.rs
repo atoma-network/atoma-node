@@ -21,7 +21,9 @@ use crate::{
         NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse,
         NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest,
         NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
-        NodeTaskUnsubscriptionResponse, NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
+        NodeTaskUnsubscriptionResponse, NodeTaskUpdateSubscriptionRequest,
+        NodeTaskUpdateSubscriptionResponse, NodeTrySettleStacksRequest,
+        NodeTrySettleStacksResponse,
     },
     CommittedStackProof,
 };
@@ -139,6 +141,7 @@ pub async fn run_daemon(
 /// * `GET /subscriptions/:id` - Get subscriptions for a specific node
 /// * `POST /model_subscribe` - Subscribe a node to a model
 /// * `POST /task_subscribe` - Subscribe a node to a task
+/// * `POST /task_update_subscription` - Updates an already existing subscription to a task
 /// * `POST /task_unsubscribe` - Unsubscribe a node from a task
 ///
 /// ## Task Management
@@ -212,6 +215,10 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         .route("/model_subscribe", post(submit_node_model_subscription_tx))
         .route("/task_subscribe", post(submit_node_task_subscription_tx))
         .route(
+            "/task_update_subscription",
+            post(submit_update_node_task_subscription_tx),
+        )
+        .route(
             "/task_unsubscribe",
             post(submit_node_task_unsubscription_tx),
         )
@@ -225,6 +232,7 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
         )
         .route("/claim_funds", post(submit_claim_funds_tx))
         .with_state(daemon_state)
+        .route("/health", get(health))
 }
 
 /// Retrieves all node subscriptions for the currently registered node badges.
@@ -327,6 +335,15 @@ async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<V
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(all_tasks))
+}
+
+/// Health check endpoint for the daemon.
+///
+/// # Returns
+/// * `StatusCode::OK` - Always returns OK
+#[instrument(level = "trace", skip_all)]
+async fn health() -> StatusCode {
+    StatusCode::OK
 }
 
 /// Retrieves all stacks associated with the currently registered node badges.
@@ -712,6 +729,7 @@ async fn submit_node_registration_tx(
             error!("Failed to submit node registration tx");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+    info!("Node registration tx submitted: {}", tx_digest);
     Ok(Json(NodeRegistrationResponse { tx_digest }))
 }
 
@@ -814,7 +832,7 @@ async fn submit_node_task_subscription_tx(
 ) -> Result<Json<NodeTaskSubscriptionResponse>> {
     let NodeTaskSubscriptionRequest {
         task_small_id,
-        node_small_id,
+        node_badge_id,
         price_per_compute_unit,
         max_num_compute_units,
         gas,
@@ -827,7 +845,7 @@ async fn submit_node_task_subscription_tx(
         .await
         .submit_node_task_subscription_tx(
             task_small_id as u64,
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             price_per_compute_unit,
             max_num_compute_units,
             gas,
@@ -840,6 +858,71 @@ async fn submit_node_task_subscription_tx(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(NodeTaskSubscriptionResponse { tx_digest }))
+}
+
+/// Submits a node task update subscription transaction.
+///
+/// # Arguments
+/// * `daemon_state` - The shared state containing the client for transaction submission.
+/// * `value` - A JSON payload containing the node task subscription request details.
+///
+/// # Returns
+/// * `Result<Json<NodeTaskUpdateSubscriptionResponse>>` - A JSON response containing the transaction digest.
+///   - `Ok(Json<NodeTaskSubscriptionResponse>)` - Successfully submitted the node task subscription transaction.
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to submit the transaction.
+///
+/// # Example Request
+/// ```json
+/// {
+///     "task_small_id": 123,
+///     "node_small_id": 456,
+///     "price_per_compute_unit": 10,
+///     "max_num_compute_units": 100,
+///     "gas": "0x789",
+///     "gas_budget": 1000,
+///     "gas_price": 10
+/// }
+/// ```
+///
+/// # Example Response
+/// ```json
+/// {
+///     "tx_digest": "0xabc"
+/// }
+/// ```
+#[instrument(level = "trace", skip_all)]
+pub async fn submit_update_node_task_subscription_tx(
+    State(daemon_state): State<DaemonState>,
+    Json(request): Json<NodeTaskUpdateSubscriptionRequest>,
+) -> Result<Json<NodeTaskUpdateSubscriptionResponse>> {
+    let NodeTaskUpdateSubscriptionRequest {
+        task_small_id,
+        node_badge_id,
+        price_per_compute_unit,
+        max_num_compute_units,
+        gas,
+        gas_budget,
+        gas_price,
+    } = request;
+    let tx_digest = daemon_state
+        .client
+        .write()
+        .await
+        .submit_update_node_task_subscription_tx(
+            task_small_id as u64,
+            node_badge_id,
+            price_per_compute_unit,
+            max_num_compute_units,
+            gas,
+            gas_budget,
+            gas_price,
+        )
+        .await
+        .map_err(|_| {
+            error!("Failed to submit node task update subscription");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(NodeTaskUpdateSubscriptionResponse { tx_digest }))
 }
 
 /// Submits a node task unsubscription transaction.
@@ -877,7 +960,7 @@ async fn submit_node_task_unsubscription_tx(
 ) -> Result<Json<NodeTaskUnsubscriptionResponse>> {
     let NodeTaskUnsubscriptionRequest {
         task_small_id,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -888,7 +971,7 @@ async fn submit_node_task_unsubscription_tx(
         .await
         .submit_unsubscribe_node_from_task_tx(
             task_small_id as u64,
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             gas,
             gas_budget,
             gas_price,
@@ -938,7 +1021,7 @@ async fn submit_node_try_settle_stacks_tx(
     let NodeTrySettleStacksRequest {
         stack_small_ids,
         num_claimed_compute_units,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -966,7 +1049,7 @@ async fn submit_node_try_settle_stacks_tx(
             .await
             .submit_try_settle_stack_tx(
                 *stack_small_id as u64,
-                node_small_id.map(|id| id as u64),
+                node_badge_id,
                 num_claimed_compute_units,
                 committed_stack_proof,
                 stack_merkle_leaf,
@@ -1089,13 +1172,26 @@ async fn submit_stack_settlement_attestations_tx(
                 attestation_node_index.attestation_node_index as u64 + 1,
             )?;
 
+            let node_small_id = node_small_ids[attestation_node_index.node_small_id_index];
+            let node_badge_id = daemon_state
+                .node_badges
+                .iter()
+                .find_map(|(nb, ns)| {
+                    if *ns as i64 == node_small_id {
+                        Some(*nb)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+
             let tx_digest = daemon_state
                 .client
                 .write()
                 .await
                 .submit_stack_settlement_attestation_tx(
                     stack_small_id as u64,
-                    Some(node_small_ids[attestation_node_index.node_small_id_index] as u64),
+                    Some(node_badge_id),
                     committed_stack_proof,
                     stack_merkle_leaf,
                     gas,
@@ -1148,7 +1244,7 @@ async fn submit_claim_funds_tx(
 ) -> Result<Json<NodeClaimFundsResponse>> {
     let NodeClaimFundsRequest {
         stack_small_ids,
-        node_small_id,
+        node_badge_id,
         gas,
         gas_budget,
         gas_price,
@@ -1160,7 +1256,7 @@ async fn submit_claim_funds_tx(
         .await
         .submit_claim_funds_tx(
             stack_small_ids.iter().map(|id| *id as u64).collect(),
-            node_small_id.map(|id| id as u64),
+            node_badge_id,
             gas,
             gas_budget,
             gas_price,
