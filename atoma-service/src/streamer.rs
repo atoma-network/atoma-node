@@ -22,6 +22,7 @@ use crate::server::utils;
 
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
+    /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     /// The accumulated response for final processing
     accumulated_response: Vec<Value>,

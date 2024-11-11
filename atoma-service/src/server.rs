@@ -392,7 +392,6 @@ async fn handle_non_streaming_response(
             },
         )?;
     response_body["signature"] = json!(signature);
-    response_body["response_hash"] = json!(response_hash);
 
     // Extract the response total number of tokens
     let total_tokens = response_body
