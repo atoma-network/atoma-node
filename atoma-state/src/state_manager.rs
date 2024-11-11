@@ -1169,7 +1169,7 @@ impl AtomaState {
         Ok(())
     }
 
-    /// Updates the number of tokens already computed for a stack.
+    /// Updates the number of compute units already computed for a stack.
     ///
     /// This method updates the `already_computed_units` field in the `stacks` table
     /// for the specified `stack_small_id`.
@@ -1177,8 +1177,8 @@ impl AtomaState {
     /// # Arguments
     ///
     /// * `stack_small_id` - The unique small identifier of the stack to update.
-    /// * `estimated_total_tokens` - The estimated total number of tokens.
-    /// * `total_tokens` - The total number of tokens.
+    /// * `estimated_total_compute_units` - The estimated total number of compute units.
+    /// * `total_compute_units` - The total number of compute units.
     ///
     /// # Returns
     ///
@@ -1194,28 +1194,28 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn update_stack_num_tokens(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), AtomaStateManagerError> {
-    ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
+    /// async fn update_stack_num_compute_units(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_compute_units: i64, total_compute_units: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_stack_num_compute_units(stack_small_id, estimated_total_compute_units, total_compute_units).await
     /// }
     /// ```
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
+        fields(stack_small_id = %stack_small_id, estimated_total_compute_units = %estimated_total_compute_units, total_compute_units = %total_compute_units)
     )]
-    pub async fn update_stack_num_tokens(
+    pub async fn update_stack_num_compute_units(
         &self,
         stack_small_id: i64,
-        estimated_total_tokens: i64,
-        total_tokens: i64,
+        estimated_total_compute_units: i64,
+        total_compute_units: i64,
     ) -> Result<()> {
         let result = sqlx::query(
             "UPDATE stacks 
             SET already_computed_units = already_computed_units - (? - ?) 
             WHERE stack_small_id = ?",
         )
-        .bind(estimated_total_tokens)
-        .bind(total_tokens)
+        .bind(estimated_total_compute_units)
+        .bind(total_compute_units)
         .bind(stack_small_id)
         .execute(&self.db)
         .await?;

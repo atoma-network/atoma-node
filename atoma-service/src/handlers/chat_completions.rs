@@ -49,7 +49,7 @@ pub(crate) struct ChatCompletionsOpenApi;
 ///
 /// # Arguments
 ///
-/// * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated token count from middleware
+/// * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
 /// * `state` - Application state containing the inference client and keystore
 /// * `payload` - The chat completion request body
 ///
@@ -89,7 +89,7 @@ pub async fn chat_completions_handler(
     info!("Received chat completions request, with payload: {payload}");
     let RequestMetadata {
         stack_small_id,
-        estimated_total_tokens,
+        estimated_total_compute_units,
         payload_hash,
     } = request_metadata;
     let client = Client::new();
@@ -121,24 +121,24 @@ pub async fn chat_completions_handler(
     response_body["signature"] = json!(signature);
 
     // Extract the response total number of tokens
-    let total_tokens = response_body
+    let total_compute_units = response_body
         .get("usage")
         .and_then(|usage| usage.get("total_tokens"))
-        .and_then(|total_tokens| total_tokens.as_u64())
+        .and_then(|total_compute_units| total_compute_units.as_u64())
         .map(|n| n as i64)
         .unwrap_or(0);
 
-    // NOTE: We need to update the stack num tokens, because the inference response might have produced
+    // NOTE: We need to update the stack num compute units, because the inference response might have produced
     // less tokens than estimated what we initially estimated, from the middleware.
     state
         .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
-            estimated_total_tokens,
-            total_tokens,
+            estimated_total_compute_units,
+            total_compute_units,
         })
         .map_err(|e| {
-            error!("Error updating stack num tokens: {}", e);
+            error!("Error updating stack num compute units: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 

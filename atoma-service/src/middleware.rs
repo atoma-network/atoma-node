@@ -32,17 +32,21 @@ const MODEL: &str = "model";
 pub struct RequestMetadata {
     /// The stack small ID
     pub stack_small_id: i64,
-    /// The estimated total number of tokens
-    pub estimated_total_tokens: i64,
+    /// The estimated total number of compute units
+    pub estimated_total_compute_units: i64,
     /// The payload hash
     pub payload_hash: [u8; 32],
 }
 
 impl RequestMetadata {
     /// Create a new `RequestMetadata` with the given stack info
-    pub fn with_stack_info(mut self, stack_small_id: i64, estimated_total_tokens: i64) -> Self {
+    pub fn with_stack_info(
+        mut self,
+        stack_small_id: i64,
+        estimated_total_compute_units: i64,
+    ) -> Self {
         self.stack_small_id = stack_small_id;
-        self.estimated_total_tokens = estimated_total_tokens;
+        self.estimated_total_compute_units = estimated_total_compute_units;
         self
     }
 
@@ -141,7 +145,7 @@ pub async fn signature_verification_middleware(
     Ok(next.run(req).await)
 }
 
-/// Middleware for verifying stack permissions and token usage.
+/// Middleware for verifying stack permissions and compute units usage.
 ///
 /// This middleware performs several checks to ensure that the incoming request
 /// is authorized to use the specified model and has sufficient compute units available.
@@ -150,7 +154,7 @@ pub async fn signature_verification_middleware(
 /// 1. Extracts and validates the public key and stack ID from request headers.
 /// 2. Parses the request body to extract the model and messages.
 /// 3. Verifies that the requested model is supported.
-/// 4. Calculates the total number of tokens required for the request.
+/// 4. Calculates the total number of compute units required for the request.
 /// 5. Checks if the user has an available stack with sufficient compute units.
 ///
 /// # Headers
@@ -167,7 +171,7 @@ pub async fn signature_verification_middleware(
 /// # Extensions
 /// This middleware adds a `RequestMetadata` extension to the request containing:
 /// - `stack_small_id`: The ID of the stack being used
-/// - `estimated_total_tokens`: The total number of tokens calculated for the request
+/// - `estimated_total_compute_units`: The total number of compute units calculated for the request
 ///
 /// This metadata can be accessed by downstream handlers using `req.extensions()`.
 ///
@@ -274,7 +278,7 @@ pub async fn verify_stack_permissions(
             error!("Model not supported");
             StatusCode::BAD_REQUEST
         })?;
-    let mut total_num_tokens = 0;
+    let mut total_num_compute_units = 0;
     for message in messages {
         let content = message.get("content").ok_or_else(|| {
             error!("Message content not found");
@@ -292,14 +296,14 @@ pub async fn verify_stack_permissions(
             })?
             .get_ids()
             .len() as i64;
-        total_num_tokens += num_tokens;
+        total_num_compute_units += num_tokens;
         // add 2 tokens as a safety margin, for start and end message delimiters
-        total_num_tokens += 2;
+        total_num_compute_units += 2;
         // add 1 token as a safety margin, for the role name of the message
-        total_num_tokens += 1;
+        total_num_compute_units += 1;
     }
 
-    total_num_tokens += body_json
+    total_num_compute_units += body_json
         .get(MAX_TOKENS)
         .and_then(|value| value.as_i64())
         .ok_or_else(|| {
@@ -314,7 +318,7 @@ pub async fn verify_stack_permissions(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
                 sui_address: sui_address.to_string(),
-                total_num_tokens,
+                total_num_compute_units,
                 result_sender,
             },
         )
@@ -340,7 +344,7 @@ pub async fn verify_stack_permissions(
         return Err(StatusCode::UNAUTHORIZED);
     }
     let request_metadata =
-        RequestMetadata::default().with_stack_info(stack_small_id, total_num_tokens);
+        RequestMetadata::default().with_stack_info(stack_small_id, total_num_compute_units);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)

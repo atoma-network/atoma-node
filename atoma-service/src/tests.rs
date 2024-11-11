@@ -207,13 +207,13 @@ mod middleware {
         let request_metadata = RequestMetadata::default();
 
         assert_eq!(request_metadata.stack_small_id, 0);
-        assert_eq!(request_metadata.estimated_total_tokens, 0);
+        assert_eq!(request_metadata.estimated_total_compute_units, 0);
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
         let request_metadata = request_metadata.with_stack_info(1, 2);
 
         assert_eq!(request_metadata.stack_small_id, 1);
-        assert_eq!(request_metadata.estimated_total_tokens, 2);
+        assert_eq!(request_metadata.estimated_total_compute_units, 2);
 
         let request_metadata = request_metadata.with_payload_hash([3u8; 32]);
 
@@ -518,7 +518,7 @@ mod middleware {
 
             assert_eq!(metadata.stack_small_id, 1);
             // The exact token count will depend on your tokenizer, but we can verify it's non-zero
-            assert!(metadata.estimated_total_tokens > 0);
+            assert!(metadata.estimated_total_compute_units > 0);
 
             Ok(Response::new(Body::empty()))
         }
@@ -584,7 +584,7 @@ mod middleware {
             // 1. Should include tokens from both messages
             // 2. Should include max_tokens (50)
             // 3. Should include safety margins (3 tokens per message)
-            assert!(metadata.estimated_total_tokens > 50); // At least more than max_tokens
+            assert!(metadata.estimated_total_compute_units > 50); // At least more than max_tokens
 
             // You could add more specific assertions based on your tokenizer's behavior
             // For example, if you know the exact token counts:
@@ -835,7 +835,7 @@ mod middleware {
         // Create initial RequestMetadata with some existing values
         let initial_metadata = RequestMetadata {
             stack_small_id: 42,
-            estimated_total_tokens: 100,
+            estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
         };
 
@@ -860,7 +860,7 @@ mod middleware {
 
             // Verify that the payload hash was updated but other fields preserved
             assert_eq!(metadata.stack_small_id, 42);
-            assert_eq!(metadata.estimated_total_tokens, 100);
+            assert_eq!(metadata.estimated_total_compute_units, 100);
             assert_ne!(metadata.payload_hash, [0u8; 32]);
             assert_eq!(
                 metadata.payload_hash,
