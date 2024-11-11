@@ -38,12 +38,17 @@ impl AtomaDaemonConfig {
     /// * The configuration format doesn't match the expected structure
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder()
-            .add_source(File::with_name(config_file_path.as_ref().to_str().unwrap()));
+            .add_source(File::with_name(config_file_path.as_ref().to_str().unwrap()))
+            .add_source(
+                config::Environment::with_prefix("ATOMA_DAEMON")
+                    .keep_prefix(true)
+                    .separator("__"),
+            );
         let config = builder
             .build()
             .expect("Failed to generate atoma-daemon configuration file");
         config
-            .get::<Self>("atoma-daemon")
+            .get::<Self>("atoma_daemon")
             .expect("Failed to generate configuration instance")
     }
 }
