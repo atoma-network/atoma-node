@@ -14,13 +14,16 @@ use blake2::{
     Blake2b, Digest,
 };
 use serde_json::Value;
-use sui_sdk::types::crypto::{Signature, SuiSignature};
+use sui_sdk::types::{
+    base_types::SuiAddress,
+    crypto::{PublicKey, Signature, SuiSignature},
+};
 use tokio::sync::oneshot;
 use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
-const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
+const MAX_TOKENS: &str = "max_tokens";
 const MESSAGES: &str = "messages";
 const MODEL: &str = "model";
 
@@ -107,7 +110,7 @@ pub async fn signature_verification_middleware(
         })?
         .to_str()
         .map_err(|e| {
-            error!("Failed to exract base64 signature encoding, with error: {e}");
+            error!("Failed to extract base64 signature encoding, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
@@ -159,7 +162,7 @@ pub async fn signature_verification_middleware(
 /// The body should be a JSON object containing:
 /// - `model`: The name of the AI model to be used.
 /// - `messages`: An array of message objects, each containing a "content" field.
-/// - `max_completion_tokens`: The maximum number of tokens for the AI's response.
+/// - `max_tokens`: The maximum number of tokens for the AI's response.
 ///
 /// # Extensions
 /// This middleware adds a `RequestMetadata` extension to the request containing:
@@ -205,7 +208,12 @@ pub async fn verify_stack_permissions(
         StatusCode::BAD_REQUEST
     })?;
     let public_key_bytes = signature.public_key_bytes();
-    let public_key_hex = format!("0x{}", hex::encode(public_key_bytes));
+    let public_key =
+        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+            error!("Failed to extract public key from bytes, with error: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+    let sui_address = SuiAddress::from(&public_key);
     let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
@@ -292,10 +300,10 @@ pub async fn verify_stack_permissions(
     }
 
     total_num_tokens += body_json
-        .get(MAX_COMPLETION_TOKENS)
+        .get(MAX_TOKENS)
         .and_then(|value| value.as_i64())
         .ok_or_else(|| {
-            error!("Max completion tokens not found in body");
+            error!("Max tokens not found in body");
             StatusCode::BAD_REQUEST
         })?;
 
@@ -305,7 +313,7 @@ pub async fn verify_stack_permissions(
         .send(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
-                public_key: public_key_hex,
+                sui_address: sui_address.to_string(),
                 total_num_tokens,
                 result_sender,
             },
