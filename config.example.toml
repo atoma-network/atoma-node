@@ -1,27 +1,31 @@
 [atoma_service]
-inference_service_url = "http://vllm:8000" # URL of the VLLM inference service, that is compatible with the the docker-compose file specs
-models = ["meta-llama/Llama-3.1-70B-Instruct"]
+chat_completions_service_url = "http://chat-completions:8000" # Internal Docker network URL
+embeddings_service_url = "http://embeddings:80"
+image_generations_service_url = "http://image-generations:80"
 revisions = ["main"]
 service_bind_address = "0.0.0.0:3000"
 
 [atoma_sui]
-http_rpc_node_addr = "https://fullnode.testnet.sui.io:443" # Current RPC node address for testnet
-atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be" # Current ATOMA DB object ID for testnet
+http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet
+atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be"         # Current ATOMA DB object ID for testnet
 atoma_package_id = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
-toma_package_id = "0xa1b2ce1a52abc52c5d21be9da0f752dbd587018bc666c5298f778f42de26df1d" # Current TOMA package ID for testnet
-request_timeout = { secs = 300, nanos = 0 } # Some reference value
-max_concurrent_requests = 10 # Some reference value
-limit = 100 # Some reference value
-node_small_ids = [1]  # List of node IDs under control of the node wallet
-sui_config_path = "/root/.sui/sui_config/client.yaml" # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
-sui_keystore_path = "/root/.sui/sui_config/sui.keystore" # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
-cursor_path = "./cursor.toml" # Path to the Sui events cursor file
+toma_package_id = "0xa1b2ce1a52abc52c5d21be9da0f752dbd587018bc666c5298f778f42de26df1d"  # Current TOMA package ID for testnet
+request_timeout = { secs = 300, nanos = 0 }                                             # Some reference value
+max_concurrent_requests = 10                                                            # Some reference value
+limit = 100                                                                             # Some reference value
+node_small_ids = [1]                                                                    # List of node IDs under control of the node wallet
+sui_config_path = "/root/.sui/sui_config/client.yaml"                                   # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
+sui_keystore_path = "/root/.sui/sui_config/sui.keystore"                                # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
+cursor_path = "./cursor.toml"                                                           # Path to the Sui events cursor file
 
 [atoma_state]
-database_url = "sqlite:///app/data/atoma.db"  # Path inside the container
+database_url = "sqlite:///app/data/atoma.db" # Path inside the container
 
 [atoma_daemon]
 service_bind_address = "0.0.0.0:3001"
 node_badges = [
-    ["0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600", 1]
+    [
+        "0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600",
+        1,
+    ],
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
