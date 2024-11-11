@@ -29,6 +29,7 @@ mod middleware {
     use crate::{
         middleware::{
             signature_verification_middleware, verify_stack_permissions, RequestMetadata,
+            RequestType,
         },
         server::AppState,
     };
@@ -185,7 +186,9 @@ mod middleware {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer)]),
                 state_manager_sender,
-                inference_service_url: "".to_string(),
+                chat_completions_service_url: "".to_string(),
+                embeddings_service_url: "".to_string(),
+                image_generations_service_url: "".to_string(),
                 keystore: Arc::new(keystore),
                 address_index: 0,
             },
@@ -837,6 +840,7 @@ mod middleware {
             stack_small_id: 42,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
+            request_type: RequestType::ChatCompletions,
         };
 
         let mut req = Request::builder()

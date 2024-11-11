@@ -1,9 +1,11 @@
-use crate::server::AppState;
-use axum::{extract::State, http::StatusCode, Json};
+use crate::{middleware::RequestMetadata, server::AppState};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use reqwest::Client;
 use serde_json::Value;
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 use utoipa::OpenApi;
+
+use super::sign_response_and_update_stack_hash;
 
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
@@ -41,16 +43,29 @@ pub(crate) struct ImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(_state, payload),
+    skip(state, payload),
     fields(path = IMAGE_GENERATIONS_PATH)
 )]
 pub async fn image_generations_handler(
-    State(_state): State<AppState>,
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    info!("Received image generations request, with payload: {payload}");
+
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units: _,
+        payload_hash,
+        request_type: _,
+    } = request_metadata;
+
     let client = Client::new();
     let response = client
-        .post("http://image-generations:3000/v1/images/generations")
+        .post(format!(
+            "{}{}",
+            state.image_generations_service_url, IMAGE_GENERATIONS_PATH
+        ))
         .json(&payload)
         .send()
         .await
@@ -58,11 +73,13 @@ pub async fn image_generations_handler(
             error!("Error sending request to image generations service: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
-    let response_body = response.json::<Value>().await.map_err(|e| {
+    let mut response_body = response.json::<Value>().await.map_err(|e| {
         error!("Error reading response body: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
+        .await?;
 
     Ok(Json(response_body))
 }

@@ -59,12 +59,24 @@ pub struct AppState {
     /// models as needed.
     pub models: Arc<Vec<String>>,
 
-    /// URL of the inference service.
+    /// URL of the chat completions service.
     ///
     /// This URL points to the external service responsible for performing
-    /// AI model inference. The application forwards requests to this service
-    /// to obtain AI-generated responses.
-    pub inference_service_url: String,
+    /// AI model chat completions. The application forwards requests to this
+    /// service to obtain AI-generated responses.
+    pub chat_completions_service_url: String,
+
+    /// URL for the embeddings service.
+    ///
+    /// This is an optional field that, if provided, specifies the endpoint
+    /// for the embeddings service used by the Atoma Service.
+    pub embeddings_service_url: String,
+
+    /// URL for the image generations service.
+    ///
+    /// This is an optional field that, if provided, specifies the endpoint
+    /// for the image generations service used by the Atoma Service.
+    pub image_generations_service_url: String,
 
     /// The Sui keystore of the node.
     ///

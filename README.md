@@ -85,7 +85,7 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 chat_completions_service_url = "http://chat-completions:8000"    # Internal Docker network URL
 embeddings_service_url = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
-multimodal_service_url = ""
+image_generations_service_url = ""
 models = ["meta-llama/Llama-3.1-70B-Instruct"]
 revisions = [""]
 service_bind_address = "0.0.0.0:3000"         # Bind to all interfaces
@@ -276,9 +276,9 @@ The application uses a TOML configuration file with the following sections:
 
 ##### `[atoma-service]`
 
-- `inference_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
+- `chat_completions_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
 - `embeddings_service_url` (optional): Endpoint URL for the embeddings service. At least one of the service URLs must be provided.
-- `multimodal_service_url` (optional): Endpoint URL for the multimodal service. At least one of the service URLs must be provided.
+- `image_generations_service_url` (optional): Endpoint URL for the image generations service. At least one of the service URLs must be provided.
 - `models`: List of model names deployed by the Atoma Service
 - `revisions`: List of model revisions supported by the service
 - `service_bind_address`: Address and port for the Atoma Service to bind to
@@ -305,9 +305,9 @@ The application uses a TOML configuration file with the following sections:
 
 ```toml
 [atoma-service]
-inference_service_url = "<INFERENCE_SERVICE_URL>"
+chat_completions_service_url = "<chat_completions_service_url>"
 embeddings_service_url = "<EMBEDDINGS_SERVICE_URL>"
-multimodal_service_url = "<MULTIMODAL_SERVICE_URL>"
+image_generations_service_url = "<image_generations_service_url>"
 models = ["<MODEL_1>", "<MODEL_2>"]
 revisions = ["<REVISION_1>", "<REVISION_2>"]
 service_bind_address = "<HOST>:<PORT>"

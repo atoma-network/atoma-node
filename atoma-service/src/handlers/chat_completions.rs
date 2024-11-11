@@ -1,12 +1,8 @@
-use crate::server::{utils, AppState};
+use crate::{handlers::sign_response_and_update_stack_hash, server::AppState};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{extract::State, http::StatusCode, Extension, Json};
-use blake2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Digest,
-};
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tracing::{error, info, instrument};
 use utoipa::OpenApi;
 
@@ -87,16 +83,19 @@ pub async fn chat_completions_handler(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     info!("Received chat completions request, with payload: {payload}");
+
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units,
         payload_hash,
+        request_type: _,
     } = request_metadata;
+
     let client = Client::new();
     let response = client
         .post(format!(
             "{}{}",
-            state.inference_service_url, CHAT_COMPLETIONS_PATH
+            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
         ))
         .json(&payload)
         .send()
@@ -109,16 +108,6 @@ pub async fn chat_completions_handler(
         error!("Error reading response body: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-
-    // Sign the response body byte content and add the base64 encoded signature to the response body
-    let (response_hash, signature) =
-        utils::sign_response_body(&response_body, &state.keystore, state.address_index).map_err(
-            |e| {
-                error!("Error signing response body: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
-        )?;
-    response_body["signature"] = json!(signature);
 
     // Extract the response total number of tokens
     let total_compute_units = response_body
@@ -142,23 +131,9 @@ pub async fn chat_completions_handler(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let mut blake2b = blake2::Blake2b::new();
-    blake2b.update([payload_hash, response_hash].concat());
-    let total_hash: GenericArray<u8, U32> = blake2b.finalize();
-    let total_hash_bytes: [u8; 32] = total_hash
-        .as_slice()
-        .try_into()
-        .expect("Invalid BLAKE2b hash length");
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash: total_hash_bytes,
-        })
-        .map_err(|e| {
-            error!("Error updating stack total hash: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
+        .await?;
+
     Ok(Json(response_body))
 }
 

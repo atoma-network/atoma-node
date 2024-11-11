@@ -1,6 +1,12 @@
 use std::str::FromStr;
 
-use crate::server::AppState;
+use crate::{
+    handlers::{
+        chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
+        image_generations::IMAGE_GENERATIONS_PATH,
+    },
+    server::AppState,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
@@ -23,9 +29,12 @@ use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+const MODEL: &str = "model";
 const MAX_TOKENS: &str = "max_tokens";
 const MESSAGES: &str = "messages";
-const MODEL: &str = "model";
+const INPUT: &str = "input";
+const IMAGE_SIZE: &str = "size";
+const IMAGE_N: &str = "n";
 
 /// Metadata extracted from the request
 #[derive(Clone, Debug, Default)]
@@ -36,6 +45,15 @@ pub struct RequestMetadata {
     pub estimated_total_compute_units: i64,
     /// The payload hash
     pub payload_hash: [u8; 32],
+    pub request_type: RequestType,
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum RequestType {
+    #[default]
+    ChatCompletions,
+    Embeddings,
+    ImageGenerations,
 }
 
 impl RequestMetadata {
@@ -53,6 +71,11 @@ impl RequestMetadata {
     /// Create a new `RequestMetadata` with the given payload hash
     pub fn with_payload_hash(mut self, payload_hash: [u8; 32]) -> Self {
         self.payload_hash = payload_hash;
+        self
+    }
+
+    pub fn with_request_type(mut self, request_type: RequestType) -> Self {
+        self.request_type = request_type;
         self
     }
 }
@@ -195,6 +218,18 @@ pub async fn verify_stack_permissions(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
+
+    // Get request path to determine type
+    let request_type = match req_parts.uri.path() {
+        CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
+        EMBEDDINGS_PATH => RequestType::Embeddings,
+        IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
+        _ => {
+            error!("Unknown request path");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
     let base64_signature = req_parts
         .headers
         .get("X-Signature")
@@ -258,58 +293,9 @@ pub async fn verify_stack_permissions(
         error!("Model not supported");
         return Err(StatusCode::BAD_REQUEST);
     }
-    let messages = body_json
-        .get(MESSAGES)
-        .ok_or_else(|| {
-            error!("Messages not found in body");
-            StatusCode::BAD_REQUEST
-        })?
-        .as_array()
-        .ok_or_else(|| {
-            error!("Messages is not an array");
-            StatusCode::BAD_REQUEST
-        })?;
 
-    let tokenizer_index = state
-        .models
-        .iter()
-        .position(|m| m == model)
-        .ok_or_else(|| {
-            error!("Model not supported");
-            StatusCode::BAD_REQUEST
-        })?;
-    let mut total_num_compute_units = 0;
-    for message in messages {
-        let content = message.get("content").ok_or_else(|| {
-            error!("Message content not found");
-            StatusCode::BAD_REQUEST
-        })?;
-        let content_str = content.as_str().ok_or_else(|| {
-            error!("Message content is not a string");
-            StatusCode::BAD_REQUEST
-        })?;
-        let num_tokens = state.tokenizers[tokenizer_index]
-            .encode(content_str, true)
-            .map_err(|_| {
-                error!("Failed to encode message content");
-                StatusCode::BAD_REQUEST
-            })?
-            .get_ids()
-            .len() as i64;
-        total_num_compute_units += num_tokens;
-        // add 2 tokens as a safety margin, for start and end message delimiters
-        total_num_compute_units += 2;
-        // add 1 token as a safety margin, for the role name of the message
-        total_num_compute_units += 1;
-    }
-
-    total_num_compute_units += body_json
-        .get(MAX_TOKENS)
-        .and_then(|value| value.as_i64())
-        .ok_or_else(|| {
-            error!("Max tokens not found in body");
-            StatusCode::BAD_REQUEST
-        })?;
+    let total_num_compute_units =
+        calculate_compute_units(&body_json, request_type.clone(), &state, model)?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -343,8 +329,9 @@ pub async fn verify_stack_permissions(
         error!("No available stack with enough compute units");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    let request_metadata =
-        RequestMetadata::default().with_stack_info(stack_small_id, total_num_compute_units);
+    let request_metadata = RequestMetadata::default()
+        .with_stack_info(stack_small_id, total_num_compute_units)
+        .with_request_type(request_type);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
@@ -409,4 +396,169 @@ pub(crate) mod utils {
         }
         Ok(())
     }
+}
+
+fn calculate_compute_units(
+    body_json: &Value,
+    request_type: RequestType,
+    state: &AppState,
+    model: &str,
+) -> Result<i64, StatusCode> {
+    match request_type {
+        RequestType::ChatCompletions => calculate_chat_completion_units(body_json, state, model),
+        RequestType::Embeddings => calculate_embedding_units(body_json, state, model),
+        RequestType::ImageGenerations => calculate_image_generation_units(body_json),
+    }
+}
+
+fn calculate_chat_completion_units(
+    body_json: &Value,
+    state: &AppState,
+    model: &str,
+) -> Result<i64, StatusCode> {
+    let tokenizer_index = state
+        .models
+        .iter()
+        .position(|m| m == model)
+        .ok_or_else(|| {
+            error!("Model not supported");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let messages = body_json
+        .get(MESSAGES)
+        .ok_or_else(|| {
+            error!("Messages not found in body");
+            StatusCode::BAD_REQUEST
+        })?
+        .as_array()
+        .ok_or_else(|| {
+            error!("Messages is not an array");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let mut total_num_compute_units = 0;
+    for message in messages {
+        let content = message.get("content").ok_or_else(|| {
+            error!("Message content not found");
+            StatusCode::BAD_REQUEST
+        })?;
+        let content_str = content.as_str().ok_or_else(|| {
+            error!("Message content is not a string");
+            StatusCode::BAD_REQUEST
+        })?;
+        let num_tokens = state.tokenizers[tokenizer_index]
+            .encode(content_str, true)
+            .map_err(|_| {
+                error!("Failed to encode message content");
+                StatusCode::BAD_REQUEST
+            })?
+            .get_ids()
+            .len() as i64;
+        total_num_compute_units += num_tokens;
+        // add 2 tokens as a safety margin, for start and end message delimiters
+        total_num_compute_units += 2;
+        // add 1 token as a safety margin, for the role name of the message
+        total_num_compute_units += 1;
+    }
+
+    total_num_compute_units += body_json
+        .get(MAX_TOKENS)
+        .and_then(|value| value.as_i64())
+        .ok_or_else(|| {
+            error!("Max tokens not found in body");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    Ok(total_num_compute_units)
+}
+
+fn calculate_embedding_units(
+    body_json: &Value,
+    state: &AppState,
+    model: &str,
+) -> Result<i64, StatusCode> {
+    let tokenizer_index = state
+        .models
+        .iter()
+        .position(|m| m == model)
+        .ok_or_else(|| {
+            error!("Model not supported");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let input = body_json.get(INPUT).ok_or_else(|| {
+        error!("Input not found in body");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    // input can be a string or an array of strings
+    let total_units = match input {
+        Value::String(text) => state.tokenizers[tokenizer_index]
+            .encode(text.as_str(), true)
+            .map_err(|_| {
+                error!("Failed to encode input text");
+                StatusCode::BAD_REQUEST
+            })?
+            .get_ids()
+            .len() as i64,
+        Value::Array(texts) => texts
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(|s| {
+                        state.tokenizers[tokenizer_index]
+                            .encode(s, true)
+                            .map(|tokens| tokens.get_ids().len() as i64)
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0)
+            })
+            .sum(),
+        _ => {
+            error!("Invalid input format");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    Ok(total_units)
+}
+
+fn calculate_image_generation_units(body_json: &Value) -> Result<i64, StatusCode> {
+    let size = body_json
+        .get(IMAGE_SIZE)
+        .ok_or_else(|| {
+            error!("Image size not found in body");
+            StatusCode::BAD_REQUEST
+        })?
+        .as_str()
+        .ok_or_else(|| {
+            error!("Image size is not a string");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    // width and height are the dimensions of the image to generate
+    let (width, height) = size
+        .split_once('x')
+        .and_then(|(w, h)| {
+            let width = w.parse::<i64>().ok()?;
+            let height = h.parse::<i64>().ok()?;
+            Some((width, height))
+        })
+        .ok_or_else(|| {
+            error!("Invalid image size format");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    // n is the number of images to generate
+    let n = body_json
+        .get(IMAGE_N)
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            error!("Invalid or missing image count (n)");
+            StatusCode::BAD_REQUEST
+        })? as i64;
+
+    // Calculate total pixels
+    Ok(width * height * n)
 }
