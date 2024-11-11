@@ -57,7 +57,7 @@ git clone https://github.com/atoma-network/atoma-node.git
 cd atoma-node
 ```
 
-2. Configure environment variables by creating `.env` file:
+2. Configure environment variables by creating `.env` file, use `.env.example` for reference:
 
 ```bash
 # Hugging Face Configuration
@@ -113,14 +113,34 @@ database_url = "sqlite:///app/data/atoma.db"
 mkdir -p data logs
 ```
 
-5. Start the containers
+5. Start the containers with the desired inference services
+
+We currenlty support the following inference services:
+
+##### Chat Completions
+
+| Backend                                      | Docker Compose Profile  |
+| -------------------------------------------- | ----------------------- |
+| [vLLM](https://github.com/vllm-project/vllm) | `chat_completions_vllm` |
+
+##### Embeddings
+
+| Backend                                                                               | Docker Compose Profile |
+| ------------------------------------------------------------------------------------- | ---------------------- |
+| [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) | `embeddings_tei`       |
+
+##### Image Generations
+
+| Backend                                                  | Docker Compose Profile        |
+| -------------------------------------------------------- | ----------------------------- |
+| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | `image_generations_mistralrs` |
 
 ```bash
 # Build and start all services
-docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up --build
 
 # Or run in detached mode
-docker compose up -d --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up -d --build
 ```
 
 #### Container Architecture
