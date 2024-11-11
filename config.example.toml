@@ -1,10 +1,10 @@
-[atoma-service]
+[atoma_service]
 chat_completions_service_url = "http://chat-completions:8000" # Internal Docker network URL
 embeddings_service_url = "http://embeddings:80"
 revisions = ["main"]
 service_bind_address = "0.0.0.0:3000"
 
-[atoma-sui]
+[atoma_sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet
 atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be"         # Current ATOMA DB object ID for testnet
 atoma_package_id = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
@@ -17,10 +17,10 @@ sui_config_path = "/root/.sui/sui_config/client.yaml"                           
 sui_keystore_path = "/root/.sui/sui_config/sui.keystore"                                # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
 cursor_path = "./cursor.toml"                                                           # Path to the Sui events cursor file
 
-[atoma-state]
+[atoma_state]
 database_url = "sqlite:///app/data/atoma.db" # Path inside the container
 
-[atoma-daemon]
+[atoma_daemon]
 service_bind_address = "0.0.0.0:3001"
 node_badges = [
     [
