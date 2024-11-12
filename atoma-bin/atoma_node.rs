@@ -238,10 +238,18 @@ async fn main() -> Result<()> {
         state_manager_sender,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.service.models),
-        inference_service_url: config
+        chat_completions_service_url: config
             .service
-            .inference_service_url
-            .context("Inference service URL not configured")?,
+            .chat_completions_service_url
+            .context("Chat completions service URL not configured")?,
+        embeddings_service_url: config
+            .service
+            .embeddings_service_url
+            .context("Embeddings service URL not configured")?,
+        image_generations_service_url: config
+            .service
+            .image_generations_service_url
+            .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
         address_index: args.address_index,
     };

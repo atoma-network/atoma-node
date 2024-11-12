@@ -595,6 +595,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml 0.9.34+deprecated",
  "serial_test",
  "sqlx",
  "sui-keys",
@@ -2115,7 +2116,7 @@ name = "enum-compat-util"
 version = "0.1.0"
 source = "git+https://github.com/mystenlabs/sui#b3290a2e32a77cc08f84a62c29bed7fdca82c1a0"
 dependencies = [
- "serde_yaml",
+ "serde_yaml 0.8.26",
 ]
 
 [[package]]
@@ -6370,6 +6371,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.6.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serial_test"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7001,7 +7015,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_with 3.11.0",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "sui-keys",
  "sui-protocol-config",
  "sui-rest-api",
@@ -7014,7 +7028,7 @@ name = "sui-enum-compat-util"
 version = "0.1.0"
 source = "git+https://github.com/mystenlabs/sui#b3290a2e32a77cc08f84a62c29bed7fdca82c1a0"
 dependencies = [
- "serde_yaml",
+ "serde_yaml 0.8.26",
 ]
 
 [[package]]
@@ -7221,7 +7235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 3.11.0",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "sui-protocol-config",
  "sui-sdk-types",
  "sui-types",
@@ -8219,6 +8233,12 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "unsigned-varint"

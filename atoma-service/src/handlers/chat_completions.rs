@@ -1,7 +1,141 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::{handlers::sign_response_and_update_stack_hash, server::AppState};
+use atoma_state::types::AtomaAtomaStateManagerEvent;
+use axum::{extract::State, http::StatusCode, Extension, Json};
+use reqwest::Client;
 use serde_json::Value;
+use tracing::{error, info, instrument};
+use utoipa::OpenApi;
+
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
+
+use crate::middleware::RequestMetadata;
+
+pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(chat_completions_handler),
+    components(schemas(
+        ChatCompletionsRequest,
+        Message,
+        MessageContent,
+        MessageContentPart,
+        MessageContentPartImageUrl,
+        ToolCall,
+        ToolCallFunction,
+        Tool,
+        ToolFunction,
+        StopCondition,
+        FinishReason,
+        Usage,
+        Choice,
+        ChatCompletionsResponse
+    ))
+)]
+pub(crate) struct ChatCompletionsOpenApi;
+
+/// Handles chat completion requests by forwarding them to the inference service and managing token usage.
+///
+/// This handler performs several key operations:
+/// 1. Forwards the chat completion request to the inference service
+/// 2. Signs the response using the node's keystore
+/// 3. Tracks token usage for the stack
+///
+/// # Arguments
+///
+/// * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+/// * `state` - Application state containing the inference client and keystore
+/// * `payload` - The chat completion request body
+///
+/// # Returns
+///
+/// Returns a JSON response containing:
+/// - The inference service's response
+/// - A cryptographic signature of the response
+///
+/// # Errors
+///
+/// Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - Response parsing fails
+/// - Response signing fails
+/// - Token usage update fails
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "chat",
+    request_body = ChatCompletionsRequest,
+    responses(
+        (status = OK, description = "Chat completion successful", body = ChatCompletionsResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = CHAT_COMPLETIONS_PATH)
+)]
+pub async fn chat_completions_handler(
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    info!("Received chat completions request, with payload: {payload}");
+
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        request_type: _,
+    } = request_metadata;
+
+    let client = Client::new();
+    let response = client
+        .post(format!(
+            "{}{}",
+            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error sending request to inference service: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let mut response_body = response.json::<Value>().await.map_err(|e| {
+        error!("Error reading response body: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Extract the response total number of tokens
+    let total_compute_units = response_body
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(|total_compute_units| total_compute_units.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
+    // NOTE: We need to update the stack num compute units, because the inference response might have produced
+    // less tokens than estimated what we initially estimated, from the middleware.
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+        })
+        .map_err(|e| {
+            error!("Error updating stack num compute units: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
+        .await?;
+
+    Ok(Json(response_body))
+}
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename(serialize = "requestBody", deserialize = "RequestBody"))]
