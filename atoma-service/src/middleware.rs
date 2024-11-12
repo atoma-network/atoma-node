@@ -25,7 +25,7 @@ use sui_sdk::types::{
     crypto::{PublicKey, Signature, SuiSignature},
 };
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument};
+use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
@@ -288,8 +288,7 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
     if !state.models.contains(&model.to_string()) {
-        info!("Supported models: {:?}", state.models);
-        error!("Model not supported");
+        error!("Model not supported, supported models: {:?}", state.models);
         return Err(StatusCode::BAD_REQUEST);
     }
 
