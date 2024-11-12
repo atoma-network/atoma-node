@@ -20,6 +20,17 @@ use tracing::{error, instrument};
 
 use crate::server::utils;
 
+/// The chunk that indicates the end of a streaming response
+const DONE_CHUNK: &str = "[DONE]";
+/// The prefix for the data chunk
+const DATA_PREFIX: &str = "data: ";
+/// The keep-alive chunk
+const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
+/// The choices key
+const CHOICES: &str = "choices";
+/// The usage key
+const USAGE: &str = "usage";
+
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
     /// The stream of bytes from the inference service
@@ -202,14 +213,51 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Started;
                 }
 
+                if chunk.as_ref() == KEEP_ALIVE_CHUNK {
+                    return Poll::Pending;
+                }
+                let chunk_str = match std::str::from_utf8(&chunk) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Invalid UTF-8 sequence: {}", e);
+                        return Poll::Ready(Some(Err(Error::new(format!(
+                            "Invalid UTF-8 sequence: {}",
+                            e
+                        )))));
+                    }
+                };
+
+                let chunk_str = chunk_str.strip_prefix(DATA_PREFIX).unwrap_or(chunk_str);
+
+                if chunk_str.starts_with(DONE_CHUNK) {
+                    // This is the last chunk, meaning the inference streaming is complete
+                    self.status = StreamStatus::Completed;
+                    return Poll::Ready(None);
+                }
                 let chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
-                if let Some(usage) = chunk.get("usage") {
+
+                let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
+                    Some(choices) => choices,
+                    None => {
+                        error!("Error getting choices from chunk");
+                        return Poll::Ready(Some(Err(Error::new(
+                            "Error getting choices from chunk",
+                        ))));
+                    }
+                };
+
+                if choices.is_empty() {
                     // Check if this is a final chunk with usage info
-                    self.status = StreamStatus::Completed;
-                    Poll::Ready(Some(self.handle_final_chunk(usage)))
+                    if let Some(usage) = chunk.get(USAGE) {
+                        self.status = StreamStatus::Completed;
+                        Poll::Ready(Some(self.handle_final_chunk(usage)))
+                    } else {
+                        error!("Error getting usage from chunk");
+                        Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
+                    }
                 } else {
                     // Accumulate regular chunks
                     self.accumulated_response.push(chunk.clone());
