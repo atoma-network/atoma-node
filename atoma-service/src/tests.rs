@@ -27,7 +27,10 @@ mod middleware {
     use tower::Service;
 
     use crate::{
-        handlers::chat_completions::CHAT_COMPLETIONS_PATH,
+        handlers::{
+            chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
+            image_generations::IMAGE_GENERATIONS_PATH,
+        },
         middleware::{
             signature_verification_middleware, verify_stack_permissions, RequestMetadata,
             RequestType,
@@ -893,5 +896,226 @@ mod middleware {
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_verify_stack_permissions_embeddings() {
+        let (
+            app_state,
+            _,
+            signature,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
+
+        // Test single string input
+        let body = json!({
+            "model": "intfloat/multilingual-e5-large-instruct",
+            "input": "This is a test sentence for embedding.",
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(EMBEDDINGS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        async fn verify_embeddings_compute_units(
+            req: Request<Body>,
+        ) -> Result<Response<Body>, StatusCode> {
+            let metadata = req
+                .extensions()
+                .get::<RequestMetadata>()
+                .expect("Metadata should be set");
+
+            // Verify compute units are calculated correctly
+            assert!(metadata.estimated_total_compute_units > 0);
+            assert_eq!(metadata.request_type, RequestType::Embeddings);
+
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new()
+            .route(EMBEDDINGS_PATH, post(verify_embeddings_compute_units))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                verify_stack_permissions,
+            ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Test array of strings input
+        let body = json!({
+            "model": "intfloat/multilingual-e5-large-instruct",
+            "input": ["First sentence.", "Second sentence.", "Third sentence."],
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(EMBEDDINGS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        std::fs::remove_file(db_path).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_verify_stack_permissions_image_generation() {
+        let (
+            app_state,
+            _,
+            signature,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
+
+        let body = json!({
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": "A beautiful sunset over mountains",
+            "size": "1024x1024",
+            "n": 2
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(IMAGE_GENERATIONS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        async fn verify_image_generation_compute_units(
+            req: Request<Body>,
+        ) -> Result<Response<Body>, StatusCode> {
+            let metadata = req
+                .extensions()
+                .get::<RequestMetadata>()
+                .expect("Metadata should be set");
+
+            // For 1024x1024 image with n=2, should be 2,097,152 compute units (1024 * 1024 * 2)
+            assert_eq!(metadata.estimated_total_compute_units, 2_097_152);
+            assert_eq!(metadata.request_type, RequestType::ImageGenerations);
+
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new()
+            .route(
+                IMAGE_GENERATIONS_PATH,
+                post(verify_image_generation_compute_units),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                verify_stack_permissions,
+            ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Test invalid size format
+        let body = json!({
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": "A beautiful sunset over mountains",
+            "size": "invalid",
+            "n": 1
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(IMAGE_GENERATIONS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Test missing n parameter
+        let body = json!({
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": "A beautiful sunset over mountains",
+            "size": "1024x1024"
+            // Missing "n" field
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(IMAGE_GENERATIONS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        std::fs::remove_file(db_path).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_verify_stack_permissions_invalid_embeddings_input() {
+        let (
+            app_state,
+            _,
+            signature,
+            db_path,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+        ) = setup_app_state().await;
+
+        // Test with invalid input type (number instead of string or array)
+        let body = json!({
+            "model": "intfloat/multilingual-e5-large-instruct",
+            "input": 123
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(EMBEDDINGS_PATH)
+            .header("X-Signature", signature.encode_base64())
+            .header("X-Stack-Small-Id", "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let mut app = Router::new()
+            .route(EMBEDDINGS_PATH, post(test_handler))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                verify_stack_permissions,
+            ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        std::fs::remove_file(db_path).unwrap();
     }
 }

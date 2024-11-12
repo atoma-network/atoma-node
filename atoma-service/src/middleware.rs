@@ -48,7 +48,7 @@ pub struct RequestMetadata {
     pub request_type: RequestType,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum RequestType {
     #[default]
     ChatCompletions,
@@ -403,14 +403,16 @@ fn calculate_compute_units(
     model: &str,
 ) -> Result<i64, StatusCode> {
     match request_type {
-        RequestType::ChatCompletions => calculate_chat_completion_units(body_json, state, model),
-        RequestType::Embeddings => calculate_embedding_units(body_json, state, model),
-        RequestType::ImageGenerations => calculate_image_generation_units(body_json),
+        RequestType::ChatCompletions => {
+            calculate_chat_completion_compute_units(body_json, state, model)
+        }
+        RequestType::Embeddings => calculate_embedding_compute_units(body_json, state, model),
+        RequestType::ImageGenerations => calculate_image_generation_compute_units(body_json),
         RequestType::NonInference => Ok(0),
     }
 }
 
-fn calculate_chat_completion_units(
+fn calculate_chat_completion_compute_units(
     body_json: &Value,
     state: &AppState,
     model: &str,
@@ -472,7 +474,7 @@ fn calculate_chat_completion_units(
     Ok(total_num_compute_units)
 }
 
-fn calculate_embedding_units(
+fn calculate_embedding_compute_units(
     body_json: &Value,
     state: &AppState,
     model: &str,
@@ -523,7 +525,7 @@ fn calculate_embedding_units(
     Ok(total_units)
 }
 
-fn calculate_image_generation_units(body_json: &Value) -> Result<i64, StatusCode> {
+fn calculate_image_generation_compute_units(body_json: &Value) -> Result<i64, StatusCode> {
     let size = body_json
         .get(IMAGE_SIZE)
         .ok_or_else(|| {
