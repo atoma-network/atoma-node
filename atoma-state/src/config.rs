@@ -41,14 +41,21 @@ impl AtomaStateManagerConfig {
     /// let config = AtomaStateManagerConfig::from_file_path("path/to/config.toml");
     /// ```
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
-        let builder = Config::builder().add_source(config::File::with_name(
-            config_file_path.as_ref().to_str().unwrap(),
-        ));
+        let builder = Config::builder()
+            .add_source(config::File::with_name(
+                config_file_path.as_ref().to_str().unwrap(),
+            ))
+            .add_source(
+                config::Environment::with_prefix("ATOMA_STATE")
+                    .keep_prefix(true)
+                    .separator("__"),
+            );
+
         let config = builder
             .build()
             .expect("Failed to generate atoma state configuration file");
         config
-            .get::<Self>("atoma-state")
+            .get::<Self>("atoma_state")
             .expect("Failed to generate configuration instance")
     }
 }
