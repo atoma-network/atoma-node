@@ -137,10 +137,10 @@ We currenlty support the following inference services:
 
 ```bash
 # Build and start all services
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up --build
 
 # Or run in detached mode
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up -d --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up -d --build
 ```
 
 #### Container Architecture
