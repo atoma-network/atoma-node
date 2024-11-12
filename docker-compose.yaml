@@ -34,14 +34,24 @@ services:
     <<: *atoma-node
     build:
       args:
-        BINARY: atoma-node
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "${ATOMA_DAEMON_PORT:-3001}:3001"
+    profiles:
+      - chat_completions_vllm
+      - embeddings_tei
+      - image_generations_mistralrs
     depends_on:
       vllm:
         condition: service_started
-    command: sh -c "./atoma-node & ./atoma-daemon"
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
 
   # Updated inference services using base configuration
   vllm:
