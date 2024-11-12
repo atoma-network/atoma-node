@@ -27,6 +27,7 @@ mod middleware {
     use tower::Service;
 
     use crate::{
+        handlers::chat_completions::CHAT_COMPLETIONS_PATH,
         middleware::{
             signature_verification_middleware, verify_stack_permissions, RequestMetadata,
             RequestType,
@@ -379,16 +380,19 @@ mod middleware {
 
         let req = Request::builder()
             .method("POST")
-            .uri("/")
+            .uri(CHAT_COMPLETIONS_PATH)
             .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
 
-        let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
-        );
+        let mut app = Router::new()
+            .route(CHAT_COMPLETIONS_PATH, post(test_handler))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                verify_stack_permissions,
+            ));
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -421,16 +425,19 @@ mod middleware {
 
         let req = Request::builder()
             .method("POST")
-            .uri("/")
+            .uri(CHAT_COMPLETIONS_PATH)
             .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
 
-        let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
-        );
+        let mut app = Router::new()
+            .route(CHAT_COMPLETIONS_PATH, post(test_handler))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                verify_stack_permissions,
+            ));
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -505,7 +512,7 @@ mod middleware {
 
         let req = Request::builder()
             .method("POST")
-            .uri("/")
+            .uri(CHAT_COMPLETIONS_PATH)
             .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
@@ -527,7 +534,7 @@ mod middleware {
         }
 
         let mut app = Router::new()
-            .route("/", post(check_metadata_handler))
+            .route(CHAT_COMPLETIONS_PATH, post(check_metadata_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
                 verify_stack_permissions,
@@ -570,7 +577,7 @@ mod middleware {
 
         let req = Request::builder()
             .method("POST")
-            .uri("/")
+            .uri(CHAT_COMPLETIONS_PATH)
             .header("X-Signature", signature.encode_base64())
             .header("X-Stack-Small-Id", "1")
             .header("Content-Type", "application/json")
@@ -596,9 +603,12 @@ mod middleware {
             Ok(Response::new(Body::empty()))
         }
 
-        let mut app = Router::new().route("/", post(verify_token_count)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
-        );
+        let mut app = Router::new()
+            .route(CHAT_COMPLETIONS_PATH, post(verify_token_count))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                verify_stack_permissions,
+            ));
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::OK);

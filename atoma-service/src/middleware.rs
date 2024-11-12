@@ -54,6 +54,7 @@ pub enum RequestType {
     ChatCompletions,
     Embeddings,
     ImageGenerations,
+    NonInference,
 }
 
 impl RequestMetadata {
@@ -224,10 +225,7 @@ pub async fn verify_stack_permissions(
         CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
         EMBEDDINGS_PATH => RequestType::Embeddings,
         IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
-        _ => {
-            error!("Unknown request path");
-            return Err(StatusCode::BAD_REQUEST);
-        }
+        _ => RequestType::NonInference,
     };
 
     let base64_signature = req_parts
@@ -408,6 +406,7 @@ fn calculate_compute_units(
         RequestType::ChatCompletions => calculate_chat_completion_units(body_json, state, model),
         RequestType::Embeddings => calculate_embedding_units(body_json, state, model),
         RequestType::ImageGenerations => calculate_image_generation_units(body_json),
+        RequestType::NonInference => Ok(0),
     }
 }
 
