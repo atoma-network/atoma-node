@@ -221,7 +221,7 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Completed;
                     return Poll::Ready(None);
                 }
-                let mut chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
+                let mut chunk = serde_json::from_str::<Value>(chunk_str).map_err(|e| {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
