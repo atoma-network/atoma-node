@@ -169,7 +169,11 @@ mod middleware {
         Sender<AtomaEvent>,
     ) {
         let keystore = setup_keystore();
-        let models = vec!["meta-llama/Llama-3.1-70B-Instruct"];
+        let models = vec![
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "intfloat/multilingual-e5-large-instruct",
+            "black-forest-labs/FLUX.1-schnell",
+        ];
         let public_key = keystore.key_pairs().first().unwrap().public();
         let mut blake2b = blake2::Blake2b::new();
         blake2b.update(TEST_MESSAGE.as_bytes());
@@ -188,7 +192,7 @@ mod middleware {
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
-                tokenizers: Arc::new(vec![Arc::new(tokenizer)]),
+                tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
                 chat_completions_service_url: "".to_string(),
                 embeddings_service_url: "".to_string(),
@@ -990,7 +994,7 @@ mod middleware {
         let body = json!({
             "model": "black-forest-labs/FLUX.1-schnell",
             "prompt": "A beautiful sunset over mountains",
-            "size": "1024x1024",
+            "size": "4x4",
             "n": 2
         });
 
@@ -1011,8 +1015,8 @@ mod middleware {
                 .get::<RequestMetadata>()
                 .expect("Metadata should be set");
 
-            // For 1024x1024 image with n=2, should be 2,097,152 compute units (1024 * 1024 * 2)
-            assert_eq!(metadata.estimated_total_compute_units, 2_097_152);
+            // For 4x4 image with n=2, should be 32 compute units (4 * 4 * 2)
+            assert_eq!(metadata.estimated_total_compute_units, 32);
             assert_eq!(metadata.request_type, RequestType::ImageGenerations);
 
             Ok(Response::new(Body::empty()))
@@ -1055,7 +1059,7 @@ mod middleware {
         let body = json!({
             "model": "black-forest-labs/FLUX.1-schnell",
             "prompt": "A beautiful sunset over mountains",
-            "size": "1024x1024"
+            "size": "4x4"
             // Missing "n" field
         });
 
