@@ -6,5 +6,6 @@ pub mod config;
 pub(crate) mod handlers;
 pub mod middleware;
 pub mod server;
+pub mod streamer;
 #[cfg(test)]
 mod tests;
