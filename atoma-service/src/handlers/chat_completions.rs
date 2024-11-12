@@ -1,7 +1,348 @@
+use crate::{handlers::sign_response_and_update_stack_hash, server::AppState, streamer::Streamer};
+use atoma_state::types::AtomaAtomaStateManagerEvent;
+use axum::{
+    body::Body,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response, Sse},
+    Extension, Json,
+};
+use reqwest::Client;
+use serde_json::{json, Value};
+use tracing::{error, info, instrument};
+use utoipa::OpenApi;
+
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use utoipa::ToSchema;
+
+use crate::middleware::RequestMetadata;
+
+/// The path for chat completions requests
+pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
+/// The keep-alive interval in seconds
+const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(chat_completions_handler),
+    components(schemas(
+        ChatCompletionsRequest,
+        Message,
+        MessageContent,
+        MessageContentPart,
+        MessageContentPartImageUrl,
+        ToolCall,
+        ToolCallFunction,
+        Tool,
+        ToolFunction,
+        StopCondition,
+        FinishReason,
+        Usage,
+        Choice,
+        ChatCompletionsResponse
+    ))
+)]
+pub(crate) struct ChatCompletionsOpenApi;
+
+/// Handles chat completion requests by forwarding them to the inference service and managing token usage.
+///
+/// This handler performs several key operations:
+/// 1. Forwards the chat completion request to the inference service
+/// 2. Signs the response using the node's keystore
+/// 3. Tracks token usage for the stack
+///
+/// # Arguments
+///
+/// * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+/// * `state` - Application state containing the inference client and keystore
+/// * `payload` - The chat completion request body
+///
+/// # Returns
+///
+/// Returns a JSON response containing:
+/// - The inference service's response
+/// - A cryptographic signature of the response
+///
+/// # Errors
+///
+/// Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - Response parsing fails
+/// - Response signing fails
+/// - Token usage update fails
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "chat",
+    request_body = ChatCompletionsRequest,
+    responses(
+        (status = OK, description = "Chat completion successful", body = ChatCompletionsResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = CHAT_COMPLETIONS_PATH)
+)]
+pub async fn chat_completions_handler(
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Response<Body>, StatusCode> {
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        ..
+    } = request_metadata;
+    info!("Received chat completions request, with payload hash: {payload_hash:?}");
+
+    // Check if streaming is requested
+    let is_stream = payload
+        .get("stream")
+        .and_then(|s| s.as_bool())
+        .unwrap_or_default();
+
+    if !is_stream {
+        handle_non_streaming_response(
+            state,
+            payload,
+            stack_small_id,
+            estimated_total_compute_units,
+            payload_hash,
+        )
+        .await
+    } else {
+        handle_streaming_response(
+            state,
+            payload,
+            stack_small_id,
+            estimated_total_compute_units,
+            payload_hash,
+        )
+        .await
+    }
+}
+
+/// Handles non-streaming chat completion requests by processing them through the inference service.
+///
+/// This function performs several key operations:
+/// 1. Forwards the request to the inference service
+/// 2. Processes and signs the response
+/// 3. Updates token usage tracking
+/// 4. Updates the stack's total hash
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service configuration and keystore
+/// * `payload` - The JSON payload containing the chat completion request
+/// * `stack_small_id` - Unique identifier for the stack making the request
+/// * `estimated_total_compute_units` - Estimated compute units count for the request
+/// * `payload_hash` - BLAKE2b hash of the original request payload
+///
+/// # Returns
+///
+/// Returns a `Result` containing the JSON response with added signature, or a `StatusCode` error.
+///
+/// # Errors
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - Response parsing fails
+/// - Response signing fails
+/// - State manager updates fail
+///
+/// # Example Response Structure
+///
+/// ```json
+/// {
+///     "choices": [...],
+///     "usage": {
+///         "total_tokens": 123,
+///         "prompt_tokens": 45,
+///         "completion_tokens": 78
+///     },
+///     "signature": "base64_encoded_signature"
+/// }
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = CHAT_COMPLETIONS_PATH,
+        completion_type = "non-streaming",
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash
+    )
+)]
+async fn handle_non_streaming_response(
+    state: AppState,
+    payload: Value,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    payload_hash: [u8; 32],
+) -> Result<Response<Body>, StatusCode> {
+    let client = Client::new();
+    let response = client
+        .post(format!(
+            "{}{}",
+            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error sending request to inference service: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let mut response_body = response.json::<Value>().await.map_err(|e| {
+        error!("Error reading response body: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Extract the response total number of tokens
+    let total_compute_units = response_body
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(|total_tokens| total_tokens.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
+    // Update stack num tokens
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+        })
+        .map_err(|e| {
+            error!("Error updating stack num tokens: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // NOTE: We need to update the stack num tokens, because the inference response might have produced
+    // less tokens than estimated what we initially estimated, from the middleware.
+    if let Err(e) = sign_response_and_update_stack_hash(
+        &mut response_body,
+        payload_hash,
+        &state,
+        stack_small_id,
+    )
+    .await
+    {
+        error!(
+            "Error updating state manager: {}, for request with payload hash: {payload_hash:?}",
+            e
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(Json(response_body).into_response())
+}
+
+/// Handles streaming chat completion requests by establishing a Server-Sent Events (SSE) connection.
+///
+/// This function processes streaming chat completion requests by:
+/// 1. Adding required streaming options to the payload
+/// 2. Forwarding the request to the inference service
+/// 3. Establishing an SSE connection with keep-alive functionality
+/// 4. Setting up a Streamer to handle the response chunks and manage token usage
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service configuration and connections
+/// * `payload` - The JSON payload containing the chat completion request
+/// * `stack_small_id` - Unique identifier for the stack making the request
+/// * `estimated_total_compute_units` - Estimated compute units count for the request
+/// * `payload_hash` - BLAKE2b hash of the original request payload
+///
+/// # Returns
+///
+/// Returns a `Result` containing an SSE stream response, or a `StatusCode` error.
+///
+/// # Errors
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - The inference service returns a non-success status code
+///
+/// # Example Response Stream
+///
+/// The SSE stream will emit events in the following format:
+/// ```text
+/// data: {"choices": [...], "usage": null}
+/// data: {"choices": [...], "usage": null}
+/// data: {"choices": [...], "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = CHAT_COMPLETIONS_PATH,
+        completion_type = "streaming",
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash
+    )
+)]
+async fn handle_streaming_response(
+    state: AppState,
+    mut payload: Value,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    payload_hash: [u8; 32],
+) -> Result<Response<Body>, StatusCode> {
+    // NOTE: If streaming is requested, add the include_usage option to the payload
+    // so that the atoma node state manager can be updated with the total number of tokens
+    // that were processed for this request.
+    payload["stream_options"] = json!({
+        "include_usage": true
+    });
+
+    let client = Client::new();
+    let response = client
+        .post(format!(
+            "{}{}",
+            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error sending request to inference service: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if !response.status().is_success() {
+        error!("Inference service returned error: {}", response.status());
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let stream = response.bytes_stream();
+
+    // Create the SSE stream
+    let stream = Sse::new(Streamer::new(
+        stream,
+        state.state_manager_sender.clone(),
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        state.keystore.clone(),
+        state.address_index,
+    ))
+    .keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_millis(STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS))
+            .text("keep-alive"),
+    );
+
+    Ok(stream.into_response())
+}
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename(serialize = "requestBody", deserialize = "RequestBody"))]

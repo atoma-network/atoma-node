@@ -1,0 +1,563 @@
+openapi: 3.1.0
+info:
+  title: atoma-service
+  description: ''
+  license:
+    name: Apache-2.0
+  version: 0.1.0
+servers:
+- url: http://localhost:8080
+paths:
+  /health:
+    get:
+      tags:
+      - health
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema: {}
+  /v1/chat/completions:
+    post:
+      tags:
+      - chat
+      summary: Handles chat completion requests by forwarding them to the inference service and managing token usage.
+      description: |-
+        This handler performs several key operations:
+        1. Forwards the chat completion request to the inference service
+        2. Signs the response using the node's keystore
+        3. Tracks token usage for the stack
+
+        # Arguments
+
+        * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated token count from middleware
+        * `state` - Application state containing the inference client and keystore
+        * `payload` - The chat completion request body
+
+        # Returns
+
+        Returns a JSON response containing:
+        - The inference service's response
+        - A cryptographic signature of the response
+
+        # Errors
+
+        Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+        - The inference service request fails
+        - Response parsing fails
+        - Response signing fails
+        - Token usage update fails
+      operationId: chat_completions_handler
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionsRequest'
+        required: true
+      responses:
+        '200':
+          description: Chat completion successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionsResponse'
+        '500':
+          description: Internal server error
+  /v1/embeddings:
+    post:
+      tags:
+      - embeddings
+      summary: Handles embedding requests by proxying them to the embeddings service.
+      description: |-
+        This handler simply forwards the request to the embeddings service and returns the response.
+
+        # Arguments
+
+        * `state` - Application state containing service URLs
+        * `payload` - The embedding request body
+
+        # Returns
+
+        Returns the JSON response from the embeddings service
+
+        # Errors
+
+        Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+        - The embeddings service request fails
+        - Response parsing fails
+      operationId: embeddings_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Embeddings generated successfully
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Internal server error
+  /v1/images/generations:
+    post:
+      tags:
+      - images
+      summary: Handles image generation requests by proxying them to the image generations service.
+      description: |-
+        This handler simply forwards the request to the image generations service and returns the response.
+
+        # Arguments
+
+        * `state` - Application state containing service URLs
+        * `payload` - The image generation request body
+
+        # Returns
+
+        Returns the JSON response from the image generations service
+
+        # Errors
+
+        Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+        - The image generations service request fails
+        - Response parsing fails
+      operationId: image_generations_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Images generated successfully
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    ChatCompletionsRequest:
+      type: object
+      required:
+      - messages
+      - model
+      properties:
+        frequency_penalty:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far,
+            decreasing the model's likelihood to repeat the same line verbatim.
+        logit_bias:
+          type:
+          - object
+          - 'null'
+          description: |-
+            Modify the likelihood of specified tokens appearing in the completion.
+            Accepts a JSON object that maps tokens (specified as their token ID in the tokenizer) to an associated bias value from -100 to 100.
+          additionalProperties:
+            type: number
+            format: float
+          propertyNames:
+            type: string
+        logprobs:
+          type:
+          - boolean
+          - 'null'
+          description: Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the content of message.
+        max_completion_tokens:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: An upper bound for the number of tokens that can be generated for a completion,
+          minimum: 0
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          description: A list of messages comprising the conversation so far.
+        model:
+          type: string
+          description: ID of the model to use.
+        n:
+          type:
+          - integer
+          - 'null'
+          description: How many chat completion choices to generate for each input message.
+          minimum: 0
+        presence_penalty:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far,
+            increasing the model's likelihood to talk about new topics.
+        seed:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: A seed to use for random number generation.
+          minimum: 0
+        stop:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/StopCondition'
+            description: Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.
+        stream:
+          type:
+          - boolean
+          - 'null'
+          description: If set, the server will stream the results as they come in.
+        temperature:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random,
+            while lower values like 0.2 will make it more focused and deterministic.
+        tools:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/Tool'
+          description: A list of tools the model may call. Currently, only functions are supported as a tool. Use this to provide a list of functions the model may generate JSON inputs for. A max of 128 functions are supported.
+        top_logprobs:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            An integer between 0 and 20 specifying the number of most likely tokens to return at each token position, each with an associated log probability.
+            logprobs must be set to true if this parameter is used.
+        top_p:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            An alternative to sampling with temperature, called nucleus sampling, where the model considers the results
+            of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.
+        user:
+          type:
+          - string
+          - 'null'
+          description: A unique identifier representing your end-user, which can help the system to monitor and detect abuse.
+    ChatCompletionsResponse:
+      type: object
+      description: Response structure returned by the chat completion API.
+      required:
+      - id
+      - object
+      - created
+      - model
+      - system_fingerprint
+      - choices
+      - usage
+      properties:
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choice'
+          description: Array of chat completion choices. Can be multiple if n>1 was specified in the request.
+        created:
+          type: integer
+          format: int64
+          description: Unix timestamp (in seconds) of when the chat completion was created.
+          minimum: 0
+        id:
+          type: string
+          description: Unique identifier for the chat completion.
+        model:
+          type: string
+          description: The model used for the chat completion.
+        object:
+          type: string
+          description: The object type, typically "chat.completion".
+        system_fingerprint:
+          type: string
+          description: A unique identifier for the model's configuration and version.
+        usage:
+          $ref: '#/components/schemas/Usage'
+          description: Statistics about token usage for this completion.
+    Choice:
+      type: object
+      description: Represents a single completion choice returned by the chat completion API.
+      required:
+      - index
+      - message
+      - finish_reason
+      properties:
+        finish_reason:
+          $ref: '#/components/schemas/FinishReason'
+          description: |-
+            Indicates why the model stopped generating tokens.
+            Can be "stopped" (API returned complete model output),
+            "length_capped" (maximum token limit reached), or
+            "content_filter" (content was filtered).
+        index:
+          type: integer
+          format: int32
+          description: The index of this choice in the array of choices.
+          minimum: 0
+        logprobs:
+          description: |-
+            Log probabilities for the output tokens, if requested in the API call.
+            Only present if `logprobs` was set to true in the request.
+        message:
+          $ref: '#/components/schemas/Message'
+          description: The message output by the model for this choice.
+    FinishReason:
+      type: string
+      description: Indicates why the model stopped generating tokens in a chat completion response.
+      enum:
+      - stopped
+      - length_capped
+      - content_filter
+    Message:
+      oneOf:
+      - type: object
+        description: The role of the messages author, in this case system.
+        required:
+        - role
+        properties:
+          content:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/MessageContent'
+              description: The contents of the message.
+          name:
+            type:
+            - string
+            - 'null'
+            description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+          role:
+            type: string
+            enum:
+            - system
+      - type: object
+        description: The role of the messages author, in this case user.
+        required:
+        - role
+        properties:
+          content:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/MessageContent'
+              description: The contents of the message.
+          name:
+            type:
+            - string
+            - 'null'
+            description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+          role:
+            type: string
+            enum:
+            - user
+      - type: object
+        description: The role of the messages author, in this case assistant.
+        required:
+        - role
+        properties:
+          content:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/MessageContent'
+              description: The contents of the message.
+          name:
+            type:
+            - string
+            - 'null'
+            description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+          refusal:
+            type:
+            - string
+            - 'null'
+            description: The refusal message by the assistant.
+          role:
+            type: string
+            enum:
+            - assistant
+          tool_calls:
+            type: array
+            items:
+              $ref: '#/components/schemas/ToolCall'
+            description: The tool calls generated by the model, such as function calls.
+      - type: object
+        description: The role of the messages author, in this case tool.
+        required:
+        - role
+        properties:
+          content:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/MessageContent'
+              description: The contents of the message.
+          role:
+            type: string
+            enum:
+            - tool
+          tool_call_id:
+            type: string
+            description: Tool call that this message is responding to.
+      description: |-
+        A message that is part of a conversation which is based on the role
+        of the author of the message.
+    MessageContent:
+      oneOf:
+      - type: string
+        description: The text contents of the message.
+      - type: array
+        items:
+          $ref: '#/components/schemas/MessageContentPart'
+        description: |-
+          An array of content parts with a defined type, each can be of type text or image_url when passing in images.
+          You can pass multiple images by adding multiple image_url content parts. Image input is only supported when using the gpt-4o model.
+    MessageContentPart:
+      oneOf:
+      - type: object
+        required:
+        - type
+        - text
+        properties:
+          text:
+            type: string
+            description: The text content.
+          type:
+            type: string
+            description: The type of the content part.
+      - type: object
+        required:
+        - type
+        - image_url
+        properties:
+          image_url:
+            $ref: '#/components/schemas/MessageContentPartImageUrl'
+          type:
+            type: string
+            description: The type of the content part.
+    MessageContentPartImageUrl:
+      type: object
+      required:
+      - url
+      properties:
+        detail:
+          type:
+          - string
+          - 'null'
+          description: Specifies the detail level of the image.
+        url:
+          type: string
+          description: Either a URL of the image or the base64 encoded image data.
+    StopCondition:
+      oneOf:
+      - type: array
+        items:
+          type: string
+      - type: string
+      description: The stop condition for the chat completion.
+    Tool:
+      type: object
+      required:
+      - type
+      - function
+      properties:
+        function:
+          $ref: '#/components/schemas/ToolFunction'
+          description: The function that the model called.
+        type:
+          type: string
+          description: The type of the tool. Currently, only function is supported.
+    ToolCall:
+      type: object
+      required:
+      - id
+      - type
+      - function
+      properties:
+        function:
+          $ref: '#/components/schemas/ToolCallFunction'
+          description: The function that the model called.
+        id:
+          type: string
+          description: The ID of the tool call.
+        type:
+          type: string
+          description: The type of the tool. Currently, only function is supported.
+    ToolCallFunction:
+      type: object
+      required:
+      - name
+      - arguments
+      properties:
+        arguments:
+          description: |-
+            The arguments to call the function with, as generated by the model in JSON format.
+            Note that the model does not always generate valid JSON, and may hallucinate parameters not defined by your function schema.
+            Validate the arguments in your code before calling your function.
+        name:
+          type: string
+          description: The name of the function to call.
+    ToolFunction:
+      type: object
+      required:
+      - name
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+          description: Description of the function to call.
+        name:
+          type: string
+          description: The name of the function to call.
+        parameters:
+          description: The arguments to call the function with, as generated by the model in JSON format.
+        strict:
+          type:
+          - boolean
+          - 'null'
+          description: |-
+            Whether to enable strict schema adherence when generating the function call. If set to true, the
+            model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true
+    Usage:
+      type: object
+      description: Represents the token usage statistics for a chat completion request.
+      required:
+      - prompt_tokens
+      - completion_tokens
+      - total_tokens
+      properties:
+        completion_tokens:
+          type: integer
+          format: int32
+          description: The number of tokens used in the completion/output.
+          minimum: 0
+        prompt_tokens:
+          type: integer
+          format: int32
+          description: The number of tokens used in the prompt/input.
+          minimum: 0
+        total_tokens:
+          type: integer
+          format: int32
+          description: The total number of tokens used (prompt_tokens + completion_tokens).
+          minimum: 0
+tags:
+- name: health
+  description: Health check
+- name: chat
+  description: Chat completions
+- name: embeddings
+  description: Embeddings
+- name: images
+  description: Image generations

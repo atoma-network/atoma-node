@@ -41,8 +41,8 @@ pub struct Streamer {
     status: StreamStatus,
     /// The stack small id for the request
     stack_small_id: i64,
-    /// The estimated total tokens for the request
-    estimated_total_tokens: i64,
+    /// The estimated total compute units for the request
+    estimated_total_compute_units: i64,
     /// The request payload hash
     payload_hash: [u8; 32],
     /// The sender for the state manager
@@ -72,7 +72,7 @@ impl Streamer {
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         stack_small_id: i64,
-        estimated_total_tokens: i64,
+        estimated_total_compute_units: i64,
         payload_hash: [u8; 32],
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
@@ -82,7 +82,7 @@ impl Streamer {
             accumulated_response: Vec::new(),
             status: StreamStatus::NotStarted,
             stack_small_id,
-            estimated_total_tokens,
+            estimated_total_compute_units,
             payload_hash,
             state_manager_sender,
             keystore,
@@ -126,7 +126,7 @@ impl Streamer {
         fields(
             endpoint = "handle_final_chunk",
             stack_small_id = self.stack_small_id,
-            estimated_total_tokens = self.estimated_total_tokens,
+            estimated_total_compute_units = self.estimated_total_compute_units,
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
@@ -143,7 +143,7 @@ impl Streamer {
         })?;
 
         // Get total tokens
-        let total_tokens = usage
+        let total_compute_units = usage
             .get("total_tokens")
             .and_then(|t| t.as_i64())
             .ok_or_else(|| {
@@ -152,14 +152,13 @@ impl Streamer {
             })?;
 
         // Update stack num tokens
-        if let Err(e) =
-            self.state_manager_sender
-                .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
-                    stack_small_id: self.stack_small_id,
-                    estimated_total_tokens: self.estimated_total_tokens,
-                    total_tokens,
-                })
-        {
+        if let Err(e) = self.state_manager_sender.send(
+            AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+                stack_small_id: self.stack_small_id,
+                estimated_total_compute_units: self.estimated_total_compute_units,
+                total_compute_units,
+            },
+        ) {
             error!("Error updating stack num tokens: {}", e);
         }
 

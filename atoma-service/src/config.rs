@@ -9,11 +9,11 @@ use serde::Deserialize;
 /// including URLs for various services and a list of models.
 #[derive(Debug, Deserialize)]
 pub struct AtomaServiceConfig {
-    /// URL for the inference service.
+    /// URL for the chat completions service.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
-    /// for the inference service used by the Atoma Service.
-    pub inference_service_url: Option<String>,
+    /// for the chat completions service used by the Atoma Service.
+    pub chat_completions_service_url: Option<String>,
 
     /// URL for the embeddings service.
     ///
@@ -21,11 +21,11 @@ pub struct AtomaServiceConfig {
     /// for the embeddings service used by the Atoma Service.
     pub embeddings_service_url: Option<String>,
 
-    /// URL for the multi-modal service.
+    /// URL for the image generations service.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
-    /// for the multi-modal service used by the Atoma Service.
-    pub multi_modal_service_url: Option<String>,
+    /// for the image generations service used by the Atoma Service.
+    pub image_generations_service_url: Option<String>,
 
     /// List of model names.
     ///

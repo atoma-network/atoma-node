@@ -5,3 +5,6 @@ config.toml
 cursor.toml
 
 .env
+
+logs/
+./cursor.toml
