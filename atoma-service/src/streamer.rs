@@ -130,7 +130,7 @@ impl Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
-    fn handle_final_chunk(&mut self, usage: &Value) -> Result<Event, Error> {
+    fn handle_final_chunk(&mut self, usage: &Value) -> Result<String, Error> {
         // Sign the accumulated response
         let (response_hash, signature) = utils::sign_response_body(
             &json!(self.accumulated_response),
@@ -183,19 +183,7 @@ impl Streamer {
             error!("Error updating stack total hash: {}", e);
         }
 
-        // Create final message with signature
-        let final_message = json!({
-            "id": self.accumulated_response.first().unwrap().get("id").unwrap().as_str().unwrap().to_string(),
-            "object": "chat.completion.chunk",
-            "created": self.accumulated_response.first().unwrap().get("created").unwrap().as_i64().unwrap(),
-            "model": self.accumulated_response.first().unwrap().get("model").unwrap().as_str().unwrap().to_string(),
-            "signature": signature,
-        });
-
-        Event::default().json_data(&final_message).map_err(|e| {
-            error!("Error creating final message: {}", e);
-            Error::new(format!("Error creating final message: {}", e))
-        })
+        Ok(signature)
     }
 }
 
@@ -234,7 +222,7 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Completed;
                     return Poll::Ready(None);
                 }
-                let chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
+                let mut chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
@@ -253,7 +241,9 @@ impl Stream for Streamer {
                     // Check if this is a final chunk with usage info
                     if let Some(usage) = chunk.get(USAGE) {
                         self.status = StreamStatus::Completed;
-                        Poll::Ready(Some(self.handle_final_chunk(usage)))
+                        let signature = self.handle_final_chunk(usage)?;
+                        chunk["signature"] = json!(signature);
+                        Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
                     } else {
                         error!("Error getting usage from chunk");
                         Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
