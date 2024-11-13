@@ -119,10 +119,11 @@ We currenlty support the following inference services:
 
 ##### Chat Completions
 
-| Backend                                            | Docker Compose Profile      |
-| -------------------------------------------------- | --------------------------- |
-| [vLLM](https://github.com/vllm-project/vllm)       | `chat_completions_vllm`     |
-| [vLLM (CPU)](https://github.com/vllm-project/vllm) | `chat_completions_vllm_cpu` |
+| Backend                                             | Docker Compose Profile       |
+| --------------------------------------------------- | ---------------------------- |
+| [vLLM](https://github.com/vllm-project/vllm)        | `chat_completions_vllm`      |
+| [vLLM (CPU)](https://github.com/vllm-project/vllm)  | `chat_completions_vllm_cpu`  |
+| [vLLM (ROCm)](https://github.com/vllm-project/vllm) | `chat_completions_vllm_rocm` |
 
 ##### Embeddings
 
