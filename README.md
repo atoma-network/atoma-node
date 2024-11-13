@@ -137,10 +137,13 @@ We currenlty support the following inference services:
 
 ```bash
 # Build and start all services
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up --build
 
-# Or run in detached mode
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistral docker compose up -d --build
+# Only start one service
+COMPOSE_PROFILES=chat_completions_vllm docker compose up --build
+
+# Run in detached mode
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up -d --build
 ```
 
 #### Container Architecture
@@ -355,7 +358,7 @@ Command line arguments:
 
 #### 5. Spawn the background inference service
 
-We currenlty support the following inference services:
+We currently support the following inference services:
 
 - [atoma-inference-service](https://github.com/atoma-network/atoma-inference-service)
 - [vLLM](https://github.com/vllm-project/vllm)
