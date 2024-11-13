@@ -48,10 +48,14 @@ services:
       - "${ATOMA_DAEMON_PORT:-3001}:3001"
     profiles:
       - chat_completions_vllm
+      - chat_completions_vllm_cpu
       - embeddings_tei
       - image_generations_mistralrs
     depends_on:
       vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
         condition: service_started
         required: false
       tei:
@@ -76,7 +80,7 @@ services:
     container_name: chat-completions-cpu
     profiles: [chat_completions_vllm_cpu]
     build:
-      context: https://github.com/vllm-project/vllm.git#v0.6.3
+      context: https://github.com/vllm-project/vllm.git#main
       dockerfile: Dockerfile.cpu
     ports:
       - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
