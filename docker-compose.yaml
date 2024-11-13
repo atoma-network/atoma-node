@@ -12,8 +12,8 @@ x-atoma-node: &atoma-node
   networks:
     - atoma-network
 
-# Base configuration for inference services
-x-inference-service: &inference-service
+# Base configuration for cuda inference services
+x-inference-service-cuda: &inference-service-cuda
   runtime: nvidia
   deploy:
     resources:
@@ -28,8 +28,26 @@ x-inference-service: &inference-service
   networks:
     - atoma-network
 
+# Base configuration for cpu inference services
+x-inference-service-cpu: &inference-service-cpu
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for ROCm inference services
+x-inference-service-rocm: &inference-service-rocm
+  runtime: rocm
+  devices:
+    - all
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
 services:
-  # Updated atoma-node service
   atoma-node:
     <<: *atoma-node
     build:
@@ -40,10 +58,18 @@ services:
       - "${ATOMA_DAEMON_PORT:-3001}:3001"
     profiles:
       - chat_completions_vllm
+      - chat_completions_vllm_cpu
+      - chat_completions_vllm_rocm
       - embeddings_tei
       - image_generations_mistralrs
     depends_on:
       vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
         condition: service_started
         required: false
       tei:
@@ -53,9 +79,8 @@ services:
         condition: service_started
         required: false
 
-  # Updated inference services using base configuration
   vllm:
-    <<: *inference-service
+    <<: *inference-service-cuda
     container_name: chat-completions
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.6.3
@@ -64,8 +89,30 @@ services:
     ipc: host
     command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
 
+  vllm-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions-cpu
+    profiles: [chat_completions_vllm_cpu]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN}
+
+  vllm-rocm:
+    <<: *inference-service-rocm
+    container_name: chat-completions-rocm
+    profiles: [chat_completions_vllm_rocm]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.rocm
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
   tei:
-    <<: *inference-service
+    <<: *inference-service-cuda
     container_name: embeddings
     profiles: [embeddings_tei]
     image: ${TEI_IMAGE}
@@ -74,7 +121,7 @@ services:
     command: --model-id ${EMBEDDINGS_MODEL} --huggingface-hub-cache /root/.cache/huggingface/hub
 
   mistralrs:
-    <<: *inference-service
+    <<: *inference-service-cuda
     container_name: image-generations
     profiles: [image_generations_mistralrs]
     image: ${MISTRALRS_IMAGE}
