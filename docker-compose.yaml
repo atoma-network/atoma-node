@@ -94,8 +94,7 @@ services:
     container_name: chat-completions-cpu
     profiles: [chat_completions_vllm_cpu]
     build:
-      # TODO: change to atoma's fork
-      context: https://github.com/francis2tm/vllm.git#main
+      context: https://github.com/atoma-network/vllm.git#main
       dockerfile: Dockerfile.cpu
     ports:
       - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
@@ -106,8 +105,7 @@ services:
     container_name: chat-completions-rocm
     profiles: [chat_completions_vllm_rocm]
     build:
-      # TODO: change to atoma's fork
-      context: https://github.com/francis2tm/vllm.git#main
+      context: https://github.com/atoma-network/vllm.git#main
       dockerfile: Dockerfile.rocm
     ports:
       - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
