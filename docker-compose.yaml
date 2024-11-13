@@ -48,33 +48,36 @@ x-inference-service-rocm: &inference-service-rocm
     - atoma-network
 
 services:
-  # Updated atoma-node service
-  # atoma-node:
-  #   <<: *atoma-node
-  #   build:
-  #     args:
-  #       TRACE_LEVEL: ${TRACE_LEVEL:-info}
-  #   ports:
-  #     - "${ATOMA_SERVICE_PORT:-3000}:3000"
-  #     - "${ATOMA_DAEMON_PORT:-3001}:3001"
-  #   profiles:
-  #     - chat_completions_vllm
-  #     - chat_completions_vllm_cpu
-  #     - embeddings_tei
-  #     - image_generations_mistralrs
-  #   depends_on:
-  #     vllm:
-  #       condition: service_started
-  #       required: false
-  #     vllm-cpu:
-  #       condition: service_started
-  #       required: false
-  #     tei:
-  #       condition: service_started
-  #       required: false
-  #     mistralrs:
-  #       condition: service_started
-  #       required: false
+  atoma-node:
+    <<: *atoma-node
+    build:
+      args:
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "${ATOMA_DAEMON_PORT:-3001}:3001"
+    profiles:
+      - chat_completions_vllm
+      - chat_completions_vllm_cpu
+      - chat_completions_vllm_rocm
+      - embeddings_tei
+      - image_generations_mistralrs
+    depends_on:
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
 
   vllm:
     <<: *inference-service-cuda
