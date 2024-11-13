@@ -7,4 +7,6 @@ cursor.toml
 .env
 
 logs/
+data/
+
 ./cursor.toml
