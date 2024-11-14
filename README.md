@@ -43,7 +43,7 @@ You then need to create a wallet and fund it with some testnet SUI. Please refer
 
 #### Prerequisites
 
-- Docker and Docker Compose installed
+- Docker and Docker Compose (>= v2.22) installed
 - NVIDIA Container Toolkit installed (for GPU support)
 - Access to HuggingFace models (and token if using gated models)
 - Sui wallet configuration
