@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use tokio::sync::watch;
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error
@@ -22,12 +22,13 @@ use tokio::sync::watch;
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
 /// let handle = spawn_with_shutdown(some_fallible_task(), shutdown_tx);
 /// ```
-pub fn spawn_with_shutdown<F>(
+pub fn spawn_with_shutdown<F, E>(
     f: F,
     shutdown_sender: watch::Sender<bool>,
 ) -> tokio::task::JoinHandle<Result<()>>
 where
-    F: std::future::Future<Output = Result<()>> + Send + 'static,
+    E: Into<Error>,
+    F: std::future::Future<Output = Result<(), E>> + Send + 'static,
 {
     tokio::task::spawn(async move {
         let res = f.await;
@@ -37,6 +38,6 @@ where
                 .send(true)
                 .context("Failed to send shutdown signal")?;
         }
-        res
+        res.map_err(Into::into)
     })
 }
