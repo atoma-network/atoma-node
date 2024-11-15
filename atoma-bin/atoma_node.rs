@@ -153,12 +153,13 @@ async fn initialize_tokenizers(
     try_join_all(fetch_futures).await
 }
 
-fn spawn_with_shutdown<F>(
+fn spawn_with_shutdown<F, E>(
     f: F,
     shutdown_sender: watch::Sender<bool>,
 ) -> tokio::task::JoinHandle<Result<()>>
 where
-    F: std::future::Future<Output = Result<()>> + Send + 'static,
+    E: Into<anyhow::Error>,
+    F: std::future::Future<Output = Result<(), E>> + Send + 'static,
 {
     tokio::task::spawn(async move {
         let res = f.await;
@@ -166,7 +167,7 @@ where
             // Only send shutdown signal if the task failed
             shutdown_sender.send(true).unwrap();
         }
-        res
+        res.map_err(Into::into)
     })
 }
 
@@ -210,8 +211,7 @@ async fn main() -> Result<()> {
                 state_manager_receiver,
             )
             .await?;
-            state_manager.run(state_manager_shutdown_receiver).await?;
-            Ok::<(), anyhow::Error>(())
+            state_manager.run(state_manager_shutdown_receiver).await
         },
         shutdown_sender.clone(),
     );
@@ -250,7 +250,7 @@ async fn main() -> Result<()> {
                 package_id = package_id.to_string(),
                 "Sui event subscriber finished"
             );
-            result.map_err(|e| anyhow::anyhow!(e))
+            result
         },
         shutdown_sender.clone(),
     );
