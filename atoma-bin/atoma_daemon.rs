@@ -126,10 +126,18 @@ async fn main() -> Result<()> {
     let ctrl_c = tokio::task::spawn(async move {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                println!("ctrl-c received, sending shutdown signal");
-                shutdown_sender.send(true).unwrap();
+                info!(
+                    target = "atoma_daemon",
+                    event = "atoma-daemon-stop",
+                    "ctrl-c received, sending shutdown signal"
+                );
+                shutdown_sender
+                    .send(true)
+                    .context("Failed to send shutdown signal")?;
+                Ok::<(), anyhow::Error>(())
             }
             _ = shutdown_receiver.changed() => {
+                Ok::<(), anyhow::Error>(())
             }
         }
     });
