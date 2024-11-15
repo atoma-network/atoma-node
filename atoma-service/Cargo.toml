@@ -37,10 +37,15 @@ tower = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "json", "local-time"] }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "json",
+  "local-time",
+] }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
-serde_yaml = "0.9.34"
+serde_yaml = { workspace = true }
+atoma-utils = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
