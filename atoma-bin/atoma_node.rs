@@ -20,7 +20,7 @@ use tokio::{
     sync::{watch, RwLock},
     try_join,
 };
-use tracing::{error, info, instrument, warn};
+use tracing::{info, instrument};
 use tracing_appender::{
     non_blocking,
     rolling::{RollingFileAppender, Rotation},
@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
     );
     let state_manager_shutdown_receiver = shutdown_receiver.clone();
     let database_url = config.state.database_url.clone();
-    let state_manager_handle = tokio::spawn(async move {
+    let state_manager_handle = async move {
         let state_manager = AtomaStateManager::new_from_url(
             &database_url,
             event_subscriber_receiver,
@@ -194,7 +194,7 @@ async fn main() -> Result<()> {
         .await?;
         state_manager.run(state_manager_shutdown_receiver).await?;
         Ok::<(), anyhow::Error>(())
-    });
+    };
 
     let package_id = config.sui.atoma_package_id();
     info!(
@@ -212,7 +212,7 @@ async fn main() -> Result<()> {
         package_id = package_id.to_string(),
         "Subscribing to Sui events"
     );
-    let subscriber_handle = tokio::spawn(async move {
+    let subscriber_handle = async move {
         info!(
             target = "atoma-node-service",
             event = "subscriber_service_run",
@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
             "Sui event subscriber finished"
         );
         result.map_err(|e| anyhow::anyhow!(e))
-    });
+    };
 
     let hf_token = std::env::var(HF_TOKEN)
         .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
         "Starting Atoma node service"
     );
 
-    let server_handle = tokio::spawn(run_server(app_state, tcp_listener, shutdown_sender));
+    let server_handle = run_server(app_state, tcp_listener, shutdown_sender);
 
     info!(
         target = "atoma-daemon-service",
@@ -290,20 +290,14 @@ async fn main() -> Result<()> {
         bind_address = config.daemon.service_bind_address,
         "Starting Atoma daemon service"
     );
-    let daemon_handle = tokio::spawn(run_daemon(daemon_app_state, daemon_tcp_listener));
+    let daemon_handle = run_daemon(daemon_app_state, daemon_tcp_listener);
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result, daemon_result) = try_join!(
+    try_join!(
         subscriber_handle,
         state_manager_handle,
         server_handle,
         daemon_handle
-    )?;
-    handle_tasks_results(
-        subscriber_result,
-        state_manager_result,
-        server_result,
-        daemon_result,
     )?;
 
     info!(
@@ -373,50 +367,5 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with(daemon_layer)
         .init();
 
-    Ok(())
-}
-
-/// Handles the results of various tasks (subscriber, state manager, and server).
-///
-/// This function checks the results of the subscriber, state manager, and server tasks.
-/// If any of the tasks return an error, it logs the error and returns it.
-/// This is useful for ensuring that the application can gracefully handle failures
-/// in any of its components and provide appropriate logging for debugging.
-///
-/// # Arguments
-///
-/// * `subscriber_result` - The result of the subscriber task, which may contain an error.
-/// * `state_manager_result` - The result of the state manager task, which may contain an error.
-/// * `server_result` - The result of the server task, which may contain an error.
-///
-/// # Returns
-///
-/// Returns a `Result<()>`, which is `Ok(())` if all tasks succeeded, or an error if any task failed.
-#[instrument(
-    level = "info",
-    skip(subscriber_result, state_manager_result, server_result)
-)]
-fn handle_tasks_results(
-    subscriber_result: Result<()>,
-    state_manager_result: Result<()>,
-    server_result: Result<()>,
-    daemon_result: Result<()>,
-) -> Result<()> {
-    let result_handler = |result: Result<()>, message: &str| {
-        if let Err(e) = result {
-            error!(
-                target = "atoma-node-service",
-                event = "atoma_node_service_shutdown",
-                error = ?e,
-                "{message}"
-            );
-            return Err(e);
-        }
-        Ok(())
-    };
-    result_handler(subscriber_result, "Subscriber terminated abruptly")?;
-    result_handler(state_manager_result, "State manager terminated abruptly")?;
-    result_handler(server_result, "Server terminated abruptly")?;
-    result_handler(daemon_result, "Daemon terminated abruptly")?;
     Ok(())
 }
