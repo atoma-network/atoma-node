@@ -13,7 +13,6 @@ use blake2::{
 };
 use flume::Sender as FlumeSender;
 use futures::Stream;
-use reqwest;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tracing::{error, instrument};

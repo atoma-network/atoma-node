@@ -8,6 +8,7 @@ use atoma_service::{
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
+use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use dotenv::dotenv;
 use futures::future::try_join_all;
@@ -163,7 +164,7 @@ async fn main() -> Result<()> {
 
     info!("Starting Atoma node service");
 
-    let (shutdown_sender, shutdown_receiver) = watch::channel(false);
+    let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
 
@@ -185,16 +186,18 @@ async fn main() -> Result<()> {
     );
     let state_manager_shutdown_receiver = shutdown_receiver.clone();
     let database_url = config.state.database_url.clone();
-    let state_manager_handle = tokio::spawn(async move {
-        let state_manager = AtomaStateManager::new_from_url(
-            &database_url,
-            event_subscriber_receiver,
-            state_manager_receiver,
-        )
-        .await?;
-        state_manager.run(state_manager_shutdown_receiver).await?;
-        Ok::<(), anyhow::Error>(())
-    });
+    let state_manager_handle = spawn_with_shutdown(
+        async move {
+            let state_manager = AtomaStateManager::new_from_url(
+                &database_url,
+                event_subscriber_receiver,
+                state_manager_receiver,
+            )
+            .await?;
+            state_manager.run(state_manager_shutdown_receiver).await
+        },
+        shutdown_sender.clone(),
+    );
 
     let package_id = config.sui.atoma_package_id();
     info!(
@@ -203,8 +206,11 @@ async fn main() -> Result<()> {
         package_id = package_id.to_string(),
         "Spawning subscriber service"
     );
-    let subscriber =
-        SuiEventSubscriber::new(config.sui, event_subscriber_sender, shutdown_receiver);
+    let subscriber = SuiEventSubscriber::new(
+        config.sui,
+        event_subscriber_sender,
+        shutdown_receiver.clone(),
+    );
 
     info!(
         target = "atoma-node-service",
@@ -212,22 +218,25 @@ async fn main() -> Result<()> {
         package_id = package_id.to_string(),
         "Subscribing to Sui events"
     );
-    let subscriber_handle = tokio::spawn(async move {
-        info!(
-            target = "atoma-node-service",
-            event = "subscriber_service_run",
-            package_id = package_id.to_string(),
-            "Running Sui event subscriber"
-        );
-        let result = subscriber.run().await;
-        info!(
-            target = "atoma-node-service",
-            event = "subscriber_service_finished",
-            package_id = package_id.to_string(),
-            "Sui event subscriber finished"
-        );
-        result.map_err(|e| anyhow::anyhow!(e))
-    });
+    let subscriber_handle = spawn_with_shutdown(
+        async move {
+            info!(
+                target = "atoma-node-service",
+                event = "subscriber_service_run",
+                package_id = package_id.to_string(),
+                "Running Sui event subscriber"
+            );
+            let result = subscriber.run().await;
+            info!(
+                target = "atoma-node-service",
+                event = "subscriber_service_finished",
+                package_id = package_id.to_string(),
+                "Sui event subscriber finished"
+            );
+            result
+        },
+        shutdown_sender.clone(),
+    );
 
     let hf_token = std::env::var(HF_TOKEN)
         .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
@@ -282,7 +291,10 @@ async fn main() -> Result<()> {
         "Starting Atoma node service"
     );
 
-    let server_handle = tokio::spawn(run_server(app_state, tcp_listener, shutdown_sender));
+    let server_handle = spawn_with_shutdown(
+        run_server(app_state, tcp_listener, shutdown_receiver.clone()),
+        shutdown_sender.clone(),
+    );
 
     info!(
         target = "atoma-daemon-service",
@@ -290,14 +302,41 @@ async fn main() -> Result<()> {
         bind_address = config.daemon.service_bind_address,
         "Starting Atoma daemon service"
     );
-    let daemon_handle = tokio::spawn(run_daemon(daemon_app_state, daemon_tcp_listener));
+    let daemon_handle = spawn_with_shutdown(
+        run_daemon(
+            daemon_app_state,
+            daemon_tcp_listener,
+            shutdown_receiver.clone(),
+        ),
+        shutdown_sender.clone(),
+    );
+
+    let ctrl_c = tokio::task::spawn(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!(
+                    target = "atoma-node-service",
+                    event = "atoma-node-stop",
+                    "ctrl-c received, sending shutdown signal"
+                );
+                shutdown_sender
+                    .send(true)
+                    .context("Failed to send shutdown signal")?;
+                Ok::<(), anyhow::Error>(())
+            }
+            _ = shutdown_receiver.changed() => {
+                Ok::<(), anyhow::Error>(())
+            }
+        }
+    });
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result, daemon_result) = try_join!(
+    let (subscriber_result, state_manager_result, server_result, daemon_result, _) = try_join!(
         subscriber_handle,
         state_manager_handle,
         server_handle,
-        daemon_handle
+        daemon_handle,
+        ctrl_c
     )?;
     handle_tasks_results(
         subscriber_result,

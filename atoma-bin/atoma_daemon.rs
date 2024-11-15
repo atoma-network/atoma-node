@@ -1,15 +1,20 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use atoma_daemon::{
     config::AtomaDaemonConfig,
     daemon::{run_daemon, DaemonState},
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
 use atoma_sui::client::AtomaSuiClient;
+use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::{net::TcpListener, sync::RwLock};
+use tokio::{
+    net::TcpListener,
+    sync::{watch, RwLock},
+    try_join,
+};
 use tracing::info;
 use tracing_appender::{
     non_blocking,
@@ -67,14 +72,40 @@ async fn main() -> Result<()> {
         "Starting the Atoma daemon service, on {}",
         daemon_config.service_bind_address
     );
-    run_daemon(daemon_state, tcp_listener).await?;
+    let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
+
+    let daemon_handle = spawn_with_shutdown(
+        run_daemon(daemon_state, tcp_listener, shutdown_receiver.clone()),
+        shutdown_sender.clone(),
+    );
     info!(
         target = "atoma_daemon",
         event = "atoma-daemon-stop",
         "Atoma daemon service stopped gracefully..."
     );
 
-    Ok(())
+    let ctrl_c = tokio::task::spawn(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!(
+                    target = "atoma_daemon",
+                    event = "atoma-daemon-stop",
+                    "ctrl-c received, sending shutdown signal"
+                );
+                shutdown_sender
+                    .send(true)
+                    .context("Failed to send shutdown signal")?;
+                Ok::<(), anyhow::Error>(())
+            }
+            _ = shutdown_receiver.changed() => {
+                Ok::<(), anyhow::Error>(())
+            }
+        }
+    });
+
+    let (daemon_result, _) = try_join!(daemon_handle, ctrl_c)?;
+
+    daemon_result
 }
 
 fn setup_logging() -> Result<()> {

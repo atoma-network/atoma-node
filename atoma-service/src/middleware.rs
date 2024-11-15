@@ -353,7 +353,7 @@ pub(crate) mod utils {
         secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
         traits::{ToFromBytes, VerifyingKey},
     };
-    use sui_sdk::types::crypto::{PublicKey, SignatureScheme, SuiSignature};
+    use sui_sdk::types::crypto::SignatureScheme;
 
     /// Verifies the authenticity of a request by checking its signature against the provided hash.
     ///

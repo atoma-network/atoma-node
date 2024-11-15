@@ -554,6 +554,7 @@ dependencies = [
  "anyhow",
  "atoma-state",
  "atoma-sui",
+ "atoma-utils",
  "axum",
  "blake2",
  "clap",
@@ -579,6 +580,7 @@ dependencies = [
  "atoma-daemon",
  "atoma-state",
  "atoma-sui",
+ "atoma-utils",
  "axum",
  "base64 0.22.1",
  "blake2",
@@ -643,6 +645,14 @@ dependencies = [
  "tokio",
  "toml 0.8.19",
  "tracing",
+]
+
+[[package]]
+name = "atoma-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
 ]
 
 [[package]]

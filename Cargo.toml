@@ -1,11 +1,12 @@
 [workspace]
 resolver = "2"
 
-members = [ 
-    "atoma-daemon", 
+members = [
+    "atoma-daemon",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
+    "atoma-utils",
 ]
 
 [workspace.package]
@@ -18,6 +19,7 @@ anyhow = "1.0.81"
 atoma-daemon = { path = "./atoma-daemon" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { path = "./atoma-sui" }
+atoma-utils = { path = "./atoma-utils" }
 axum = "0.7.5"
 base64 = "0.22.1"
 blake2 = "0.10.6"
@@ -39,6 +41,7 @@ reqwest = "0.12.1"
 rs_merkle = "1.4.2"
 serde = "1.0.204"
 serde_json = "1.0.120"
+serde_yaml = "0.9.34"
 serial_test = "3.1.1"
 sqlx = "0.8.2"
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }

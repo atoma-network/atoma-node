@@ -12,6 +12,7 @@ path = "../atoma-bin/atoma_daemon.rs"
 anyhow = { workspace = true }
 atoma-state = { workspace = true }
 atoma-sui = { workspace = true }
+atoma-utils = { workspace = true }
 axum = { workspace = true }
 blake2 = { workspace = true }
 clap = { workspace = true }
@@ -23,7 +24,11 @@ sui-sdk = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "json", "local-time"] }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "json",
+  "local-time",
+] }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 
