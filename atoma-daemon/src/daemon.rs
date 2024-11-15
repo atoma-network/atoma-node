@@ -11,7 +11,10 @@ use axum::{
 };
 use std::sync::Arc;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::{net::TcpListener, signal, sync::RwLock};
+use tokio::{
+    net::TcpListener,
+    sync::{watch::Receiver, RwLock},
+};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -112,16 +115,16 @@ pub struct DaemonState {
 pub async fn run_daemon(
     daemon_state: DaemonState,
     tcp_listener: TcpListener,
+    mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
     let daemon_router = create_daemon_router(daemon_state);
-    let shutdown_signal = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to parse Ctrl+C signal");
-        info!("Shutting down server...");
-    };
     let server = axum::serve(tcp_listener, daemon_router.into_make_service())
-        .with_graceful_shutdown(shutdown_signal);
+        .with_graceful_shutdown(async move {
+            shutdown_receiver
+                .changed()
+                .await
+                .expect("Error receiving shutdown signal")
+        });
     server.await?;
     Ok(())
 }

@@ -15,9 +15,8 @@ use flume::Sender as FlumeSender;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, signal, sync::watch::Sender};
+use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower::ServiceBuilder;
-use tracing::info;
 use utoipa::OpenApi;
 
 use crate::{
@@ -169,20 +168,17 @@ pub fn create_router(app_state: AppState) -> Router {
 pub async fn run_server(
     app_state: AppState,
     tcp_listener: TcpListener,
-    shutdown_sender: Sender<bool>,
+    mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
     let app = create_router(app_state);
-    let shutdown_signal = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to parse Ctrl+C signal");
-        info!("Shutting down server...");
-    };
     let server =
-        axum::serve(tcp_listener, app.into_make_service()).with_graceful_shutdown(shutdown_signal);
+        axum::serve(tcp_listener, app.into_make_service()).with_graceful_shutdown(async move {
+            shutdown_receiver
+                .changed()
+                .await
+                .expect("Error receiving shutdown signal")
+        });
     server.await?;
-
-    shutdown_sender.send(true)?;
 
     Ok(())
 }
