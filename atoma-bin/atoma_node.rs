@@ -194,7 +194,10 @@ async fn main() -> Result<()> {
                 state_manager_receiver,
             )
             .await?;
-            state_manager.run(state_manager_shutdown_receiver).await
+            state_manager
+                .run(state_manager_shutdown_receiver)
+                .await
+                .map_err(Into::into)
         },
         shutdown_sender.clone(),
     );
@@ -233,7 +236,7 @@ async fn main() -> Result<()> {
                 package_id = package_id.to_string(),
                 "Sui event subscriber finished"
             );
-            result
+            result.map_err(Into::into)
         },
         shutdown_sender.clone(),
     );
