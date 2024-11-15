@@ -18,7 +18,7 @@ use tokio::sync::watch;
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
 /// let handle = spawn_with_shutdown(some_fallible_task(), shutdown_tx);
 /// ```
