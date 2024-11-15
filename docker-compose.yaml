@@ -60,6 +60,7 @@ services:
       - chat_completions_vllm
       - chat_completions_vllm_cpu
       - chat_completions_vllm_rocm
+      - chat_completions_mistralrs_cpu
       - embeddings_tei
       - image_generations_mistralrs
     depends_on:
@@ -70,6 +71,9 @@ services:
         condition: service_started
         required: false
       vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
         condition: service_started
         required: false
       tei:
