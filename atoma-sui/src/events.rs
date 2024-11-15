@@ -11,7 +11,7 @@ pub type Result<T> = std::result::Result<T, SuiEventParseError>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum AtomaEventIdentifier {
     /// Events related to the database (Db) module:
-
+    ///
     /// Emitted when the Atoma contract is first published.
     PublishedEvent,
     /// Emitted when a new node is registered in the network.
@@ -44,7 +44,7 @@ pub enum AtomaEventIdentifier {
     StackAttestationDisputeEvent,
 
     /// Events related to the settlement module:
-
+    ///
     /// Emitted when the first submission is made in a settlement process.
     FirstSubmissionEvent,
     /// Emitted when a dispute occurs during settlement.
@@ -57,7 +57,7 @@ pub enum AtomaEventIdentifier {
     RetrySettlementEvent,
 
     /// Events related to the gate module (specific AI tasks):
-
+    ///
     /// Emitted when a text-to-image prompt is processed.
     Text2ImagePromptEvent,
     /// Emitted when a text-to-text prompt is processed.

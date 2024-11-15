@@ -201,7 +201,6 @@ pub async fn run_server(
 /// ```rust,ignore
 /// app.route("/health", get(health_check))
 /// ```
-
 pub const HEALTH_PATH: &str = "/health";
 #[derive(OpenApi)]
 #[openapi(paths(health))]
