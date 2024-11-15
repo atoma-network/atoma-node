@@ -119,24 +119,24 @@ We currenlty support the following inference services:
 
 ##### Chat Completions
 
-| Backend                                                  | Docker Compose Profile           |
-| -------------------------------------------------------- | -------------------------------- |
-| [vLLM](https://github.com/vllm-project/vllm)             | `chat_completions_vllm`          |
-| [vLLM (CPU)](https://github.com/vllm-project/vllm)       | `chat_completions_vllm_cpu`      |
-| [vLLM (ROCm)](https://github.com/vllm-project/vllm)      | `chat_completions_vllm_rocm`     |
-| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | `chat_completions_mistralrs_cpu` |
+| Backend                                                  | Architecture/Platform | Docker Compose Profile           |
+| -------------------------------------------------------- | --------------------- | -------------------------------- |
+| [vLLM](https://github.com/vllm-project/vllm)             | CUDA                  | `chat_completions_vllm`          |
+| [vLLM](https://github.com/vllm-project/vllm)             | x86_64                | `chat_completions_vllm_cpu`      |
+| [vLLM](https://github.com/vllm-project/vllm)             | ROCm                  | `chat_completions_vllm_rocm`     |
+| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | x86_64, aarch64       | `chat_completions_mistralrs_cpu` |
 
 ##### Embeddings
 
-| Backend                                                                               | Docker Compose Profile |
-| ------------------------------------------------------------------------------------- | ---------------------- |
-| [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) | `embeddings_tei`       |
+| Backend                                                                               | Architecture/Platform | Docker Compose Profile |
+| ------------------------------------------------------------------------------------- | --------------------- | ---------------------- |
+| [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) | CUDA                  | `embeddings_tei`       |
 
 ##### Image Generations
 
-| Backend                                                  | Docker Compose Profile        |
-| -------------------------------------------------------- | ----------------------------- |
-| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | `image_generations_mistralrs` |
+| Backend                                                  | Architecture/Platform | Docker Compose Profile        |
+| -------------------------------------------------------- | --------------------- | ----------------------------- |
+| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | CUDA                  | `image_generations_mistralrs` |
 
 ```bash
 # Build and start all services
