@@ -676,7 +676,7 @@ impl AtomaState {
 
     /// Unsubscribes a node from a task.
     ///
-    /// This method updates the `valid` field of the `node_subscriptions` table to `FALSE` for the specified node and task combination.
+    /// This method deletes the subscription from the `node_subscriptions` table for the specified node and task combination.
     ///
     /// # Arguments
     ///
@@ -709,7 +709,7 @@ impl AtomaState {
         node_small_id: i64,
         task_small_id: i64,
     ) -> Result<()> {
-        sqlx::query("UPDATE node_subscriptions SET valid = FALSE WHERE node_small_id = ? AND task_small_id = ?")
+        sqlx::query("DELETE FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?")
             .bind(node_small_id)
             .bind(task_small_id)
             .execute(&self.db)
