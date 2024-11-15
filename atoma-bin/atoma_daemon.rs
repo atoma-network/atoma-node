@@ -9,7 +9,11 @@ use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
 use atoma_sui::client::AtomaSuiClient;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
-use tokio::{net::TcpListener, sync::RwLock};
+use tokio::{
+    net::TcpListener,
+    sync::{watch, RwLock},
+    try_join,
+};
 use tracing::info;
 use tracing_appender::{
     non_blocking,
@@ -31,6 +35,23 @@ const LOG_FILE: &str = "atoma-daemon-service.log";
 struct DaemonArgs {
     #[arg(short, long)]
     config_path: String,
+}
+
+fn spawn_with_shutdown<F>(
+    f: F,
+    shutdown_sender: watch::Sender<bool>,
+) -> tokio::task::JoinHandle<Result<()>>
+where
+    F: std::future::Future<Output = Result<()>> + Send + 'static,
+{
+    tokio::task::spawn(async move {
+        let res = f.await;
+        if res.is_err() {
+            // Only send shutdown signal if the task failed
+            shutdown_sender.send(true).unwrap();
+        }
+        res
+    })
 }
 
 #[tokio::main]
@@ -67,14 +88,32 @@ async fn main() -> Result<()> {
         "Starting the Atoma daemon service, on {}",
         daemon_config.service_bind_address
     );
-    run_daemon(daemon_state, tcp_listener).await?;
+    let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
+
+    let daemon_handle = spawn_with_shutdown(
+        run_daemon(daemon_state, tcp_listener, shutdown_receiver.clone()),
+        shutdown_sender.clone(),
+    );
     info!(
         target = "atoma_daemon",
         event = "atoma-daemon-stop",
         "Atoma daemon service stopped gracefully..."
     );
 
-    Ok(())
+    let ctrl_c = tokio::task::spawn(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                println!("ctrl-c received, sending shutdown signal");
+                shutdown_sender.send(true).unwrap();
+            }
+            _ = shutdown_receiver.changed() => {
+            }
+        }
+    });
+
+    let (daemon_result, _) = try_join!(daemon_handle, ctrl_c)?;
+
+    daemon_result
 }
 
 fn setup_logging() -> Result<()> {

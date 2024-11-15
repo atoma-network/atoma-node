@@ -162,11 +162,11 @@ where
 {
     tokio::task::spawn(async move {
         let res = f.await;
-        if let Err(_) = res {
+        if res.is_err() {
             // Only send shutdown signal if the task failed
             shutdown_sender.send(true).unwrap();
         }
-        return res;
+        res
     })
 }
 
