@@ -164,7 +164,6 @@ where
         let res = f.await;
         if let Err(_) = res {
             // Only send shutdown signal if the task failed
-            dbg!("function finished, sending shutdown signal");
             shutdown_sender.send(true).unwrap();
         }
         return res;
