@@ -7,6 +7,8 @@ use axum::{
     response::{IntoResponse, Response, Sse},
     Extension, Json,
 };
+use once_cell::sync::Lazy;
+use prometheus::{register_counter_vec, register_histogram_vec, CounterVec, HistogramVec};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::{error, info, instrument};
@@ -22,6 +24,37 @@ use crate::middleware::RequestMetadata;
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
+
+static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "atoma_chat_completions_token_latency",
+        "The latency of chat completion generation in seconds",
+        &["stream_type"],
+        vec![
+            0.0001, 0.0005, 0.001, 0.005, 0.01, 0.015, 0.02, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0,
+            30.0,
+        ],
+    )
+    .unwrap()
+});
+
+pub static CHAT_COMPLETIONS_INPUT_TOKENS_METRICS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_chat_completions_input_tokens_metrics",
+        "Total number of input tokens processed",
+        &["model", "stack_id"] // prompt,
+    )
+    .unwrap()
+});
+
+pub static CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_chat_completions_output_tokens_metrics",
+        "Total number of output tokens processed",
+        &["model", "stack_id"] // completion,
+    )
+    .unwrap()
+});
 
 #[derive(OpenApi)]
 #[openapi(
@@ -185,6 +218,9 @@ async fn handle_non_streaming_response(
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
 ) -> Result<Response<Body>, StatusCode> {
+    let timer = CHAT_COMPLETIONS_LATENCY_METRICS
+        .with_label_values(&["non-streaming"])
+        .start_timer();
     let client = Client::new();
     let response = client
         .post(format!(
@@ -204,13 +240,29 @@ async fn handle_non_streaming_response(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Extract the response total number of tokens
-    let total_compute_units = response_body
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-        .and_then(|total_tokens| total_tokens.as_u64())
-        .map(|n| n as i64)
-        .unwrap_or(0);
+    // Record token metrics and extract the response total number of tokens
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    let mut total_compute_units = 0;
+    if let Some(usage) = response_body.get("usage") {
+        if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+            let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
+                .with_label_values(&[model, &stack_small_id.to_string()])
+                .inc_by(prompt_tokens as f64);
+            total_compute_units += prompt_tokens;
+        }
+        if let Some(completion_tokens) = usage.get("completion_tokens") {
+            let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
+                .with_label_values(&[model, &stack_small_id.to_string()])
+                .inc_by(completion_tokens as f64);
+            total_compute_units += completion_tokens;
+        }
+    }
 
     // Update stack num tokens
     state
@@ -218,7 +270,7 @@ async fn handle_non_streaming_response(
         .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
             estimated_total_compute_units,
-            total_compute_units,
+            total_compute_units: total_compute_units as i64,
         })
         .map_err(|e| {
             error!("Error updating stack num tokens: {}", e);
@@ -241,6 +293,9 @@ async fn handle_non_streaming_response(
         );
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
+
+    // Stop the timer before returning the response
+    timer.observe_duration();
 
     Ok(Json(response_body).into_response())
 }
@@ -297,12 +352,20 @@ async fn handle_streaming_response(
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
 ) -> Result<Response<Body>, StatusCode> {
+    let timer = CHAT_COMPLETIONS_LATENCY_METRICS
+        .with_label_values(&["streaming"])
+        .start_timer();
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
     // that were processed for this request.
     payload["stream_options"] = json!({
         "include_usage": true
     });
+
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
 
     let client = Client::new();
     let response = client
@@ -334,6 +397,7 @@ async fn handle_streaming_response(
         payload_hash,
         state.keystore.clone(),
         state.address_index,
+        model.to_string(),
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -341,6 +405,7 @@ async fn handle_streaming_response(
             .text("keep-alive"),
     );
 
+    timer.observe_duration();
     Ok(stream.into_response())
 }
 
