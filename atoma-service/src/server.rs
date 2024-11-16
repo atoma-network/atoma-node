@@ -14,12 +14,14 @@ use blake2::{
 };
 use flume::Sender as FlumeSender;
 use hyper::StatusCode;
-use prometheus::Encoder;
+use lazy_static::lazy_static;
+use prometheus::{Encoder, Registry};
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
 use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower::ServiceBuilder;
+use tracing::error;
 use utoipa::OpenApi;
 
 use crate::{
@@ -28,9 +30,17 @@ use crate::{
         chat_completions::{chat_completions_handler, CHAT_COMPLETIONS_PATH},
         embeddings::{embeddings_handler, EMBEDDINGS_PATH},
         image_generations::{image_generations_handler, IMAGE_GENERATIONS_PATH},
+        prometheus::{
+            CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+        },
     },
     middleware::{signature_verification_middleware, verify_stack_permissions},
 };
+
+lazy_static! {
+    pub static ref REGISTRY: Registry = Registry::new();
+}
 
 /// The path for the health check endpoint.
 pub const HEALTH_PATH: &str = "/health";
@@ -180,6 +190,7 @@ pub async fn run_server(
     tcp_listener: TcpListener,
     mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
+    register_metrics();
     let app = create_router(app_state);
     let server =
         axum::serve(tcp_listener, app.into_make_service()).with_graceful_shutdown(async move {
@@ -191,6 +202,21 @@ pub async fn run_server(
     server.await?;
 
     Ok(())
+}
+
+pub fn register_metrics() {
+    REGISTRY
+        .register(Box::new(CHAT_COMPLETIONS_LATENCY_METRICS.clone()))
+        .expect("Failed to register latency metrics");
+    REGISTRY
+        .register(Box::new(CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN.clone()))
+        .expect("Failed to register time to first token metrics");
+    REGISTRY
+        .register(Box::new(CHAT_COMPLETIONS_INPUT_TOKENS_METRICS.clone()))
+        .expect("Failed to register input tokens metrics");
+    REGISTRY
+        .register(Box::new(CHAT_COMPLETIONS_DECODING_TIME.clone()))
+        .expect("Failed to register decoding time metrics");
 }
 
 #[derive(OpenApi)]
@@ -246,17 +272,23 @@ pub(crate) struct MetricsOpenApi;
         (status = OK, description = "Metrics for the service")
     )
 )]
-async fn metrics_handler() -> impl IntoResponse {
+async fn metrics_handler() -> Result<impl IntoResponse, StatusCode> {
     let encoder = prometheus::TextEncoder::new();
-    let metric_families = prometheus::gather();
+    let metric_families = REGISTRY.gather();
     let mut buffer = vec![];
-    encoder.encode(&metric_families, &mut buffer).unwrap();
+    encoder.encode(&metric_families, &mut buffer).map_err(|e| {
+        error!("Failed to encode metrics: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", encoder.format_type())
         .body(Body::from(buffer))
-        .unwrap()
+        .map_err(|e| {
+            error!("Failed to build response: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 pub(crate) mod utils {

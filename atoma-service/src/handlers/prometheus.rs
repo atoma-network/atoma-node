@@ -13,7 +13,7 @@ use prometheus::{register_counter_vec, register_histogram_vec, CounterVec, Histo
 /// - Labels: `model`
 /// - Unit: seconds
 /// - Buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
-pub(crate) static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
+pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_token_latency",
         "The latency of chat completion generation in seconds",
@@ -57,7 +57,7 @@ pub static CHAT_COMPLETIONS_DECODING_TIME: Lazy<HistogramVec> = Lazy::new(|| {
 /// - Labels: `model`
 /// - Unit: seconds
 /// - Buckets: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
-pub(crate) static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(|| {
+pub static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_time_to_first_token",
         "Time taken until first token is generated in seconds",
