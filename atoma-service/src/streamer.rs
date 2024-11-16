@@ -13,13 +13,15 @@ use blake2::{
 };
 use flume::Sender as FlumeSender;
 use futures::Stream;
+use prometheus::HistogramTimer;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tracing::{error, instrument};
 
 use crate::{
-    handlers::chat_completions::{
-        CHAT_COMPLETIONS_INPUT_TOKENS_METRICS, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+    handlers::prometheus::{
+        CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
     },
     server::utils,
 };
@@ -57,6 +59,12 @@ pub struct Streamer {
     address_index: usize,
     /// The model for the inference request
     model: String,
+    /// The first token generation (prefill phase) timer for the request.
+    /// We need store it as an option because we need to consume its value
+    /// once the first token is generated
+    first_token_generation_timer: Option<HistogramTimer>,
+    /// The decoding phase timer for the request.
+    decoding_phase_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -84,6 +92,7 @@ impl Streamer {
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
         model: String,
+        first_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -96,6 +105,8 @@ impl Streamer {
             keystore,
             address_index,
             model,
+            first_token_generation_timer: Some(first_token_generation_timer),
+            decoding_phase_timer: None,
         }
     }
 
@@ -140,6 +151,11 @@ impl Streamer {
         )
     )]
     fn handle_final_chunk(&mut self, usage: &Value) -> Result<String, Error> {
+        // Record the decoding phase timer
+        if let Some(timer) = self.decoding_phase_timer.take() {
+            timer.observe_duration();
+        }
+
         // Sign the accumulated response
         let (response_hash, signature) = utils::sign_response_body(
             &json!(self.accumulated_response),
@@ -226,6 +242,7 @@ impl Stream for Streamer {
                 if chunk.as_ref() == KEEP_ALIVE_CHUNK {
                     return Poll::Pending;
                 }
+
                 let chunk_str = match std::str::from_utf8(&chunk) {
                     Ok(v) => v,
                     Err(e) => {
@@ -248,6 +265,15 @@ impl Stream for Streamer {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
+
+                // Observe the first token generation timer
+                if let Some(timer) = self.first_token_generation_timer.take() {
+                    timer.observe_duration();
+                    let timer = CHAT_COMPLETIONS_DECODING_TIME
+                        .with_label_values(&[&self.model])
+                        .start_timer();
+                    self.decoding_phase_timer = Some(timer);
+                }
 
                 let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,
