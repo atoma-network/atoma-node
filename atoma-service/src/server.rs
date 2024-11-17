@@ -204,6 +204,27 @@ pub async fn run_server(
     Ok(())
 }
 
+/// Registers Prometheus metrics for monitoring chat completion performance.
+///
+/// This function registers several metrics that track different aspects of chat completion
+/// performance in the global Prometheus registry:
+///
+/// * Latency metrics - Overall response time for chat completion requests
+/// * Time to first token - How quickly the first response token is generated
+/// * Input tokens metrics - Number of tokens in the input prompts
+/// * Decoding time metrics - Time spent decoding the model outputs
+///
+/// # Panics
+///
+/// This function will panic if any metric registration fails, as these metrics are
+/// essential for monitoring system performance.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// register_metrics();
+/// // Metrics are now available for collection at the /metrics endpoint
+/// ```
 pub fn register_metrics() {
     REGISTRY
         .register(Box::new(CHAT_COMPLETIONS_LATENCY_METRICS.clone()))
