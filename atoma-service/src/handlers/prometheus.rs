@@ -1,6 +1,10 @@
 use once_cell::sync::Lazy;
 use prometheus::{register_counter_vec, register_histogram_vec, CounterVec, HistogramVec};
 
+const LATENCY_HISTOGRAM_BUCKETS: [f64; 15] = [
+    0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
+];
+
 /// Counter metric that tracks the total number of chat completion requests.
 ///
 /// This metric counts the number of incoming requests for chat completions,
@@ -72,16 +76,13 @@ pub static TEXT_EMBEDDINGS_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Unit: seconds
-/// - Buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_token_latency",
         "The latency of chat completion generation in seconds",
         &["model"],
-        vec![
-            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
-            300.0, 600.0,
-        ],
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
     .unwrap()
 });
@@ -97,16 +98,13 @@ pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Unit: seconds
-/// - Buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static IMAGE_GEN_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_image_generation_latency",
         "The latency of image generation in seconds",
         &["model"],
-        vec![
-            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
-            300.0, 600.0
-        ],
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
     .unwrap()
 });
@@ -122,16 +120,13 @@ pub static IMAGE_GEN_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Unit: seconds
-/// - Buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static TEXT_EMBEDDINGS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_text_embeddings_latency",
         "The latency of text embeddings in seconds",
         &["model"],
-        vec![
-            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
-            300.0, 600.0
-        ],
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
     .unwrap()
 });
@@ -147,13 +142,13 @@ pub static TEXT_EMBEDDINGS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Unit: seconds
-/// - Buckets: [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static CHAT_COMPLETIONS_DECODING_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_decoding_time",
         "Time taken for the complete decoding phase  in seconds",
         &["model"],
-        vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
     .unwrap()
 });
@@ -169,13 +164,13 @@ pub static CHAT_COMPLETIONS_DECODING_TIME: Lazy<HistogramVec> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Unit: seconds
-/// - Buckets: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+/// - Buckets: [[0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_time_to_first_token",
         "Time taken until first token is generated in seconds",
         &["model"],
-        vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
     .unwrap()
 });
