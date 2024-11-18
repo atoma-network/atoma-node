@@ -218,14 +218,14 @@ async fn handle_non_streaming_response(
         if let Some(prompt_tokens) = usage.get("prompt_tokens") {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                .with_label_values(&[model, &stack_small_id.to_string()])
+                .with_label_values(&[model])
                 .inc_by(prompt_tokens as f64);
             total_compute_units += prompt_tokens;
         }
         if let Some(completion_tokens) = usage.get("completion_tokens") {
             let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
-                .with_label_values(&[model, &stack_small_id.to_string()])
+                .with_label_values(&[model])
                 .inc_by(completion_tokens as f64);
             total_compute_units += completion_tokens;
         }
@@ -319,13 +319,6 @@ async fn handle_streaming_response(
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
 ) -> Result<Response<Body>, StatusCode> {
-    let model = payload
-        .get("model")
-        .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
-    let timer = CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN
-        .with_label_values(&[model])
-        .start_timer();
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
     // that were processed for this request.
@@ -337,6 +330,12 @@ async fn handle_streaming_response(
         .get("model")
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
+    CHAT_COMPLETIONS_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
+    let timer = CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN
+        .with_label_values(&[model])
+        .start_timer();
 
     let client = Client::new();
     let response = client

@@ -32,7 +32,9 @@ use crate::{
         image_generations::{image_generations_handler, IMAGE_GENERATIONS_PATH},
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+            CHAT_COMPLETIONS_LATENCY_METRICS, CHAT_COMPLETIONS_NUM_REQUESTS,
+            CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN, IMAGE_GEN_LATENCY_METRICS,
+            IMAGE_GEN_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS,
         },
     },
     middleware::{signature_verification_middleware, verify_stack_permissions},
@@ -209,10 +211,15 @@ pub async fn run_server(
 /// This function registers several metrics that track different aspects of chat completion
 /// performance in the global Prometheus registry:
 ///
-/// * Latency metrics - Overall response time for chat completion requests
-/// * Time to first token - How quickly the first response token is generated
-/// * Input tokens metrics - Number of tokens in the input prompts
-/// * Decoding time metrics - Time spent decoding the model outputs
+/// * Chat completions latency metrics - Overall response time for chat completion requests
+/// * Chat completions time to first token - How quickly the first response token is generated
+/// * Chat completions input tokens metrics - Number of tokens in the input prompts
+/// * Chat completions decoding time metrics - Time spent decoding the model outputs
+/// * Chat completions number of requests - Total number of received chat completions requests, so far
+/// * Text embeddings latency metrics - Overall response time for image generation requests
+/// * Text embeddings number of requests - Total number of received text embeddings requests, so far
+/// * Image generation latency metrics - Overall response time for text embeddings requests
+/// * Image generation number of requests - Total number of received image generation requests, so far
 ///
 /// # Panics
 ///
@@ -228,16 +235,31 @@ pub async fn run_server(
 pub fn register_metrics() {
     REGISTRY
         .register(Box::new(CHAT_COMPLETIONS_LATENCY_METRICS.clone()))
-        .expect("Failed to register latency metrics");
+        .expect("Failed to register chat completions latency metrics");
     REGISTRY
         .register(Box::new(CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN.clone()))
-        .expect("Failed to register time to first token metrics");
+        .expect("Failed to register chat completions time to first token metrics");
     REGISTRY
         .register(Box::new(CHAT_COMPLETIONS_INPUT_TOKENS_METRICS.clone()))
-        .expect("Failed to register input tokens metrics");
+        .expect("Failed to register chat completions input tokens metrics");
     REGISTRY
         .register(Box::new(CHAT_COMPLETIONS_DECODING_TIME.clone()))
-        .expect("Failed to register decoding time metrics");
+        .expect("Failed to register chat completions decoding time metrics");
+    REGISTRY
+        .register(Box::new(CHAT_COMPLETIONS_NUM_REQUESTS.clone()))
+        .expect("Failed to register chat completions number of requests metrics");
+    REGISTRY
+        .register(Box::new(TEXT_EMBEDDINGS_LATENCY_METRICS.clone()))
+        .expect("Failed to register text embeddings metrics");
+    REGISTRY
+        .register(Box::new(TEXT_EMBEDDINGS_NUM_REQUESTS.clone()))
+        .expect("Failed to register text embeddings number of requests metrics");
+    REGISTRY
+        .register(Box::new(IMAGE_GEN_LATENCY_METRICS.clone()))
+        .expect("Failed to register image generation metrics");
+    REGISTRY
+        .register(Box::new(IMAGE_GEN_NUM_REQUESTS.clone()))
+        .expect("Failed to register image generation number of requests metrics");
 }
 
 #[derive(OpenApi)]

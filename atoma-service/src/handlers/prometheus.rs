@@ -1,6 +1,33 @@
 use once_cell::sync::Lazy;
 use prometheus::{register_counter_vec, register_histogram_vec, CounterVec, HistogramVec};
 
+pub static CHAT_COMPLETIONS_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_chat_completions_num_requests",
+        "The number of incoming requests for chat completions tasks",
+        &["model"]
+    )
+    .unwrap()
+});
+
+pub static IMAGE_GEN_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_image_gen_num_requests",
+        "The number of incoming requests for image generation tasks",
+        &["model"]
+    )
+    .unwrap()
+});
+
+pub static TEXT_EMBEDDINGS_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_text_embs_num_requests",
+        "The number of incoming requests for text embeddings tasks",
+        &["model"]
+    )
+    .unwrap()
+});
+
 /// Histogram metric that tracks the latency of chat completion token generation.
 ///
 /// This metric measures the time taken to generate each token during chat completions,
@@ -18,7 +45,36 @@ pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
         "atoma_chat_completions_token_latency",
         "The latency of chat completion generation in seconds",
         &["model"],
-        vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,],
+        vec![
+            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
+            300.0, 600.0,
+        ],
+    )
+    .unwrap()
+});
+
+pub static IMAGE_GEN_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "atoma_image_generation_latency",
+        "The latency of image generation in seconds",
+        &["model"],
+        vec![
+            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
+            300.0, 600.0
+        ],
+    )
+    .unwrap()
+});
+
+pub static TEXT_EMBEDDINGS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "atoma_text_embeddings_latency",
+        "The latency of text embeddings in seconds",
+        &["model"],
+        vec![
+            0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0,
+            300.0, 600.0
+        ],
     )
     .unwrap()
 });
@@ -70,7 +126,7 @@ pub static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(
 /// Counter metric that tracks the total number of input tokens processed in chat completions.
 ///
 /// This metric counts the cumulative number of tokens in the input prompts,
-/// broken down by model type and stack ID. This helps monitor token usage and costs
+/// broken down by model type. This helps monitor token usage and costs
 /// across different models and client applications.
 ///
 /// # Metric Details
@@ -78,13 +134,12 @@ pub static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(
 /// - Type: Counter
 /// - Labels:
 ///   - `model`: The model used for completion
-///   - `stack_id`: Identifier for the client application
 /// - Unit: tokens (count)
 pub static CHAT_COMPLETIONS_INPUT_TOKENS_METRICS: Lazy<CounterVec> = Lazy::new(|| {
     register_counter_vec!(
         "atoma_chat_completions_input_tokens_metrics",
         "Total number of input tokens processed",
-        &["model", "stack_id"] // prompt,
+        &["model"] // prompt,
     )
     .unwrap()
 });
@@ -93,7 +148,7 @@ pub static CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS: Lazy<CounterVec> = Lazy::new(
     register_counter_vec!(
         "atoma_chat_completions_output_tokens_metrics",
         "Total number of output tokens processed",
-        &["model", "stack_id"] // completion,
+        &["model"] // completion,
     )
     .unwrap()
 });
