@@ -23,6 +23,34 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
+/// OpenAPI documentation structure for the chat completions endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the chat completions API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation.
+///
+/// # Components
+///
+/// The documentation includes the following schema components:
+/// - `ChatCompletionsRequest`: The request body for chat completion requests
+/// - `Message`: A message in the conversation (system, user, assistant, or tool)
+/// - `MessageContent`: Content of a message (text or array of content parts)
+/// - `MessageContentPart`: Individual content parts (text or image)
+/// - `MessageContentPartImageUrl`: Image URL configuration
+/// - `ToolCall`: Information about a tool call made by the model
+/// - `ToolCallFunction`: Function call details within a tool call
+/// - `Tool`: Available tools that the model can use
+/// - `ToolFunction`: Function definition within a tool
+/// - `StopCondition`: Conditions for stopping token generation
+/// - `FinishReason`: Reasons why the model stopped generating
+/// - `Usage`: Token usage statistics
+/// - `Choice`: A single completion choice
+/// - `ChatCompletionsResponse`: The complete response structure
+///
+/// # Paths
+///
+/// Documents the following endpoint:
+/// - `chat_completions_handler`: POST endpoint for chat completions
 #[derive(OpenApi)]
 #[openapi(
     paths(chat_completions_handler),
