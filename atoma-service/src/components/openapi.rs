@@ -5,19 +5,21 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::handlers::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
 use crate::handlers::embeddings::{EmbeddingsOpenApi, EMBEDDINGS_PATH};
 use crate::handlers::image_generations::{ImageGenerationsOpenApi, IMAGE_GENERATIONS_PATH};
-use crate::server::{HealthOpenApi, HEALTH_PATH};
+use crate::server::{HealthOpenApi, MetricsOpenApi, HEALTH_PATH, METRICS_PATH};
 
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi),
+            (path = METRICS_PATH, api = MetricsOpenApi),
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi),
             (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi),
             (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi),
         ),
         tags(
             (name = "health", description = "Health check"),
+            (name = "metrics", description = "Metrics"),
             (name = "chat", description = "Chat completions"),
             (name = "embeddings", description = "Embeddings"),
             (name = "images", description = "Image generations"),

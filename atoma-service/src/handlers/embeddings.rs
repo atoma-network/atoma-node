@@ -1,5 +1,10 @@
 use crate::{
-    handlers::sign_response_and_update_stack_hash, middleware::RequestMetadata, server::AppState,
+    handlers::{
+        prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
+        sign_response_and_update_stack_hash,
+    },
+    middleware::RequestMetadata,
+    server::AppState,
 };
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use reqwest::Client;
@@ -52,6 +57,17 @@ pub async fn embeddings_handler(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     info!("Received embeddings request, with payload: {payload}");
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    TEXT_EMBEDDINGS_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
+    let timer = TEXT_EMBEDDINGS_LATENCY_METRICS
+        .with_label_values(&[model])
+        .start_timer();
 
     let RequestMetadata {
         stack_small_id,
@@ -80,6 +96,9 @@ pub async fn embeddings_handler(
 
     sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
         .await?;
+
+    // Stop the timer before returning the response
+    timer.observe_duration();
 
     Ok(Json(response_body))
 }

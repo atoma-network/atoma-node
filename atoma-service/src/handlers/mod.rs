@@ -1,6 +1,7 @@
 pub(crate) mod chat_completions;
 pub(crate) mod embeddings;
 pub(crate) mod image_generations;
+pub(crate) mod prometheus;
 
 use axum::http::StatusCode;
 use blake2::{

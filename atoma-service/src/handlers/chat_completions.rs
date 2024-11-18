@@ -16,13 +16,41 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, time::Duration};
 use utoipa::ToSchema;
 
-use crate::middleware::RequestMetadata;
+use crate::{handlers::prometheus::*, middleware::RequestMetadata};
 
 /// The path for chat completions requests
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
+/// OpenAPI documentation structure for the chat completions endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the chat completions API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation.
+///
+/// # Components
+///
+/// The documentation includes the following schema components:
+/// - `ChatCompletionsRequest`: The request body for chat completion requests
+/// - `Message`: A message in the conversation (system, user, assistant, or tool)
+/// - `MessageContent`: Content of a message (text or array of content parts)
+/// - `MessageContentPart`: Individual content parts (text or image)
+/// - `MessageContentPartImageUrl`: Image URL configuration
+/// - `ToolCall`: Information about a tool call made by the model
+/// - `ToolCallFunction`: Function call details within a tool call
+/// - `Tool`: Available tools that the model can use
+/// - `ToolFunction`: Function definition within a tool
+/// - `StopCondition`: Conditions for stopping token generation
+/// - `FinishReason`: Reasons why the model stopped generating
+/// - `Usage`: Token usage statistics
+/// - `Choice`: A single completion choice
+/// - `ChatCompletionsResponse`: The complete response structure
+///
+/// # Paths
+///
+/// Documents the following endpoint:
+/// - `chat_completions_handler`: POST endpoint for chat completions
 #[derive(OpenApi)]
 #[openapi(
     paths(chat_completions_handler),
@@ -185,6 +213,15 @@ async fn handle_non_streaming_response(
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
 ) -> Result<Response<Body>, StatusCode> {
+    // Record token metrics and extract the response total number of tokens
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    let timer = CHAT_COMPLETIONS_LATENCY_METRICS
+        .with_label_values(&[model])
+        .start_timer();
     let client = Client::new();
     let response = client
         .post(format!(
@@ -204,13 +241,23 @@ async fn handle_non_streaming_response(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Extract the response total number of tokens
-    let total_compute_units = response_body
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-        .and_then(|total_tokens| total_tokens.as_u64())
-        .map(|n| n as i64)
-        .unwrap_or(0);
+    let mut total_compute_units = 0;
+    if let Some(usage) = response_body.get("usage") {
+        if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+            let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
+                .with_label_values(&[model])
+                .inc_by(prompt_tokens as f64);
+            total_compute_units += prompt_tokens;
+        }
+        if let Some(completion_tokens) = usage.get("completion_tokens") {
+            let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
+                .with_label_values(&[model])
+                .inc_by(completion_tokens as f64);
+            total_compute_units += completion_tokens;
+        }
+    }
 
     // Update stack num tokens
     state
@@ -218,7 +265,7 @@ async fn handle_non_streaming_response(
         .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
             estimated_total_compute_units,
-            total_compute_units,
+            total_compute_units: total_compute_units as i64,
         })
         .map_err(|e| {
             error!("Error updating stack num tokens: {}", e);
@@ -241,6 +288,9 @@ async fn handle_non_streaming_response(
         );
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
+
+    // Stop the timer before returning the response
+    timer.observe_duration();
 
     Ok(Json(response_body).into_response())
 }
@@ -304,6 +354,17 @@ async fn handle_streaming_response(
         "include_usage": true
     });
 
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+    CHAT_COMPLETIONS_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
+    let timer = CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN
+        .with_label_values(&[model])
+        .start_timer();
+
     let client = Client::new();
     let response = client
         .post(format!(
@@ -334,6 +395,8 @@ async fn handle_streaming_response(
         payload_hash,
         state.keystore.clone(),
         state.address_index,
+        model.to_string(),
+        timer,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()

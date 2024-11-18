@@ -13,11 +13,18 @@ use blake2::{
 };
 use flume::Sender as FlumeSender;
 use futures::Stream;
+use prometheus::HistogramTimer;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tracing::{error, instrument};
 
-use crate::server::utils;
+use crate::{
+    handlers::prometheus::{
+        CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+    },
+    server::utils,
+};
 
 /// The chunk that indicates the end of a streaming response
 const DONE_CHUNK: &str = "[DONE]";
@@ -50,6 +57,14 @@ pub struct Streamer {
     keystore: Arc<FileBasedKeystore>,
     /// The address index
     address_index: usize,
+    /// The model for the inference request
+    model: String,
+    /// The first token generation (prefill phase) timer for the request.
+    /// We need store it as an option because we need to consume its value
+    /// once the first token is generated
+    first_token_generation_timer: Option<HistogramTimer>,
+    /// The decoding phase timer for the request.
+    decoding_phase_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -67,6 +82,7 @@ pub enum StreamStatus {
 
 impl Streamer {
     /// Creates a new Streamer instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
@@ -75,6 +91,8 @@ impl Streamer {
         payload_hash: [u8; 32],
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
+        model: String,
+        first_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -86,6 +104,9 @@ impl Streamer {
             state_manager_sender,
             keystore,
             address_index,
+            model,
+            first_token_generation_timer: Some(first_token_generation_timer),
+            decoding_phase_timer: None,
         }
     }
 
@@ -130,6 +151,11 @@ impl Streamer {
         )
     )]
     fn handle_final_chunk(&mut self, usage: &Value) -> Result<String, Error> {
+        // Record the decoding phase timer
+        if let Some(timer) = self.decoding_phase_timer.take() {
+            timer.observe_duration();
+        }
+
         // Sign the accumulated response
         let (response_hash, signature) = utils::sign_response_body(
             &json!(self.accumulated_response),
@@ -142,20 +168,34 @@ impl Streamer {
         })?;
 
         // Get total tokens
-        let total_compute_units = usage
-            .get("total_tokens")
-            .and_then(|t| t.as_i64())
-            .ok_or_else(|| {
-                error!("Error getting total tokens from usage");
-                Error::new("Error getting total tokens from usage")
-            })?;
+        let mut total_compute_units = 0;
+        if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+            let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
+                .with_label_values(&[&self.model, &self.stack_small_id.to_string()])
+                .inc_by(prompt_tokens as f64);
+            total_compute_units += prompt_tokens;
+        } else {
+            error!("Error getting prompt tokens from usage");
+            return Err(Error::new("Error getting prompt tokens from usage"));
+        }
+        if let Some(completion_tokens) = usage.get("completion_tokens") {
+            let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
+            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
+                .with_label_values(&[&self.model, &self.stack_small_id.to_string()])
+                .inc_by(completion_tokens as f64);
+            total_compute_units += completion_tokens;
+        } else {
+            error!("Error getting completion tokens from usage");
+            return Err(Error::new("Error getting completion tokens from usage"));
+        }
 
         // Update stack num tokens
         if let Err(e) = self.state_manager_sender.send(
             AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
                 stack_small_id: self.stack_small_id,
                 estimated_total_compute_units: self.estimated_total_compute_units,
-                total_compute_units,
+                total_compute_units: total_compute_units as i64,
             },
         ) {
             error!("Error updating stack num tokens: {}", e);
@@ -202,6 +242,7 @@ impl Stream for Streamer {
                 if chunk.as_ref() == KEEP_ALIVE_CHUNK {
                     return Poll::Pending;
                 }
+
                 let chunk_str = match std::str::from_utf8(&chunk) {
                     Ok(v) => v,
                     Err(e) => {
@@ -224,6 +265,15 @@ impl Stream for Streamer {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
+
+                // Observe the first token generation timer
+                if let Some(timer) = self.first_token_generation_timer.take() {
+                    timer.observe_duration();
+                    let timer = CHAT_COMPLETIONS_DECODING_TIME
+                        .with_label_values(&[&self.model])
+                        .start_timer();
+                    self.decoding_phase_timer = Some(timer);
+                }
 
                 let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,

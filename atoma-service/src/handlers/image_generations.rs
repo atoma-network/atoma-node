@@ -1,4 +1,8 @@
-use crate::{middleware::RequestMetadata, server::AppState};
+use crate::{
+    handlers::prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
+    middleware::RequestMetadata,
+    server::AppState,
+};
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use reqwest::Client;
 use serde_json::Value;
@@ -52,6 +56,15 @@ pub async fn image_generations_handler(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     info!("Received image generations request, with payload: {payload}");
+    let model = payload
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    IMAGE_GEN_NUM_REQUESTS.with_label_values(&[model]).inc();
+    let timer = IMAGE_GEN_LATENCY_METRICS
+        .with_label_values(&[model])
+        .start_timer();
 
     let RequestMetadata {
         stack_small_id,
@@ -80,6 +93,9 @@ pub async fn image_generations_handler(
 
     sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
         .await?;
+
+    // Stop the timer before returning the response
+    timer.observe_duration();
 
     Ok(Json(response_body))
 }

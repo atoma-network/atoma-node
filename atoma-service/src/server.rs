@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
+    body::Body,
     middleware::{from_fn, from_fn_with_state},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -12,11 +13,14 @@ use blake2::{
     Digest,
 };
 use flume::Sender as FlumeSender;
+use hyper::StatusCode;
+use prometheus::Encoder;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
 use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower::ServiceBuilder;
+use tracing::error;
 use utoipa::OpenApi;
 
 use crate::{
@@ -28,6 +32,12 @@ use crate::{
     },
     middleware::{signature_verification_middleware, verify_stack_permissions},
 };
+
+/// The path for the health check endpoint.
+pub const HEALTH_PATH: &str = "/health";
+
+/// The path for the metrics endpoint.
+pub const METRICS_PATH: &str = "/metrics";
 
 /// Represents the shared state of the application.
 ///
@@ -129,6 +139,7 @@ pub fn create_router(app_state: AppState) -> Router {
         )
         .with_state(app_state)
         .route(HEALTH_PATH, get(health))
+        .route(METRICS_PATH, get(metrics_handler))
         .merge(openapi_routes())
 }
 
@@ -183,6 +194,10 @@ pub async fn run_server(
     Ok(())
 }
 
+#[derive(OpenApi)]
+#[openapi(paths(health))]
+pub(crate) struct HealthOpenApi;
+
 /// Handles the health check endpoint.
 ///
 /// This function is used to verify that the server is running and responsive.
@@ -201,11 +216,6 @@ pub async fn run_server(
 /// ```rust,ignore
 /// app.route("/health", get(health_check))
 /// ```
-pub const HEALTH_PATH: &str = "/health";
-#[derive(OpenApi)]
-#[openapi(paths(health))]
-pub(crate) struct HealthOpenApi;
-
 #[utoipa::path(
     get,
     path = "",
@@ -214,8 +224,52 @@ pub(crate) struct HealthOpenApi;
         (status = OK, description = "Service is healthy", body = Value)
     )
 )]
-pub async fn health() -> impl IntoResponse {
+async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok" }))
+}
+
+/// OpenAPI documentation for the metrics endpoint.
+///
+/// This struct is used to generate OpenAPI/Swagger documentation for the metrics
+/// endpoint of the service. It provides a standardized way to describe the API
+/// endpoint that exposes service metrics in a format compatible with Prometheus
+/// and other monitoring systems.
+#[derive(OpenApi)]
+#[openapi(paths(metrics_handler))]
+pub(crate) struct MetricsOpenApi;
+
+/// Handles the metrics endpoint.
+///
+/// This function is used to return the metrics for the service.
+///
+/// # Returns
+///
+/// Returns the metrics for the service as a plain text response.
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "metrics",
+    responses(
+        (status = OK, description = "Metrics for the service")
+    )
+)]
+async fn metrics_handler() -> Result<impl IntoResponse, StatusCode> {
+    let encoder = prometheus::TextEncoder::new();
+    let metric_families = prometheus::gather();
+    let mut buffer = vec![];
+    encoder.encode(&metric_families, &mut buffer).map_err(|e| {
+        error!("Failed to encode metrics: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", encoder.format_type())
+        .body(Body::from(buffer))
+        .map_err(|e| {
+            error!("Failed to build response: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 pub(crate) mod utils {
