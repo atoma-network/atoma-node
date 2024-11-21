@@ -41,3 +41,7 @@ where
         res.map_err(Into::into)
     })
 }
+
+pub mod test {
+    pub const POSTGRES_TEST_DB_URL: &str = "postgres://atoma_test:atoma@localhost:5432/atoma_test";
+}

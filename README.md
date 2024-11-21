@@ -104,7 +104,7 @@ sui_config_path = "/root/.sui/sui_config/client.yaml"
 sui_keystore_path = "/root/.sui/sui_config/sui.keystore"
 
 [atoma-state]
-database_url = "sqlite:///app/data/atoma.db"
+database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>"
 ```
 
 4. Create required directories
@@ -166,7 +166,7 @@ The deployment consists of two main services:
 - HuggingFace cache: `~/.cache/huggingface:/root/.cache/huggingface`
 - Sui configuration: `~/.sui/sui_config:/root/.sui/sui_config`
 - Logs: `./logs:/app/logs`
-- SQLite database: `./data:/app/data`
+- PostgreSQL database: `./data:/app/data`
 
 #### Managing the Deployment
 
@@ -252,6 +252,28 @@ sudo ufw allow 50000/tcp
 - Ensure Sui configuration files have appropriate permissions
 - Keep keystore file secure and never commit to version control
 
+### Testing 
+
+Since the `AtomaStateManager` instance relies on a PostgreSQL database, we need to have a local instance running to run the tests. You can spawn one using the `docker-compose.test.yaml` file:
+
+```bash
+docker compose -f docker-compose.test.yaml up --build -d
+```
+
+It might be necessary that you clean up the database before or after running the tests. You can do so by running:
+
+```bash
+docker compose -f docker-compose.test.yaml down
+```
+
+and remove the specific postgres volumes:
+
+```bash
+docker system prune -af --volumes
+```
+
+Notice that by running the above commands you will lose all the data stored in the database.
+
 ### Manual deployment
 
 #### 1. Installing Rust
@@ -305,7 +327,7 @@ The application uses a TOML configuration file with the following sections:
 
 ##### `[atoma-state]`
 
-- `database_url`: SQLite database connection URL
+- `database_url`: PostgreSQL database connection URL
 
 ##### Example Configuration
 
@@ -332,7 +354,9 @@ sui_config_path = "<PATH_TO_SUI_CONFIG>" # Example: "~/.sui/sui_config/client.ya
 sui_keystore_path = "<PATH_TO_SUI_KEYSTORE>" # Example: "~/.sui/sui_config/sui.keystore" (default)
 
 [atoma-state]
-database_url = "sqlite:///<PATH_TO_DATABASE>"
+# Path inside the container
+# Replace the placeholder values with the ones for your local environment (in the .env file)
+database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>"
 ```
 
 #### 4. Running the Atoma Node

@@ -17,3 +17,5 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 serial_test = { workspace = true }
+rand = { workspace = true }
+atoma-utils = { workspace = true }

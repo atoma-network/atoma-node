@@ -3,8 +3,8 @@ services:
     image: postgres:13
     restart: always
     environment:
-      - POSTGRES_DB=atoma
-      - POSTGRES_USER=atoma
+      - POSTGRES_DB=atoma_test
+      - POSTGRES_USER=atoma_test
       - POSTGRES_PASSWORD=atoma
     ports:
       - "5432:5432"
@@ -13,3 +13,4 @@ services:
 
 volumes:
   postgres-data:
+ 

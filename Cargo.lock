@@ -622,8 +622,10 @@ name = "atoma-state"
 version = "0.1.0"
 dependencies = [
  "atoma-sui",
+ "atoma-utils",
  "config",
  "flume",
+ "rand",
  "serde",
  "serde_json",
  "serial_test",
