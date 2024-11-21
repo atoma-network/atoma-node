@@ -625,7 +625,6 @@ dependencies = [
  "atoma-utils",
  "config",
  "flume",
- "rand",
  "serde",
  "serde_json",
  "serial_test",
