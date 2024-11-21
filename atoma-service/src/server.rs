@@ -2,51 +2,42 @@ use std::sync::Arc;
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
-    extract::State,
-    http::StatusCode,
+    body::Body,
     middleware::{from_fn, from_fn_with_state},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
 use blake2::{
     digest::generic_array::{typenum::U32, GenericArray},
     Digest,
 };
 use flume::Sender as FlumeSender;
-use reqwest::Client;
+use hyper::StatusCode;
+use prometheus::Encoder;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, signal, sync::watch::Sender};
+use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower::ServiceBuilder;
-use tracing::{error, info, instrument};
+use tracing::error;
 use utoipa::OpenApi;
 
 use crate::{
-    middleware::{signature_verification_middleware, verify_stack_permissions, RequestMetadata},
-    types::{ChatCompletionsRequest, ChatCompletionsResponse},
+    components::openapi::openapi_routes,
+    handlers::{
+        chat_completions::{chat_completions_handler, CHAT_COMPLETIONS_PATH},
+        embeddings::{embeddings_handler, EMBEDDINGS_PATH},
+        image_generations::{image_generations_handler, IMAGE_GENERATIONS_PATH},
+    },
+    middleware::{signature_verification_middleware, verify_stack_permissions},
 };
 
-const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
-const HEALTH_PATH: &str = "/health";
+/// The path for the health check endpoint.
+pub const HEALTH_PATH: &str = "/health";
 
-/// OpenAPI documentation for the chat completions endpoint
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        health,
-        chat_completions_handler
-    ),
-    components(
-        schemas(ChatCompletionsRequest, ChatCompletionsResponse)
-    ),
-    tags(
-        (name = "health", description = "Health check endpoint"),
-        (name = "chat-completions", description = "Chat completions endpoint")
-    )
-)]
-pub struct OpenApiDoc;
+/// The path for the metrics endpoint.
+pub const METRICS_PATH: &str = "/metrics";
 
 /// Represents the shared state of the application.
 ///
@@ -77,12 +68,24 @@ pub struct AppState {
     /// models as needed.
     pub models: Arc<Vec<String>>,
 
-    /// URL of the inference service.
+    /// URL of the chat completions service.
     ///
     /// This URL points to the external service responsible for performing
-    /// AI model inference. The application forwards requests to this service
-    /// to obtain AI-generated responses.
-    pub inference_service_url: String,
+    /// AI model chat completions. The application forwards requests to this
+    /// service to obtain AI-generated responses.
+    pub chat_completions_service_url: String,
+
+    /// URL for the embeddings service.
+    ///
+    /// This is an optional field that, if provided, specifies the endpoint
+    /// for the embeddings service used by the Atoma Service.
+    pub embeddings_service_url: String,
+
+    /// URL for the image generations service.
+    ///
+    /// This is an optional field that, if provided, specifies the endpoint
+    /// for the image generations service used by the Atoma Service.
+    pub image_generations_service_url: String,
 
     /// The Sui keystore of the node.
     ///
@@ -123,6 +126,8 @@ pub struct AppState {
 pub fn create_router(app_state: AppState) -> Router {
     Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
         .layer(
             ServiceBuilder::new()
                 .layer(from_fn(signature_verification_middleware))
@@ -134,6 +139,8 @@ pub fn create_router(app_state: AppState) -> Router {
         )
         .with_state(app_state)
         .route(HEALTH_PATH, get(health))
+        .route(METRICS_PATH, get(metrics_handler))
+        .merge(openapi_routes())
 }
 
 /// Starts and runs the HTTP server with graceful shutdown handling.
@@ -172,23 +179,24 @@ pub fn create_router(app_state: AppState) -> Router {
 pub async fn run_server(
     app_state: AppState,
     tcp_listener: TcpListener,
-    shutdown_sender: Sender<bool>,
+    mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
     let app = create_router(app_state);
-    let shutdown_signal = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to parse Ctrl+C signal");
-        info!("Shutting down server...");
-    };
     let server =
-        axum::serve(tcp_listener, app.into_make_service()).with_graceful_shutdown(shutdown_signal);
+        axum::serve(tcp_listener, app.into_make_service()).with_graceful_shutdown(async move {
+            shutdown_receiver
+                .changed()
+                .await
+                .expect("Error receiving shutdown signal")
+        });
     server.await?;
-
-    shutdown_sender.send(true)?;
 
     Ok(())
 }
+
+#[derive(OpenApi)]
+#[openapi(paths(health))]
+pub(crate) struct HealthOpenApi;
 
 /// Handles the health check endpoint.
 ///
@@ -210,136 +218,58 @@ pub async fn run_server(
 /// ```
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "",
     tag = "health",
     responses(
-        (status = 200, description = "Service is healthy", body = Value)
+        (status = OK, description = "Service is healthy", body = Value)
     )
 )]
-pub async fn health() -> impl IntoResponse {
+async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok" }))
 }
 
-/// Handles chat completion requests by forwarding them to the inference service and managing token usage.
+/// OpenAPI documentation for the metrics endpoint.
 ///
-/// This handler performs several key operations:
-/// 1. Forwards the chat completion request to the inference service
-/// 2. Signs the response using the node's keystore
-/// 3. Tracks token usage for the stack
+/// This struct is used to generate OpenAPI/Swagger documentation for the metrics
+/// endpoint of the service. It provides a standardized way to describe the API
+/// endpoint that exposes service metrics in a format compatible with Prometheus
+/// and other monitoring systems.
+#[derive(OpenApi)]
+#[openapi(paths(metrics_handler))]
+pub(crate) struct MetricsOpenApi;
+
+/// Handles the metrics endpoint.
 ///
-/// # Arguments
-///
-/// * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated token count from middleware
-/// * `state` - Application state containing the inference client and keystore
-/// * `payload` - The chat completion request body
+/// This function is used to return the metrics for the service.
 ///
 /// # Returns
 ///
-/// Returns a JSON response containing:
-/// - The inference service's response
-/// - A cryptographic signature of the response
-///
-/// # Errors
-///
-/// Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
-/// - The inference service request fails
-/// - Response parsing fails
-/// - Response signing fails
-/// - Token usage update fails
+/// Returns the metrics for the service as a plain text response.
 #[utoipa::path(
-    post,
-    path = "/v1/chat/completions",
-    tag = "chat",
-    request_body = ChatCompletionsRequest,
+    get,
+    path = "",
+    tag = "metrics",
     responses(
-        (status = 200, description = "Chat completion successful", body = ChatCompletionsResponse),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "Metrics for the service")
     )
 )]
-#[instrument(
-    level = "info",
-    skip(state, payload),
-    fields(path = CHAT_COMPLETIONS_PATH)
-)]
-pub async fn chat_completions_handler(
-    Extension(request_metadata): Extension<RequestMetadata>,
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
-    info!("Received chat completions request, with payload: {payload}");
-    let RequestMetadata {
-        stack_small_id,
-        estimated_total_tokens,
-        payload_hash,
-    } = request_metadata;
-    let client = Client::new();
-    let response = client
-        .post(format!(
-            "{}{}",
-            state.inference_service_url, CHAT_COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
-            error!("Error sending request to inference service: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let mut response_body = response.json::<Value>().await.map_err(|e| {
-        error!("Error reading response body: {}", e);
+async fn metrics_handler() -> Result<impl IntoResponse, StatusCode> {
+    let encoder = prometheus::TextEncoder::new();
+    let metric_families = prometheus::gather();
+    let mut buffer = vec![];
+    encoder.encode(&metric_families, &mut buffer).map_err(|e| {
+        error!("Failed to encode metrics: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Sign the response body byte content and add the base64 encoded signature to the response body
-    let (response_hash, signature) =
-        utils::sign_response_body(&response_body, &state.keystore, state.address_index).map_err(
-            |e| {
-                error!("Error signing response body: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
-        )?;
-    response_body["signature"] = json!(signature);
-
-    // Extract the response total number of tokens
-    let total_tokens = response_body
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-        .and_then(|total_tokens| total_tokens.as_u64())
-        .map(|n| n as i64)
-        .unwrap_or(0);
-
-    // NOTE: We need to update the stack num tokens, because the inference response might have produced
-    // less tokens than estimated what we initially estimated, from the middleware.
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
-            stack_small_id,
-            estimated_total_tokens,
-            total_tokens,
-        })
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", encoder.format_type())
+        .body(Body::from(buffer))
         .map_err(|e| {
-            error!("Error updating stack num tokens: {}", e);
+            error!("Failed to build response: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let mut blake2b = blake2::Blake2b::new();
-    blake2b.update([payload_hash, response_hash].concat());
-    let total_hash: GenericArray<u8, U32> = blake2b.finalize();
-    let total_hash_bytes: [u8; 32] = total_hash
-        .as_slice()
-        .try_into()
-        .expect("Invalid BLAKE2b hash length");
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash: total_hash_bytes,
         })
-        .map_err(|e| {
-            error!("Error updating stack total hash: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    Ok(Json(response_body))
 }
 
 pub(crate) mod utils {

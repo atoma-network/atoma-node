@@ -48,13 +48,12 @@ impl AtomaStateManager {
     /// This method establishes a connection to the SQLite database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
     pub async fn new_from_url(
-        database_url: String,
+        database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let connect_options =
-            SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
+        let connect_options = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
         let db = SqlitePool::connect_with(connect_options).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
@@ -180,8 +179,8 @@ impl AtomaState {
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
-    pub async fn new_from_url(database_url: String) -> Result<Self> {
-        let db = SqlitePool::connect(&database_url).await?;
+    pub async fn new_from_url(database_url: &str) -> Result<Self> {
+        let db = SqlitePool::connect(database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
     }
@@ -677,7 +676,7 @@ impl AtomaState {
 
     /// Unsubscribes a node from a task.
     ///
-    /// This method updates the `valid` field of the `node_subscriptions` table to `FALSE` for the specified node and task combination.
+    /// This method deletes the subscription from the `node_subscriptions` table for the specified node and task combination.
     ///
     /// # Arguments
     ///
@@ -710,7 +709,7 @@ impl AtomaState {
         node_small_id: i64,
         task_small_id: i64,
     ) -> Result<()> {
-        sqlx::query("UPDATE node_subscriptions SET valid = FALSE WHERE node_small_id = ? AND task_small_id = ?")
+        sqlx::query("DELETE FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?")
             .bind(node_small_id)
             .bind(task_small_id)
             .execute(&self.db)
@@ -1033,14 +1032,14 @@ impl AtomaState {
         skip_all,
         fields(
             stack_small_id = %stack_small_id,
-            public_key = %public_key,
+            sui_address = %sui_address,
             num_compute_units = %num_compute_units
         )
     )]
     pub async fn get_available_stack_with_compute_units(
         &self,
         stack_small_id: i64,
-        public_key: &str,
+        sui_address: &str,
         num_compute_units: i64,
     ) -> Result<Option<Stack>> {
         // Single query that updates and returns the modified row
@@ -1057,7 +1056,7 @@ impl AtomaState {
         )
         .bind(num_compute_units)
         .bind(stack_small_id)
-        .bind(public_key)
+        .bind(sui_address)
         .fetch_optional(&self.db)
         .await?;
 
@@ -1170,7 +1169,7 @@ impl AtomaState {
         Ok(())
     }
 
-    /// Updates the number of tokens already computed for a stack.
+    /// Updates the number of compute units already computed for a stack.
     ///
     /// This method updates the `already_computed_units` field in the `stacks` table
     /// for the specified `stack_small_id`.
@@ -1178,8 +1177,8 @@ impl AtomaState {
     /// # Arguments
     ///
     /// * `stack_small_id` - The unique small identifier of the stack to update.
-    /// * `estimated_total_tokens` - The estimated total number of tokens.
-    /// * `total_tokens` - The total number of tokens.
+    /// * `estimated_total_compute_units` - The estimated total number of compute units.
+    /// * `total_compute_units` - The total number of compute units.
     ///
     /// # Returns
     ///
@@ -1195,28 +1194,28 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn update_stack_num_tokens(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), AtomaStateManagerError> {
-    ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
+    /// async fn update_stack_num_compute_units(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_compute_units: i64, total_compute_units: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_stack_num_compute_units(stack_small_id, estimated_total_compute_units, total_compute_units).await
     /// }
     /// ```
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
+        fields(stack_small_id = %stack_small_id, estimated_total_compute_units = %estimated_total_compute_units, total_compute_units = %total_compute_units)
     )]
-    pub async fn update_stack_num_tokens(
+    pub async fn update_stack_num_compute_units(
         &self,
         stack_small_id: i64,
-        estimated_total_tokens: i64,
-        total_tokens: i64,
+        estimated_total_compute_units: i64,
+        total_compute_units: i64,
     ) -> Result<()> {
         let result = sqlx::query(
             "UPDATE stacks 
             SET already_computed_units = already_computed_units - (? - ?) 
             WHERE stack_small_id = ?",
         )
-        .bind(estimated_total_tokens)
-        .bind(total_tokens)
+        .bind(estimated_total_compute_units)
+        .bind(total_compute_units)
         .bind(stack_small_id)
         .execute(&self.db)
         .await?;
@@ -2344,9 +2343,7 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> AtomaState {
-        AtomaState::new_from_url("sqlite::memory:".to_string())
-            .await
-            .unwrap()
+        AtomaState::new_from_url("sqlite::memory:").await.unwrap()
     }
 
     #[tokio::test]

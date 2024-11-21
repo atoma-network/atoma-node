@@ -599,7 +599,7 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
 ///
 /// This function processes various events that are sent to the state manager,
 /// including requests to get available stacks with compute units, update the number
-/// of tokens for a stack, and update the total hash of a stack.
+/// of compute units for a stack, and update the total hash of a stack.
 ///
 /// # Arguments
 ///
@@ -613,7 +613,7 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
 /// # Errors
 ///
 /// This function may return an error if:
-/// * The database operations for updating tokens or hashes fail.
+/// * The database operations for updating compute units or hashes fail.
 /// * The result sender fails to send the result for the `GetAvailableStackWithComputeUnits` event.
 ///
 /// # Behavior
@@ -621,7 +621,7 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
 /// The function performs the following steps:
 /// 1. Matches the incoming event to determine the type of operation to perform.
 /// 2. For `GetAvailableStackWithComputeUnits`, it retrieves the available stack and sends the result.
-/// 3. For `UpdateStackNumTokens`, it updates the number of tokens for the specified stack.
+/// 3. For `UpdateStackNumComputeUnits`, it updates the number of compute units for the specified stack.
 /// 4. For `UpdateStackTotalHash`, it updates the total hash for the specified stack.
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_state_manager_event(
@@ -636,30 +636,34 @@ pub(crate) async fn handle_state_manager_event(
     match event {
         AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
             stack_small_id,
-            public_key,
-            total_num_tokens,
+            sui_address,
+            total_num_compute_units,
             result_sender,
         } => {
             let result = state_manager
                 .state
                 .get_available_stack_with_compute_units(
                     stack_small_id,
-                    &public_key,
-                    total_num_tokens,
+                    &sui_address,
+                    total_num_compute_units,
                 )
                 .await;
             result_sender
                 .send(result)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
-        AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
+        AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
-            estimated_total_tokens,
-            total_tokens,
+            estimated_total_compute_units,
+            total_compute_units,
         } => {
             state_manager
                 .state
-                .update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens)
+                .update_stack_num_compute_units(
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    total_compute_units,
+                )
                 .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateStackTotalHash {

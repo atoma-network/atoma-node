@@ -1,6 +1,12 @@
 use std::str::FromStr;
 
-use crate::server::AppState;
+use crate::{
+    handlers::{
+        chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
+        image_generations::IMAGE_GENERATIONS_PATH,
+    },
+    server::AppState,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
@@ -14,38 +20,73 @@ use blake2::{
     Blake2b, Digest,
 };
 use serde_json::Value;
-use sui_sdk::types::crypto::{Signature, SuiSignature};
+use sui_sdk::types::{
+    base_types::SuiAddress,
+    crypto::{PublicKey, Signature, SuiSignature},
+};
 use tokio::sync::oneshot;
 use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
-const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
-const MESSAGES: &str = "messages";
+/// The key for the model in the request body
 const MODEL: &str = "model";
+/// The key for the max tokens in the request body
+const MAX_TOKENS: &str = "max_tokens";
+/// The key for the messages in the request body
+const MESSAGES: &str = "messages";
+/// The key for the input tokens in the request body
+const INPUT: &str = "input";
+/// The key for the image size in the request body
+const IMAGE_SIZE: &str = "size";
+/// The key for the number of images in the request body
+const IMAGE_N: &str = "n";
 
 /// Metadata extracted from the request
 #[derive(Clone, Debug, Default)]
 pub struct RequestMetadata {
     /// The stack small ID
     pub stack_small_id: i64,
-    /// The estimated total number of tokens
-    pub estimated_total_tokens: i64,
+    /// The estimated total number of compute units
+    pub estimated_total_compute_units: i64,
     /// The payload hash
     pub payload_hash: [u8; 32],
+    /// The type of request
+    pub request_type: RequestType,
+}
+
+/// The type of request
+///
+/// This enum is used to determine the type of request based on the path of the request.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum RequestType {
+    #[default]
+    ChatCompletions,
+    Embeddings,
+    ImageGenerations,
+    NonInference,
 }
 
 impl RequestMetadata {
     /// Create a new `RequestMetadata` with the given stack info
-    pub fn with_stack_info(mut self, stack_small_id: i64, estimated_total_tokens: i64) -> Self {
+    pub fn with_stack_info(
+        mut self,
+        stack_small_id: i64,
+        estimated_total_compute_units: i64,
+    ) -> Self {
         self.stack_small_id = stack_small_id;
-        self.estimated_total_tokens = estimated_total_tokens;
+        self.estimated_total_compute_units = estimated_total_compute_units;
         self
     }
 
     /// Create a new `RequestMetadata` with the given payload hash
     pub fn with_payload_hash(mut self, payload_hash: [u8; 32]) -> Self {
         self.payload_hash = payload_hash;
+        self
+    }
+
+    pub fn with_request_type(mut self, request_type: RequestType) -> Self {
+        self.request_type = request_type;
         self
     }
 }
@@ -138,7 +179,7 @@ pub async fn signature_verification_middleware(
     Ok(next.run(req).await)
 }
 
-/// Middleware for verifying stack permissions and token usage.
+/// Middleware for verifying stack permissions and compute units usage.
 ///
 /// This middleware performs several checks to ensure that the incoming request
 /// is authorized to use the specified model and has sufficient compute units available.
@@ -147,7 +188,7 @@ pub async fn signature_verification_middleware(
 /// 1. Extracts and validates the public key and stack ID from request headers.
 /// 2. Parses the request body to extract the model and messages.
 /// 3. Verifies that the requested model is supported.
-/// 4. Calculates the total number of tokens required for the request.
+/// 4. Calculates the total number of compute units required for the request.
 /// 5. Checks if the user has an available stack with sufficient compute units.
 ///
 /// # Headers
@@ -159,12 +200,12 @@ pub async fn signature_verification_middleware(
 /// The body should be a JSON object containing:
 /// - `model`: The name of the AI model to be used.
 /// - `messages`: An array of message objects, each containing a "content" field.
-/// - `max_completion_tokens`: The maximum number of tokens for the AI's response.
+/// - `max_tokens`: The maximum number of tokens for the AI's response.
 ///
 /// # Extensions
 /// This middleware adds a `RequestMetadata` extension to the request containing:
 /// - `stack_small_id`: The ID of the stack being used
-/// - `estimated_total_tokens`: The total number of tokens calculated for the request
+/// - `estimated_total_compute_units`: The total number of compute units calculated for the request
 ///
 /// This metadata can be accessed by downstream handlers using `req.extensions()`.
 ///
@@ -188,6 +229,15 @@ pub async fn verify_stack_permissions(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
+
+    // Get request path to determine type
+    let request_type = match req_parts.uri.path() {
+        CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
+        EMBEDDINGS_PATH => RequestType::Embeddings,
+        IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
+        _ => RequestType::NonInference,
+    };
+
     let base64_signature = req_parts
         .headers
         .get("X-Signature")
@@ -205,7 +255,12 @@ pub async fn verify_stack_permissions(
         StatusCode::BAD_REQUEST
     })?;
     let public_key_bytes = signature.public_key_bytes();
-    let public_key_hex = format!("0x{}", hex::encode(public_key_bytes));
+    let public_key =
+        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+            error!("Failed to extract public key from bytes, with error: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
+    let sui_address = SuiAddress::from(&public_key);
     let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
@@ -243,61 +298,12 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
     if !state.models.contains(&model.to_string()) {
-        error!("Model not supported");
+        error!("Model not supported, supported models: {:?}", state.models);
         return Err(StatusCode::BAD_REQUEST);
     }
-    let messages = body_json
-        .get(MESSAGES)
-        .ok_or_else(|| {
-            error!("Messages not found in body");
-            StatusCode::BAD_REQUEST
-        })?
-        .as_array()
-        .ok_or_else(|| {
-            error!("Messages is not an array");
-            StatusCode::BAD_REQUEST
-        })?;
 
-    let tokenizer_index = state
-        .models
-        .iter()
-        .position(|m| m == model)
-        .ok_or_else(|| {
-            error!("Model not supported");
-            StatusCode::BAD_REQUEST
-        })?;
-    let mut total_num_tokens = 0;
-    for message in messages {
-        let content = message.get("content").ok_or_else(|| {
-            error!("Message content not found");
-            StatusCode::BAD_REQUEST
-        })?;
-        let content_str = content.as_str().ok_or_else(|| {
-            error!("Message content is not a string");
-            StatusCode::BAD_REQUEST
-        })?;
-        let num_tokens = state.tokenizers[tokenizer_index]
-            .encode(content_str, true)
-            .map_err(|_| {
-                error!("Failed to encode message content");
-                StatusCode::BAD_REQUEST
-            })?
-            .get_ids()
-            .len() as i64;
-        total_num_tokens += num_tokens;
-        // add 2 tokens as a safety margin, for start and end message delimiters
-        total_num_tokens += 2;
-        // add 1 token as a safety margin, for the role name of the message
-        total_num_tokens += 1;
-    }
-
-    total_num_tokens += body_json
-        .get(MAX_COMPLETION_TOKENS)
-        .and_then(|value| value.as_i64())
-        .ok_or_else(|| {
-            error!("Max completion tokens not found in body");
-            StatusCode::BAD_REQUEST
-        })?;
+    let total_num_compute_units =
+        utils::calculate_compute_units(&body_json, request_type.clone(), &state, model)?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -305,8 +311,8 @@ pub async fn verify_stack_permissions(
         .send(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
-                public_key: public_key_hex,
-                total_num_tokens,
+                sui_address: sui_address.to_string(),
+                total_num_compute_units,
                 result_sender,
             },
         )
@@ -331,8 +337,9 @@ pub async fn verify_stack_permissions(
         error!("No available stack with enough compute units");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    let request_metadata =
-        RequestMetadata::default().with_stack_info(stack_small_id, total_num_tokens);
+    let request_metadata = RequestMetadata::default()
+        .with_stack_info(stack_small_id, total_num_compute_units)
+        .with_request_type(request_type);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
@@ -346,8 +353,34 @@ pub(crate) mod utils {
         secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
         traits::{ToFromBytes, VerifyingKey},
     };
-    use sui_sdk::types::crypto::{PublicKey, SignatureScheme, SuiSignature};
+    use sui_sdk::types::crypto::SignatureScheme;
 
+    /// Verifies the authenticity of a request by checking its signature against the provided hash.
+    ///
+    /// # Arguments
+    /// * `base64_signature` - A base64-encoded signature string that contains:
+    ///   - The signature itself
+    ///   - The public key
+    ///   - The signature scheme used
+    /// * `body_hash` - A 32-byte Blake2b hash of the request body
+    ///
+    /// # Returns
+    /// * `Ok(())` if the signature is valid
+    /// * `Err(StatusCode)` if:
+    ///   - The signature cannot be parsed (`BAD_REQUEST`)
+    ///   - The public key is invalid (`BAD_REQUEST`)
+    ///   - The signature scheme is unsupported (`BAD_REQUEST`)
+    ///   - The signature verification fails (`UNAUTHORIZED`)
+    ///
+    /// # Supported Signature Schemes
+    /// - ED25519
+    /// - Secp256k1
+    /// - Secp256r1
+    ///
+    /// # Security Note
+    /// This function is critical for ensuring request authenticity. It verifies that:
+    /// 1. The request was signed by the owner of the public key
+    /// 2. The request body hasn't been tampered with since signing
     pub(crate) fn verify_signature(
         base64_signature: &str,
         body_hash: &[u8; 32],
@@ -396,5 +429,298 @@ pub(crate) mod utils {
             }
         }
         Ok(())
+    }
+
+    /// Calculates the total number of compute units required for a request based on its type and content.
+    ///
+    /// # Arguments
+    /// * `body_json` - The parsed JSON body of the request containing model-specific parameters
+    /// * `request_type` - The type of request (ChatCompletions, Embeddings, ImageGenerations, or NonInference)
+    /// * `state` - Application state containing model configurations and tokenizers
+    /// * `model` - The name of the AI model being used
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - The total number of compute units required
+    /// * `Err(StatusCode)` - If there's an error calculating the units, returns an appropriate HTTP status code
+    ///
+    /// # Compute Unit Calculation
+    /// The calculation varies by request type:
+    /// - ChatCompletions: Based on input tokens + max output tokens
+    /// - Embeddings: Based on input text length
+    /// - ImageGenerations: Based on image dimensions and quantity
+    /// - NonInference: Returns 0 (no compute units required)
+    ///
+    /// This function delegates to specific calculators based on the request type:
+    /// - `calculate_chat_completion_compute_units`
+    /// - `calculate_embedding_compute_units`
+    /// - `calculate_image_generation_compute_units`
+    pub(crate) fn calculate_compute_units(
+        body_json: &Value,
+        request_type: RequestType,
+        state: &AppState,
+        model: &str,
+    ) -> Result<i64, StatusCode> {
+        match request_type {
+            RequestType::ChatCompletions => {
+                calculate_chat_completion_compute_units(body_json, state, model)
+            }
+            RequestType::Embeddings => calculate_embedding_compute_units(body_json, state, model),
+            RequestType::ImageGenerations => calculate_image_generation_compute_units(body_json),
+            RequestType::NonInference => Ok(0),
+        }
+    }
+
+    /// Calculates the total number of compute units required for a chat completion request.
+    ///
+    /// This function analyzes the request body to determine the total computational cost by:
+    /// 1. Counting tokens in all input messages
+    /// 2. Adding safety margins for message formatting
+    /// 3. Including the requested maximum output tokens
+    ///
+    /// # Arguments
+    /// * `body_json` - The parsed JSON body of the request containing:
+    ///   - `messages`: Array of message objects with "content" fields
+    ///   - `max_tokens`: Maximum number of tokens for the model's response
+    /// * `state` - Application state containing model configurations and tokenizers
+    /// * `model` - The name of the AI model being used
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - The total number of compute units required
+    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    ///   - The model is not supported
+    ///   - Required fields are missing
+    ///   - Message content is invalid
+    ///   - Tokenization fails
+    ///
+    /// # Token Calculation
+    /// For each message:
+    /// - Base tokens: Number of tokens in the message content
+    /// - +2 tokens: Safety margin for message delimiters
+    /// - +1 token: Safety margin for role name
+    ///     Plus the requested max_tokens for the response
+    ///
+    /// # Example JSON Structure
+    /// ```json
+    /// {
+    ///     "messages": [
+    ///         {"role": "user", "content": "Hello, how are you?"},
+    ///         {"role": "assistant", "content": "I'm doing well, thank you!"}
+    ///     ],
+    ///     "max_tokens": 100
+    /// }
+    /// ```
+    pub(crate) fn calculate_chat_completion_compute_units(
+        body_json: &Value,
+        state: &AppState,
+        model: &str,
+    ) -> Result<i64, StatusCode> {
+        let tokenizer_index = state
+            .models
+            .iter()
+            .position(|m| m == model)
+            .ok_or_else(|| {
+                error!("Model not supported");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        let messages = body_json
+            .get(MESSAGES)
+            .ok_or_else(|| {
+                error!("Messages not found in body");
+                StatusCode::BAD_REQUEST
+            })?
+            .as_array()
+            .ok_or_else(|| {
+                error!("Messages is not an array");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        let mut total_num_compute_units = 0;
+        for message in messages {
+            let content = message.get("content").ok_or_else(|| {
+                error!("Message content not found");
+                StatusCode::BAD_REQUEST
+            })?;
+            let content_str = content.as_str().ok_or_else(|| {
+                error!("Message content is not a string");
+                StatusCode::BAD_REQUEST
+            })?;
+            let num_tokens = state.tokenizers[tokenizer_index]
+                .encode(content_str, true)
+                .map_err(|_| {
+                    error!("Failed to encode message content");
+                    StatusCode::BAD_REQUEST
+                })?
+                .get_ids()
+                .len() as i64;
+            total_num_compute_units += num_tokens;
+            // add 2 tokens as a safety margin, for start and end message delimiters
+            total_num_compute_units += 2;
+            // add 1 token as a safety margin, for the role name of the message
+            total_num_compute_units += 1;
+        }
+
+        total_num_compute_units += body_json
+            .get(MAX_TOKENS)
+            .and_then(|value| value.as_i64())
+            .ok_or_else(|| {
+                error!("Max tokens not found in body");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        Ok(total_num_compute_units)
+    }
+
+    /// Calculates the total number of compute units required for an embedding request.
+    ///
+    /// This function analyzes the request body to determine the computational cost by counting
+    /// the number of tokens in the input text(s) that will be embedded.
+    ///
+    /// # Arguments
+    /// * `body_json` - The parsed JSON body of the request containing:
+    ///   - `input`: Either a single string or an array of strings to be embedded
+    /// * `state` - Application state containing model configurations and tokenizers
+    /// * `model` - The name of the AI model being used
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - The total number of compute units required
+    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    ///   - The model is not supported
+    ///   - The input field is missing
+    ///   - The input format is invalid
+    ///   - Tokenization fails
+    ///
+    /// # Input Formats
+    /// The function supports two input formats:
+    /// 1. Single string:
+    /// ```json
+    /// {
+    ///     "input": "text to embed"
+    /// }
+    /// ```
+    ///
+    /// 2. Array of strings:
+    /// ```json
+    /// {
+    ///     "input": ["text one", "text two"]
+    /// }
+    /// ```
+    ///
+    /// # Computation
+    /// The total compute units is calculated as the sum of tokens across all input texts.
+    /// For array inputs, each string is tokenized separately and the results are summed.
+    fn calculate_embedding_compute_units(
+        body_json: &Value,
+        state: &AppState,
+        model: &str,
+    ) -> Result<i64, StatusCode> {
+        let tokenizer_index = state
+            .models
+            .iter()
+            .position(|m| m == model)
+            .ok_or_else(|| {
+                error!("Model not supported");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        let input = body_json.get(INPUT).ok_or_else(|| {
+            error!("Input not found in body");
+            StatusCode::BAD_REQUEST
+        })?;
+
+        // input can be a string or an array of strings
+        let total_units = match input {
+            Value::String(text) => state.tokenizers[tokenizer_index]
+                .encode(text.as_str(), true)
+                .map_err(|_| {
+                    error!("Failed to encode input text");
+                    StatusCode::BAD_REQUEST
+                })?
+                .get_ids()
+                .len() as i64,
+            Value::Array(texts) => texts
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .map(|s| {
+                            state.tokenizers[tokenizer_index]
+                                .encode(s, true)
+                                .map(|tokens| tokens.get_ids().len() as i64)
+                                .unwrap_or(0)
+                        })
+                        .unwrap_or(0)
+                })
+                .sum(),
+            _ => {
+                error!("Invalid input format");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        };
+
+        Ok(total_units)
+    }
+
+    /// Calculates the total number of compute units required for an image generation request.
+    ///
+    /// This function analyzes the request body to determine the computational cost based on:
+    /// - The dimensions of the requested image(s)
+    /// - The number of images to generate
+    ///
+    /// # Arguments
+    /// * `body_json` - The parsed JSON body of the request containing:
+    ///   - `size`: String in format "WxH" (e.g., "1024x1024")
+    ///   - `n`: Number of images to generate
+    ///
+    /// # Returns
+    /// * `Ok(i64)` - The total number of compute units required (width * height * n)
+    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    ///   - The size field is missing or invalid
+    ///   - The dimensions cannot be parsed
+    ///   - The number of images is missing or invalid
+    ///
+    /// # Example JSON Structure
+    /// ```json
+    /// {
+    ///     "size": "1024x1024",
+    ///     "n": 1
+    /// }
+    /// ```
+    fn calculate_image_generation_compute_units(body_json: &Value) -> Result<i64, StatusCode> {
+        let size = body_json
+            .get(IMAGE_SIZE)
+            .ok_or_else(|| {
+                error!("Image size not found in body");
+                StatusCode::BAD_REQUEST
+            })?
+            .as_str()
+            .ok_or_else(|| {
+                error!("Image size is not a string");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        // width and height are the dimensions of the image to generate
+        let (width, height) = size
+            .split_once('x')
+            .and_then(|(w, h)| {
+                let width = w.parse::<i64>().ok()?;
+                let height = h.parse::<i64>().ok()?;
+                Some((width, height))
+            })
+            .ok_or_else(|| {
+                error!("Invalid image size format");
+                StatusCode::BAD_REQUEST
+            })?;
+
+        // n is the number of images to generate
+        let n = body_json
+            .get(IMAGE_N)
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| {
+                error!("Invalid or missing image count (n)");
+                StatusCode::BAD_REQUEST
+            })? as i64;
+
+        // Calculate total pixels
+        Ok(width * height * n)
     }
 }

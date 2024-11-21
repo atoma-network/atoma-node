@@ -1,62 +1,148 @@
+# Base configuration for Atoma services
+x-atoma-node: &atoma-node
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - ./config.toml:/app/config.toml
+    - ./logs:/app/logs
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+    - ./data:/app/data
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for cuda inference services
+x-inference-service-cuda: &inference-service-cuda
+  runtime: nvidia
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for cpu inference services
+x-inference-service-cpu: &inference-service-cpu
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for ROCm inference services
+x-inference-service-rocm: &inference-service-rocm
+  runtime: rocm
+  devices:
+    - all
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
 services:
-  vllm:
-    image: vllm/vllm-openai:latest
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    volumes:
-      - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
-    env_file:
-      - .env
-    ports:
-      - "${INFERENCE_SERVER_PORT:-8000}:8000"
-    ipc: host
-    command: --model ${MODEL} --max-model-len ${MAX_MODEL_LEN} --tensor-parallel-size ${TENSOR_PARALLEL_SIZE}
-    networks:
-      - atoma-network
-
   atoma-node:
+    <<: *atoma-node
     build:
-      context: .
-      dockerfile: Dockerfile
       args:
-        BINARY: atoma-node
-    volumes:
-      - ./config.toml:/app/config.toml
-      - ./logs:/app/logs
-      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
-      - ./data:/app/data
-    env_file:
-      - .env
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
     ports:
-      - "${ATOMA_SERVICE_PORT:-3000}:3000"  # Expose Atoma service port
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "${ATOMA_DAEMON_PORT:-3001}:3001"
+    profiles:
+      - chat_completions_vllm
+      - chat_completions_vllm_cpu
+      - chat_completions_vllm_rocm
+      - chat_completions_mistralrs_cpu
+      - embeddings_tei
+      - image_generations_mistralrs
     depends_on:
-      - vllm
-    networks:
-      - atoma-network
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
 
-  atoma-daemon:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        BINARY: atoma-daemon
-    volumes:
-      - ./config.toml:/app/config.toml
-      - ./logs:/app/logs
-      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
-      - ./data:/app/data
-    env_file:
-      - .env
+  vllm:
+    <<: *inference-service-cuda
+    container_name: chat-completions
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.6.3
     ports:
-      - "${ATOMA_DAEMON_PORT:-3001}:3001"  # Expose Atoma daemon port
-    networks:
-      - atoma-network
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    ipc: host
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
+  vllm-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_cpu]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN}
+
+  vllm-rocm:
+    <<: *inference-service-rocm
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_rocm]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.rocm
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
+  mistralrs-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_mistralrs_cpu]
+    build:
+      context: https://github.com/EricLBuehler/mistral.rs.git
+      dockerfile: Dockerfile
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:80"
+    command: plain -m ${CHAT_COMPLETIONS_MODEL}
+
+  tei:
+    <<: *inference-service-cuda
+    container_name: embeddings
+    profiles: [embeddings_tei]
+    image: ${TEI_IMAGE}
+    ports:
+      - "${EMBEDDINGS_SERVER_PORT}:80"
+    command: --model-id ${EMBEDDINGS_MODEL} --huggingface-hub-cache /root/.cache/huggingface/hub
+
+  mistralrs:
+    <<: *inference-service-cuda
+    container_name: image-generations
+    profiles: [image_generations_mistralrs]
+    image: ${MISTRALRS_IMAGE}
+    ports:
+      - "${IMAGE_GENERATIONS_SERVER_PORT}:80"
+    command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
 
 networks:
   atoma-network:

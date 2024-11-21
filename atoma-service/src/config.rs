@@ -9,11 +9,11 @@ use serde::Deserialize;
 /// including URLs for various services and a list of models.
 #[derive(Debug, Deserialize)]
 pub struct AtomaServiceConfig {
-    /// URL for the inference service.
+    /// URL for the chat completions service.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
-    /// for the inference service used by the Atoma Service.
-    pub inference_service_url: Option<String>,
+    /// for the chat completions service used by the Atoma Service.
+    pub chat_completions_service_url: Option<String>,
 
     /// URL for the embeddings service.
     ///
@@ -21,11 +21,11 @@ pub struct AtomaServiceConfig {
     /// for the embeddings service used by the Atoma Service.
     pub embeddings_service_url: Option<String>,
 
-    /// URL for the multimodal service.
+    /// URL for the image generations service.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
-    /// for the multimodal service used by the Atoma Service.
-    pub multimodal_service_url: Option<String>,
+    /// for the image generations service used by the Atoma Service.
+    pub image_generations_service_url: Option<String>,
 
     /// List of model names.
     ///
@@ -66,12 +66,17 @@ impl AtomaServiceConfig {
     /// * The configuration format doesn't match the expected structure
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder()
-            .add_source(File::with_name(config_file_path.as_ref().to_str().unwrap()));
+            .add_source(File::with_name(config_file_path.as_ref().to_str().unwrap()))
+            .add_source(
+                config::Environment::with_prefix("ATOMA_SERVICE")
+                    .keep_prefix(true)
+                    .separator("__"),
+            );
         let config = builder
             .build()
             .expect("Failed to generate atoma-service configuration file");
         config
-            .get::<Self>("atoma-service")
+            .get::<Self>("atoma_service")
             .expect("Failed to generate configuration instance")
     }
 }

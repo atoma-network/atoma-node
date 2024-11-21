@@ -11,7 +11,7 @@ use crate::config::AtomaSuiConfig;
 type Result<T> = std::result::Result<T, AtomaSuiClientError>;
 
 /// The gas budget for the node registration transaction
-const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
+const GAS_BUDGET: u64 = 50_000_000; // 0.05 SUI
 
 /// The Atoma's contract module name
 const MODULE_ID: &str = "db";
