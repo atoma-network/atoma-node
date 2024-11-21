@@ -368,6 +368,8 @@ fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> 
 /// * `StackSettlementTicketEvent` - Handles stack settlement tickets
 /// * `StackSettlementTicketClaimedEvent` - Handles claimed stack settlement tickets
 /// * `StackAttestationDisputeEvent` - Handles stack attestation disputes
+/// * `NewKeyRotationEvent` - Handles new key rotation requests
+/// * `NodeKeyRotationEvent` - Handles node key rotation events
 ///
 /// Unimplemented events will return an `unimplemented!()` error with a descriptive message.
 ///
@@ -451,6 +453,12 @@ async fn parse_event(event: &AtomaEventIdentifier, value: Value) -> Result<Atoma
             serde_json::from_value(value)?,
         )),
         AtomaEventIdentifier::Text2TextPromptEvent => Ok(AtomaEvent::Text2TextPromptEvent(
+            serde_json::from_value(value)?,
+        )),
+        AtomaEventIdentifier::NewKeyRotationEvent => Ok(AtomaEvent::NewKeyRotationEvent(
+            serde_json::from_value(value)?,
+        )),
+        AtomaEventIdentifier::NodeKeyRotationEvent => Ok(AtomaEvent::NodeKeyRotationEvent(
             serde_json::from_value(value)?,
         )),
     }

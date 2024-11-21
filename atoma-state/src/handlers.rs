@@ -1,8 +1,5 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
-    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, NewKeyRotationEvent, NewStackSettlementAttestationEvent, NodeKeyRotationEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent
 };
 use tracing::{info, instrument};
 
@@ -91,6 +88,12 @@ pub async fn handle_atoma_event(
         AtomaEvent::Text2TextPromptEvent(event) => {
             info!("Text2Text prompt event: {:?}", event);
             Ok(())
+        }
+        AtomaEvent::NewKeyRotationEvent(event) => {
+            handle_new_key_rotation_event(state_manager, event).await
+        }
+        AtomaEvent::NodeKeyRotationEvent(event) => {
+            handle_node_key_rotation_event(state_manager, event).await
         }
     }
 }
@@ -676,5 +679,32 @@ pub(crate) async fn handle_state_manager_event(
                 .await?;
         }
     }
+    Ok(())
+}
+
+#[instrument(level = "info", skip_all)]
+pub(crate) async fn handle_new_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NewKeyRotationEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-new-key-rotation-event",
+        "Processing new key rotation event"
+    );
+    Ok(())
+}
+
+
+#[instrument(level = "info", skip_all)]
+pub(crate) async fn handle_node_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NodeKeyRotationEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-node-key-rotation-event",
+        "Processing node key rotation event"
+    );
     Ok(())
 }
