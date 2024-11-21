@@ -1,6 +1,8 @@
 # Builder stage
-FROM rust:1.76-slim-bullseye AS builder
+FROM --platform=$BUILDPLATFORM rust:1.76-slim-bullseye AS builder
 
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 ARG TRACE_LEVEL
 
 # Install build dependencies
@@ -11,15 +13,24 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Set up cross-compilation
+RUN case "$TARGETPLATFORM" in \
+    "linux/amd64") echo "x86_64-unknown-linux-gnu" > /rust_target.txt ;; \
+    "linux/arm64") echo "aarch64-unknown-linux-gnu" > /rust_target.txt ;; \
+    *) exit 1 ;; \
+    esac
+
+RUN rustup target add $(cat /rust_target.txt)
+
 WORKDIR /usr/src/atoma-node
 
 COPY . .
 
 # Build the application
-RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node
+RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --target $(cat /rust_target.txt)
 
 # Final stage
-FROM debian:bullseye-slim
+FROM --platform=$TARGETPLATFORM debian:bullseye-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
