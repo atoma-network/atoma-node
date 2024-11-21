@@ -11,13 +11,26 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     curl \
+    libssl-dev \
     gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    gcc-x86-64-linux-gnu \
+    g++-x86-64-linux-gnu \
+    pkg-config-aarch64-linux-gnu \
+    pkg-config-x86-64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up cross-compilation
+RUN export PKG_CONFIG_ALLOW_CROSS=1
+
+# Set up cross-compilation
 RUN case "$TARGETPLATFORM" in \
-    "linux/amd64") echo "x86_64-unknown-linux-gnu" > /rust_target.txt ;; \
-    "linux/arm64") echo "aarch64-unknown-linux-gnu" > /rust_target.txt ;; \
+    "linux/arm64") \
+    echo "aarch64-unknown-linux-gnu" > /rust_target.txt && \
+    ;; \
+    "linux/amd64") \
+    echo "x86_64-unknown-linux-gnu" > /rust_target.txt && \
+    ;; \
     *) exit 1 ;; \
     esac
 
