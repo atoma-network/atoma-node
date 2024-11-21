@@ -15,6 +15,7 @@ atoma-daemon = { workspace = true }
 atoma-sui = { workspace = true }
 atoma-state = { workspace = true }
 atoma-utils = { workspace = true }
+atoma-waku = { workspace = true, optional = true}
 base64 = { workspace = true }
 blake2 = { workspace = true }
 clap = { workspace = true }
@@ -57,3 +58,6 @@ tempfile = { workspace = true }
 
 [dev_dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+
+[features]
+waku = ["atoma-waku"]
