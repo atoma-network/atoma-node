@@ -6,8 +6,8 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-rand.workspace = true
-tracing.workspace = true
 chrono.workspace = true
 prost.workspace = true
+rand.workspace = true
+tracing.workspace = true
 waku-bindings.workspace = true
