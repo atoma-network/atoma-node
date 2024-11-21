@@ -8,28 +8,32 @@ ARG TRACE_LEVEL
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    pkg-config \
-    libssl-dev \
     curl \
-    libssl-dev \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
     gcc-x86-64-linux-gnu \
     g++-x86-64-linux-gnu \
     pkg-config-aarch64-linux-gnu \
     pkg-config-x86-64-linux-gnu \
+    libssl-dev:arm64 \
+    libssl-dev:amd64 \
     && rm -rf /var/lib/apt/lists/*
-
-# Set up cross-compilation
-RUN export PKG_CONFIG_ALLOW_CROSS=1
 
 # Set up cross-compilation
 RUN case "$TARGETPLATFORM" in \
     "linux/arm64") \
     echo "aarch64-unknown-linux-gnu" > /rust_target.txt && \
+    export PKG_CONFIG_ALLOW_CROSS=1 && \
+    export OPENSSL_DIR=/usr/aarch64-linux-gnu && \
+    export OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu && \
+    export OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu \
     ;; \
     "linux/amd64") \
     echo "x86_64-unknown-linux-gnu" > /rust_target.txt && \
+    export PKG_CONFIG_ALLOW_CROSS=1 && \
+    export OPENSSL_DIR=/usr/x86_64-linux-gnu && \
+    export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu && \
+    export OPENSSL_INCLUDE_DIR=/usr/include/x86_64-linux-gnu \
     ;; \
     *) exit 1 ;; \
     esac
