@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
@@ -9,19 +7,19 @@ use crate::types::{
 
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
-use sqlx::{sqlite::SqliteConnectOptions, Sqlite, SqlitePool};
+use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
-/// AtomaStateManager is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
+/// AtomaStateManager is a wrapper around a Postgres connection pool, responsible for managing the state of the Atoma system.
 ///
-/// It provides an interface to interact with the SQLite database, handling operations
+/// It provides an interface to interact with the Postgres database, handling operations
 /// related to tasks, node subscriptions, stacks, and various other system components.
 pub struct AtomaStateManager {
-    /// The SQLite connection pool used for database operations.
+    /// The Postgres connection pool used for database operations.
     pub state: AtomaState,
     /// Receiver channel from the SuiEventSubscriber
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
@@ -32,7 +30,7 @@ pub struct AtomaStateManager {
 impl AtomaStateManager {
     /// Constructor
     pub fn new(
-        db: SqlitePool,
+        db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Self {
@@ -45,7 +43,7 @@ impl AtomaStateManager {
 
     /// Creates a new `AtomaStateManager` instance from a database URL.
     ///
-    /// This method establishes a connection to the SQLite database using the provided URL,
+    /// This method establishes a connection to the Postgres database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
     pub async fn new_from_url(
         database_url: &str,
@@ -53,9 +51,8 @@ impl AtomaStateManager {
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let connect_options = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
-        let db = SqlitePool::connect_with(connect_options).await?;
-        queries::create_all_tables(&db).await?;
+        let db = PgPool::connect(database_url).await?;
+        sqlx::migrate!("./src/migrations").run(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
             event_subscriber_receiver,
@@ -165,23 +162,23 @@ impl AtomaStateManager {
     }
 }
 
-/// AtomaState is a wrapper around a SQLite connection pool, responsible for managing the state of the Atoma system.
+/// AtomaState is a wrapper around a Postgres connection pool, responsible for managing the state of the Atoma system.
 #[derive(Clone)]
 pub struct AtomaState {
-    /// The SQLite connection pool used for database operations.
-    pub db: SqlitePool,
+    /// The Postgres connection pool used for database operations.
+    pub db: PgPool,
 }
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: SqlitePool) -> Self {
+    pub fn new(db: PgPool) -> Self {
         Self { db }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
     pub async fn new_from_url(database_url: &str) -> Result<Self> {
-        let db = SqlitePool::connect(database_url).await?;
-        queries::create_all_tables(&db).await?;
+        let db = PgPool::connect(database_url).await?;
+        sqlx::migrate!("./src/migrations").run(&db).await?;
         Ok(Self { db })
     }
 
@@ -208,7 +205,7 @@ impl AtomaState {
         fields(task_small_id = %task_small_id)
     )]
     pub async fn get_task_by_small_id(&self, task_small_id: i64) -> Result<Task> {
-        let task = sqlx::query("SELECT * FROM tasks WHERE task_small_id = ?")
+        let task = sqlx::query("SELECT * FROM tasks WHERE task_small_id = $1")
             .bind(task_small_id)
             .fetch_one(&self.db)
             .await?;
@@ -289,7 +286,7 @@ impl AtomaState {
             "INSERT INTO tasks (
                 task_small_id, task_id, role, model_name, is_deprecated,
                 valid_until_epoch, security_level, minimum_reputation_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(task.task_small_id)
         .bind(task.task_id)
@@ -338,7 +335,7 @@ impl AtomaState {
         fields(task_small_id = %task_small_id)
     )]
     pub async fn deprecate_task(&self, task_small_id: i64, epoch: i64) -> Result<()> {
-        sqlx::query("UPDATE tasks SET is_deprecated = TRUE, deprecated_at_epoch = ? WHERE task_small_id = ?")
+        sqlx::query("UPDATE tasks SET is_deprecated = TRUE, deprecated_at_epoch = $1 WHERE task_small_id = $2")
             .bind(epoch)
             .bind(task_small_id)
             .execute(&self.db)
@@ -385,7 +382,7 @@ impl AtomaState {
         let tasks = sqlx::query(
             "SELECT tasks.* FROM tasks
             INNER JOIN node_subscriptions ON tasks.task_small_id = node_subscriptions.task_small_id
-            WHERE node_subscriptions.node_small_id = ?",
+            WHERE node_subscriptions.node_small_id = $1",
         )
         .bind(node_small_id)
         .fetch_all(&self.db)
@@ -494,7 +491,7 @@ impl AtomaState {
         task_small_id: i64,
     ) -> Result<bool> {
         let result = sqlx::query(
-            "SELECT COUNT(*) FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?",
+            "SELECT COUNT(*) FROM node_subscriptions WHERE node_small_id = $1 AND task_small_id = $2",
         )
         .bind(node_small_id)
         .bind(task_small_id)
@@ -555,7 +552,7 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO node_subscriptions 
                 (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
-                VALUES (?, ?, ?, ?, TRUE)",
+                VALUES ($1, $2, $3, $4, TRUE)",
         )
             .bind(node_small_id)
             .bind(task_small_id)
@@ -606,7 +603,7 @@ impl AtomaState {
         &self,
         task_small_id: i64,
     ) -> Result<NodeSubscription> {
-        let subscription = sqlx::query("SELECT * FROM node_subscriptions WHERE task_small_id = ?")
+        let subscription = sqlx::query("SELECT * FROM node_subscriptions WHERE task_small_id = $1")
             .bind(task_small_id)
             .fetch_one(&self.db)
             .await?;
@@ -663,7 +660,7 @@ impl AtomaState {
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE node_subscriptions SET price_per_compute_unit = ?, max_num_compute_units = ? WHERE node_small_id = ? AND task_small_id = ?",
+            "UPDATE node_subscriptions SET price_per_compute_unit = $1, max_num_compute_units = $2 WHERE node_small_id = $3 AND task_small_id = $4",
         )
             .bind(price_per_compute_unit)
             .bind(max_num_compute_units)
@@ -709,11 +706,13 @@ impl AtomaState {
         node_small_id: i64,
         task_small_id: i64,
     ) -> Result<()> {
-        sqlx::query("DELETE FROM node_subscriptions WHERE node_small_id = ? AND task_small_id = ?")
-            .bind(node_small_id)
-            .bind(task_small_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "DELETE FROM node_subscriptions WHERE node_small_id = $1 AND task_small_id = $2",
+        )
+        .bind(node_small_id)
+        .bind(task_small_id)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -752,7 +751,7 @@ impl AtomaState {
         fields(stack_small_id = %stack_small_id)
     )]
     pub async fn get_stack(&self, stack_small_id: i64) -> Result<Stack> {
-        let stack = sqlx::query("SELECT * FROM stacks WHERE stack_small_id = ?")
+        let stack = sqlx::query("SELECT * FROM stacks WHERE stack_small_id = $1")
             .bind(stack_small_id)
             .fetch_one(&self.db)
             .await?;
@@ -897,7 +896,7 @@ impl AtomaState {
         fields(node_small_id = %node_small_id)
     )]
     pub async fn get_stack_by_id(&self, node_small_id: i64) -> Result<Vec<Stack>> {
-        let stacks = sqlx::query("SELECT * FROM stacks WHERE selected_node_id = ?")
+        let stacks = sqlx::query("SELECT * FROM stacks WHERE selected_node_id = $1")
             .bind(node_small_id)
             .fetch_all(&self.db)
             .await?;
@@ -954,22 +953,21 @@ impl AtomaState {
         node_small_ids: &[i64],
         fraction: f64,
     ) -> Result<Vec<Stack>> {
-        let mut query_builder = build_query_with_in(
-            "SELECT * FROM stacks",
-            "selected_node_id",
-            node_small_ids,
-            Some("CAST(already_computed_units AS FLOAT) / CAST(num_compute_units AS FLOAT) > "),
-        );
-
-        // Add the fraction value directly in the SQL
-        query_builder.push(fraction.to_string());
-
-        let stacks = query_builder.build().fetch_all(&self.db).await?;
-
-        stacks
-            .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
-            .collect()
+        Ok(sqlx::query_as::<_, Stack>(
+            r#"
+            SELECT *
+            FROM stacks
+            WHERE selected_node_id = ANY($1)
+            AND CASE 
+                WHEN num_compute_units = 0 THEN true
+                ELSE (already_computed_units::float / num_compute_units::float) > $2
+            END
+            "#,
+        )
+        .bind(node_small_ids)
+        .bind(fraction)
+        .fetch_all(&self.db)
+        .await?)
     }
 
     /// Retrieves and updates an available stack with the specified number of compute units.
@@ -1104,7 +1102,7 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO stacks 
                 (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
             .bind(stack.owner_address)
             .bind(stack.stack_small_id)
@@ -1161,7 +1159,7 @@ impl AtomaState {
         stack_small_id: i64,
         already_computed_units: i64,
     ) -> Result<()> {
-        sqlx::query("UPDATE stacks SET already_computed_units = ? WHERE stack_small_id = ?")
+        sqlx::query("UPDATE stacks SET already_computed_units = $1 WHERE stack_small_id = $2")
             .bind(already_computed_units)
             .bind(stack_small_id)
             .execute(&self.db)
@@ -1211,8 +1209,8 @@ impl AtomaState {
     ) -> Result<()> {
         let result = sqlx::query(
             "UPDATE stacks 
-            SET already_computed_units = already_computed_units - (? - ?) 
-            WHERE stack_small_id = ?",
+            SET already_computed_units = already_computed_units - ($1 - $2) 
+            WHERE stack_small_id = $3",
         )
         .bind(estimated_total_compute_units)
         .bind(total_compute_units)
@@ -1268,7 +1266,7 @@ impl AtomaState {
         stack_small_id: i64,
     ) -> Result<StackSettlementTicket> {
         let stack_settlement_ticket =
-            sqlx::query("SELECT * FROM stack_settlement_tickets WHERE stack_small_id = ?")
+            sqlx::query("SELECT * FROM stack_settlement_tickets WHERE stack_small_id = $1")
                 .bind(stack_small_id)
                 .fetch_one(&self.db)
                 .await?;
@@ -1380,7 +1378,7 @@ impl AtomaState {
                     is_in_dispute, 
                     user_refund_amount, 
                     is_claimed) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(stack_settlement_ticket.stack_small_id)
         .bind(stack_settlement_ticket.selected_node_id)
@@ -1397,7 +1395,7 @@ impl AtomaState {
         .await?;
 
         // Also update the stack to set in_settle_period to true
-        sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = ?")
+        sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = $1")
             .bind(stack_settlement_ticket.stack_small_id)
             .execute(&mut *tx)
             .await?;
@@ -1501,7 +1499,7 @@ impl AtomaState {
     )]
     pub async fn get_stack_total_hash(&self, stack_small_id: i64) -> Result<Vec<u8>> {
         let total_hash = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT total_hash FROM stacks WHERE stack_small_id = ?",
+            "SELECT total_hash FROM stacks WHERE stack_small_id = $1",
         )
         .bind(stack_small_id)
         .fetch_one(&self.db)
@@ -1624,8 +1622,9 @@ impl AtomaState {
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
 
+        // First query remains the same - get existing data
         let row = sqlx::query(
-            "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes 
+            "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes, already_attested_nodes
              FROM stack_settlement_tickets 
              WHERE stack_small_id = $1",
         )
@@ -1638,13 +1637,18 @@ impl AtomaState {
         let requested_nodes: String = row.get("requested_attestation_nodes");
         let requested_nodes: Vec<i64> = serde_json::from_str(&requested_nodes)?;
 
-        // Find the index of the attestation_node_id
+        // Get current attested nodes and handle null case
+        let already_attested: Option<String> = row.get("already_attested_nodes");
+        let mut attested_nodes: Vec<i64> = already_attested
+            .map(|nodes| serde_json::from_str(&nodes).unwrap_or_default())
+            .unwrap_or_default();
+
+        // Find the index and update binary data as before
         let index = requested_nodes
             .iter()
             .position(|&id| id == attestation_node_id)
             .ok_or_else(|| AtomaStateManagerError::AttestationNodeNotFound(attestation_node_id))?;
 
-        // Update the corresponding 32-byte range in the stack_merkle_leaves
         let start = (index + 1) * 32;
         let end = start + 32;
         if end > current_merkle_leaves.len() {
@@ -1657,19 +1661,21 @@ impl AtomaState {
         current_merkle_leaves[start..end].copy_from_slice(&stack_merkle_leaf[..32]);
         committed_stack_proofs[start..end].copy_from_slice(&committed_stack_proof[..32]);
 
+        // Update attested nodes list
+        attested_nodes.push(attestation_node_id);
+        let attested_nodes_json = serde_json::to_string(&attested_nodes)?;
+
+        // Simplified update query
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-             SET committed_stack_proofs = $1,
-                 stack_merkle_leaves = $2, 
-                 already_attested_nodes = CASE 
-                     WHEN already_attested_nodes IS NULL THEN json_array($3)
-                     ELSE json_insert(already_attested_nodes, '$[#]', $3)
-                 END
-             WHERE stack_small_id = $4",
+            SET committed_stack_proofs = $1,
+                stack_merkle_leaves = $2,
+                already_attested_nodes = $3
+            WHERE stack_small_id = $4",
         )
         .bind(committed_stack_proofs)
         .bind(current_merkle_leaves)
-        .bind(attestation_node_id)
+        .bind(attested_nodes_json)
         .bind(stack_small_id)
         .execute(&mut *tx)
         .await?;
@@ -1720,7 +1726,7 @@ impl AtomaState {
         stack_small_id: i64,
         dispute_settled_at_epoch: i64,
     ) -> Result<()> {
-        sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = ? WHERE stack_small_id = ?")
+        sqlx::query("UPDATE stack_settlement_tickets SET dispute_settled_at_epoch = $1 WHERE stack_small_id = $2")
             .bind(dispute_settled_at_epoch)
             .bind(stack_small_id)
             .execute(&self.db)
@@ -1773,9 +1779,9 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE stack_settlement_tickets 
-                SET user_refund_amount = ?,
+                SET user_refund_amount = $1,
                     is_claimed = true
-                WHERE stack_small_id = ?",
+                WHERE stack_small_id = $2",
         )
         .bind(user_refund_amount)
         .bind(stack_small_id)
@@ -1886,7 +1892,7 @@ impl AtomaState {
     ) -> Result<Vec<StackAttestationDispute>> {
         let disputes = sqlx::query(
             "SELECT * FROM stack_attestation_disputes 
-                WHERE stack_small_id = ? AND attestation_node_id = ?",
+                WHERE stack_small_id = $1 AND attestation_node_id = $2",
         )
         .bind(stack_small_id)
         .bind(attestation_node_id)
@@ -2057,7 +2063,7 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO stack_attestation_disputes 
                 (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment) 
-                VALUES (?, ?, ?, ?, ?)",
+                VALUES ($1, $2, $3, $4, $5)",
         )
             .bind(stack_attestation_dispute.stack_small_id)
             .bind(stack_attestation_dispute.attestation_commitment)
@@ -2091,251 +2097,8 @@ pub enum AtomaStateManagerError {
     ChannelSendError,
     #[error("Failed to create database directory")]
     FailedToCreateDatabaseDirectory(#[from] std::io::Error),
-}
-
-pub(crate) mod queries {
-    use sqlx::Pool;
-
-    use super::*;
-
-    /// Generates the SQL query to create the `tasks` table.
-    ///
-    /// This table stores information about tasks in the system.
-    ///
-    /// # Table Structure
-    /// - `task_small_id`: INTEGER PRIMARY KEY - The unique identifier for the task.
-    /// - `task_id`: TEXT UNIQUE NOT NULL - A unique text identifier for the task.
-    /// - `role`: INTEGER NOT NULL - The role associated with the task.
-    /// - `model_name`: TEXT - The name of the model used for the task (nullable).
-    /// - `is_deprecated`: BOOLEAN NOT NULL - Indicates whether the task is deprecated.
-    /// - `valid_until_epoch`: INTEGER - The epoch until which the task is valid (nullable).
-    /// - `deprecated_at_epoch`: INTEGER - The epoch when the task was deprecated (nullable).
-    /// - `security_level`: INTEGER NOT NULL - The security level of the task.
-    /// - `minimum_reputation_score`: INTEGER - The minimum reputation score required (nullable).
-    ///
-    /// # Primary Key
-    /// The table uses `task_small_id` as the primary key.
-    ///
-    /// # Unique Constraint
-    /// The `task_id` field has a unique constraint to ensure no duplicate task IDs.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `tasks` table.
-    pub(crate) fn create_tasks_table_query() -> String {
-        "CREATE TABLE IF NOT EXISTS tasks (
-                task_small_id INTEGER PRIMARY KEY,
-                task_id TEXT UNIQUE NOT NULL,
-                role INTEGER NOT NULL,
-                model_name TEXT,
-                is_deprecated BOOLEAN NOT NULL,
-                valid_until_epoch INTEGER,
-                deprecated_at_epoch INTEGER,
-                security_level INTEGER NOT NULL,
-                minimum_reputation_score INTEGER
-            )"
-        .to_string()
-    }
-
-    /// Generates the SQL query to create the `node_subscriptions` table.
-    ///
-    /// This table stores information about node subscriptions to tasks.
-    ///
-    /// # Table Structure
-    /// - `task_small_id`: INTEGER NOT NULL - The ID of the task being subscribed to.
-    /// - `node_small_id`: INTEGER NOT NULL - The ID of the node subscribing to the task.
-    /// - `price_per_compute_unit`: INTEGER NOT NULL - The price per compute unit for this subscription.
-    ///
-    /// # Primary Key
-    /// The table uses a composite primary key of (task_small_id, node_small_id).
-    ///
-    /// # Foreign Key
-    /// - `task_small_id` references the `tasks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `node_subscriptions` table.
-    pub(crate) fn subscribed_tasks_query() -> String {
-        "CREATE TABLE IF NOT EXISTS node_subscriptions (
-            task_small_id INTEGER NOT NULL,
-            node_small_id INTEGER NOT NULL,
-            price_per_compute_unit INTEGER NOT NULL,
-            max_num_compute_units INTEGER NOT NULL,
-            valid BOOLEAN NOT NULL,
-            PRIMARY KEY (task_small_id, node_small_id),
-            FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id ON node_subscriptions (task_small_id, node_small_id);"
-        .to_string()
-    }
-
-    /// Generates the SQL query to create the `stacks` table.
-    ///
-    /// This table stores information about stacks in the system.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
-    /// - `stack_id`: TEXT UNIQUE NOT NULL - A unique text identifier for the stack.
-    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for this stack.
-    /// - `num_compute_units`: INTEGER NOT NULL - The number of compute units allocated to this stack.
-    /// - `price`: INTEGER NOT NULL - The price associated with this stack.
-    ///
-    /// # Primary Key
-    /// The table uses `stack_small_id` as the primary key.
-    ///
-    /// # Foreign Keys
-    /// - `selected_node_id` references the `node_subscriptions` table.
-    /// - `task_small_id` references the `tasks` table.
-    /// # Unique Constraint
-    /// The `stack_id` field has a unique constraint to ensure no duplicate stack IDs.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stacks` table.
-    pub(crate) fn stacks() -> String {
-        "CREATE TABLE IF NOT EXISTS stacks (
-                stack_small_id INTEGER PRIMARY KEY,
-                owner_address TEXT NOT NULL,
-                stack_id TEXT UNIQUE NOT NULL,
-                task_small_id INTEGER NOT NULL,
-                selected_node_id INTEGER NOT NULL,
-                num_compute_units INTEGER NOT NULL,
-                price INTEGER NOT NULL,
-                already_computed_units INTEGER NOT NULL,
-                in_settle_period BOOLEAN NOT NULL,
-                total_hash BLOB NOT NULL,
-                num_total_messages INTEGER NOT NULL,
-                FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);
-            CREATE INDEX IF NOT EXISTS idx_stacks_stack_small_id ON stacks (stack_small_id);"
-        .to_string()
-    }
-
-    /// Generates the SQL query to create the `stack_settlement_tickets` table.
-    ///
-    /// This table stores information about settlement tickets for stacks.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER PRIMARY KEY - The unique identifier for the stack.
-    /// - `selected_node_id`: INTEGER NOT NULL - The ID of the node selected for settlement.
-    /// - `num_claimed_compute_units`: INTEGER NOT NULL - The number of compute units claimed.
-    /// - `requested_attestation_nodes`: TEXT NOT NULL - A list of nodes requested for attestation.
-    /// - `committed_stack_proofs`: BLOB NOT NULL - The committed proofs for the stack settlement.
-    /// - `stack_merkle_leaves`: BLOB NOT NULL - The Merkle leaves for the stack.
-    /// - `dispute_settled_at_epoch`: INTEGER - The epoch when the dispute was settled (nullable).
-    /// - `already_attested_nodes`: TEXT NOT NULL - A list of nodes that have already attested.
-    /// - `is_in_dispute`: BOOLEAN NOT NULL - Indicates whether the settlement is in dispute.
-    /// - `user_refund_amount`: INTEGER NOT NULL - The amount to be refunded to the user.
-    /// - `is_claimed`: BOOLEAN NOT NULL - Indicates whether the settlement has been claimed.
-    ///
-    /// # Primary Key
-    /// The table uses `stack_small_id` as the primary key.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
-    ///
-    /// # Foreign Key
-    /// - `stack_small_id` references the `stacks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
-    pub(crate) fn stack_settlement_tickets() -> String {
-        "CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
-            stack_small_id INTEGER PRIMARY KEY,
-            selected_node_id INTEGER NOT NULL,
-            num_claimed_compute_units INTEGER NOT NULL,
-            requested_attestation_nodes TEXT NOT NULL,
-            committed_stack_proofs BLOB NOT NULL,
-            stack_merkle_leaves BLOB NOT NULL,
-            dispute_settled_at_epoch INTEGER,
-            already_attested_nodes TEXT NOT NULL,
-            is_in_dispute BOOLEAN NOT NULL,
-            user_refund_amount INTEGER NOT NULL,
-            is_claimed BOOLEAN NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_stack_settlement_tickets_stack_small_id ON stack_settlement_tickets (stack_small_id);"
-        .to_string()
-    }
-
-    /// Generates the SQL query to create the `stack_attestation_disputes` table.
-    ///
-    /// This table stores information about disputes related to stack attestations.
-    ///
-    /// # Table Structure
-    /// - `stack_small_id`: INTEGER NOT NULL - The ID of the stack involved in the dispute.
-    /// - `attestation_commitment`: BLOB NOT NULL - The commitment provided by the attesting node.
-    /// - `attestation_node_id`: INTEGER NOT NULL - The ID of the node providing the attestation.
-    /// - `original_node_id`: INTEGER NOT NULL - The ID of the original node involved in the dispute.
-    /// - `original_commitment`: BLOB NOT NULL - The original commitment that is being disputed.
-    ///
-    /// # Primary Key
-    /// The table uses a composite primary key of (stack_small_id, attestation_node_id).
-    ///
-    /// # Foreign Key
-    /// - `stack_small_id` references the `stacks` table.
-    ///
-    /// # Returns
-    /// A `String` containing the SQL query to create the `stack_attestation_disputes` table.
-    pub(crate) fn stack_attestation_disputes() -> String {
-        "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
-                stack_small_id INTEGER NOT NULL,
-                attestation_commitment BLOB NOT NULL,
-                attestation_node_id INTEGER NOT NULL,
-                original_node_id INTEGER NOT NULL,
-                original_commitment BLOB NOT NULL,
-                PRIMARY KEY (stack_small_id, attestation_node_id),
-                FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
-            )"
-        .to_string()
-    }
-
-    /// Creates all the necessary tables in the database.
-    ///
-    /// This function executes SQL queries to create the following tables:
-    /// - tasks
-    /// - node_subscriptions
-    /// - stacks
-    /// - stack_settlement_tickets
-    /// - stack_attestation_disputes
-    ///
-    /// # Arguments
-    ///
-    /// * `db` - A reference to the SQLite database pool.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if all tables are created successfully, or an error if any operation fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if any of the SQL queries fail to execute.
-    /// Possible reasons for failure include:
-    /// - Database connection issues
-    /// - Insufficient permissions
-    /// - Syntax errors in the SQL queries
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use sqlx::SqlitePool;
-    /// use atoma_node::atoma_state::queries;
-    ///
-    /// async fn setup_database(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    ///     queries::create_all_tables(pool).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    pub(crate) async fn create_all_tables(db: &Pool<Sqlite>) -> Result<()> {
-        sqlx::query("PRAGMA foreign_keys = ON;").execute(db).await?;
-
-        sqlx::query(&create_tasks_table_query()).execute(db).await?;
-        sqlx::query(&subscribed_tasks_query()).execute(db).await?;
-        sqlx::query(&stacks()).execute(db).await?;
-        sqlx::query(&stack_settlement_tickets()).execute(db).await?;
-        sqlx::query(&stack_attestation_disputes())
-            .execute(db)
-            .await?;
-
-        Ok(())
-    }
+    #[error("Failed to migrate database")]
+    FailedToMigrateDatabase(#[from] sqlx::migrate::MigrateError),
 }
 
 #[cfg(test)]
@@ -2343,10 +2106,29 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> AtomaState {
-        AtomaState::new_from_url("sqlite::memory:").await.unwrap()
+        AtomaState::new_from_url("postgres://atoma:atoma@localhost:5432/atoma")
+            .await
+            .unwrap()
+    }
+
+    async fn truncate_tables(db: &sqlx::PgPool) {
+        // List all your tables here
+        sqlx::query(
+            "TRUNCATE TABLE 
+                tasks,
+                node_subscriptions,
+                stacks,
+                stack_settlement_tickets,
+                stack_attestation_disputes
+            CASCADE",
+        )
+        .execute(db)
+        .await
+        .expect("Failed to truncate tables");
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_insert_and_get_task() {
         let state_manager = setup_test_db().await;
 
@@ -2365,9 +2147,12 @@ mod tests {
         state_manager.insert_new_task(task.clone()).await.unwrap();
         let retrieved_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert_eq!(task, retrieved_task);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_deprecate_task() {
         let state_manager = setup_test_db().await;
 
@@ -2388,9 +2173,12 @@ mod tests {
 
         let deprecated_task = state_manager.get_task_by_small_id(1).await.unwrap();
         assert!(deprecated_task.is_deprecated);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_subscribed_tasks() {
         let state_manager = setup_test_db().await;
 
@@ -2429,9 +2217,12 @@ mod tests {
         let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
         assert_eq!(subscribed_tasks.len(), 1);
         assert_eq!(subscribed_tasks[0], task1);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_update_node_subscription() {
         let state_manager = setup_test_db().await;
 
@@ -2476,9 +2267,12 @@ mod tests {
             .unwrap();
         assert_eq!(subscription.price_per_compute_unit, 200);
         assert_eq!(subscription.max_num_compute_units, 2000);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_insert_and_get_stack() {
         let state_manager = setup_test_db().await;
 
@@ -2519,9 +2313,12 @@ mod tests {
         // Get the stack and verify
         let retrieved_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(stack, retrieved_stack);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_update_computed_units() {
         let state_manager = setup_test_db().await;
 
@@ -2567,9 +2364,12 @@ mod tests {
         // Verify the update
         let updated_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 15);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_insert_and_get_stack_settlement_ticket() {
         let state_manager = setup_test_db().await;
 
@@ -2627,9 +2427,12 @@ mod tests {
         // Verify the insertion (you'll need to implement a method to get a settlement ticket)
         let retrieved_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(ticket, retrieved_ticket);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_update_stack_settlement_ticket() {
         let state_manager = setup_test_db().await;
 
@@ -2721,9 +2524,12 @@ mod tests {
         let claimed_ticket = state_manager.get_stack_settlement_ticket(1).await.unwrap();
         assert_eq!(claimed_ticket.user_refund_amount, user_refund_amount);
         assert!(claimed_ticket.is_claimed);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_stack_attestation_disputes() {
         let state_manager = setup_test_db().await;
 
@@ -2827,9 +2633,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(disputes.len(), 1);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_available_stack_with_compute_units() {
         let state_manager = setup_test_db().await;
 
@@ -2940,9 +2749,12 @@ mod tests {
             .await
             .unwrap();
         assert!(result.is_none());
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_update_stack_total_hash() {
         let state_manager = setup_test_db().await;
 
@@ -3010,9 +2822,12 @@ mod tests {
         // Test updating non-existent stack
         let result = state_manager.update_stack_total_hash(999, new_hash).await;
         assert!(matches!(result, Err(AtomaStateManagerError::StackNotFound)));
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_all_node_subscriptions() {
         let state_manager = setup_test_db().await;
 
@@ -3106,9 +2921,12 @@ mod tests {
         assert_eq!(subscription.price_per_compute_unit, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
         assert!(subscription.valid);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_stacks_by_node_small_ids_comprehensive() {
         let state_manager = setup_test_db().await;
 
@@ -3300,9 +3118,12 @@ mod tests {
             result.iter().any(|s| !s.in_settle_period),
             "Should find stack not in settle period"
         );
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_stack_by_id() {
         let state_manager = setup_test_db().await;
 
@@ -3374,9 +3195,12 @@ mod tests {
         // Test retrieving stacks for non-existent node_id
         let empty_stacks = state_manager.get_stack_by_id(999).await.unwrap();
         assert!(empty_stacks.is_empty());
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_stack_by_id_with_multiple_nodes() {
         let state_manager = setup_test_db().await;
 
@@ -3450,9 +3274,12 @@ mod tests {
         let node2_stacks = state_manager.get_stack_by_id(2).await.unwrap();
         assert_eq!(node2_stacks.len(), 1);
         assert_eq!(node2_stacks[0], stack2);
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_almost_filled_stacks() {
         let state_manager = setup_test_db().await;
 
@@ -3608,9 +3435,12 @@ mod tests {
         assert!(specific_nodes_stacks
             .iter()
             .all(|s| { (s.already_computed_units as f64 / s.num_compute_units as f64) > 0.8 }));
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_almost_filled_stacks_edge_cases() {
         let state_manager = setup_test_db().await;
 
@@ -3666,9 +3496,11 @@ mod tests {
 
         // Test with various thresholds
         let test_cases = vec![
-            (0.0, 1),  // Should return both stacks
-            (0.5, 1),  // Should return only the large stack
-            (0.99, 0), // Should return no stacks
+            (0.0, 2),  // Should return both stacks
+            (0.5, 2),  // Should return both stacks
+            (0.74, 2), // Should return both stacks
+            (0.75, 1), // Should return the empty stack
+            (0.99, 1), // Should return the empty stack
         ];
 
         for (threshold, expected_count) in test_cases {
@@ -3685,9 +3517,12 @@ mod tests {
                 stacks.len()
             );
         }
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_against_attestation_disputes() {
         let state_manager = setup_test_db().await;
 
@@ -3764,9 +3599,12 @@ mod tests {
             .await
             .unwrap();
         assert!(disputes.is_empty());
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_own_attestation_disputes() {
         let state_manager = setup_test_db().await;
 
@@ -3869,9 +3707,12 @@ mod tests {
             .await
             .unwrap();
         assert!(disputes.is_empty());
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_claimed_stacks() {
         let state_manager = setup_test_db().await;
 
@@ -4014,9 +3855,12 @@ mod tests {
         // Test 4: Get claimed stacks for non-existent node
         let claimed_stacks_none = state_manager.get_claimed_stacks(&[99]).await.unwrap();
         assert!(claimed_stacks_none.is_empty());
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_all_total_hashes() {
         let state_manager = setup_test_db().await;
 
@@ -4138,9 +3982,12 @@ mod tests {
             .unwrap();
         assert_eq!(result.len(), 1, "Duplicate IDs should return single result");
         assert_eq!(result[0], hash1, "Hash should match for duplicate IDs");
+
+        truncate_tables(&state_manager.db).await;
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_get_stack_settlement_tickets() {
         let state_manager = setup_test_db().await;
 
@@ -4347,5 +4194,7 @@ mod tests {
                 && all_result.contains(&tickets[2]),
             "Should contain all tickets"
         );
+
+        truncate_tables(&state_manager.db).await;
     }
 }
