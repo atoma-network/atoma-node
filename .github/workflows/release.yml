@@ -20,6 +20,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Copy config file
+        run: cp config.toml.example config.toml
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
