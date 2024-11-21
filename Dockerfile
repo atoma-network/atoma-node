@@ -9,14 +9,8 @@ ARG TRACE_LEVEL
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
-    gcc-aarch64-linux-gnu \
-    g++-aarch64-linux-gnu \
-    gcc-x86-64-linux-gnu \
-    g++-x86-64-linux-gnu \
-    pkg-config-aarch64-linux-gnu \
-    pkg-config-x86-64-linux-gnu \
-    libssl-dev:arm64 \
-    libssl-dev:amd64 \
+    pkg-config \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up cross-compilation
