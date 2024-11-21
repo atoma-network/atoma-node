@@ -25,6 +25,21 @@ jobs:
   clippy:
     name: clippy
     runs-on: [ubuntu-22.04]
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: atoma
+          POSTGRES_USER: atoma
+          POSTGRES_PASSWORD: atoma
+        ports:
+          - 5432:5432
+        # health check to ensure database is ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: checkout
         uses: actions/checkout@v4
