@@ -6,8 +6,6 @@ services:
       - POSTGRES_DB=atoma_test
       - POSTGRES_USER=atoma_test
       - POSTGRES_PASSWORD=atoma
-      - PGUSER=atoma_test
-      - PGPASSWORD=atoma
     ports:
       - "5432:5432"
     volumes:
