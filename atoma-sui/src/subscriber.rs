@@ -1,27 +1,32 @@
 use crate::{
     config::AtomaSuiConfig,
-    events::{AtomaEvent, AtomaEventIdentifier, SuiEventParseError},
+    events::{AtomaEvent, AtomaEventIdentifier, StackCreatedEvent, SuiEventParseError},
 };
 use flume::Sender;
 use serde_json::Value;
 use std::{path::Path, str::FromStr, time::Duration};
 use sui_sdk::{
-    rpc_types::{EventFilter, EventPage},
-    types::{event::EventID, Identifier},
+    rpc_types::{EventFilter, EventPage, SuiTransactionBlockResponseOptions},
+    types::{digests::TransactionDigest, event::EventID, Identifier},
     SuiClient, SuiClientBuilder,
 };
 use thiserror::Error;
-use tokio::sync::watch::Receiver;
+use tokio::sync::{mpsc, oneshot, watch::Receiver};
 use tracing::{error, info, instrument, trace};
 
 /// The Atoma contract db module name.
 const DB_MODULE_NAME: &str = "db";
+
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
+
 /// The amount of main loop iterations in order to update the cursor file.
 const CURSOR_FILE_UPDATE_ITERATIONS: u64 = 10;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
+
+type StackRetrieveReceiver =
+    mpsc::UnboundedReceiver<(TransactionDigest, oneshot::Sender<Option<u64>>)>;
 
 /// A subscriber for Sui blockchain events.
 ///
@@ -30,10 +35,19 @@ pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 pub struct SuiEventSubscriber {
     /// The configuration values for the subscriber.
     config: AtomaSuiConfig,
+
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
+
     /// Sender to stream each received event to the `AtomaStateManager` running task.
     state_manager_sender: Sender<AtomaEvent>,
+
+    //// Channel receiver to handle transaction digest queries from the `AtomaService` task.
+    /// Receives tuples containing:
+    /// - A transaction digest to query
+    /// - A oneshot sender to respond with the number of events found (if any)
+    stack_retrieve_receiver: StackRetrieveReceiver,
+
     /// The shutdown signal.
     shutdown_signal: Receiver<bool>,
 }
@@ -43,6 +57,7 @@ impl SuiEventSubscriber {
     pub fn new(
         config: AtomaSuiConfig,
         state_manager_sender: Sender<AtomaEvent>,
+        stack_retrieve_receiver: StackRetrieveReceiver,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
         let filter = EventFilter::MoveModule {
@@ -53,6 +68,7 @@ impl SuiEventSubscriber {
             config,
             filter,
             state_manager_sender,
+            stack_retrieve_receiver,
             shutdown_signal,
         }
     }
@@ -78,10 +94,16 @@ impl SuiEventSubscriber {
     pub fn new_from_config<P: AsRef<Path>>(
         config_path: P,
         state_manager_sender: Sender<AtomaEvent>,
+        stack_retrieve_receiver: StackRetrieveReceiver,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
         let config = AtomaSuiConfig::from_file_path(config_path);
-        Self::new(config, state_manager_sender, shutdown_signal)
+        Self::new(
+            config,
+            state_manager_sender,
+            stack_retrieve_receiver,
+            shutdown_signal,
+        )
     }
 
     /// Builds a SuiClient based on the provided configuration.
@@ -152,6 +174,46 @@ impl SuiEventSubscriber {
         let mut cursor_update_iteration_count = 0;
         loop {
             tokio::select! {
+                    Some((tx_digest, compute_units_sender)) = self.stack_retrieve_receiver.recv() => {
+                        let tx_events = client
+                            .read_api()
+                            .get_transaction_with_options(
+                                tx_digest,
+                                SuiTransactionBlockResponseOptions {
+                                    show_events: true, ..Default::default()
+                                }
+                            )
+                            .await?
+                            .events;
+                        let mut compute_units = None;
+                        if let Some(tx_events) = tx_events {
+                            for event in tx_events.data.iter() {
+                                let event_identifier = AtomaEventIdentifier::from_str(event.type_.name.as_str())?;
+                                if event_identifier == AtomaEventIdentifier::StackCreatedEvent {
+                                    // NOTE: In this case, the transaction contains a stack creation event,
+                                    // which means that whoever made a request to the service has already paid
+                                    // to buy new compute units.
+                                    // We need to count the compute units used by the transaction.
+                                    let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
+                                    compute_units = Some(event.num_compute_units);
+
+                                    // NOTE: We also send the event to the state manager, so it can be processed
+                                    // right away.
+                                    self.state_manager_sender
+                                        .send(AtomaEvent::StackCreatedEvent(event))
+                                        .map_err(Box::new)?;
+
+                                    // We found the stack creation event, so we can break out of the loop
+                                    break;
+                                }
+                            }
+                        }
+                        // Send the compute units to the Atoma service, so it can be used to validate the
+                        // request.
+                        compute_units_sender
+                            .send(compute_units)
+                            .map_err(|_| SuiEventSubscriberError::SendComputeUnitsError)?;
+                    }
                     page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
                         let EventPage {
                             data,
@@ -619,6 +681,8 @@ pub enum SuiEventSubscriberError {
     DeserializeError(#[from] serde_json::Error),
     #[error("Failed to send event to state manager: {0}")]
     SendEventError(#[from] Box<flume::SendError<AtomaEvent>>),
+    #[error("Failed to send compute units to state manager")]
+    SendComputeUnitsError,
     #[error("Failed to read/write cursor to file: {0}")]
     CursorFileError(#[from] std::io::Error),
     #[error("Failed to serialize cursor: {0}")]

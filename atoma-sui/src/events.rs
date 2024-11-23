@@ -8,7 +8,7 @@ pub type Result<T> = std::result::Result<T, SuiEventParseError>;
 ///
 /// This enum encapsulates all possible events across different modules of the Atoma system,
 /// including database operations, settlement processes, and specific AI task events.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum AtomaEventIdentifier {
     /// Events related to the database (Db) module:
     ///

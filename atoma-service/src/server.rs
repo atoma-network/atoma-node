@@ -17,8 +17,12 @@ use hyper::StatusCode;
 use prometheus::Encoder;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
+use sui_sdk::types::digests::TransactionDigest;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, sync::watch::Receiver};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, oneshot, watch::Receiver},
+};
 use tower::ServiceBuilder;
 use tracing::error;
 use utoipa::OpenApi;
@@ -52,6 +56,10 @@ pub struct AppState {
     /// state manager, allowing for efficient handling of application state
     /// updates and notifications across different components.
     pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
+
+    /// Channel sender for requesting compute units from the blockchain.
+    pub stack_retrieve_sender:
+        mpsc::UnboundedSender<(TransactionDigest, oneshot::Sender<Option<u64>>)>,
 
     /// Tokenizer used for processing text input.
     ///

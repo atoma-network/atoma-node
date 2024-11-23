@@ -23,6 +23,7 @@ use serde_json::Value;
 use sui_sdk::types::{
     base_types::SuiAddress,
     crypto::{PublicKey, Signature, SuiSignature},
+    digests::TransactionDigest,
 };
 use tokio::sync::oneshot;
 use tracing::{error, instrument};
@@ -334,8 +335,24 @@ pub async fn verify_stack_permissions(
             StatusCode::UNAUTHORIZED
         })?;
     if available_stack.is_none() {
-        error!("No available stack with enough compute units");
-        return Err(StatusCode::UNAUTHORIZED);
+        let tx_digest_str = req_parts
+            .headers
+            .get("X-Tx-Digest")
+            .ok_or_else(|| {
+                error!("Tx digest header not found");
+                StatusCode::BAD_REQUEST
+            })?
+            .to_str()
+            .map_err(|_| {
+                error!("Tx digest cannot be converted to a string");
+                StatusCode::BAD_REQUEST
+            })?;
+        let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
+        let compute_units = utils::request_blockchain_for_stack(&state, tx_digest).await?;
+        if compute_units > total_num_compute_units as u64 {
+            error!("No available stack with enough compute units");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
     }
     let request_metadata = RequestMetadata::default()
         .with_stack_info(stack_small_id, total_num_compute_units)
@@ -353,7 +370,7 @@ pub(crate) mod utils {
         secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
         traits::{ToFromBytes, VerifyingKey},
     };
-    use sui_sdk::types::crypto::SignatureScheme;
+    use sui_sdk::types::{crypto::SignatureScheme, digests::TransactionDigest};
 
     /// Verifies the authenticity of a request by checking its signature against the provided hash.
     ///
@@ -381,6 +398,7 @@ pub(crate) mod utils {
     /// This function is critical for ensuring request authenticity. It verifies that:
     /// 1. The request was signed by the owner of the public key
     /// 2. The request body hasn't been tampered with since signing
+    #[instrument(level = "trace", skip_all)]
     pub(crate) fn verify_signature(
         base64_signature: &str,
         body_hash: &[u8; 32],
@@ -429,6 +447,56 @@ pub(crate) mod utils {
             }
         }
         Ok(())
+    }
+
+    /// Queries the blockchain to retrieve compute units associated with a specific transaction.
+    ///
+    /// This asynchronous function uses a combination of channels to communicate with the blockchain:
+    /// - An mpsc channel to send the query request to the compute units handler
+    /// - A oneshot channel to receive the response back in the current scope
+    ///
+    /// # Arguments
+    /// * `state` - Reference to the application state containing the compute units mpsc sender
+    /// * `tx_digest` - The transaction digest to query compute units for
+    ///
+    /// # Returns
+    /// * `Ok(u64)` - The number of compute units if found
+    /// * `Err(StatusCode)` - If the request fails, returns one of:
+    ///   - `INTERNAL_SERVER_ERROR` if channel communication fails
+    ///   - `UNAUTHORIZED` if no compute units are found for the transaction
+    ///
+    /// # Channel Communication Flow
+    /// 1. Creates a oneshot channel for receiving the response
+    /// 2. Sends the transaction digest and oneshot sender through the mpsc channel
+    /// 3. Awaits the response on the oneshot receiver
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let compute_units = request_blockchain_for_stack(&app_state, transaction_digest).await?;
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) async fn request_blockchain_for_stack(
+        state: &AppState,
+        tx_digest: TransactionDigest,
+    ) -> Result<u64, StatusCode> {
+        let (result_sender, result_receiver) = oneshot::channel();
+        state
+            .stack_retrieve_sender
+            .send((tx_digest, result_sender))
+            .map_err(|_| {
+                error!("Failed to send compute units request");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        let compute_units = result_receiver.await.map_err(|_| {
+            error!("Failed to receive compute units");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        if let Some(compute_units) = compute_units {
+            Ok(compute_units)
+        } else {
+            error!("No compute units found for transaction");
+            Err(StatusCode::UNAUTHORIZED)
+        }
     }
 
     /// Calculates the total number of compute units required for a request based on its type and content.
@@ -509,6 +577,7 @@ pub(crate) mod utils {
     ///     "max_tokens": 100
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     pub(crate) fn calculate_chat_completion_compute_units(
         body_json: &Value,
         state: &AppState,
@@ -609,6 +678,7 @@ pub(crate) mod utils {
     /// # Computation
     /// The total compute units is calculated as the sum of tokens across all input texts.
     /// For array inputs, each string is tokenized separately and the results are summed.
+    #[instrument(level = "trace", skip_all)]
     fn calculate_embedding_compute_units(
         body_json: &Value,
         state: &AppState,
@@ -685,6 +755,7 @@ pub(crate) mod utils {
     ///     "n": 1
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     fn calculate_image_generation_compute_units(body_json: &Value) -> Result<i64, StatusCode> {
         let size = body_json
             .get(IMAGE_SIZE)

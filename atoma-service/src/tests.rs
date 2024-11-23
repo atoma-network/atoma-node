@@ -191,6 +191,7 @@ mod middleware {
         let tokenizer = load_tokenizer().await;
         let (state_manager_handle, state_manager_sender, shutdown_sender, _event_subscriber_sender) =
             setup_database(public_key.clone()).await;
+        let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
@@ -201,6 +202,7 @@ mod middleware {
                 image_generations_service_url: "".to_string(),
                 keystore: Arc::new(keystore),
                 address_index: 0,
+                stack_retrieve_sender,
             },
             public_key,
             signature,

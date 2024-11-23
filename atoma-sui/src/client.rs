@@ -15,22 +15,31 @@ const GAS_BUDGET: u64 = 50_000_000; // 0.05 SUI
 
 /// The Atoma's contract module name
 const MODULE_ID: &str = "db";
+
 /// The Atoma's contract method name for node registration
 const NODE_REGISTRATION_METHOD: &str = "register_node_entry";
+
 /// The Atoma's contract method name for node model subscription
 const NODE_MODEL_SUBSCRIPTION_METHOD: &str = "add_node_to_model";
+
 /// The Atoma's contract method name for node task subscription
 const NODE_TASK_SUBSCRIPTION_METHOD: &str = "subscribe_node_to_task";
+
 /// The Atoma's contract method name for node task unsubscription
 const NODE_TASK_UNSUBSCRIPTION_METHOD: &str = "unsubscribe_node_from_task";
+
 /// The Atoma's contract method name for trying to settle a stack
 const TRY_SETTLE_STACK_METHOD: &str = "try_settle_stack";
+
 /// The Atoma's contract method name for stack settlement attestation
 const STACK_SETTLEMENT_ATTESTATION_METHOD: &str = "submit_stack_settlement_attestation";
+
 /// The Atoma's contract method name for starting an attestation dispute
 const START_ATTESTATION_DISPUTE_METHOD: &str = "start_attestation_dispute";
+
 /// The Atoma's contract method name for claiming funds
 const CLAIM_FUNDS_METHOD: &str = "claim_funds";
+
 /// The Atoma's contract method name for updating a node task subscription
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
