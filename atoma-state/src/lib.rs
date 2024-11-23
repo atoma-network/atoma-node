@@ -4,8 +4,7 @@ pub mod state_manager;
 pub mod types;
 
 pub use config::AtomaStateManagerConfig;
-use sqlx::Sqlite;
-pub use sqlx::SqlitePool;
+use sqlx::Postgres;
 pub use state_manager::{AtomaState, AtomaStateManager, AtomaStateManagerError};
 
 /// Builds a query with an IN clause and optional additional conditions
@@ -18,12 +17,12 @@ pub use state_manager::{AtomaState, AtomaStateManager, AtomaStateManagerError};
 ///
 /// # Returns
 /// A QueryBuilder configured with the IN clause and ready for additional bindings
-pub(crate) fn build_query_with_in<'a, T: sqlx::Type<Sqlite> + sqlx::Encode<'a, Sqlite>>(
+pub(crate) fn build_query_with_in<'a, T: sqlx::Type<Postgres> + sqlx::Encode<'a, Postgres>>(
     base_query: &str,
     column: &str,
     values: &'a [T],
     additional_conditions: Option<&str>,
-) -> sqlx::QueryBuilder<'a, Sqlite> {
+) -> sqlx::QueryBuilder<'a, Postgres> {
     let mut builder = sqlx::QueryBuilder::new(base_query);
 
     if values.is_empty() {

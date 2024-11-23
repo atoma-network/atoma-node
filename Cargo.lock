@@ -622,10 +622,12 @@ name = "atoma-state"
 version = "0.1.0"
 dependencies = [
  "atoma-sui",
+ "atoma-utils",
  "config",
  "flume",
  "serde",
  "serde_json",
+ "serial_test",
  "sqlx",
  "thiserror",
  "tokio",
@@ -6744,7 +6746,6 @@ dependencies = [
  "indexmap 2.6.0",
  "log",
  "memchr",
- "native-tls",
  "once_cell",
  "paste",
  "percent-encoding",

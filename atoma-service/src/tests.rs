@@ -4,6 +4,7 @@ mod middleware {
         AtomaStateManager,
     };
     use atoma_sui::events::AtomaEvent;
+    use atoma_utils::test::POSTGRES_TEST_DB_URL;
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
@@ -15,7 +16,8 @@ mod middleware {
     use flume::Sender;
     use serde_json::json;
     use serial_test::serial;
-    use std::{path::PathBuf, str::FromStr, sync::Arc};
+    use sqlx::PgPool;
+    use std::{str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
         base_types::SuiAddress,
@@ -83,29 +85,36 @@ mod middleware {
         Tokenizer::from_str(&tokenizer_json).unwrap()
     }
 
+    async fn truncate_tables() {
+        let db = PgPool::connect(POSTGRES_TEST_DB_URL)
+            .await
+            .expect("Failed to connect to database");
+        sqlx::query(
+            "TRUNCATE TABLE 
+                tasks,
+                node_subscriptions,
+                stacks,
+                stack_settlement_tickets,
+                stack_attestation_disputes
+            CASCADE",
+        )
+        .execute(&db)
+        .await
+        .expect("Failed to truncate tables");
+    }
+
     async fn setup_database(
         public_key: PublicKey,
     ) -> (
-        PathBuf,
         JoinHandle<()>,
         Sender<AtomaAtomaStateManagerEvent>,
         tokio::sync::watch::Sender<bool>,
         Sender<AtomaEvent>,
     ) {
-        let db_path = std::path::Path::new("./db_path").to_path_buf();
-
-        std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .read(true)
-            .open(&db_path)
-            .unwrap();
-
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
-            "sqlite::memory:",
+            POSTGRES_TEST_DB_URL,
             event_subscriber_receiver,
             state_manager_receiver,
         )
@@ -151,7 +160,6 @@ mod middleware {
         // but we need to return it so the tests can send events to the state manager
         // otherwise the event subscriber will be dropped and the state manager shuts down
         (
-            db_path,
             state_manager_handle,
             state_manager_sender,
             shutdown_sender,
@@ -163,7 +171,6 @@ mod middleware {
         AppState,
         PublicKey,
         Signature,
-        PathBuf,
         tokio::sync::watch::Sender<bool>,
         JoinHandle<()>,
         Sender<AtomaEvent>,
@@ -182,13 +189,8 @@ mod middleware {
             .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
             .expect("Failed to sign message");
         let tokenizer = load_tokenizer().await;
-        let (
-            db_path,
-            state_manager_handle,
-            state_manager_sender,
-            shutdown_sender,
-            _event_subscriber_sender,
-        ) = setup_database(public_key.clone()).await;
+        let (state_manager_handle, state_manager_sender, shutdown_sender, _event_subscriber_sender) =
+            setup_database(public_key.clone()).await;
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
@@ -202,7 +204,6 @@ mod middleware {
             },
             public_key,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -238,7 +239,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -279,21 +279,14 @@ mod middleware {
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_missing_public_key() {
-        let (
-            app_state,
-            _,
-            _,
-            db_path,
-            shutdown_sender,
-            state_manager_handle,
-            _event_subscriber_sender,
-        ) = setup_app_state().await;
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender) =
+            setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -321,7 +314,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -331,7 +324,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -363,7 +355,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -373,7 +365,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -405,7 +396,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -415,7 +406,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -450,21 +440,14 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_invalid_stack() {
-        let (
-            app_state,
-            _,
-            _,
-            db_path,
-            shutdown_sender,
-            state_manager_handle,
-            _event_subscriber_sender,
-        ) = setup_app_state().await;
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender) =
+            setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -492,7 +475,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -502,7 +485,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -551,7 +533,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::OK);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -561,7 +543,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -621,7 +602,7 @@ mod middleware {
         assert_eq!(response.status(), StatusCode::OK);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -909,7 +890,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -975,7 +955,7 @@ mod middleware {
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -985,7 +965,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -1077,7 +1056,7 @@ mod middleware {
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 
     #[tokio::test]
@@ -1087,7 +1066,6 @@ mod middleware {
             app_state,
             _,
             signature,
-            db_path,
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
@@ -1120,6 +1098,6 @@ mod middleware {
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
-        std::fs::remove_file(db_path).unwrap();
+        truncate_tables().await;
     }
 }

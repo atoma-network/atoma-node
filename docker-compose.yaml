@@ -48,6 +48,20 @@ x-inference-service-rocm: &inference-service-rocm
     - atoma-network
 
 services:
+  postgres-db:
+    image: postgres:13
+    restart: always
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - atoma-network
+
   atoma-node:
     <<: *atoma-node
     build:
@@ -64,6 +78,9 @@ services:
       - embeddings_tei
       - image_generations_mistralrs
     depends_on:
+      postgres-db:
+        condition: service_started
+        required: false
       vllm:
         condition: service_started
         required: false
