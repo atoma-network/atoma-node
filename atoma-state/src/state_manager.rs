@@ -2104,9 +2104,10 @@ pub enum AtomaStateManagerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atoma_utils::test::POSTGRES_TEST_DB_URL;
 
     async fn setup_test_db() -> AtomaState {
-        AtomaState::new_from_url("postgres://atoma:atoma@localhost:5432/atoma")
+        AtomaState::new_from_url(POSTGRES_TEST_DB_URL)
             .await
             .unwrap()
     }

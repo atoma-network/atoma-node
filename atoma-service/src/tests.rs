@@ -4,6 +4,7 @@ mod middleware {
         AtomaStateManager,
     };
     use atoma_sui::events::AtomaEvent;
+    use atoma_utils::test::POSTGRES_TEST_DB_URL;
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
@@ -85,7 +86,7 @@ mod middleware {
     }
 
     async fn truncate_tables() {
-        let db = PgPool::connect("postgres://atoma:atoma@localhost:5432/atoma")
+        let db = PgPool::connect(POSTGRES_TEST_DB_URL)
             .await
             .expect("Failed to connect to database");
         sqlx::query(
@@ -113,7 +114,7 @@ mod middleware {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
-            "postgres://atoma:atoma@localhost:5432/atoma",
+            POSTGRES_TEST_DB_URL,
             event_subscriber_receiver,
             state_manager_receiver,
         )
