@@ -63,7 +63,7 @@ pub enum AtomaEventIdentifier {
     /// Emitted when a text-to-text prompt is processed.
     Text2TextPromptEvent,
 
-    /// Events related to node public key rotation with TEE: 
+    /// Events related to node public key rotation with TEE:
     ///
     /// Emitted when a node's public key is rotated.
     NewKeyRotationEvent,
@@ -768,7 +768,7 @@ pub struct Text2TextPromptEvent {
 
 /// Represents an event emitted when a node's public key is rotated.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeKeyRotationEvent { 
+pub struct NodeKeyRotationEvent {
     /// The epoch number when the node key rotation was requested.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
@@ -782,7 +782,7 @@ pub struct NodeKeyRotationEvent {
     /// The node's new registered public key.
     pub new_public_key: Vec<u8>,
 
-    /// The TEE remote attestation report attesting for 
+    /// The TEE remote attestation report attesting for
     /// the public key's generation integrity, in byte format.
     pub tee_remote_attestation_bytes: Vec<u8>,
 }

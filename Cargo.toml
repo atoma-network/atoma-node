@@ -6,6 +6,7 @@ members = [
     "atoma-service",
     "atoma-state",
     "atoma-sui",
+    "atoma-tdx",
     "atoma-utils",
 ]
 
@@ -49,6 +50,7 @@ serial_test = "3.1.1"
 sqlx = "0.8.2"
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
+tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.13.0"
 thiserror = "1.0.58"
 tokenizers = "0.15.2"

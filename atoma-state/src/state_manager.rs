@@ -25,8 +25,6 @@ pub struct AtomaStateManager {
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-    /// TDX remote attestation report generator
-    
 }
 
 impl AtomaStateManager {

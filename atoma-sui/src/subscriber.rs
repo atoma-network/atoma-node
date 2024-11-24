@@ -16,8 +16,10 @@ use tracing::{error, info, instrument, trace};
 
 /// The Atoma contract db module name.
 const DB_MODULE_NAME: &str = "db";
+
 /// The duration to wait for new events in seconds, if there are no new events.
 const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
+
 /// The amount of main loop iterations in order to update the cursor file.
 const CURSOR_FILE_UPDATE_ITERATIONS: u64 = 10;
 
