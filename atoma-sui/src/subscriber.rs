@@ -142,11 +142,22 @@ impl SuiEventSubscriber {
 
     /// Runs the event subscriber, continuously processing events from the Sui blockchain.
     ///
-    /// This method enters an infinite loop that:
-    /// 1. Queries for new events using the configured filter and cursor.
-    /// 2. Processes each event concurrently using the specified number of tasks.
-    /// 3. Updates the cursor for the next query.
-    /// 4. Waits for a short duration if no new events are available.
+    /// This method enters an infinite loop that handles three main types of operations:
+    /// 
+    /// 1. Stack Retrieval:
+    ///    - Receives transaction digests and responds with compute units information
+    ///    - Processes StackCreatedEvents from transactions and forwards them to the state manager
+    ///
+    /// 2. Event Processing:
+    ///    - Queries for new events using the configured filter and cursor
+    ///    - Parses and filters events based on node and task IDs
+    ///    - Forwards relevant events to the state manager
+    ///    - Updates the cursor periodically (every CURSOR_FILE_UPDATE_ITERATIONS)
+    ///    - Implements backoff when no new events are available
+    ///
+    /// 3. Shutdown Handling:
+    ///    - Monitors a shutdown signal
+    ///    - Performs graceful shutdown by saving the current cursor
     ///
     /// # Returns
     ///
@@ -155,9 +166,12 @@ impl SuiEventSubscriber {
     /// # Errors
     ///
     /// This method may return an error if:
-    /// * There's a failure in building the Sui client.
-    /// * Event querying encounters an error.
-    /// * Event processing or handling fails (though these are currently logged and not propagated).
+    /// * There's a failure in building the Sui client
+    /// * Event querying encounters an error
+    /// * Stack retrieval operations fail
+    /// * Event processing fails
+    /// * Writing the cursor file fails
+    /// * Communication with the state manager fails
     #[instrument(level = "trace", skip_all, fields(package_id))]
     pub async fn run(mut self) -> Result<()> {
         let package_id = self.config.atoma_package_id();
