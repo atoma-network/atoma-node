@@ -658,6 +658,7 @@ name = "atoma-tdx"
 version = "0.1.0"
 dependencies = [
  "atoma-sui",
+ "dcap-rs",
  "fastcrypto 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "tdx",

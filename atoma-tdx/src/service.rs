@@ -1,4 +1,7 @@
-use crate::key_rotation::{KeyManager, KeyManagerError};
+use crate::{
+    key_rotation::{KeyManager, KeyManagerError},
+    ToBytes,
+};
 use atoma_sui::client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_sui::events::AtomaEvent;
 use thiserror::Error;

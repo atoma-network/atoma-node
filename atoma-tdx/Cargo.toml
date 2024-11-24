@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 atoma-sui = { workspace = true }
+dcap-rs = { workspace = true }
 fastcrypto = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
