@@ -22,6 +22,7 @@ RUN case "${TARGETARCH}" in \
     apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     libssl-dev:arm64 \
+    libssl1.1:arm64 \
     && rm -rf /var/lib/apt/lists/* ;; \
     *) exit 1 ;; \
     esac
@@ -41,7 +42,16 @@ RUN case "${TARGETARCH}" in \
 RUN rustup target add $(cat /rust_target)
 
 # Compile
-RUN RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target)
+RUN case "${TARGETARCH}" in \
+    "amd64") RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
+    "arm64") OPENSSL_DIR=/usr/lib/aarch64-linux-gnu/ \
+    OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu/ \
+    OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu/ \
+    AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_DIR=/usr/lib/aarch64-linux-gnu/ \
+    AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu/ \
+    RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
+    *) exit 1 ;; \
+    esac
 
 # Final stage
 FROM --platform=$TARGETPLATFORM debian:bullseye-slim
