@@ -15,7 +15,6 @@ pub struct KeyManager {
     /// This secret key can be rotated using the `rotate_keys()` method.
     secret_key: StaticSecret,
 
-
     /// The TDX device instance used for generating attestation reports
     /// and managing device-specific operations.
     device: Device,
