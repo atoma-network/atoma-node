@@ -5,11 +5,24 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-atoma-sui = { workspace = true }
-dcap-rs = { workspace = true }
-fastcrypto = { workspace = true }
-rand = { workspace = true }
-tokio = { workspace = true }
-tdx = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
+atoma-sui = { workspace = true, optional = true }
+dcap-rs = { workspace = true, optional = true }
+fastcrypto = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tdx = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[features]
+default = []
+tdx = [
+    "dep:atoma-sui",
+    "dep:dcap-rs",
+    "dep:fastcrypto",
+    "dep:rand",
+    "dep:tokio",
+    "dep:tdx",
+    "dep:thiserror",
+    "dep:tracing",
+]

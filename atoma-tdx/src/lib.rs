@@ -1,7 +1,11 @@
+#[cfg(feature = "tdx")]
 pub mod key_rotation;
+#[cfg(feature = "tdx")]
 pub mod service;
 
+#[cfg(feature = "tdx")]
 use dcap_rs::types::quotes::body::QuoteBody;
+#[cfg(feature = "tdx")]
 use tdx::QuoteV4;
 
 /// Trait for converting types into a byte representation
@@ -17,6 +21,7 @@ pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
 }
 
+#[cfg(feature = "tdx")]
 impl ToBytes for QuoteV4 {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();

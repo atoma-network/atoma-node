@@ -1019,7 +1019,7 @@ impl AtomaSuiClient {
 
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
-        public_key = %hex::encode(&public_key_bytes),
+        public_key = %hex::encode(public_key_bytes),
         remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
     ))]
     pub async fn submit_key_rotation_remote_attestation(
