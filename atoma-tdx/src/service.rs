@@ -160,7 +160,7 @@ impl TdxService {
         let tdx_quote = self.key_manager.rotate_keys()?;
         let tdx_quote_bytes = tdx_quote.to_bytes();
         let public_key = self.key_manager.get_public_key();
-        let public_key_bytes = public_key.0.to_bytes();
+        let public_key_bytes = public_key.to_bytes();
         match self.sui_client.submit_node_key_rotation_attestation(
             tdx_quote_bytes,
             public_key_bytes,

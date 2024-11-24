@@ -1,23 +1,20 @@
-use fastcrypto::{
-    ed25519::{Ed25519KeyPair, Ed25519PublicKey},
-    traits::{EncodeDecodeBase64, KeyPair},
-};
 use tdx::device::{Device, DeviceOptions};
 use thiserror::Error;
-
+use x25519_dalek::{PublicKey, StaticSecret};
 type Result<T> = std::result::Result<T, KeyManagerError>;
 
 /// A struct that manages cryptographic key rotation and remote attestation for TDX (Trust Domain Extensions).
 ///
-/// `KeyManager` combines an Ed25519 keypair with a TDX device to facilitate:
+/// `KeyManager` combines an X25519 keypair with a TDX device to facilitate:
 /// - Secure key generation and rotation
 /// - Remote attestation report generation
 /// - Public key access
 /// - Device report data updates
 pub struct KeyManager {
-    /// The Ed25519 keypair used for cryptographic operations.
-    /// This keypair can be rotated using the `rotate_keys()` method.
-    keypair: Ed25519KeyPair,
+    /// The X25519 static secret used for cryptographic operations.
+    /// This secret key can be rotated using the `rotate_keys()` method.
+    secret_key: StaticSecret,
+
 
     /// The TDX device instance used for generating attestation reports
     /// and managing device-specific operations.
@@ -28,14 +25,14 @@ impl KeyManager {
     /// Constructor
     pub fn new() -> Result<Self> {
         let mut rng = rand::thread_rng();
-        let keypair = Ed25519KeyPair::generate(&mut rng);
+        let secret_key = StaticSecret::random_from_rng(&mut rng);
         let device = Device::new(DeviceOptions::default())?;
-        let mut this = Self { keypair, device };
+        let mut this = Self { secret_key, device };
         this.update_device_options();
         Ok(this)
     }
 
-    /// Returns a reference to the current Ed25519 public key.
+    /// Returns a reference to the current X25519 public key.
     ///
     /// This public key corresponds to the current keypair and can be used for:
     /// - Verifying signatures
@@ -43,14 +40,14 @@ impl KeyManager {
     /// - Identity verification
     ///
     /// The public key will change when `rotate_keys()` is called.
-    pub fn get_public_key(&self) -> &Ed25519PublicKey {
-        &self.keypair.public()
+    pub fn get_public_key(&self) -> &PublicKey {
+        &PublicKey::from(&self.secret_key)
     }
 
-    /// Rotates the Ed25519 keypair by generating a new random keypair and updates device report data.
+    /// Rotates the X25519 keypair by generating a new random keypair and updates device report data.
     ///
     /// This method:
-    /// - Generates a new random Ed25519 keypair using a secure random number generator
+    /// - Generates a new random X25519 keypair using a secure random number generator
     /// - Replaces the existing keypair with the newly generated one
     /// - Updates the device's report data with the new public key
     /// - Invalidates any previous signatures or cryptographic operations
@@ -69,7 +66,7 @@ impl KeyManager {
     /// the attestation report reflects the new keypair.
     pub fn rotate_keys(&mut self) -> Result<QuoteV4> {
         let mut rng = rand::thread_rng();
-        self.keypair = Ed25519KeyPair::generate(&mut rng);
+        self.secret_key = StaticSecret::random_from_rng(&mut rng);
         self.update_device_options();
         self.generate_remote_attestation_report()
     }
@@ -93,28 +90,43 @@ impl KeyManager {
         self.device.get_attestation_report()
     }
 
-    /// Updates the TDX device options with the current public key as report data.
+    /// Updates the TDX device's report data with the current public key.
     ///
-    /// This method:
-    /// - Retrieves the current Ed25519 public key
-    /// - Creates a 64-byte report data buffer
-    /// - Copies the public key bytes into the report data buffer
+    /// This method embeds the X25519 public key into the TDX device's report data field,
+    /// which is a 64-byte buffer used during attestation. The public key (32 bytes) is
+    /// copied into the beginning of the buffer, with the remaining bytes zeroed.
+    ///
+    /// # Implementation Details
+    /// - Derives the X25519 public key from the current secret key
+    /// - Initializes a zero-filled 64-byte report data buffer
+    /// - Copies the 32-byte public key into the first half of the buffer
     /// - Updates the device options with the new report data
     ///
-    /// The report data is used in attestation reports to bind the public key
-    /// to the TDX environment, ensuring that remote parties can verify both:
-    /// - The authenticity of the TDX environment
-    /// - The ownership of the public key
+    /// This method is called automatically during:
+    /// - Key manager initialization (`new()`)
+    /// - Key rotation (`rotate_keys()`)
     ///
-    /// This method is automatically called during key rotation and initialization
-    /// to maintain consistency between the keypair and device attestation.
+    /// The report data binding ensures that attestation reports cryptographically
+    /// prove possession of the corresponding private key within the TDX environment.
     pub fn update_device_options(&mut self) {
-        let public_key = self.keypair.public();
+        let public_key = PublicKey::from(&self.secret_key);
         let mut report_data = [0u8; 64];
         report_data[..public_key.as_ref().len()].copy_from_slice(public_key.as_ref());
         self.device.update_options(DeviceOptions {
             report_data: Some(report_data),
         });
+    }
+
+    /// Computes the shared secret between the current secret key and a given public key.
+    ///
+    /// This method uses the X25519 Diffie-Hellman key agreement protocol to derive a shared secret.
+    /// The shared secret is returned as a byte vector.
+    ///
+    /// # Returns
+    /// - `Vec<u8>` - The shared secret as a byte vector
+    pub fn compute_shared_secret(&self, public_key: &PublicKey) -> Vec<u8> {
+        let shared_secret = self.secret_key.diffie_hellman(&public_key);
+        shared_secret.to_bytes().to_vec()
     }
 }
 
