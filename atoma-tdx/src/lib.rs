@@ -2,6 +2,8 @@
 pub mod key_rotation;
 #[cfg(feature = "tdx")]
 pub mod service;
+#[cfg(feature = "tdx")]
+pub mod encryption;
 
 #[cfg(feature = "tdx")]
 use dcap_rs::types::quotes::body::QuoteBody;
