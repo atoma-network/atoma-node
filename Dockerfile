@@ -17,10 +17,12 @@ RUN apt-get update && apt-get install -y \
 RUN case "${TARGETARCH}" in \
     "amd64") apt-get update && apt-get install -y \
     libssl-dev \
+    libssl1.1 \
     && rm -rf /var/lib/apt/lists/* ;; \
     "arm64") dpkg --add-architecture arm64 && \
     apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
     libssl-dev:arm64 \
     libssl1.1:arm64 \
     && rm -rf /var/lib/apt/lists/* ;; \
@@ -41,44 +43,45 @@ RUN case "${TARGETARCH}" in \
 # Add target support
 RUN rustup target add $(cat /rust_target)
 
+ENV OPENSSL_DIR=/usr/lib/aarch64-linux-gnu
+ENV OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu
+ENV OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu
+
 # Compile
-RUN case "${TARGETARCH}" in \
-    "amd64") RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
-    "arm64") OPENSSL_DIR=/usr/lib/aarch64-linux-gnu/ \
-    OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu/ \
-    OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu/ \
-    AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_DIR=/usr/lib/aarch64-linux-gnu/ \
-    AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu/ \
-    RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
-    *) exit 1 ;; \
-    esac
+# RUN case "${TARGETARCH}" in \
+#     "amd64") RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
+#     "arm64") RUST_LOG=debug cargo build --release --bin atoma-node --target $(cat /rust_target) ;; \
+#     *) exit 1 ;; \
+#     esac
 
-# Final stage
-FROM --platform=$TARGETPLATFORM debian:bullseye-slim
+CMD ["/bin/bash"]
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libssl1.1 \
-    libsqlite3-0 \
-    && rm -rf /var/lib/apt/lists/*
+# # Final stage
+# FROM --platform=$TARGETPLATFORM debian:bullseye-slim
 
-WORKDIR /app
+# # Install runtime dependencies
+# RUN apt-get update && apt-get install -y \
+#     ca-certificates \
+#     libssl1.1 \
+#     libsqlite3-0 \
+#     && rm -rf /var/lib/apt/lists/*
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/logs
+# WORKDIR /app
 
-# Copy the built binary from builder stage
-COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node
+# # Create necessary directories
+# RUN mkdir -p /app/data /app/logs
 
-# Copy configuration file
-COPY config.toml ./config.toml
+# # Copy the built binary from builder stage
+# COPY --from=builder /usr/src/atoma-node/target/release/atoma-node /usr/local/bin/atoma-node
 
-RUN chmod +x /usr/local/bin/atoma-node
+# # Copy configuration file
+# COPY config.toml ./config.toml
 
-# Copy and set up entrypoint script
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# RUN chmod +x /usr/local/bin/atoma-node
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/usr/local/bin/atoma-node", "--config-path", "/app/config.toml"]
+# # Copy and set up entrypoint script
+# COPY entrypoint.sh /usr/local/bin/
+# RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# CMD ["/usr/local/bin/atoma-node", "--config-path", "/app/config.toml"]

@@ -46,7 +46,7 @@ serde = "1.0.204"
 serde_json = "1.0.120"
 serde_yaml = "0.9.34"
 serial_test = "3.1.1"
-sqlx = "0.8.2"
+sqlx = { version = "0.8.2", features = ["tls-rustls"] }
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
 tempfile = "3.13.0"
