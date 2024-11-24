@@ -8,21 +8,8 @@ use dcap_rs::types::quotes::body::QuoteBody;
 #[cfg(feature = "tdx")]
 use tdx::QuoteV4;
 
-/// Trait for converting types into a byte representation
-///
-/// This trait provides a standard way to serialize types into a sequence of bytes.
-/// It is particularly useful for cryptographic operations and data serialization
-/// where a consistent byte representation is needed.
-pub trait ToBytes {
-    /// Converts the implementing type into a vector of bytes
-    ///
-    /// # Returns
-    /// * `Vec<u8>` - The byte representation of the implementing type
-    fn to_bytes(&self) -> Vec<u8>;
-}
-
 #[cfg(feature = "tdx")]
-impl ToBytes for QuoteV4 {
+impl crate::ToBytes for QuoteV4 {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.header.to_bytes());
@@ -43,4 +30,17 @@ impl ToBytes for QuoteV4 {
         bytes.extend_from_slice(&self.signature.qe_cert_data.cert_data);
         bytes
     }
+}
+
+/// Trait for converting types into a byte representation
+///
+/// This trait provides a standard way to serialize types into a sequence of bytes.
+/// It is particularly useful for cryptographic operations and data serialization
+/// where a consistent byte representation is needed.
+pub trait ToBytes {
+    /// Converts the implementing type into a vector of bytes
+    ///
+    /// # Returns
+    /// * `Vec<u8>` - The byte representation of the implementing type
+    fn to_bytes(&self) -> Vec<u8>;
 }
