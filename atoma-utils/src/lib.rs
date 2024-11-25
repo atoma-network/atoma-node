@@ -1,5 +1,5 @@
 pub mod encryption;
-
+pub mod hashing;
 use anyhow::{Context, Error, Result};
 use tokio::sync::watch;
 

@@ -4,15 +4,11 @@ mod middleware {
         AtomaStateManager,
     };
     use atoma_sui::events::AtomaEvent;
-    use atoma_utils::test::POSTGRES_TEST_DB_URL;
+    use atoma_utils::{hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL};
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
     use base64::{prelude::BASE64_STANDARD, Engine};
-    use blake2::{
-        digest::generic_array::{typenum::U32, GenericArray},
-        Digest,
-    };
     use flume::Sender;
     use serde_json::json;
     use serial_test::serial;
@@ -64,13 +60,11 @@ mod middleware {
         let body_message = Body::from(message);
 
         // Create signature
-        let mut blake2b = blake2::Blake2b::new();
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
             .await
             .expect("Failed to convert body to bytes");
-        blake2b.update(body_message_bytes);
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
-
+        let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
+        
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -182,9 +176,7 @@ mod middleware {
             "black-forest-labs/FLUX.1-schnell",
         ];
         let public_key = keystore.key_pairs().first().unwrap().public();
-        let mut blake2b = blake2::Blake2b::new();
-        blake2b.update(TEST_MESSAGE.as_bytes());
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let blake2b_hash = blake2b_hash(TEST_MESSAGE.as_bytes());
         let signature = keystore
             .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -679,10 +671,7 @@ mod middleware {
 
         // Sign a different message than what we'll send
         let different_message = "Different message";
-        let mut blake2b = blake2::Blake2b::new();
-        blake2b.update(different_message.as_bytes());
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
-
+        let blake2b_hash = blake2b_hash(different_message.as_bytes());
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -710,9 +699,7 @@ mod middleware {
         let address = keystore.addresses()[0];
 
         // Sign empty message
-        let mut blake2b = blake2::Blake2b::new();
-        blake2b.update([]);
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let blake2b_hash = blake2b_hash(&[]);
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
@@ -743,9 +730,7 @@ mod middleware {
         // Create a body larger than MAX_BODY_SIZE
         let large_body = "x".repeat(2 * 1024 * 1024); // 2MB
 
-        let mut blake2b = blake2::Blake2b::new();
-        blake2b.update(large_body.as_bytes());
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let blake2b_hash = blake2b_hash(large_body.as_bytes());
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
@@ -776,13 +761,11 @@ mod middleware {
         let body_message = Body::from(message);
 
         // Create signature
-        let mut blake2b = blake2::Blake2b::new();
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
             .await
             .expect("Failed to convert body to bytes");
-        blake2b.update(&body_message_bytes);
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
-
+        let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
+        
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -821,12 +804,10 @@ mod middleware {
         let body_message = Body::from(message);
 
         // Create signature
-        let mut blake2b = blake2::Blake2b::new();
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
             .await
             .expect("Failed to convert body to bytes");
-        blake2b.update(&body_message_bytes);
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())

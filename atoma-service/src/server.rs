@@ -8,10 +8,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use blake2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Digest,
-};
 use flume::Sender as FlumeSender;
 use hyper::StatusCode;
 use prometheus::Encoder;
@@ -275,6 +271,7 @@ async fn metrics_handler() -> Result<impl IntoResponse, StatusCode> {
 pub(crate) mod utils {
     use super::*;
 
+    use atoma_utils::hashing::blake2b_hash;
     use sui_keys::keystore::AccountKeystore;
     use sui_sdk::types::crypto::EncodeDecodeBase64;
 
@@ -308,9 +305,7 @@ pub(crate) mod utils {
         let address = keystore.addresses()[address_index];
         let response_body_str = response_body.to_string();
         let response_body_bytes = response_body_str.as_bytes();
-        let mut blake2b = blake2::Blake2b::new();
-        blake2b.update(response_body_bytes);
-        let blake2b_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let blake2b_hash = blake2b_hash(response_body_bytes);
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign response body");

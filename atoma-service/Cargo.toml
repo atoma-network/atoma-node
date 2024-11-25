@@ -16,7 +16,6 @@ atoma-sui = { workspace = true }
 atoma-state = { workspace = true }
 atoma-utils = { workspace = true }
 base64 = { workspace = true }
-blake2 = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
 dotenv = { workspace = true }

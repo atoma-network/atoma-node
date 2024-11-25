@@ -1,5 +1,5 @@
 #[cfg(feature = "tdx")]
-pub mod key_rotation;
+pub mod attestation_manager;
 #[cfg(feature = "tdx")]
 pub mod service;
 

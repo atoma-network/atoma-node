@@ -7,8 +7,9 @@ license.workspace = true
 [dependencies]
 aes-gcm = { workspace = true, optional = true }
 atoma-sui = { workspace = true, optional = true }
+blake2 = { workspace = true, optional = true }
 dcap-rs = { workspace = true, optional = true }
-flume = { workspace = true }
+flume = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tdx = { workspace = true, optional = true }
@@ -19,8 +20,11 @@ x25519-dalek = { workspace = true, optional = true, features = ["static_secrets"
 [features]
 default = []
 tdx = [
+    "dep:aes-gcm",
     "dep:atoma-sui",
+    "dep:blake2",
     "dep:dcap-rs",
+    "dep:flume",
     "dep:rand",
     "dep:tokio",
     "dep:tdx",
