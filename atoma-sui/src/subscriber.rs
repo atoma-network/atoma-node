@@ -23,7 +23,7 @@ const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
 type StackRetrieveReceiver =
-    mpsc::UnboundedReceiver<(TransactionDigest, oneshot::Sender<Option<u64>>)>;
+    mpsc::UnboundedReceiver<(TransactionDigest, oneshot::Sender<(Option<u64>, Option<u64>)>)>;
 
 /// A subscriber for Sui blockchain events.
 ///
@@ -140,7 +140,7 @@ impl SuiEventSubscriber {
     /// Runs the event subscriber, continuously processing events from the Sui blockchain.
     ///
     /// This method enters an infinite loop that handles three main types of operations:
-    /// 
+    ///
     /// 1. Stack Retrieval:
     ///    - Receives transaction digests and responds with compute units information
     ///    - Processes StackCreatedEvents from transactions and forwards them to the state manager
@@ -196,6 +196,7 @@ impl SuiEventSubscriber {
                             .await?
                             .events;
                         let mut compute_units = None;
+                        let mut stack_small_id = None;
                         if let Some(tx_events) = tx_events {
                             for event in tx_events.data.iter() {
                                 let event_identifier = AtomaEventIdentifier::from_str(event.type_.name.as_str())?;
@@ -206,7 +207,7 @@ impl SuiEventSubscriber {
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
                                     compute_units = Some(event.num_compute_units);
-
+                                    stack_small_id = Some(event.stack_small_id.inner);
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
                                     self.state_manager_sender
@@ -221,7 +222,7 @@ impl SuiEventSubscriber {
                         // Send the compute units to the Atoma service, so it can be used to validate the
                         // request.
                         compute_units_sender
-                            .send(compute_units)
+                            .send((stack_small_id, compute_units))
                             .map_err(|_| SuiEventSubscriberError::SendComputeUnitsError)?;
                     }
                     page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {

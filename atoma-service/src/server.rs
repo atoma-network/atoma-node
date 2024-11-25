@@ -43,6 +43,15 @@ pub const HEALTH_PATH: &str = "/health";
 /// The path for the metrics endpoint.
 pub const METRICS_PATH: &str = "/metrics";
 
+/// A small identifier for a Stack, represented as a 64-bit unsigned integer.
+type StackSmallId = u64;
+
+/// Represents the number of compute units available, stored as a 64-bit unsigned integer.
+type ComputeUnits = u64;
+
+/// Represents the result of a blockchain query for stack information.
+type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
+
 /// Represents the shared state of the application.
 ///
 /// This struct holds various components and configurations that are shared
@@ -59,7 +68,7 @@ pub struct AppState {
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:
-        mpsc::UnboundedSender<(TransactionDigest, oneshot::Sender<Option<u64>>)>,
+        mpsc::UnboundedSender<(TransactionDigest, oneshot::Sender<StackQueryResult>)>,
 
     /// Tokenizer used for processing text input.
     ///

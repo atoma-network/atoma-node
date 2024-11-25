@@ -339,7 +339,7 @@ pub async fn verify_stack_permissions(
             .headers
             .get("X-Tx-Digest")
             .ok_or_else(|| {
-                error!("Tx digest header not found");
+                error!("Stack not found, tx digest header expected but not found");
                 StatusCode::BAD_REQUEST
             })?
             .to_str()
@@ -348,8 +348,14 @@ pub async fn verify_stack_permissions(
                 StatusCode::BAD_REQUEST
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
-        let compute_units = utils::request_blockchain_for_stack(&state, tx_digest).await?;
-        if compute_units > total_num_compute_units as u64 {
+        let (tx_stack_small_id, compute_units) =
+            utils::request_blockchain_for_stack(&state, tx_digest).await?;
+        // NOTE: We need to check that the stack small id matches the one in the request
+        // otherwise, the user is requesting for a different stack, which is invalid. We
+        // must also check that the compute units are enough for processing the request.
+        if stack_small_id != tx_stack_small_id as i64
+            || compute_units > total_num_compute_units as u64
+        {
             error!("No available stack with enough compute units");
             return Err(StatusCode::UNAUTHORIZED);
         }
@@ -478,7 +484,7 @@ pub(crate) mod utils {
     pub(crate) async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
-    ) -> Result<u64, StatusCode> {
+    ) -> Result<(u64, u64), StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
@@ -487,12 +493,12 @@ pub(crate) mod utils {
                 error!("Failed to send compute units request");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let compute_units = result_receiver.await.map_err(|_| {
+        let result = result_receiver.await.map_err(|_| {
             error!("Failed to receive compute units");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-        if let Some(compute_units) = compute_units {
-            Ok(compute_units)
+        if let (Some(stack_small_id), Some(compute_units)) = result {
+            Ok((stack_small_id, compute_units))
         } else {
             error!("No compute units found for transaction");
             Err(StatusCode::UNAUTHORIZED)
