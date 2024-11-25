@@ -1110,7 +1110,14 @@ impl AtomaState {
             "INSERT INTO stacks 
                 (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                ON CONFLICT (stack_small_id) DO NOTHING",
+                ON CONFLICT (stack_small_id) DO UPDATE
+                SET already_compute_units = 
+                    CASE 
+                        WHEN stacks.already_computed_units + $8 <= stacks.num_compute_units
+                        THEN stacks.already_computed_units + $8
+                        ELSE RAISE EXCEPTION 'Computed units would exceed total compute units'
+                    END
+                WHERE stacks.already_computed_units + $8 <= stacks.num_compute_units",
         )
             .bind(stack.owner_address)
             .bind(stack.stack_small_id)
