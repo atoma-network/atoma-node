@@ -61,7 +61,8 @@ pub fn decrypt_cyphertext(
 ) -> Result<Vec<u8>> {
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());
     let mut symmetric_key = [0u8; 32];
-    hkdf.expand(b"", &mut symmetric_key)?;
+    hkdf.expand(b"", &mut symmetric_key)
+        .map_err(EncryptionError::KeyExpansionFailed)?;
 
     let cipher = Aes256Gcm::new(&symmetric_key.into());
     cipher
@@ -119,7 +120,8 @@ pub fn encrypt_plaintext(
 ) -> Result<(Vec<u8>, [u8; NONCE_BYTE_SIZE])> {
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());
     let mut symmetric_key = [0u8; 32];
-    hkdf.expand(b"", &mut symmetric_key)?;
+    hkdf.expand(b"", &mut symmetric_key)
+        .map_err(EncryptionError::KeyExpansionFailed)?;
 
     let cipher = Aes256Gcm::new(&symmetric_key.into());
     let nonce = rand::random::<[u8; NONCE_BYTE_SIZE]>().into();
@@ -137,5 +139,5 @@ pub enum EncryptionError {
     #[error("Failed to encrypt plaintext, with error: `{0}`")]
     EncryptionFailed(AesError),
     #[error("Failed to expand key, with error: `{0}`")]
-    KeyExpansionFailed(#[from] hkdf::InvalidLength),
+    KeyExpansionFailed(hkdf::InvalidLength),
 }

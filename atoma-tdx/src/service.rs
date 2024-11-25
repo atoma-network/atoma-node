@@ -9,6 +9,8 @@ use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 use tracing::instrument;
 
+// TODO: How large can the `ServiceData` be ? 
+
 type Result<T> = std::result::Result<T, TdxServiceError>;
 type ServiceData = Vec<u8>;
 
