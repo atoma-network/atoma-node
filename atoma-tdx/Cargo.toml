@@ -8,6 +8,7 @@ license.workspace = true
 aes-gcm = { workspace = true, optional = true }
 atoma-sui = { workspace = true, optional = true }
 dcap-rs = { workspace = true, optional = true }
+flume = { workspace = true }
 rand = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tdx = { workspace = true, optional = true }

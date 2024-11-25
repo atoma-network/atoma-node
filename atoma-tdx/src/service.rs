@@ -4,11 +4,13 @@ use crate::{
 };
 use atoma_sui::client::{AtomaSuiClient, AtomaSuiClientError};
 use atoma_sui::events::AtomaEvent;
+use flume::Receiver as FlumeReceiver;
 use thiserror::Error;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 use tracing::instrument;
 
 type Result<T> = std::result::Result<T, TdxServiceError>;
+type ServiceData = Vec<u8>;
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
@@ -24,6 +26,8 @@ pub struct TdxService {
     key_manager: KeyManager,
     /// Channel receiver for incoming Atoma events that need to be processed
     event_receiver: UnboundedReceiver<AtomaEvent>,
+    /// Channel receiver for incoming Atoma service requests for decryption and processing
+    service_receiver: FlumeReceiver<(ServiceData, oneshot::Sender)>,
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
@@ -33,6 +37,7 @@ impl TdxService {
     pub fn new(
         sui_client: AtomaSuiClient,
         event_receiver: UnboundedReceiver<AtomaEvent>,
+        service_receiver: FlumeReceiver<(ServiceData, oneshot::Sender)>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = KeyManager::new()?;
@@ -40,6 +45,7 @@ impl TdxService {
             sui_client,
             key_manager,
             event_receiver,
+            service_receiver,
             shutdown_signal,
         })
     }
