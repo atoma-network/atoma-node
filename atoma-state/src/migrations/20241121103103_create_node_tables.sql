@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS node_subscriptions (
     task_small_id          BIGINT  NOT NULL,
     node_small_id          BIGINT  NOT NULL,
     price_per_compute_unit BIGINT  NOT NULL,
-    max_num_compute_units  BIGINT  NOT NULL,
+    max_num_compute_units  BIGINT  NOT NULL, 
     valid                  BOOLEAN NOT NULL,
     PRIMARY KEY (task_small_id, node_small_id),
     FOREIGN KEY (task_small_id) 
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period       BOOLEAN NOT NULL,
     total_hash             BYTEA   NOT NULL,
     num_total_messages     BIGINT  NOT NULL,
+    CONSTRAINT check_compute_units CHECK (already_computed_units <= num_compute_units),
     FOREIGN KEY (selected_node_id, task_small_id) 
         REFERENCES node_subscriptions (node_small_id, task_small_id)
 );
