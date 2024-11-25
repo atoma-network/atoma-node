@@ -52,8 +52,11 @@ pub async fn handle_atoma_event(
             info!("Published event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::NodeRegisteredEvent(event) => {
-            info!("Node registered event: {:?}", event);
+        AtomaEvent::NodeRegisteredEvent((event, sender)) => {
+            info!(
+                "Node registered event: {:?} from sui address {:?}",
+                event, sender
+            );
             Ok(())
         }
         AtomaEvent::NodeSubscribedToModelEvent(event) => {
