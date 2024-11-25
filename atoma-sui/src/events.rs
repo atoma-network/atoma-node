@@ -132,6 +132,9 @@ pub enum AtomaEvent {
     /// An event emitted when a new stack (collection of tasks) is created.
     StackCreatedEvent(StackCreatedEvent),
 
+    /// An event emitted when a stack is created and updated simultaneously with already computed compute units.
+    StackCreateAndUpdateEvent(StackCreateAndUpdateEvent),
+
     /// An event emitted when there's an attempt to settle a stack.
     StackTrySettleEvent(StackTrySettleEvent),
 
@@ -400,6 +403,55 @@ pub struct StackCreatedEvent {
     /// This value represents the cost in the network's native currency for processing this stack.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub price: u64,
+}
+
+impl From<(StackCreatedEvent, i64)> for StackCreateAndUpdateEvent {
+    fn from((event, already_computed_units): (StackCreatedEvent, i64)) -> Self {
+        Self {
+            stack_id: event.stack_id,
+            stack_small_id: event.stack_small_id,
+            owner: event.owner,
+            task_small_id: event.task_small_id,
+            selected_node_id: event.selected_node_id,
+            num_compute_units: event.num_compute_units,
+            price: event.price,
+            already_computed_units,
+        }
+    }
+}
+
+/// An event emitted when a stack is created and updated simultaneously with already computed compute units.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StackCreateAndUpdateEvent {
+    /// The address of the owner of the stack.
+    pub owner: String,
+
+    /// The unique identifier of the created stack.
+    /// This is typically a longer, more descriptive ID for the stack.
+    pub stack_id: String,
+
+    /// The small ID assigned to the stack within the Atoma network.
+    /// This ID is used for efficient referencing of the stack in various operations and events.
+    pub stack_small_id: StackSmallId,
+
+    /// The small ID of the task that the stack is associated with.
+    /// This is a compact identifier for the task within the Atoma network.
+    pub task_small_id: TaskSmallId,
+
+    /// The small ID of the node selected to process this stack.
+    /// This identifies which node in the network is responsible for executing the stack's tasks.
+    pub selected_node_id: NodeSmallId,
+
+    /// The number of compute units allocated for this stack.
+    /// This represents the computational resources reserved for processing the stack's tasks.
+    pub num_compute_units: u64,
+
+    /// The price associated with this stack.
+    /// This value represents the cost in the network's native currency for processing this stack.
+    pub price: u64,
+
+    /// The number of compute units already computed for this stack.
+    pub already_computed_units: i64,
 }
 
 /// Represents an event that is emitted when an attempt is made to settle a stack in the Atoma network.

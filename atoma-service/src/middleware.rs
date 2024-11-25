@@ -349,7 +349,8 @@ pub async fn verify_stack_permissions(
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
         let (tx_stack_small_id, compute_units) =
-            utils::request_blockchain_for_stack(&state, tx_digest).await?;
+            utils::request_blockchain_for_stack(&state, tx_digest, total_num_compute_units).await?;
+
         // NOTE: We need to check that the stack small id matches the one in the request
         // otherwise, the user is requesting for a different stack, which is invalid. We
         // must also check that the compute units are enough for processing the request.
@@ -484,11 +485,12 @@ pub(crate) mod utils {
     pub(crate) async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
+        estimated_compute_units: i64,
     ) -> Result<(u64, u64), StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
-            .send((tx_digest, result_sender))
+            .send((tx_digest, estimated_compute_units, result_sender))
             .map_err(|_| {
                 error!("Failed to send compute units request");
                 StatusCode::INTERNAL_SERVER_ERROR

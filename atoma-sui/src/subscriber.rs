@@ -1,6 +1,9 @@
 use crate::{
     config::AtomaSuiConfig,
-    events::{AtomaEvent, AtomaEventIdentifier, StackCreatedEvent, SuiEventParseError},
+    events::{
+        AtomaEvent, AtomaEventIdentifier, StackCreateAndUpdateEvent, StackCreatedEvent,
+        SuiEventParseError,
+    },
 };
 use flume::Sender;
 use serde_json::Value;
@@ -22,8 +25,11 @@ const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
-type StackRetrieveReceiver =
-    mpsc::UnboundedReceiver<(TransactionDigest, oneshot::Sender<(Option<u64>, Option<u64>)>)>;
+type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
+    TransactionDigest,
+    i64,
+    oneshot::Sender<(Option<u64>, Option<u64>)>,
+)>;
 
 /// A subscriber for Sui blockchain events.
 ///
@@ -184,7 +190,7 @@ impl SuiEventSubscriber {
         let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
         loop {
             tokio::select! {
-                    Some((tx_digest, compute_units_sender)) = self.stack_retrieve_receiver.recv() => {
+                    Some((tx_digest, estimated_compute_units, result_sender)) = self.stack_retrieve_receiver.recv() => {
                         let tx_events = client
                             .read_api()
                             .get_transaction_with_options(
@@ -206,14 +212,14 @@ impl SuiEventSubscriber {
                                     // to buy new compute units.
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
-                                    compute_units = Some(event.num_compute_units);
-                                    stack_small_id = Some(event.stack_small_id.inner);
+                                    let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
+                                    compute_units = Some(event.num_compute_units);
+                                    stack_small_id = Some(event.stack_small_id.inner);
                                     self.state_manager_sender
-                                        .send(AtomaEvent::StackCreatedEvent(event))
+                                        .send(AtomaEvent::StackCreateAndUpdateEvent(event))
                                         .map_err(Box::new)?;
-
                                     // We found the stack creation event, so we can break out of the loop
                                     break;
                                 }
@@ -221,7 +227,7 @@ impl SuiEventSubscriber {
                         }
                         // Send the compute units to the Atoma service, so it can be used to validate the
                         // request.
-                        compute_units_sender
+                        result_sender
                             .send((stack_small_id, compute_units))
                             .map_err(|_| SuiEventSubscriberError::SendComputeUnitsError)?;
                     }

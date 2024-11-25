@@ -1,5 +1,6 @@
 use atoma_sui::events::{
-    StackAttestationDisputeEvent, StackCreatedEvent, StackTrySettleEvent, TaskRegisteredEvent,
+    StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
+    StackTrySettleEvent, TaskRegisteredEvent,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -88,6 +89,24 @@ impl From<StackCreatedEvent> for Stack {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+        }
+    }
+}
+
+impl From<StackCreateAndUpdateEvent> for Stack {
+    fn from(event: StackCreateAndUpdateEvent) -> Self {
+        Stack {
+            owner_address: event.owner,
+            stack_small_id: event.stack_small_id.inner as i64,
+            stack_id: event.stack_id,
+            task_small_id: event.task_small_id.inner as i64,
+            selected_node_id: event.selected_node_id.inner as i64,
+            num_compute_units: event.num_compute_units as i64,
+            price: event.price as i64,
+            already_computed_units: event.already_computed_units,
+            in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 1,
         }
     }
 }

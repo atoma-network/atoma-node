@@ -68,7 +68,7 @@ pub struct AppState {
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:
-        mpsc::UnboundedSender<(TransactionDigest, oneshot::Sender<StackQueryResult>)>,
+        mpsc::UnboundedSender<(TransactionDigest, i64, oneshot::Sender<StackQueryResult>)>,
 
     /// Tokenizer used for processing text input.
     ///
