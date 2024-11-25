@@ -286,7 +286,8 @@ impl AtomaState {
             "INSERT INTO tasks (
                 task_small_id, task_id, role, model_name, is_deprecated,
                 valid_until_epoch, security_level, minimum_reputation_score
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (task_small_id) DO NOTHING",
         )
         .bind(task.task_small_id)
         .bind(task.task_id)
@@ -552,7 +553,8 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO node_subscriptions 
                 (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
-                VALUES ($1, $2, $3, $4, TRUE)",
+                VALUES ($1, $2, $3, $4, TRUE)
+                ON CONFLICT (task_small_id, node_small_id) DO NOTHING",
         )
             .bind(node_small_id)
             .bind(task_small_id)
@@ -1384,7 +1386,8 @@ impl AtomaState {
                     is_in_dispute, 
                     user_refund_amount, 
                     is_claimed) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ON CONFLICT (stack_small_id, selected_node_id) DO NOTHING",
         )
         .bind(stack_settlement_ticket.stack_small_id)
         .bind(stack_settlement_ticket.selected_node_id)
@@ -2069,7 +2072,8 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO stack_attestation_disputes 
                 (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment) 
-                VALUES ($1, $2, $3, $4, $5)",
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (stack_small_id, attestation_node_id) DO NOTHING",
         )
             .bind(stack_attestation_dispute.stack_small_id)
             .bind(stack_attestation_dispute.attestation_commitment)
@@ -2666,11 +2670,17 @@ mod tests {
         assert_eq!(retrieved_disputes.len(), 1);
         assert_eq!(retrieved_disputes[0], dispute);
 
-        // Try to insert a duplicate dispute (should fail)
+        // Inserting a duplicate dispute should be idempotent
         let result = state_manager
             .insert_stack_attestation_dispute(dispute.clone())
             .await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let retrieved_disputes = state_manager
+            .get_stack_attestation_disputes(1, 3)
+            .await
+            .unwrap();
+        assert_eq!(retrieved_disputes.len(), 1);
+        assert_eq!(retrieved_disputes[0], dispute);
 
         // Insert another dispute for the same stack but different attestation node
         let another_dispute = StackAttestationDispute {
