@@ -1019,7 +1019,7 @@ impl AtomaSuiClient {
 
     /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
     ///
-    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote 
+    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
     /// attestation. The node must have a valid node badge to perform this operation. The method requires
     /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
     ///
