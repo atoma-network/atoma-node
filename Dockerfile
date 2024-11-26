@@ -19,10 +19,6 @@ WORKDIR /usr/src/atoma-node
 
 COPY . .
 
-ENV OPENSSL_DIR=/usr/lib/aarch64-linux-gnu
-ENV OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu
-ENV OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu
-
 # Compile
 RUN RUST_LOG=debug cargo build --release --bin atoma-node
 
