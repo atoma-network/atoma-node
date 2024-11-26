@@ -1,6 +1,7 @@
 use tdx::device::{Device, DeviceOptions};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
+
 type Result<T> = std::result::Result<T, KeyManagerError>;
 
 /// A struct that manages cryptographic key rotation and remote attestation for TDX (Trust Domain Extensions).

@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
 
 -- Create stack_settlement_tickets table
 CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
-    stack_small_id              BIGINT PRIMARY KEY,
+    stack_small_id              BIGINT NOT NULL,
     selected_node_id            BIGINT NOT NULL,
     num_claimed_compute_units   BIGINT NOT NULL,
     requested_attestation_nodes TEXT    NOT NULL,
@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
     already_attested_nodes      TEXT    NOT NULL,
     is_in_dispute               BOOLEAN NOT NULL,
     user_refund_amount          BIGINT NOT NULL,
-    is_claimed                  BOOLEAN NOT NULL
+    is_claimed                  BOOLEAN NOT NULL,
+    PRIMARY KEY (stack_small_id, selected_node_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_stack_settlement_tickets_stack_small_id 
