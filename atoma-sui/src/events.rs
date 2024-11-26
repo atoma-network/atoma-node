@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use sui_sdk::types::base_types::SuiAddress;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, SuiEventParseError>;
@@ -106,7 +107,7 @@ pub enum AtomaEvent {
     PublishedEvent(PublishedEvent),
 
     /// An event emitted when a new node is registered in the Atoma network.
-    NodeRegisteredEvent(NodeRegisteredEvent),
+    NodeRegisteredEvent((NodeRegisteredEvent, SuiAddress)),
 
     /// An event emitted when a node subscribes to a specific AI model.
     NodeSubscribedToModelEvent(NodeSubscribedToModelEvent),

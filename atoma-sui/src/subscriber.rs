@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::{path::Path, str::FromStr, time::Duration};
 use sui_sdk::{
     rpc_types::{EventFilter, EventPage},
-    types::{event::EventID, Identifier},
+    types::{base_types::SuiAddress, event::EventID, Identifier},
     SuiClient, SuiClientBuilder,
 };
 use thiserror::Error;
@@ -177,7 +177,8 @@ impl SuiEventSubscriber {
                             );
                             match AtomaEventIdentifier::from_str(event_name.as_str()) {
                                 Ok(atoma_event_id) => {
-                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json).await {
+                                    let sender = sui_event.sender;
+                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json, sender).await {
                                         Ok(atoma_event) => atoma_event,
                                         Err(e) => {
                                             error!(
@@ -380,7 +381,11 @@ fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> 
 /// }
 /// ```
 #[instrument(level = "trace", skip_all)]
-async fn parse_event(event: &AtomaEventIdentifier, value: Value) -> Result<AtomaEvent> {
+async fn parse_event(
+    event: &AtomaEventIdentifier,
+    value: Value,
+    sender: SuiAddress,
+) -> Result<AtomaEvent> {
     match event {
         AtomaEventIdentifier::DisputeEvent => {
             Ok(AtomaEvent::DisputeEvent(serde_json::from_value(value)?))
@@ -394,9 +399,10 @@ async fn parse_event(event: &AtomaEventIdentifier, value: Value) -> Result<Atoma
         AtomaEventIdentifier::NewlySampledNodesEvent => Ok(AtomaEvent::NewlySampledNodesEvent(
             serde_json::from_value(value)?,
         )),
-        AtomaEventIdentifier::NodeRegisteredEvent => Ok(AtomaEvent::NodeRegisteredEvent(
+        AtomaEventIdentifier::NodeRegisteredEvent => Ok(AtomaEvent::NodeRegisteredEvent((
             serde_json::from_value(value)?,
-        )),
+            sender,
+        ))),
         AtomaEventIdentifier::NodeSubscribedToModelEvent => Ok(
             AtomaEvent::NodeSubscribedToModelEvent(serde_json::from_value(value)?),
         ),
