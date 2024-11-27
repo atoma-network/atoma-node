@@ -1063,9 +1063,13 @@ impl AtomaState {
         Ok(maybe_stack)
     }
 
-    /// Inserts a new stack into the database.
+    /// Inserts a new stack into the database if it doesn't already exist.
     ///
-    /// This method inserts a new entry into the `stacks` table with the provided stack details.
+    /// This method attempts to insert a new entry into the `stacks` table with the provided stack details.
+    /// If a stack with the same `stack_small_id` already exists, the operation will silently succeed without
+    /// modifying the existing record. This idempotent behavior is relevant as a `Stack` might be inserted
+    /// multiple times, if a request is sent to the Atoma service, while the event subscriber is still processing
+    /// the events from previous transactions.
     ///
     /// # Arguments
     ///
@@ -1087,6 +1091,7 @@ impl AtomaState {
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
     /// async fn insert_stack(state_manager: &AtomaStateManager, stack: Stack) -> Result<(), AtomaStateManagerError> {
+    ///     // If a stack with the same stack_small_id exists, this will succeed without modifying it
     ///     state_manager.insert_new_stack(stack).await
     /// }   
     /// ```
@@ -1104,8 +1109,10 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO stacks 
                 (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                ON CONFLICT (stack_small_id) DO NOTHING",
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (stack_small_id) DO UPDATE
+            SET already_computed_units = stacks.already_computed_units + $8
+            WHERE stacks.stack_small_id = $2;",
         )
             .bind(stack.owner_address)
             .bind(stack.stack_small_id)
@@ -2325,6 +2332,147 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn test_insert_new_stack_compute_units() {
+        let state_manager = setup_test_db().await;
+
+        // Setup: Create a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            security_level: 1,
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Test case 1: Initial insert
+        let initial_stack = Stack {
+            owner_address: "owner1".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 100,
+            price: 1000,
+            already_computed_units: 30,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state_manager.insert_new_stack(initial_stack).await.unwrap();
+
+        // Verify initial insert
+        let stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(stack.already_computed_units, 30);
+
+        // Test case 2: Valid update (within limits)
+        let update_stack = Stack {
+            already_computed_units: 40,
+            ..stack
+        };
+        state_manager.insert_new_stack(update_stack).await.unwrap();
+
+        // Verify successful update
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 70); // 30 + 40
+
+        // Test case 3: Invalid update (exceeds limit)
+        let invalid_stack = Stack {
+            already_computed_units: 50, // Would exceed 100 (70 + 50 > 100)
+            ..updated_stack
+        };
+        let result = state_manager.insert_new_stack(invalid_stack).await;
+
+        // Verify error is returned
+        assert!(result.is_err());
+
+        // Verify original value remains unchanged
+        let final_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(final_stack.already_computed_units, 70);
+
+        // Test case 4: Exact limit update
+        let exact_limit_stack = Stack {
+            already_computed_units: 30, // Exactly reaches limit (70 + 30 = 100)
+            ..final_stack
+        };
+        state_manager
+            .insert_new_stack(exact_limit_stack)
+            .await
+            .unwrap();
+
+        // Verify successful update to exact limit
+        let limit_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(limit_stack.already_computed_units, 100);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_new_stack_idempotent() {
+        let state_manager = setup_test_db().await;
+
+        // Setup: Create a task and subscribe a node
+        let task = Task {
+            task_small_id: 1,
+            task_id: "task1".to_string(),
+            role: 1,
+            model_name: Some("model1".to_string()),
+            is_deprecated: false,
+            valid_until_epoch: Some(100),
+            deprecated_at_epoch: None,
+            security_level: 1,
+            minimum_reputation_score: Some(50),
+        };
+        state_manager.insert_new_task(task).await.unwrap();
+        state_manager
+            .subscribe_node_to_task(1, 1, 100, 1000)
+            .await
+            .unwrap();
+
+        // Create a test stack
+        let stack = Stack {
+            owner_address: "0x123".to_string(),
+            stack_small_id: 1,
+            stack_id: "stack1".to_string(),
+            task_small_id: 1,
+            selected_node_id: 1,
+            num_compute_units: 10,
+            price: 1000,
+            already_computed_units: 0,
+            in_settle_period: false,
+            total_hash: vec![],
+            num_total_messages: 0,
+        };
+
+        // Test case 1: First insertion should succeed
+        state_manager.insert_new_stack(stack.clone()).await.unwrap();
+        let retrieved_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(stack, retrieved_stack);
+
+        // Test case 2: Second insertion of the same stack should not modify anything
+        state_manager.insert_new_stack(stack.clone()).await.unwrap();
+        let retrieved_stack_after_second_insert = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(stack, retrieved_stack_after_second_insert);
+
+        // Test case 3: Verify no duplicate entries were created
+        let all_stacks = state_manager.get_stack_by_id(1).await.unwrap();
+        assert_eq!(all_stacks.len(), 1);
+        assert_eq!(all_stacks[0], stack);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn test_update_computed_units() {
         let state_manager = setup_test_db().await;
 
@@ -2351,7 +2499,7 @@ mod tests {
             stack_id: "stack1".to_string(),
             task_small_id: 1,
             selected_node_id: 1,
-            num_compute_units: 10,
+            num_compute_units: 15,
             price: 1000,
             already_computed_units: 0,
             in_settle_period: false,

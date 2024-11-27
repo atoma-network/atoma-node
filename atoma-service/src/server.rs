@@ -17,8 +17,12 @@ use hyper::StatusCode;
 use prometheus::Encoder;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
+use sui_sdk::types::digests::TransactionDigest;
 use tokenizers::Tokenizer;
-use tokio::{net::TcpListener, sync::watch::Receiver};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, oneshot, watch::Receiver},
+};
 use tower::ServiceBuilder;
 use tracing::error;
 use utoipa::OpenApi;
@@ -39,6 +43,15 @@ pub const HEALTH_PATH: &str = "/health";
 /// The path for the metrics endpoint.
 pub const METRICS_PATH: &str = "/metrics";
 
+/// A small identifier for a Stack, represented as a 64-bit unsigned integer.
+type StackSmallId = u64;
+
+/// Represents the number of compute units available, stored as a 64-bit unsigned integer.
+type ComputeUnits = u64;
+
+/// Represents the result of a blockchain query for stack information.
+type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
+
 /// Represents the shared state of the application.
 ///
 /// This struct holds various components and configurations that are shared
@@ -52,6 +65,10 @@ pub struct AppState {
     /// state manager, allowing for efficient handling of application state
     /// updates and notifications across different components.
     pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
+
+    /// Channel sender for requesting compute units from the blockchain.
+    pub stack_retrieve_sender:
+        mpsc::UnboundedSender<(TransactionDigest, i64, oneshot::Sender<StackQueryResult>)>,
 
     /// Tokenizer used for processing text input.
     ///

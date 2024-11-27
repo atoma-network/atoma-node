@@ -164,3 +164,6 @@ services:
 networks:
   atoma-network:
     driver: bridge
+
+volumes:
+  postgres-data:

@@ -1,8 +1,8 @@
 use atoma_sui::events::{
     AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
     NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    StackCreateAndUpdateEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
+    StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use tracing::{info, instrument};
 
@@ -33,6 +33,9 @@ pub async fn handle_atoma_event(
         AtomaEvent::StackCreatedEvent(event) => {
             handle_stack_created_event(state_manager, event).await
         }
+        AtomaEvent::StackCreateAndUpdateEvent(event) => {
+            handle_stack_create_and_update_event(state_manager, event).await
+        }
         AtomaEvent::StackTrySettleEvent(event) => {
             handle_stack_try_settle_event(state_manager, event).await
         }
@@ -52,8 +55,11 @@ pub async fn handle_atoma_event(
             info!("Published event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::NodeRegisteredEvent(event) => {
-            info!("Node registered event: {:?}", event);
+        AtomaEvent::NodeRegisteredEvent((event, sender)) => {
+            info!(
+                "Node registered event: {:?} from sui address {:?}",
+                event, sender
+            );
             Ok(())
         }
         AtomaEvent::NodeSubscribedToModelEvent(event) => {
@@ -371,6 +377,21 @@ pub(crate) async fn handle_stack_created_event(
         target = "atoma-state-handlers",
         event = "handle-stack-created-event",
         "Stack selected current node, with id {node_small_id}, inserting new stack"
+    );
+    let stack = event.into();
+    state_manager.state.insert_new_stack(stack).await?;
+    Ok(())
+}
+
+#[instrument(level = "info", skip_all)]
+pub(crate) async fn handle_stack_create_and_update_event(
+    state_manager: &AtomaStateManager,
+    event: StackCreateAndUpdateEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-stack-create-and-update-event",
+        "Processing stack create and update event"
     );
     let stack = event.into();
     state_manager.state.insert_new_stack(stack).await?;
