@@ -37,45 +37,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=${{ github.event.release.tag_name }}
-            type=raw,value=latest
-            type=raw,value=${{ github.event.release.tag_name }}-{{arch}}
-            type=raw,value=latest-{{arch}}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  create-manifest:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create and push manifest
-        run: |
-          VERSION_TAG=${{ github.event.release.tag_name }}
-          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
-          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-arm64
-          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}
