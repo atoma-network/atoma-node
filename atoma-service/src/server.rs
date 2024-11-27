@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_tdx::types::{
+    ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
+};
 use axum::{
     body::Body,
     middleware::{from_fn, from_fn_with_state},
@@ -61,6 +64,11 @@ pub struct AppState {
     /// state manager, allowing for efficient handling of application state
     /// updates and notifications across different components.
     pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
+
+    pub confidential_compute_sender: FlumeSender<(
+        ConfidentialComputeDecryptionRequest,
+        oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+    )>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:

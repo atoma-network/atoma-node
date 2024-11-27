@@ -2,6 +2,7 @@
 pub mod attestation_manager;
 #[cfg(feature = "tdx")]
 pub mod service;
+pub mod types;
 
 #[cfg(feature = "tdx")]
 use dcap_rs::types::quotes::body::QuoteBody;

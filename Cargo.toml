@@ -22,6 +22,7 @@ atoma-daemon = { path = "./atoma-daemon" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { path = "./atoma-sui" }
 atoma-utils = { path = "./atoma-utils" }
+atoma-tdx = { path = "./atoma-tdx" }
 axum = "0.7.5"
 base64 = "0.22.1"
 blake2 = "0.10.6"

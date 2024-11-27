@@ -13,6 +13,10 @@ use tracing::instrument;
 
 type Result<T> = std::result::Result<T, TdxServiceError>;
 type ServiceData = Vec<u8>;
+type ServiceDataRequest = (
+    ConfidentialComputeDecryptionRequest,
+    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+);
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
@@ -29,7 +33,7 @@ pub struct TdxService {
     /// Channel receiver for incoming Atoma events that need to be processed
     event_receiver: UnboundedReceiver<AtomaEvent>,
     /// Channel receiver for incoming Atoma service requests for decryption and processing
-    service_receiver: FlumeReceiver<(ServiceData, oneshot::Sender)>,
+    service_receiver: FlumeReceiver<ServiceDataRequest>,
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }

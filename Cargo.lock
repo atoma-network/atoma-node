@@ -580,6 +580,7 @@ dependencies = [
  "atoma-daemon",
  "atoma-state",
  "atoma-sui",
+ "atoma-tdx",
  "atoma-utils",
  "axum",
  "base64 0.22.1",
@@ -614,6 +615,7 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+ "x25519-dalek",
 ]
 
 [[package]]

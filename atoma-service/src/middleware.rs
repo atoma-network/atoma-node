@@ -8,6 +8,9 @@ use crate::{
     server::AppState,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_tdx::types::{
+    ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
+};
 use atoma_utils::hashing::blake2b_hash;
 use axum::{
     body::Body,
@@ -16,6 +19,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sui_sdk::types::{
     base_types::SuiAddress,
@@ -27,16 +31,22 @@ use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+
 /// The key for the model in the request body
 const MODEL: &str = "model";
+
 /// The key for the max tokens in the request body
 const MAX_TOKENS: &str = "max_tokens";
+
 /// The key for the messages in the request body
 const MESSAGES: &str = "messages";
+
 /// The key for the input tokens in the request body
 const INPUT: &str = "input";
+
 /// The key for the image size in the request body
 const IMAGE_SIZE: &str = "size";
+
 /// The key for the number of images in the request body
 const IMAGE_N: &str = "n";
 
@@ -361,6 +371,81 @@ pub async fn verify_stack_permissions(
         .with_request_type(request_type);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
+    Ok(next.run(req).await)
+}
+
+#[instrument(level = "trace", skip_all)]
+pub async fn confidential_compute_middleware(
+    state: State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let (req_parts, req_body) = req.into_parts();
+    let salt = req_parts.headers.get("X-Salt").ok_or_else(|| {
+        error!("Salt header not found");
+        StatusCode::BAD_REQUEST
+    })?;
+    let salt_str = salt.to_str().map_err(|_| {
+        error!("Salt cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let salt_bytes = salt_str.as_bytes().to_vec();
+    let nonce = req_parts.headers.get("X-Nonce").ok_or_else(|| {
+        error!("Nonce header not found");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce_str = nonce.to_str().map_err(|_| {
+        error!("Nonce cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce_bytes = nonce_str.as_bytes().to_vec();
+    let diffie_hellman_public_key = req_parts
+        .headers
+        .get("X-Diffie-Hellman-Public-Key")
+        .ok_or_else(|| {
+            error!("Diffie-Hellman public key header not found");
+            StatusCode::BAD_REQUEST
+        })?;
+    let diffie_hellman_public_key_bytes = diffie_hellman_public_key.to_str().map_err(|_| {
+        error!("Diffie-Hellman public key cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let diffie_hellman_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(diffie_hellman_public_key).map_err(|_| {
+        error!("Failed to decode Diffie-Hellman public key from base64 encoding");
+            StatusCode::BAD_REQUEST
+        })?
+        .try_into()
+        .map_err(|_| {
+            error!("Failed to convert Diffie-Hellman public key bytes to 32-byte array, incorrect length: {}", diffie_hellman_public_key_bytes.len());
+            StatusCode::BAD_REQUEST
+        })?;
+    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
+        .await
+        .map_err(|_| {
+            error!("Failed to convert body to bytes");
+            StatusCode::BAD_REQUEST
+        })?;
+    let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
+        ciphertext: body_bytes.as_ref().to_vec(),
+        nonce: nonce_bytes,
+        salt: salt_bytes,
+        diffie_hellman_public_key: diffie_hellman_public_key_bytes,
+    };
+    let (result_sender, result_receiver) = oneshot::channel();
+    state
+        .confidential_compute_sender
+        .send((confidential_compute_decryption_request, result_sender))
+        .map_err(|_| {
+            error!("Failed to send confidential compute request");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let ConfidentialComputeDecryptionResponse { plaintext } =
+        result_receiver.await.map_err(|_| {
+            error!("Failed to receive confidential compute response");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let body = Body::from(plaintext);
+    let req = Request::from_parts(req_parts, body);
     Ok(next.run(req).await)
 }
 

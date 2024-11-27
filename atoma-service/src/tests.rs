@@ -64,7 +64,7 @@ mod middleware {
             .await
             .expect("Failed to convert body to bytes");
         let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
-        
+
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -184,11 +184,13 @@ mod middleware {
         let (state_manager_handle, state_manager_sender, shutdown_sender, _event_subscriber_sender) =
             setup_database(public_key.clone()).await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let (confidential_compute_sender, _) = flume::unbounded();
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
+                confidential_compute_sender,
                 chat_completions_service_url: "".to_string(),
                 embeddings_service_url: "".to_string(),
                 image_generations_service_url: "".to_string(),
@@ -767,7 +769,7 @@ mod middleware {
             .await
             .expect("Failed to convert body to bytes");
         let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
-        
+
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
