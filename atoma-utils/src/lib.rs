@@ -10,7 +10,7 @@ use fastcrypto::{
 };
 use sui_sdk::types::crypto::{PublicKey, Signature, SignatureScheme, SuiSignature};
 use tokio::sync::watch;
-use tracing::error;
+use tracing::{error, instrument};
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error
 ///
@@ -79,6 +79,7 @@ where
 /// This function is critical for ensuring request authenticity. It verifies that:
 /// 1. The request was signed by the owner of the public key
 /// 2. The request body hasn't been tampered with since signing
+#[instrument(level = "trace", skip_all)]
 pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<(), StatusCode> {
     let signature = Signature::from_str(base64_signature).map_err(|_| {
         error!("Failed to parse signature");
