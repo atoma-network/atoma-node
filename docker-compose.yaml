@@ -4,7 +4,7 @@ x-atoma-node: &atoma-node
     context: .
     dockerfile: Dockerfile
   volumes:
-    - ./config.toml:/app/config.toml
+    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
     - ./data:/app/data
