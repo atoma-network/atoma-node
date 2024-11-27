@@ -64,7 +64,7 @@ mod middleware {
             .await
             .expect("Failed to convert body to bytes");
         let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
-        
+
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -767,7 +767,7 @@ mod middleware {
             .await
             .expect("Failed to convert body to bytes");
         let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
-        
+
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
