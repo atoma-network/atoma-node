@@ -587,7 +587,6 @@ dependencies = [
  "clap",
  "config",
  "dotenv",
- "fastcrypto 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "flume",
  "futures",
  "hex",
@@ -657,7 +656,11 @@ name = "atoma-utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "fastcrypto 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sui-sdk",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
