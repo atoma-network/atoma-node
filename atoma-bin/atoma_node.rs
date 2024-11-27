@@ -199,6 +199,7 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
+    let (stack_retrieve_sender, stack_retrieve_receiver) = tokio::sync::mpsc::unbounded_channel();
     let package_id = config.sui.atoma_package_id();
     info!(
         target = "atoma-node-service",
@@ -209,6 +210,7 @@ async fn main() -> Result<()> {
     let subscriber = SuiEventSubscriber::new(
         config.sui,
         event_subscriber_sender,
+        stack_retrieve_receiver,
         shutdown_receiver.clone(),
     );
 
@@ -245,6 +247,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState {
         state_manager_sender,
+        stack_retrieve_sender,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.service.models),
         chat_completions_service_url: config

@@ -53,7 +53,5 @@ utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 [dev-dependencies]
 rand = { workspace = true }
 serial_test = { workspace = true }
-tempfile = { workspace = true }
-
-[dev_dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+tempfile = { workspace = true }
