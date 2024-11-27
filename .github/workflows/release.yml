@@ -46,6 +46,8 @@ jobs:
           tags: |
             type=raw,value={{date 'YYYY.MM.DDHHmm'}}
             type=raw,value=latest
+            type=raw,value={{date 'YYYY.MM.DDHHmm'}}-{{arch}}
+            type=raw,value=latest-{{arch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
