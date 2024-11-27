@@ -14,7 +14,11 @@ use sui_sdk::{
     SuiClient, SuiClientBuilder,
 };
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot, watch::Receiver};
+use tokio::sync::{
+    mpsc::{self, UnboundedSender},
+    oneshot,
+    watch::Receiver,
+};
 use tracing::{error, info, instrument, trace};
 
 /// The Atoma contract db module name.
@@ -45,6 +49,9 @@ pub struct SuiEventSubscriber {
     /// Sender to stream each received event to the `AtomaStateManager` running task.
     state_manager_sender: Sender<AtomaEvent>,
 
+    /// Sender to stream confidential compute requests to the `AtomaTDX` running task.
+    confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
+
     //// Channel receiver to handle transaction digest queries from the `AtomaService` task.
     /// Receives tuples containing:
     /// - A transaction digest to query
@@ -61,6 +68,7 @@ impl SuiEventSubscriber {
         config: AtomaSuiConfig,
         state_manager_sender: Sender<AtomaEvent>,
         stack_retrieve_receiver: StackRetrieveReceiver,
+        confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
         let filter = EventFilter::MoveModule {
@@ -71,6 +79,7 @@ impl SuiEventSubscriber {
             config,
             filter,
             state_manager_sender,
+            confidential_compute_service_sender,
             stack_retrieve_receiver,
             shutdown_signal,
         }
@@ -98,6 +107,7 @@ impl SuiEventSubscriber {
         config_path: P,
         state_manager_sender: Sender<AtomaEvent>,
         stack_retrieve_receiver: StackRetrieveReceiver,
+        confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
         let config = AtomaSuiConfig::from_file_path(config_path);
@@ -105,6 +115,7 @@ impl SuiEventSubscriber {
             config,
             state_manager_sender,
             stack_retrieve_receiver,
+            confidential_compute_service_sender,
             shutdown_signal,
         )
     }
@@ -277,9 +288,7 @@ impl SuiEventSubscriber {
                                         self.config.node_small_ids().as_ref(),
                                         self.config.task_small_ids().as_ref(),
                                     ) {
-                                        self.state_manager_sender
-                                            .send(atoma_event)
-                                            .map_err(Box::new)?;
+                                        self.handle_atoma_event(atoma_event_id, atoma_event).await?;
                                     } else {
                                         continue;
                                     }
@@ -335,6 +344,70 @@ impl SuiEventSubscriber {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Handles an Atoma event by sending it to the appropriate service.
+    ///
+    /// This method routes events to either the confidential compute service or the state manager
+    /// based on the event type. Specifically:
+    /// - `NewKeyRotationEvent` events are sent to the confidential compute service
+    /// - All other events are sent to the state manager
+    ///
+    /// # Arguments
+    ///
+    /// * `atoma_event_id` - The identifier specifying the type of Atoma event
+    /// * `atoma_event` - The actual event data to be processed
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the event was successfully sent to the appropriate service,
+    /// or an error if sending failed.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - Sending to the confidential compute service fails (`SuiEventSubscriberError::SendComputeUnitsError`)
+    /// - Sending to the state manager fails (wrapped `flume::SendError`)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use your_crate::{AtomaEventIdentifier, AtomaEvent, SuiEventSubscriber};
+    /// # async fn example(subscriber: &SuiEventSubscriber) -> Result<(), Box<dyn std::error::Error>> {
+    /// let event_id = AtomaEventIdentifier::TaskRegisteredEvent;
+    /// let event = AtomaEvent::TaskRegisteredEvent(/* ... */);
+    /// subscriber.handle_atoma_event(event_id, event).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(event_id))]
+    async fn handle_atoma_event(
+        &self,
+        atoma_event_id: AtomaEventIdentifier,
+        atoma_event: AtomaEvent,
+    ) -> Result<()> {
+        if atoma_event_id == AtomaEventIdentifier::NewKeyRotationEvent {
+            self.confidential_compute_service_sender
+                .send(atoma_event)
+                .map_err(|e| {
+                    error!(
+                        target = "atoma-sui-subscriber",
+                        event = "subscriber-send-new-key-rotation-event-error",
+                        "Failed to send new key rotation event: {e}"
+                    );
+                    SuiEventSubscriberError::SendComputeUnitsError
+                })?;
+        } else {
+            self.state_manager_sender.send(atoma_event).map_err(|e| {
+                error!(
+                    target = "atoma-sui-subscriber",
+                    event = "subscriber-send-event-error",
+                    "Failed to send event: {e}"
+                );
+                Box::new(e)
+            })?;
         }
         Ok(())
     }

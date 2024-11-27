@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_tdx::types::{
+use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
 };
+use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
     middleware::{from_fn, from_fn_with_state},

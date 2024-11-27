@@ -1017,6 +1017,55 @@ impl AtomaSuiClient {
         Ok(response.digest.to_string())
     }
 
+    /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
+    ///
+    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
+    /// attestation. The node must have a valid node badge to perform this operation. The method requires
+    /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `tdx_quote_bytes` - A vector of bytes containing the Intel TDX remote attestation quote
+    /// * `public_key_bytes` - A 32-byte array containing the new public key
+    /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
+    ///           automatically select a gas object
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<String>` where the String is the transaction digest if successful.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node badge is not found
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - The TDX quote or public key data cannot be properly encoded
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use sui_sdk::types::base_types::ObjectID;
+    ///
+    /// async fn example(client: &mut AtomaSuiClient) -> Result<()> {
+    ///     let tdx_quote = vec![1, 2, 3, 4]; // Your TDX quote bytes
+    ///     let public_key = [0u8; 32];       // Your new public key
+    ///     
+    ///     // Submit with default gas settings
+    ///     let tx_digest = client.submit_key_rotation_remote_attestation(
+    ///         tdx_quote,
+    ///         public_key,
+    ///         None,    // default gas
+    ///         None,    // default gas budget
+    ///         None,    // default gas price
+    ///     ).await?;
+    ///     
+    ///     println!("Key rotation submitted: {}", tx_digest);
+    ///     Ok(())
+    /// }
+    /// ```
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),

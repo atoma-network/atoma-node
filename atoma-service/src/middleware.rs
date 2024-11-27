@@ -7,10 +7,10 @@ use crate::{
     },
     server::AppState,
 };
-use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_tdx::types::{
+use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
 };
+use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::hashing::blake2b_hash;
 use axum::{
     body::Body,

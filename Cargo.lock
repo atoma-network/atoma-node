@@ -548,6 +548,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoma-confidential"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "atoma-sui",
+ "atoma-utils",
+ "blake2",
+ "dcap-rs",
+ "flume",
+ "rand",
+ "tdx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "atoma-daemon"
 version = "0.1.0"
 dependencies = [
@@ -577,10 +595,10 @@ name = "atoma-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "atoma-confidential",
  "atoma-daemon",
  "atoma-state",
  "atoma-sui",
- "atoma-tdx",
  "atoma-utils",
  "axum",
  "base64 0.22.1",
@@ -652,23 +670,6 @@ dependencies = [
  "tokio",
  "toml 0.8.19",
  "tracing",
-]
-
-[[package]]
-name = "atoma-tdx"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "atoma-sui",
- "blake2",
- "dcap-rs",
- "flume",
- "rand",
- "tdx",
- "thiserror",
- "tokio",
- "tracing",
- "x25519-dalek",
 ]
 
 [[package]]

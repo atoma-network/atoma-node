@@ -1,0 +1,23 @@
+[package]
+name = "atoma-confidential"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aes-gcm = { workspace = true }
+atoma-sui = { workspace = true }
+atoma-utils = { workspace = true }
+blake2 = { workspace = true }
+dcap-rs = { workspace = true, optional = true }
+flume = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tdx = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+x25519-dalek = { workspace = true, features = ["static_secrets"] }
+
+[features]
+default = []
+tdx = ["dep:dcap-rs", "dep:tdx" ]

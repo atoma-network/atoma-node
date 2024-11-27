@@ -2,11 +2,11 @@
 resolver = "2"
 
 members = [
+    "atoma-confidential",
     "atoma-daemon",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
-    "atoma-tdx",
     "atoma-utils",
 ]
 
@@ -18,11 +18,11 @@ license = "Apache-2.0"
 [workspace.dependencies]
 aes-gcm = "0.10.3"
 anyhow = "1.0.81"
+atoma-confidential = { path = "./atoma-confidential" }
 atoma-daemon = { path = "./atoma-daemon" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { path = "./atoma-sui" }
 atoma-utils = { path = "./atoma-utils" }
-atoma-tdx = { path = "./atoma-tdx" }
 axum = "0.7.5"
 base64 = "0.22.1"
 blake2 = "0.10.6"
