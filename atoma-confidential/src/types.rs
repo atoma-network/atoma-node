@@ -32,29 +32,13 @@ pub struct ConfidentialComputeDecryptionResponse {
     pub plaintext: Vec<u8>,
 }
 
-/// An enum representing different types of confidential computation requests
-///
-/// This enum allows for two types of encryption requests:
-/// * Standard encryption without attestation
-/// * Encryption with TEE remote attestation, which sends proof of secure execution to the service
-///
-/// The attestation variant provides additional security guarantees by including
-/// a cryptographic proof that the computation was performed in a trusted environment.
-pub enum ConfidentialComputeEncryptionRequest {
-    /// Standard encryption request without attestation
-    Encryption(ConfidentialComputeEncryptionRequestInner),
-    /// Encryption request that includes TEE remote attestation for proof of secure execution
-    /// and sends this attestation to the service
-    EncryptionWithAttestation(ConfidentialComputeEncryptionRequestInner),
-}
-
 /// A request for confidential computation that includes plaintext data and key exchange parameters
 ///
 /// This struct contains all necessary components for secure communication:
 /// * Plaintext payload to be encrypted
 /// * Salt for key derivation
 /// * Public key for Diffie-Hellman key exchange
-pub struct ConfidentialComputeEncryptionRequestInner {
+pub struct ConfidentialComputeEncryptionRequest {
     /// The plaintext data to be encrypted
     pub plaintext: Vec<u8>,
     /// Salt value used in key derivation

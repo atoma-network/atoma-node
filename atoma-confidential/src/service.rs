@@ -2,7 +2,10 @@
 use crate::tdx::get_compute_data_attestation;
 use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
-    types::{ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionRequestInner, ConfidentialComputeEncryptionResponse},
+    types::{
+        ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
+        ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
+    },
 };
 #[cfg(feature = "tdx")]
 use atoma_sui::client::AtomaSuiClient;
@@ -94,35 +97,28 @@ impl AtomaConfidentialCompute {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
                     let ConfidentialComputeDecryptionRequest { ciphertext, nonce, salt, diffie_hellman_public_key } = decryption_request;
                         let plaintext = self.key_manager.decrypt_cyphertext(diffie_hellman_public_key, &ciphertext, &salt, &nonce)?;
-                        // TODO: should we send the attestation report here, as well ?
+                        // TODO: should we send the attestation report here, as well ? @Dayeol
                         sender
                             .send(ConfidentialComputeDecryptionResponse { plaintext })
                             .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 Some((encryption_request, sender)) = self.service_encryption_receiver.recv() => {
-                    match encryption_request {
-                        ConfidentialComputeEncryptionRequest::Encryption(inner) => {
-                            let ConfidentialComputeEncryptionRequestInner { plaintext, salt, diffie_hellman_public_key } = inner;
-                            let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt)?;
-                            sender
-                                .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce, attestation_report: None })
-                                .map_err(|_| AtomaConfidentialComputeError::SenderError)?;  
-                        }
-                        ConfidentialComputeEncryptionRequest::EncryptionWithAttestation(inner) => {
-                            let ConfidentialComputeEncryptionRequestInner { plaintext, salt, diffie_hellman_public_key } = inner;
-                            let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt)?;
-                            let public_key = self.key_manager.get_public_key();
-                            let public_key_bytes = public_key.to_bytes();
-                            #[cfg(feature = "tdx")]
-                            {
-                                let attestation_report = get_compute_data_attestation(&public_key_bytes)?;
-                                let attestation_report_bytes = attestation_report.to_bytes();
-                                sender
-                                    .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce, attestation_report: Some(attestation_report_bytes) })
-                                    .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
-                            }
-                        }
+                    let ConfidentialComputeEncryptionRequest { plaintext, salt, diffie_hellman_public_key } = encryption_request;
+                    let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt)?;
+                    #[cfg(feature = "tdx")]
+                    {
+                        let public_key = self.key_manager.get_public_key();
+                        let public_key_bytes = public_key.to_bytes();
+                        let attestation_report = get_compute_data_attestation(&public_key_bytes)?;
+                        let attestation_report_bytes = attestation_report.to_bytes();
+                        sender
+                            .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce, attestation_report: Some(attestation_report_bytes) })
+                            .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                     }
+                    #[cfg(not(feature = "tdx"))]
+                    sender
+                        .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce, attestation_report: None })
+                        .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 event_result = self.event_receiver.recv() => {
                     if let Some(event) = event_result {
