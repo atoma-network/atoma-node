@@ -18,8 +18,12 @@ use utoipa::ToSchema;
 
 use crate::{handlers::prometheus::*, middleware::RequestMetadata};
 
+/// The path for confidential chat completions requests
+pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
+
 /// The path for chat completions requests
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
+
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 

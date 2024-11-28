@@ -374,6 +374,46 @@ pub async fn verify_stack_permissions(
     Ok(next.run(req).await)
 }
 
+/// Middleware for handling confidential compute requests by decrypting encrypted payloads.
+///
+/// This middleware intercepts requests containing encrypted data and processes them through
+/// a confidential compute pipeline before passing them to the next handler. It performs
+/// decryption using a combination of:
+/// - A salt for key derivation
+/// - A nonce for encryption uniqueness
+/// - A Diffie-Hellman public key for secure key exchange
+///
+/// # Headers Required
+/// The middleware expects the following headers:
+/// - `X-Salt`: Base string containing the salt used in key derivation
+/// - `X-Nonce`: Base string containing the nonce used in encryption
+/// - `X-Diffie-Hellman-Public-Key`: Base64-encoded public key (32 bytes) for key exchange
+///
+/// # Request Flow
+/// 1. Extracts and validates required headers
+/// 2. Decodes the Diffie-Hellman public key from base64
+/// 3. Reads the encrypted request body
+/// 4. Sends decryption request to confidential compute service
+/// 5. Receives decrypted plaintext
+/// 6. Reconstructs request with decrypted body
+///
+/// # Returns
+/// * `Ok(Response)` - The response from the next handler after successful decryption
+/// * `Err(StatusCode)` - One of:
+///   - `BAD_REQUEST` if headers are missing or invalid
+///   - `INTERNAL_SERVER_ERROR` if decryption service communication fails
+///
+/// # Example Headers
+/// ```text
+/// X-Salt: randomsaltvalue
+/// X-Nonce: uniquenoncevalue
+/// X-Diffie-Hellman-Public-Key: base64encodedkey...
+/// ```
+///
+/// # Security Notes
+/// - The salt and nonce should be unique for each request
+/// - The Diffie-Hellman public key must be exactly 32 bytes when decoded
+/// - All cryptographic operations are performed in a separate confidential compute service
 #[instrument(level = "trace", skip_all)]
 pub async fn confidential_compute_middleware(
     state: State<AppState>,

@@ -12,8 +12,17 @@ use serde_json::Value;
 use tracing::{error, info, instrument};
 use utoipa::OpenApi;
 
+/// The path for confidential embeddings requests
+pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
+
+/// The path for embeddings requests
 pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
+/// OpenAPI documentation structure for the embeddings endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the embeddings API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(embeddings_handler))]
 pub(crate) struct EmbeddingsOpenApi;
