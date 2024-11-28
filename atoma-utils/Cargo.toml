@@ -7,10 +7,14 @@ license.workspace = true
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
+axum = { workspace = true }
 blake2 = { workspace = true }
+fastcrypto = { workspace = true }
 hkdf = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
+sui-sdk = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
 x25519-dalek = { workspace = true }
