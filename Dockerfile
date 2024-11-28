@@ -20,7 +20,7 @@ WORKDIR /usr/src/atoma-node
 COPY . .
 
 # Compile
-RUN RUST_LOG=debug cargo build --release --bin atoma-node
+RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node
 
 # Final stage
 FROM --platform=$TARGETPLATFORM debian:bullseye-slim
