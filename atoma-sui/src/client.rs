@@ -43,6 +43,9 @@ const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 /// The Atoma's contract method name for updating a node task subscription
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
+/// The Atoma's contract method name for submitting a node key rotation attestation
+const SUBMIT_NODE_KEY_ROTATION_ATTESTATION_METHOD: &str = "submit_node_key_rotation_attestation";
+
 /// A client for interacting with the Atoma network using the Sui blockchain.
 ///
 /// The `AtomaSuiClient` struct provides methods to perform various operations
@@ -1010,6 +1013,105 @@ impl AtomaSuiClient {
             "Claim funds transaction submitted successfully. Transaction digest: {:?}",
             response.digest
         );
+
+        Ok(response.digest.to_string())
+    }
+
+    /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
+    ///
+    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
+    /// attestation. The node must have a valid node badge to perform this operation. The method requires
+    /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `tdx_quote_bytes` - A vector of bytes containing the Intel TDX remote attestation quote
+    /// * `public_key_bytes` - A 32-byte array containing the new public key
+    /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
+    ///           automatically select a gas object
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<String>` where:
+    /// - `Ok(digest)` contains the transaction digest as a string if successful
+    /// - `Err(AtomaSuiClientError)` if:
+    ///   - No node badge is found for the client
+    ///   - The wallet context operations fail
+    ///   - The transaction submission fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use sui_sdk::types::base_types::ObjectID;
+    ///
+    /// async fn rotate_key(client: &mut AtomaSuiClient) -> Result<String> {
+    ///     let tdx_quote = vec![/* TDX quote bytes */];
+    ///     let new_public_key = [0u8; 32]; // Your new public key
+    ///     
+    ///     // Rotate key with default gas settings
+    ///     client.submit_key_rotation_remote_attestation(
+    ///         tdx_quote,
+    ///         new_public_key,
+    ///         None,    // default gas
+    ///         None,    // default gas budget
+    ///         None,    // default gas price
+    ///     ).await
+    /// }
+    /// ```
+    ///
+    /// # Instrumentation
+    ///
+    /// This method is instrumented with tracing at the info level, logging:
+    /// - The active wallet address
+    /// - The hex-encoded public key
+    /// - The hex-encoded remote attestation quote
+    #[instrument(level = "info", skip_all, fields(
+        address = %self.wallet_ctx.active_address().unwrap(),
+        public_key = %hex::encode(public_key_bytes),
+        remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
+    ))]
+    pub async fn submit_key_rotation_remote_attestation(
+        &mut self,
+        tdx_quote_bytes: Vec<u8>,
+        public_key_bytes: [u8; 32],
+        gas: Option<ObjectID>,
+        gas_budget: Option<u64>,
+        gas_price: Option<u64>,
+    ) -> Result<String> {
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
+        let node_badge_id = self
+            .node_badge
+            .as_ref()
+            .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
+            .0;
+
+        let tx = client
+            .transaction_builder()
+            .move_call(
+                active_address,
+                self.config.atoma_package_id(),
+                MODULE_ID,
+                SUBMIT_NODE_KEY_ROTATION_ATTESTATION_METHOD,
+                vec![],
+                vec![
+                    SuiJsonValue::from_object_id(self.config.atoma_db()),
+                    SuiJsonValue::from_object_id(node_badge_id),
+                    SuiJsonValue::new(tdx_quote_bytes.into())?,
+                    SuiJsonValue::new(public_key_bytes.to_vec().into())?,
+                ],
+                gas,
+                gas_budget.unwrap_or(GAS_BUDGET),
+                gas_price,
+            )
+            .await?;
+
+        info!("Submitting key rotation remote attestation transaction...");
+
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         Ok(response.digest.to_string())
     }

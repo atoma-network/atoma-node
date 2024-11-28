@@ -63,6 +63,13 @@ pub enum AtomaEventIdentifier {
     Text2ImagePromptEvent,
     /// Emitted when a text-to-text prompt is processed.
     Text2TextPromptEvent,
+
+    /// Events related to node public key rotation with TEE:
+    ///
+    /// Emitted when a node's public key is rotated.
+    NewKeyRotationEvent,
+    /// Emitted when a node's key rotation remote attestation is verified.
+    NodeKeyRotationEvent,
 }
 
 impl FromStr for AtomaEventIdentifier {
@@ -92,6 +99,8 @@ impl FromStr for AtomaEventIdentifier {
             "Text2ImagePromptEvent" => Ok(Self::Text2ImagePromptEvent),
             "Text2TextPromptEvent" => Ok(Self::Text2TextPromptEvent),
             "NodeSubscriptionUpdatedEvent" => Ok(Self::NodeSubscriptionUpdatedEvent),
+            "NewKeyRotationEvent" => Ok(Self::NewKeyRotationEvent),
+            "NodeKeyRotationEvent" => Ok(Self::NodeKeyRotationEvent),
             _ => Err(SuiEventParseError::UnknownEvent(s.to_string())),
         }
     }
@@ -171,6 +180,12 @@ pub enum AtomaEvent {
 
     /// An event emitted when a text-to-text prompt is processed.
     Text2TextPromptEvent(Text2TextPromptEvent),
+
+    /// An event emitted when Atoma's smart contract requests new node key rotation.
+    NewKeyRotationEvent(NewKeyRotationEvent),
+
+    /// An event emitted when a node's key rotation remote attestation is verified successfully.
+    NodeKeyRotationEvent(NodeKeyRotationEvent),
 }
 
 fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -802,6 +817,35 @@ pub struct Text2TextPromptEvent {
     /// The output destination where the output will be stored.
     /// The output is serialized with MessagePack.
     pub output_destination: Vec<u8>,
+}
+
+/// Represents an event emitted when a node's public key is rotated.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeKeyRotationEvent {
+    /// The epoch number when the node key rotation was requested.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub epoch: u64,
+
+    /// The small ID of the node that requested the key rotation.
+    pub node_id: NodeSmallId,
+
+    /// The node's unique identifier.
+    pub node_unique_id: String,
+
+    /// The node's new registered public key.
+    pub new_public_key: Vec<u8>,
+
+    /// The TEE remote attestation report attesting for
+    /// the public key's generation integrity, in byte format.
+    pub tee_remote_attestation_bytes: Vec<u8>,
+}
+
+/// Represents an event emitted when Atoma's smart contract requests new node key rotation.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NewKeyRotationEvent {
+    /// The epoch number when the node key rotation was requested.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub epoch: u64,
 }
 
 /// Represents an identifier for an echelon (performance tier) in the Atoma network.

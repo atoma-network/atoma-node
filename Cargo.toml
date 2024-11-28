@@ -6,6 +6,7 @@ members = [
     "atoma-service",
     "atoma-state",
     "atoma-sui",
+    "atoma-tdx",
     "atoma-utils",
 ]
 
@@ -25,6 +26,7 @@ base64 = "0.22.1"
 blake2 = "0.10.6"
 clap = "4.5.4"
 config = "0.14.0"
+dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
 dotenv = "0.15.0"
 fastcrypto = "0.1.8"
 flume = "0.11.1"
@@ -49,6 +51,7 @@ serial_test = "3.1.1"
 sqlx = "0.8.2"
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
+tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.13.0"
 thiserror = "1.0.58"
 tokenizers = "0.15.2"
@@ -60,3 +63,4 @@ tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.18"
 utoipa = "5.1.1"
 utoipa-swagger-ui = "8.0.1"
+x25519-dalek = "2.0.1"

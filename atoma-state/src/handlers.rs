@@ -98,6 +98,14 @@ pub async fn handle_atoma_event(
             info!("Text2Text prompt event: {:?}", event);
             Ok(())
         }
+        AtomaEvent::NewKeyRotationEvent(event) => {
+            info!("New key rotation event: {:?}", event);
+            Ok(())
+        }
+        AtomaEvent::NodeKeyRotationEvent(event) => {
+            info!("Node key rotation event: {:?}", event);
+            Ok(())
+        }
     }
 }
 
