@@ -1,7 +1,6 @@
 pub mod encryption;
 pub mod hashing;
 
-use std::str::FromStr;
 use anyhow::{Context, Error, Result};
 use axum::http::StatusCode;
 use fastcrypto::{
@@ -10,6 +9,7 @@ use fastcrypto::{
     secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
     traits::{ToFromBytes, VerifyingKey},
 };
+use std::str::FromStr;
 use sui_sdk::types::crypto::{PublicKey, Signature, SignatureScheme, SuiSignature};
 use tokio::sync::watch;
 use tracing::{error, instrument};
