@@ -364,18 +364,15 @@ database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<P
 After configuring your node, you can run it using the following command:
 
 ```bash
-cargo run --bin atoma -- \
-  --config-path /path/to/config.toml \
-  --address-index 0 # Optional, defaults to 0
+RUST_LOG=debug cargo run --release --bin atoma-node -- \
+  --config-path /path/to/config.toml
 ```
 
 Or if you've built the binary:
 
 ```bash
-./target/release/atoma \
-  --config-path /path/to/config.toml \
-  --keystore-path /path/to/sui.keystore \
-  --address-index 0 # Optional, defaults to 0
+./target/release/atoma-node \
+  --config-path /path/to/config.toml
 ```
 
 Command line arguments:
@@ -416,7 +413,7 @@ The default logging level is `info`, but you can adjust it using the `RUST_LOG` 
 export RUST_LOG=debug,atoma_node_service=trace
 
 # Run with custom log level
-RUST_LOG=debug cargo run --bin atoma -- [args]
+RUST_LOG=debug cargo run --release --bin atoma-node -- [args]
 ```
 
 Common log levels (from most to least verbose):
