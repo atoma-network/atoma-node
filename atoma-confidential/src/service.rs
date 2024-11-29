@@ -70,6 +70,18 @@ impl AtomaConfidentialComputeService {
         })
     }
 
+    /// Returns the current public key used by the confidential compute service
+    ///
+    /// This method provides access to the X25519 public key that is currently being used
+    /// for encryption and decryption operations. The public key can be shared with clients
+    /// who need to establish secure communication with this service.
+    ///
+    /// # Returns
+    /// - `x25519_dalek::PublicKey`: The current public key from the key manager
+    pub fn get_public_key(&self) -> x25519_dalek::PublicKey {
+        self.key_manager.get_public_key()
+    }
+
     /// Starts the TDX service event loop that processes Atoma events and handles graceful shutdown.
     ///
     /// This method runs continuously until a shutdown signal is received, processing two types of events:

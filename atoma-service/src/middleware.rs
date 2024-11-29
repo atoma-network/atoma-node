@@ -429,7 +429,10 @@ pub async fn confidential_compute_middleware(
         error!("Salt cannot be converted to a string");
         StatusCode::BAD_REQUEST
     })?;
-    let salt_bytes = salt_str.as_bytes().to_vec();
+    let salt_bytes = STANDARD.decode(salt_str).map_err(|_| {
+        error!("Failed to decode salt from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
     let nonce = req_parts.headers.get("X-Nonce").ok_or_else(|| {
         error!("Nonce header not found");
         StatusCode::BAD_REQUEST
@@ -438,7 +441,10 @@ pub async fn confidential_compute_middleware(
         error!("Nonce cannot be converted to a string");
         StatusCode::BAD_REQUEST
     })?;
-    let nonce_bytes = nonce_str.as_bytes().to_vec();
+    let nonce_bytes = STANDARD.decode(nonce_str).map_err(|_| {
+        error!("Failed to decode nonce from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
     let diffie_hellman_public_key = req_parts
         .headers
         .get("X-Diffie-Hellman-Public-Key")
