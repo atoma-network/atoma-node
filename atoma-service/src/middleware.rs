@@ -8,7 +8,7 @@ use crate::{
     server::AppState,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::hashing::blake2b_hash;
+use atoma_utils::{hashing::blake2b_hash, verify_signature};
 use axum::{
     body::Body,
     extract::State,
@@ -161,7 +161,7 @@ pub async fn signature_verification_middleware(
         .try_into()
         .expect("Invalid Blake2b hash length");
 
-    utils::verify_signature(base64_signature, &body_blake2b_hash_bytes)?;
+    verify_signature(base64_signature, &body_blake2b_hash_bytes)?;
 
     let request_metadata = req_parts
         .extensions
@@ -366,90 +366,6 @@ pub async fn verify_stack_permissions(
 
 pub(crate) mod utils {
     use super::*;
-    use fastcrypto::{
-        ed25519::{Ed25519PublicKey, Ed25519Signature},
-        secp256k1::{Secp256k1PublicKey, Secp256k1Signature},
-        secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
-        traits::{ToFromBytes, VerifyingKey},
-    };
-    use sui_sdk::types::{crypto::SignatureScheme, digests::TransactionDigest};
-
-    /// Verifies the authenticity of a request by checking its signature against the provided hash.
-    ///
-    /// # Arguments
-    /// * `base64_signature` - A base64-encoded signature string that contains:
-    ///   - The signature itself
-    ///   - The public key
-    ///   - The signature scheme used
-    /// * `body_hash` - A 32-byte Blake2b hash of the request body
-    ///
-    /// # Returns
-    /// * `Ok(())` if the signature is valid
-    /// * `Err(StatusCode)` if:
-    ///   - The signature cannot be parsed (`BAD_REQUEST`)
-    ///   - The public key is invalid (`BAD_REQUEST`)
-    ///   - The signature scheme is unsupported (`BAD_REQUEST`)
-    ///   - The signature verification fails (`UNAUTHORIZED`)
-    ///
-    /// # Supported Signature Schemes
-    /// - ED25519
-    /// - Secp256k1
-    /// - Secp256r1
-    ///
-    /// # Security Note
-    /// This function is critical for ensuring request authenticity. It verifies that:
-    /// 1. The request was signed by the owner of the public key
-    /// 2. The request body hasn't been tampered with since signing
-    #[instrument(level = "trace", skip_all)]
-    pub(crate) fn verify_signature(
-        base64_signature: &str,
-        body_hash: &[u8; 32],
-    ) -> Result<(), StatusCode> {
-        let signature = Signature::from_str(base64_signature).map_err(|_| {
-            error!("Failed to parse signature");
-            StatusCode::BAD_REQUEST
-        })?;
-        let signature_bytes = signature.signature_bytes();
-        let public_key_bytes = signature.public_key_bytes();
-        let signature_scheme = signature.scheme();
-        let public_key =
-            PublicKey::try_from_bytes(signature_scheme, public_key_bytes).map_err(|e| {
-                error!("Failed to extract public key from bytes, with error: {e}");
-                StatusCode::BAD_REQUEST
-            })?;
-
-        match signature_scheme {
-            SignatureScheme::ED25519 => {
-                let public_key = Ed25519PublicKey::from_bytes(public_key.as_ref()).unwrap();
-                let signature = Ed25519Signature::from_bytes(signature_bytes).unwrap();
-                public_key.verify(body_hash, &signature).map_err(|_| {
-                    error!("Failed to verify signature");
-                    StatusCode::UNAUTHORIZED
-                })?;
-            }
-            SignatureScheme::Secp256k1 => {
-                let public_key = Secp256k1PublicKey::from_bytes(public_key.as_ref()).unwrap();
-                let signature = Secp256k1Signature::from_bytes(signature_bytes).unwrap();
-                public_key.verify(body_hash, &signature).map_err(|_| {
-                    error!("Failed to verify signature");
-                    StatusCode::UNAUTHORIZED
-                })?;
-            }
-            SignatureScheme::Secp256r1 => {
-                let public_key = Secp256r1PublicKey::from_bytes(public_key.as_ref()).unwrap();
-                let signature = Secp256r1Signature::from_bytes(signature_bytes).unwrap();
-                public_key.verify(body_hash, &signature).map_err(|_| {
-                    error!("Failed to verify signature");
-                    StatusCode::UNAUTHORIZED
-                })?;
-            }
-            _ => {
-                error!("Currently unsupported signature scheme");
-                return Err(StatusCode::BAD_REQUEST);
-            }
-        }
-        Ok(())
-    }
 
     /// Queries the blockchain to retrieve compute units associated with a specific transaction.
     ///
