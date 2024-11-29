@@ -861,20 +861,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atoma-tdx"
-version = "0.1.0"
-dependencies = [
- "atoma-sui",
- "dcap-rs",
- "rand",
- "tdx",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "x25519-dalek",
-]
-
-[[package]]
 name = "atoma-utils"
 version = "0.1.0"
 dependencies = [

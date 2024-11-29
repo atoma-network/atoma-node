@@ -7,7 +7,6 @@ members = [
     "atoma-service",
     "atoma-state",
     "atoma-sui",
-    "atoma-tdx",
     "atoma-utils",
 ]
 
