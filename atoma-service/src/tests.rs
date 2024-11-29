@@ -184,13 +184,15 @@ mod middleware {
         let (state_manager_handle, state_manager_sender, shutdown_sender, _event_subscriber_sender) =
             setup_database(public_key.clone()).await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
-        let (confidential_compute_sender, _) = flume::unbounded();
+        let (decryption_sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let (encryption_sender, _) = tokio::sync::mpsc::unbounded_channel();
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
-                confidential_compute_sender,
+                decryption_sender,
+                encryption_sender,
                 chat_completions_service_url: "".to_string(),
                 embeddings_service_url: "".to_string(),
                 image_generations_service_url: "".to_string(),

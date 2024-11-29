@@ -21,6 +21,7 @@ pub struct X25519KeyPairManager {
 
 impl X25519KeyPairManager {
     /// Constructor
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut rng = rand::thread_rng();
         let secret_key = StaticSecret::random_from_rng(&mut rng);
@@ -72,7 +73,7 @@ impl X25519KeyPairManager {
     /// # Returns
     /// - `SharedSecret` - The shared secret
     pub fn compute_shared_secret(&self, public_key: &PublicKey) -> SharedSecret {
-        self.secret_key.diffie_hellman(&public_key)
+        self.secret_key.diffie_hellman(public_key)
     }
 
     /// Decrypts a ciphertext using X25519 key exchange and symmetric encryption.

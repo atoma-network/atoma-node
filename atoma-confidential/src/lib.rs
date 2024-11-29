@@ -4,6 +4,8 @@ pub mod service;
 pub mod tdx;
 pub mod types;
 
+pub use service::AtomaConfidentialComputeService;
+
 /// Trait for converting types into a byte representation
 ///
 /// This trait provides a standard way to serialize types into a sequence of bytes.

@@ -473,7 +473,7 @@ pub async fn confidential_compute_middleware(
     };
     let (result_sender, result_receiver) = oneshot::channel();
     state
-        .confidential_compute_sender
+        .decryption_sender
         .send((confidential_compute_decryption_request, result_sender))
         .map_err(|_| {
             error!("Failed to send confidential compute request");

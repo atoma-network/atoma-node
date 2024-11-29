@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
+    ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
@@ -20,7 +21,11 @@ use sui_sdk::types::digests::TransactionDigest;
 use tokenizers::Tokenizer;
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, oneshot, watch::Receiver},
+    sync::{
+        mpsc::{self, UnboundedSender},
+        oneshot,
+        watch::Receiver,
+    },
 };
 use tower::ServiceBuilder;
 use tracing::error;
@@ -58,6 +63,17 @@ type ComputeUnits = u64;
 /// Represents the result of a blockchain query for stack information.
 type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
 
+/// Represents a request for confidential compute decryption.
+type DecryptionRequest = (
+    ConfidentialComputeDecryptionRequest,
+    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+);
+
+type EncryptionRequest = (
+    ConfidentialComputeEncryptionRequest,
+    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+);
+
 /// Represents the shared state of the application.
 ///
 /// This struct holds various components and configurations that are shared
@@ -72,10 +88,19 @@ pub struct AppState {
     /// updates and notifications across different components.
     pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
 
-    pub confidential_compute_sender: FlumeSender<(
-        ConfidentialComputeDecryptionRequest,
-        oneshot::Sender<ConfidentialComputeDecryptionResponse>,
-    )>,
+    /// Channel sender for confidential compute decryption requests.
+    ///
+    /// This sender is used to communicate decryption requests to the
+    /// confidential compute service, allowing for efficient handling of
+    /// confidential data processing across different components.
+    pub decryption_sender: UnboundedSender<DecryptionRequest>,
+
+    /// Channel sender for confidential compute encryption requests.
+    ///
+    /// This sender is used to communicate encryption requests to the
+    /// confidential compute service, allowing for efficient handling of
+    /// confidential data processing across different components.
+    pub encryption_sender: UnboundedSender<EncryptionRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:

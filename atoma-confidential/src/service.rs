@@ -33,7 +33,7 @@ type ServiceEncryptionRequest = (
 /// - Managing TDX key rotations and attestations
 /// - Submitting attestations to the Sui blockchain
 /// - Graceful shutdown handling
-pub struct AtomaConfidentialCompute {
+pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
     #[cfg(feature = "tdx")]
     sui_client: AtomaSuiClient,
@@ -49,7 +49,7 @@ pub struct AtomaConfidentialCompute {
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
 
-impl AtomaConfidentialCompute {
+impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
         #[cfg(feature = "tdx")] sui_client: AtomaSuiClient,
