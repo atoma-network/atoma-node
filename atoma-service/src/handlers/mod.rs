@@ -3,11 +3,8 @@ pub(crate) mod embeddings;
 pub(crate) mod image_generations;
 pub(crate) mod prometheus;
 
+use atoma_utils::hashing::blake2b_hash;
 use axum::http::StatusCode;
-use blake2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Digest,
-};
 use serde_json::{json, Value};
 use tracing::error;
 
@@ -43,9 +40,7 @@ async fn sign_response_and_update_stack_hash(
     response_body["signature"] = json!(signature);
 
     // Update the stack total hash
-    let mut blake2b = blake2::Blake2b::new();
-    blake2b.update([payload_hash, response_hash].concat());
-    let total_hash: GenericArray<u8, U32> = blake2b.finalize();
+    let total_hash = blake2b_hash(&[payload_hash, response_hash].concat());
     let total_hash_bytes: [u8; 32] = total_hash
         .as_slice()
         .try_into()

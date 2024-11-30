@@ -1,14 +1,18 @@
 use crate::{
-    key_rotation::{KeyManager, KeyManagerError},
+    attestation_managers::{AttestationManager, AttestationManagerError},
     ToBytes,
 };
-use atoma_sui::client::{AtomaSuiClient, AtomaSuiClientError};
-use atoma_sui::events::AtomaEvent;
+use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent};
+use atoma_utils::hashing::blake2b_hash;
+use flume::Receiver as FlumeReceiver;
 use thiserror::Error;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 use tracing::instrument;
 
+// TODO: How large can the `ServiceData` be ? Is it feasible to use a Flume channel ?
+
 type Result<T> = std::result::Result<T, TdxServiceError>;
+type ServiceData = Vec<u8>;
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
@@ -21,9 +25,11 @@ pub struct TdxService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
     sui_client: AtomaSuiClient,
     /// Manages TDX key operations including key rotation and attestation generation
-    key_manager: KeyManager,
+    attestation_manager: AttestationManager,
     /// Channel receiver for incoming Atoma events that need to be processed
     event_receiver: UnboundedReceiver<AtomaEvent>,
+    /// Channel receiver for incoming Atoma service requests for decryption and processing
+    service_receiver: FlumeReceiver<(ServiceData, oneshot::Sender)>,
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
@@ -33,6 +39,7 @@ impl TdxService {
     pub fn new(
         sui_client: AtomaSuiClient,
         event_receiver: UnboundedReceiver<AtomaEvent>,
+        service_receiver: FlumeReceiver<(ServiceData, oneshot::Sender)>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = KeyManager::new()?;
@@ -40,6 +47,7 @@ impl TdxService {
             sui_client,
             key_manager,
             event_receiver,
+            service_receiver,
             shutdown_signal,
         })
     }
@@ -68,6 +76,19 @@ impl TdxService {
     pub async fn run(self) -> Result<()> {
         loop {
             tokio::select! {
+                service_data = self.service_receiver.recv() => {
+                    match service_data {
+                        Ok((service_data, sender)) => { },
+                        Err(e) => {
+                            tracing::error!(
+                                target = "atoma-tdx-service",
+                                event = "service_receiver_error",
+                                error = %e,
+                                "Error receiving service data from service receiver"
+                            );
+                        }
+                    }
+                }
                 event = self.event_receiver.recv() => {
                     match event {
                         Ok(event) => {

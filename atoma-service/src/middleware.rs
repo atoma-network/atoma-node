@@ -8,17 +8,13 @@ use crate::{
     server::AppState,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::verify_signature;
+use atoma_utils::{hashing::blake2b_hash, verify_signature};
 use axum::{
     body::Body,
     extract::State,
     http::{Request, StatusCode},
     middleware::Next,
     response::Response,
-};
-use blake2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Blake2b, Digest,
 };
 use serde_json::Value;
 use sui_sdk::types::{
@@ -159,9 +155,7 @@ pub async fn signature_verification_middleware(
             error!("Failed to convert body to bytes");
             StatusCode::BAD_REQUEST
         })?;
-    let mut blake2b_hash = Blake2b::new();
-    blake2b_hash.update(&body_bytes);
-    let body_blake2b_hash: GenericArray<u8, U32> = blake2b_hash.finalize();
+    let body_blake2b_hash = blake2b_hash(&body_bytes);
     let body_blake2b_hash_bytes: [u8; 32] = body_blake2b_hash
         .as_slice()
         .try_into()

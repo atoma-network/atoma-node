@@ -5,12 +5,9 @@ use std::{
 };
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_utils::hashing::blake2b_hash;
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
-use blake2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Blake2b, Digest,
-};
 use flume::Sender as FlumeSender;
 use futures::Stream;
 use prometheus::HistogramTimer;
@@ -202,9 +199,7 @@ impl Streamer {
         }
 
         // Calculate and update total hash
-        let mut blake2b = Blake2b::new();
-        blake2b.update([self.payload_hash, response_hash].concat());
-        let total_hash: GenericArray<u8, U32> = blake2b.finalize();
+        let total_hash = blake2b_hash(&[self.payload_hash, response_hash].concat());
         let total_hash_bytes: [u8; 32] = total_hash
             .as_slice()
             .try_into()
