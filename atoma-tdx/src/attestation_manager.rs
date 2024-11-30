@@ -129,18 +129,6 @@ impl AttestationManager {
         let shared_secret = self.secret_key.diffie_hellman(&public_key);
         shared_secret.to_bytes().to_vec()
     }
-
-    pub fn get_compute_data_attestation(&self, service_data: &[u8]) -> Result<QuoteV4> {
-        let mut report_data = [0u8; 64];
-        let public_key_bytes = self.get_public_key().as_ref();
-        report_data[..public_key_bytes.len()].copy_from_slice(public_key_bytes);
-        let service_data_hash = blake2b_hash(service_data);
-        report_data[public_key_bytes.len()..].copy_from_slice(&service_data_hash);
-        let device = Device::new(DeviceOptions {
-            report_data: Some(report_data),
-        });
-        device.get_attestation_report()
-    }
 }
 
 #[derive(Debug, Error)]

@@ -78,10 +78,7 @@ impl TdxService {
             tokio::select! {
                 service_data = self.service_receiver.recv() => {
                     match service_data {
-                        Ok((service_data, sender)) => {
-                            // TODO: Generate remote attestation for the current public key and the service data hash
-                            self.attestation_manager.get_compute_data_attestation(service_data);
-                        },
+                        Ok((service_data, sender)) => { },
                         Err(e) => {
                             tracing::error!(
                                 target = "atoma-tdx-service",
