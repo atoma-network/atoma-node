@@ -4,7 +4,7 @@ mod middleware {
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
     };
-    use atoma_sui::events::AtomaEvent;
+    use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
     use atoma_utils::{
         encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
     };
@@ -19,12 +19,12 @@ mod middleware {
     use std::{str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
-        base_types::SuiAddress,
+        base_types::{ObjectID, SuiAddress},
         crypto::{EncodeDecodeBase64, PublicKey, Signature, SignatureScheme},
     };
     use tempfile::tempdir;
     use tokenizers::Tokenizer;
-    use tokio::task::JoinHandle;
+    use tokio::{sync::RwLock, task::JoinHandle};
     use tower::Service;
 
     use crate::{
@@ -200,8 +200,27 @@ mod middleware {
         let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
+        let client_config = AtomaSuiConfig::new(
+            "http://localhost:9000".to_string(),
+            ObjectID::from_str("0x1").unwrap(),
+            ObjectID::from_str("0x2").unwrap(),
+            ObjectID::from_str("0x3").unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            "./".to_string(),
+            "./".to_string(),
+            "./".to_string(),
+        );
         let _join_handle = tokio::spawn(async move {
             let confidential_compute_service = AtomaConfidentialComputeService::new(
+                Arc::new(RwLock::new(
+                    AtomaSuiClient::new(client_config)
+                        .await
+                        .expect("Failed to create Sui client"),
+                )),
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,

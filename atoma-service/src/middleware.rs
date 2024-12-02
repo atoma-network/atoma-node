@@ -93,6 +93,21 @@ impl RequestMetadata {
         self
     }
 
+    /// Sets the request type for this metadata instance
+    ///
+    /// # Arguments
+    /// * `request_type` - The type of request (ChatCompletions, Embeddings, ImageGenerations, or NonInference)
+    ///
+    /// # Returns
+    /// Returns self with the updated request type for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::{RequestMetadata, RequestType};
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///     .with_request_type(RequestType::ChatCompletions);
+    /// ```
     pub fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
         self
@@ -264,10 +279,13 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
     let sui_address = SuiAddress::from(&public_key);
-    let stack_small_id = req_parts.headers.get(atoma_utils::constants::STACK_SMALL_ID).ok_or_else(|| {
-        error!("Stack ID header not found");
-        StatusCode::BAD_REQUEST
-    })?;
+    let stack_small_id = req_parts
+        .headers
+        .get(atoma_utils::constants::STACK_SMALL_ID)
+        .ok_or_else(|| {
+            error!("Stack ID header not found");
+            StatusCode::BAD_REQUEST
+        })?;
     let stack_small_id = stack_small_id
         .to_str()
         .map_err(|_| {
@@ -418,10 +436,13 @@ pub async fn confidential_compute_middleware(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (req_parts, req_body) = req.into_parts();
-    let salt = req_parts.headers.get(atoma_utils::constants::SALT).ok_or_else(|| {
-        error!("Salt header not found");
-        StatusCode::BAD_REQUEST
-    })?;
+    let salt = req_parts
+        .headers
+        .get(atoma_utils::constants::SALT)
+        .ok_or_else(|| {
+            error!("Salt header not found");
+            StatusCode::BAD_REQUEST
+        })?;
     let salt_str = salt.to_str().map_err(|_| {
         error!("Salt cannot be converted to a string");
         StatusCode::BAD_REQUEST
@@ -430,10 +451,13 @@ pub async fn confidential_compute_middleware(
         error!("Failed to decode salt from base64 encoding");
         StatusCode::BAD_REQUEST
     })?;
-    let nonce = req_parts.headers.get(atoma_utils::constants::NONCE).ok_or_else(|| {
-        error!("Nonce header not found");
-        StatusCode::BAD_REQUEST
-    })?;
+    let nonce = req_parts
+        .headers
+        .get(atoma_utils::constants::NONCE)
+        .ok_or_else(|| {
+            error!("Nonce header not found");
+            StatusCode::BAD_REQUEST
+        })?;
     let nonce_str = nonce.to_str().map_err(|_| {
         error!("Nonce cannot be converted to a string");
         StatusCode::BAD_REQUEST

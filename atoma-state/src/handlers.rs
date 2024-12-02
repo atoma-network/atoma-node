@@ -1,8 +1,9 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
-    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackCreateAndUpdateEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
-    StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodeKeyRotationEvent,
+    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
+    StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
+    StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
+    TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use tracing::{info, instrument};
 
@@ -103,8 +104,7 @@ pub async fn handle_atoma_event(
             Ok(())
         }
         AtomaEvent::NodeKeyRotationEvent(event) => {
-            info!("Node key rotation event: {:?}", event);
-            Ok(())
+            handle_node_key_rotation_event(state_manager, event).await
         }
     }
 }
@@ -705,5 +705,57 @@ pub(crate) async fn handle_state_manager_event(
                 .await?;
         }
     }
+    Ok(())
+}
+
+/// Handles a node key rotation event.
+///
+/// This function processes a node key rotation event by extracting the relevant data
+/// and updating the node's public key in the database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
+/// * `event` - A `NodeKeyRotationEvent` containing the details of the key rotation event.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to insert the new node public key rotation fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Extracts the `epoch`, `node_id`, `new_public_key`, and `tee_remote_attestation_bytes` from the event.
+/// 2. Calls the `insert_node_public_key_rotation` method on the `AtomaStateManager` to update the node's public key in the database.
+#[instrument(level = "info", skip_all)]
+async fn handle_node_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NodeKeyRotationEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-new-key-rotation-event",
+        "Processing new key rotation event"
+    );
+    let NodeKeyRotationEvent {
+        epoch,
+        node_id,
+        new_public_key,
+        tee_remote_attestation_bytes,
+    } = event;
+    state_manager
+        .state
+        .insert_node_public_key_rotation(
+            epoch,
+            node_id.inner,
+            new_public_key,
+            tee_remote_attestation_bytes,
+        )
+        .await?;
     Ok(())
 }

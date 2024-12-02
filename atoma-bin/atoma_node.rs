@@ -213,7 +213,12 @@ async fn main() -> Result<()> {
         "Spawning confidential compute service"
     );
 
+    let client = Arc::new(RwLock::new(
+        AtomaSuiClient::new_from_config(args.config_path).await?,
+    ));
+
     let confidential_compute_service = AtomaConfidentialComputeService::new(
+        client.clone(),
         subscriber_confidential_compute_receiver,
         app_state_decryption_receiver,
         app_state_encryption_receiver,
@@ -309,9 +314,6 @@ async fn main() -> Result<()> {
         address_index: args.address_index,
     };
 
-    let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_path).await?,
-    ));
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
         client,

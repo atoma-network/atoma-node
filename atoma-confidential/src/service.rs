@@ -7,11 +7,11 @@ use crate::{
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
     },
 };
-#[cfg(feature = "tdx")]
 use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
+use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
 
 // TODO: How large can the `ServiceData` be ? Is it feasible to use a Flume channel ?
@@ -35,8 +35,7 @@ type ServiceEncryptionRequest = (
 /// - Graceful shutdown handling
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
-    #[cfg(feature = "tdx")]
-    sui_client: AtomaSuiClient,
+    sui_client: Arc<RwLock<AtomaSuiClient>>,
     /// Manages TDX key operations including key rotation and attestation generation
     key_manager: X25519KeyPairManager,
     /// Channel receiver for incoming Atoma events that need to be processed
@@ -52,7 +51,7 @@ pub struct AtomaConfidentialComputeService {
 impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
-        #[cfg(feature = "tdx")] sui_client: AtomaSuiClient,
+        sui_client: Arc<RwLock<AtomaSuiClient>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -60,7 +59,6 @@ impl AtomaConfidentialComputeService {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new();
         Ok(Self {
-            #[cfg(feature = "tdx")]
             sui_client,
             key_manager,
             event_receiver,
@@ -129,8 +127,7 @@ impl AtomaConfidentialComputeService {
                                     event = "new_key_rotation_event",
                                     "New key rotation event received from event receiver"
                                 );
-                                #[cfg(feature = "tdx")]
-                                self.submit_node_key_rotation_tdx_attestation()?;
+                                self.submit_node_key_rotation_tdx_attestation().await?
                             }
                             _ => {
                                 tracing::warn!(
@@ -181,17 +178,26 @@ impl AtomaConfidentialComputeService {
     /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation or public key retrieval fails
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "trace", skip_all)]
-    #[cfg(feature = "tdx")]
-    async fn submit_node_key_rotation_tdx_attestation(&self) -> Result<()> {
+    async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
         self.key_manager.rotate_keys();
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
-        let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
-        let tdx_quote_bytes = tdx_quote.to_bytes();
+        #[cfg(feature = "tdx")]
+        let tdx_quote_bytes = {
+            let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
+            tdx_quote.to_bytes()
+        };
+        #[cfg(not(feature = "tdx"))]
+        let tdx_quote_bytes = {
+            const TDX_QUOTE_V4_SIZE: usize = 512;
+            vec![0u8; TDX_QUOTE_V4_SIZE]
+        };
         match self
             .sui_client
+            .write()
+            .await
             .submit_key_rotation_remote_attestation(
-                tdx_quote_bytes,
+                tdx_quote_bytes.clone(),
                 public_key_bytes,
                 None,
                 None,
