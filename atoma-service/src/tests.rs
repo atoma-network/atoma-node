@@ -218,10 +218,16 @@ mod middleware {
         "#;
         const CLIENT_YAML_PATH: &str = "./.sui/sui_config/client.yaml";
         let client_yaml_path = std::path::PathBuf::from(CLIENT_YAML_PATH);
+        // Create directory structure
+        std::fs::create_dir_all(client_yaml_path.parent().unwrap())
+            .expect("Failed to create .sui/sui_config directory");
         std::fs::write(&client_yaml_path, client_yaml_contents)
             .expect("Failed to write to client.yaml");
-        let sui_keystore_path = std::path::PathBuf::from("./.sui/keystore");
-        std::fs::write(&sui_keystore_path, sui_keystore_contents)
+        const KEYSTORE_PATH: &str = "./.sui/keystore";
+        let keystore_path = std::path::PathBuf::from(KEYSTORE_PATH);
+        std::fs::create_dir_all(keystore_path.parent().unwrap())
+            .expect("Failed to create .sui/keystore directory");
+        std::fs::write(keystore_path.clone(), sui_keystore_contents)
             .expect("Failed to write to keystore");
         let client_config = AtomaSuiConfig::new(
             "http://localhost:9000".to_string(),
@@ -258,8 +264,10 @@ mod middleware {
                 .expect("Failed to run confidential compute service");
         });
         let dh_public_key = pk_receiver.await.unwrap();
-        std::fs::remove_file(CLIENT_YAML_PATH).expect("Failed to remove client.yaml");
-        std::fs::remove_file(sui_keystore_path).expect("Failed to remove keystore");
+        std::fs::remove_dir_all(client_yaml_path.parent().unwrap())
+            .expect("Failed to remove client.yaml");
+        std::fs::remove_dir_all(keystore_path.parent().unwrap())
+            .expect("Failed to remove keystore");
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
