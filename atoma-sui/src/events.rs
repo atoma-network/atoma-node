@@ -828,7 +828,7 @@ pub struct NodeKeyRotationEvent {
 
     /// The small ID of the node that requested the key rotation.
     pub node_id: NodeSmallId,
-    
+
     /// The node's new registered public key.
     pub new_public_key: Vec<u8>,
 
