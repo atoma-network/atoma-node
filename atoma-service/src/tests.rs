@@ -210,8 +210,8 @@ mod middleware {
             None,
             None,
             None,
-            "./".to_string(),
-            "./".to_string(),
+            "/Users/jorgeantonio/.sui/sui_config/client.yaml".to_string(),
+            "/Users/jorgeantonio/.sui/sui_config/sui.keystore".to_string(),
             "./".to_string(),
         );
         let _join_handle = tokio::spawn(async move {
@@ -1170,9 +1170,9 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", STANDARD.encode(salt.as_bytes()))
-            .header("X-Nonce", STANDARD.encode(nonce.as_slice()))
-            .header("X-Diffie-Hellman-Public-Key", client_dh_public_key_b64)
+            .header(atoma_utils::constants::SALT, STANDARD.encode(salt.as_bytes()))
+            .header(atoma_utils::constants::NONCE, STANDARD.encode(nonce.as_slice()))
+            .header(atoma_utils::constants::NODE_X25519_PUBLIC_KEY, client_dh_public_key_b64)
             .body(Body::from(encrypted_data.clone()))
             .expect("Failed to build request");
 
