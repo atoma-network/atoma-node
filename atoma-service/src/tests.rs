@@ -200,6 +200,29 @@ mod middleware {
         let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
+        let client_yaml_contents = r#"
+            keystore:
+                File: ./.sui/keystore
+            envs:
+                - alias: testnet
+                  rpc: "https://fullnode.testnet.sui.io:443"
+                  ws: ~
+                  basic_auth: ~
+            active_env: testnet
+            active_address: "0xe9068128f7b0955412f8b825cd3bab6e1a5dd49cde8c51a72091481df9bca609"
+        "#;
+        let sui_keystore_contents = r#"
+        [
+            "AIgaZOcV4LWOsLMY37SfkEalngk2nbUM9S3SDhSe+rHq"
+        ]
+        "#;
+        const CLIENT_YAML_PATH: &str = "./.sui/sui_config/client.yaml";
+        let client_yaml_path = std::path::PathBuf::from(CLIENT_YAML_PATH);
+        std::fs::write(&client_yaml_path, client_yaml_contents)
+            .expect("Failed to write to client.yaml");
+        let sui_keystore_path = std::path::PathBuf::from("./.sui/keystore");
+        std::fs::write(&sui_keystore_path, sui_keystore_contents)
+            .expect("Failed to write to keystore");
         let client_config = AtomaSuiConfig::new(
             "http://localhost:9000".to_string(),
             ObjectID::from_str("0x1").unwrap(),
@@ -210,8 +233,8 @@ mod middleware {
             None,
             None,
             None,
-            "/Users/jorgeantonio/.sui/sui_config/client.yaml".to_string(),
-            "/Users/jorgeantonio/.sui/sui_config/sui.keystore".to_string(),
+            client_yaml_path.to_string_lossy().to_string(),
+            "./keystore".to_string(),
             "./".to_string(),
         );
         let _join_handle = tokio::spawn(async move {
@@ -235,6 +258,8 @@ mod middleware {
                 .expect("Failed to run confidential compute service");
         });
         let dh_public_key = pk_receiver.await.unwrap();
+        std::fs::remove_file(CLIENT_YAML_PATH).expect("Failed to remove client.yaml");
+        std::fs::remove_file(sui_keystore_path).expect("Failed to remove keystore");
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
