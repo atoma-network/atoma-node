@@ -189,11 +189,11 @@ pub fn create_router(app_state: AppState) -> Router {
         )
         .layer(
             ServiceBuilder::new()
-                .layer(from_fn(signature_verification_middleware))
                 .layer(from_fn_with_state(
                     app_state.clone(),
                     confidential_compute_middleware,
                 ))
+                .layer(from_fn(signature_verification_middleware))
                 .layer(from_fn_with_state(
                     app_state.clone(),
                     verify_stack_permissions,

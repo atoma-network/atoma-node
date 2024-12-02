@@ -56,6 +56,4 @@ pub struct ConfidentialComputeEncryptionResponse {
     pub ciphertext: Vec<u8>,
     /// Cryptographic nonce used in the encryption process
     pub nonce: [u8; NONCE_SIZE],
-    /// Attestation report for the confidential computation, in bytes
-    pub attestation_report: Option<Vec<u8>>,
 }

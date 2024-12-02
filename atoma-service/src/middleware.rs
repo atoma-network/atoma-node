@@ -122,8 +122,6 @@ impl RequestMetadata {
 /// # Headers
 /// The middleware expects the following custom headers:
 /// - `X-Signature`: The signature of the request body, base64 encoded.
-/// - `X-PublicKey`: The public key used for verification, base64 encoded.
-/// - `X-Scheme`: The signature scheme used (e.g., "ed25519").
 ///
 /// # Extensions
 /// This middleware adds or updates a `RequestMetadata` extension to the request containing:
@@ -149,7 +147,7 @@ pub async fn signature_verification_middleware(
     let (mut req_parts, req_body) = req.into_parts();
     let base64_signature = req_parts
         .headers
-        .get("X-Signature")
+        .get(atoma_utils::constants::SIGNATURE)
         .ok_or_else(|| {
             error!("Signature header not found");
             StatusCode::BAD_REQUEST
@@ -199,7 +197,6 @@ pub async fn signature_verification_middleware(
 ///
 /// # Headers
 /// The middleware expects the following custom headers:
-/// - `X-PublicKey`: The public key of the user, base64 encoded.
 /// - `X-Stack-Small-Id`: The ID of the stack being used for this request.
 ///
 /// # Request Body
@@ -246,7 +243,7 @@ pub async fn verify_stack_permissions(
 
     let base64_signature = req_parts
         .headers
-        .get("X-Signature")
+        .get(atoma_utils::constants::SIGNATURE)
         .ok_or_else(|| {
             error!("Signature header not found");
             StatusCode::BAD_REQUEST
@@ -267,7 +264,7 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
     let sui_address = SuiAddress::from(&public_key);
-    let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
+    let stack_small_id = req_parts.headers.get(atoma_utils::constants::STACK_SMALL_ID).ok_or_else(|| {
         error!("Stack ID header not found");
         StatusCode::BAD_REQUEST
     })?;
@@ -342,7 +339,7 @@ pub async fn verify_stack_permissions(
     if available_stack.is_none() {
         let tx_digest_str = req_parts
             .headers
-            .get("X-Tx-Digest")
+            .get(atoma_utils::constants::TX_DIGEST)
             .ok_or_else(|| {
                 error!("Stack not found, tx digest header expected but not found");
                 StatusCode::BAD_REQUEST
@@ -387,7 +384,7 @@ pub async fn verify_stack_permissions(
 /// The middleware expects the following headers:
 /// - `X-Salt`: Base string containing the salt used in key derivation
 /// - `X-Nonce`: Base string containing the nonce used in encryption
-/// - `X-Diffie-Hellman-Public-Key`: Base64-encoded public key (32 bytes) for key exchange
+/// - `X-Node-X25519-PublicKey`: Base64-encoded public key (32 bytes) for key exchange
 ///
 /// # Request Flow
 /// 1. Extracts and validates required headers
@@ -407,7 +404,7 @@ pub async fn verify_stack_permissions(
 /// ```text
 /// X-Salt: randomsaltvalue
 /// X-Nonce: uniquenoncevalue
-/// X-Diffie-Hellman-Public-Key: base64encodedkey...
+/// X-Node-X25519-PublicKey: base64encodedkey...
 /// ```
 ///
 /// # Security Notes
@@ -421,7 +418,7 @@ pub async fn confidential_compute_middleware(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (req_parts, req_body) = req.into_parts();
-    let salt = req_parts.headers.get("X-Salt").ok_or_else(|| {
+    let salt = req_parts.headers.get(atoma_utils::constants::SALT).ok_or_else(|| {
         error!("Salt header not found");
         StatusCode::BAD_REQUEST
     })?;
@@ -433,7 +430,7 @@ pub async fn confidential_compute_middleware(
         error!("Failed to decode salt from base64 encoding");
         StatusCode::BAD_REQUEST
     })?;
-    let nonce = req_parts.headers.get("X-Nonce").ok_or_else(|| {
+    let nonce = req_parts.headers.get(atoma_utils::constants::NONCE).ok_or_else(|| {
         error!("Nonce header not found");
         StatusCode::BAD_REQUEST
     })?;
@@ -447,7 +444,7 @@ pub async fn confidential_compute_middleware(
     })?;
     let diffie_hellman_public_key = req_parts
         .headers
-        .get("X-Diffie-Hellman-Public-Key")
+        .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
         .ok_or_else(|| {
             error!("Diffie-Hellman public key header not found");
             StatusCode::BAD_REQUEST
