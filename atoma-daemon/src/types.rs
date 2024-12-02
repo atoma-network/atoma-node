@@ -1,16 +1,21 @@
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
+use utoipa::ToSchema;
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[schema(value_type = String)]
+pub struct ObjectIDSchema(ObjectID);
 
 /// Represents a request to register a node.
 ///
 /// This struct is used to encapsulate the necessary parameters
 /// for registering a node, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeRegistrationRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -27,7 +32,7 @@ pub struct NodeRegistrationRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the node registration.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeRegistrationResponse {
     /// The transaction digest.
     /// This is a unique identifier for the transaction.
@@ -38,7 +43,7 @@ pub struct NodeRegistrationResponse {
 ///
 /// This struct encapsulates the necessary parameters for subscribing
 /// to a node model, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeModelSubscriptionRequest {
     /// The name of the model to subscribe to.
     pub model_name: String,
@@ -49,12 +54,12 @@ pub struct NodeModelSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -71,7 +76,7 @@ pub struct NodeModelSubscriptionRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the node model subscription.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeModelSubscriptionResponse {
     /// The transaction digest.
     /// This is a unique identifier for the transaction.
@@ -82,7 +87,7 @@ pub struct NodeModelSubscriptionResponse {
 ///
 /// This struct encapsulates the necessary parameters for subscribing
 /// to a node task, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskSubscriptionRequest {
     /// The small ID of the task to subscribe to.
     pub task_small_id: i64,
@@ -90,7 +95,7 @@ pub struct NodeTaskSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -101,7 +106,7 @@ pub struct NodeTaskSubscriptionRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -118,14 +123,14 @@ pub struct NodeTaskSubscriptionRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the node task subscription.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskSubscriptionResponse {
     /// The transaction digest.
     /// This is a unique identifier for the transaction.
     pub tx_digest: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskUpdateSubscriptionRequest {
     /// The small ID of the task to subscribe to.
     pub task_small_id: i64,
@@ -133,7 +138,7 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -144,7 +149,7 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -161,7 +166,7 @@ pub struct NodeTaskUpdateSubscriptionRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the node task subscription.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskUpdateSubscriptionResponse {
     /// The transaction digest.
     /// This is a unique identifier for the transaction.
@@ -172,7 +177,7 @@ pub struct NodeTaskUpdateSubscriptionResponse {
 ///
 /// This struct encapsulates the necessary parameters for unsubscribing
 /// from a node task, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskUnsubscriptionRequest {
     /// The small ID of the task to unsubscribe from.
     pub task_small_id: i64,
@@ -180,12 +185,12 @@ pub struct NodeTaskUnsubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -202,7 +207,7 @@ pub struct NodeTaskUnsubscriptionRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the node task unsubscription.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTaskUnsubscriptionResponse {
     /// The transaction digest.
     /// This is a unique identifier for the transaction.
@@ -213,7 +218,7 @@ pub struct NodeTaskUnsubscriptionResponse {
 ///
 /// This struct encapsulates the necessary parameters for attempting
 /// to settle a stack, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTrySettleStacksRequest {
     /// The small IDs of the stacks to settle.
     pub stack_small_ids: Vec<i64>,
@@ -224,12 +229,12 @@ pub struct NodeTrySettleStacksRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -246,7 +251,7 @@ pub struct NodeTrySettleStacksRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the attempt to settle a stack.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeTrySettleStacksResponse {
     /// The transaction digests.
     /// This is a unique identifier for the transaction.
@@ -257,7 +262,7 @@ pub struct NodeTrySettleStacksResponse {
 ///
 /// This struct encapsulates the necessary parameters for submitting
 /// a node attestation proof.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeAttestationProofRequest {
     /// The small IDs of the stacks to attest to.
     pub stack_small_ids: Vec<i64>,
@@ -270,7 +275,7 @@ pub struct NodeAttestationProofRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -287,7 +292,7 @@ pub struct NodeAttestationProofRequest {
 ///
 /// This struct contains the transaction digests, which are unique
 /// identifiers for the transactions associated with the attestation proof.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeAttestationProofResponse {
     /// The transaction digests.
     pub tx_digests: Vec<String>,
@@ -297,7 +302,7 @@ pub struct NodeAttestationProofResponse {
 ///
 /// This struct encapsulates the necessary parameters for claiming funds
 /// from a stack, including optional gas-related fields.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeClaimFundsRequest {
     /// The small IDs of the stacks to claim funds from.
     pub stack_small_ids: Vec<i64>,
@@ -305,12 +310,12 @@ pub struct NodeClaimFundsRequest {
     /// Optional node badge IDs.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectID>,
+    pub node_badge_id: Option<ObjectIDSchema>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectID>,
+    pub gas: Option<ObjectIDSchema>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -327,7 +332,7 @@ pub struct NodeClaimFundsRequest {
 ///
 /// This struct contains the transaction digest, which is a unique
 /// identifier for the transaction associated with the claim funds.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NodeClaimFundsResponse {
     /// The associated transaction digest.
     pub tx_digest: String,

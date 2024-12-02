@@ -16,6 +16,8 @@ use tokio::{
     sync::{watch::Receiver, RwLock},
 };
 use tracing::{error, info, instrument};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     calculate_node_index, compute_committed_stack_proof,
@@ -32,6 +34,59 @@ use crate::{
 };
 
 type Result<T> = std::result::Result<T, StatusCode>;
+
+/// OpenAPI documentation for the Atoma daemon API.
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        health,
+        get_all_node_subscriptions,
+        get_node_subscriptions,
+        get_all_tasks,
+        get_all_node_stacks,
+        get_node_stacks,
+        get_all_almost_filled_stacks,
+        get_node_almost_filled_stacks,
+        get_all_against_attestation_disputes,
+        get_against_attestation_dispute,
+        get_all_own_attestation_disputes,
+        get_own_attestation_dispute,
+        get_all_claimed_stacks,
+        get_node_claimed_stacks,
+        submit_node_registration_tx,
+        submit_node_model_subscription_tx,
+        submit_node_task_subscription_tx,
+        submit_update_node_task_subscription_tx,
+        submit_node_task_unsubscription_tx,
+        submit_node_try_settle_stacks_tx,
+        submit_stack_settlement_attestations_tx,
+        submit_claim_funds_tx
+    ),
+    components(schemas(
+        NodeSubscription,
+        Task,
+        Stack,
+        StackAttestationDispute,
+        StackSettlementTicket,
+        NodeRegistrationRequest,
+        NodeRegistrationResponse,
+        NodeModelSubscriptionRequest,
+        NodeModelSubscriptionResponse,
+        NodeTaskSubscriptionRequest,
+        NodeTaskSubscriptionResponse,
+        NodeTaskUpdateSubscriptionRequest,
+        NodeTaskUpdateSubscriptionResponse,
+        NodeTaskUnsubscriptionRequest,
+        NodeTaskUnsubscriptionResponse,
+        NodeTrySettleStacksRequest,
+        NodeTrySettleStacksResponse,
+        NodeAttestationProofRequest,
+        NodeAttestationProofResponse,
+        NodeClaimFundsRequest,
+        NodeClaimFundsResponse
+    ))
+)]
+pub(crate) struct ApiDoc;
 
 /// State container for the Atoma daemon service that manages node operations and interactions.
 ///
@@ -103,21 +158,21 @@ pub struct DaemonState {
 /// ```rust,ignore
 /// use tokio::net::TcpListener;
 /// use tokio::sync::watch;
-/// use atoma_daemon::{DaemonState, run_daemon};
+/// use atoma_daemon::{DaemonState, run_server};
 ///
 /// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
 ///     let daemon_state = DaemonState::new(/* ... */);
 ///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
 ///     
-///     run_daemon(daemon_state, listener).await
+///     run_server(daemon_state, listener).await
 /// }
 /// ```
-pub async fn run_daemon(
+pub async fn run_server(
     daemon_state: DaemonState,
     tcp_listener: TcpListener,
     mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
-    let daemon_router = create_daemon_router(daemon_state);
+    let daemon_router = create_router(daemon_state);
     let server = axum::serve(tcp_listener, daemon_router.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_receiver
@@ -181,8 +236,9 @@ pub async fn run_daemon(
 ///     .serve(app.into_make_service())
 ///     .await?;
 /// ```
-pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
+pub fn create_router(daemon_state: DaemonState) -> Router {
     Router::new()
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/subscriptions", get(get_all_node_subscriptions))
         .route("/subscriptions/:id", get(get_node_subscriptions))
         .route("/tasks", get(get_all_tasks))
@@ -251,7 +307,16 @@ pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
 ///
 /// # Example Response
 /// Returns a JSON array of NodeSubscription objects for all registered nodes
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/subscriptions",
+    tag = "subscriptions",
+    responses(
+        (status = 200, description = "List of all node subscriptions", body = Vec<NodeSubscription>),
+        (status = 404, description = "No node badges registered"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_node_subscriptions(
     State(daemon_state): State<DaemonState>,
 ) -> Result<Json<Vec<NodeSubscription>>> {
@@ -298,7 +363,15 @@ async fn get_all_node_subscriptions(
 ///     }
 /// ]
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/subscriptions/:id",
+    tag = "subscriptions",
+    responses(
+        (status = 200, description = "List of node subscriptions", body = Vec<NodeSubscription>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_node_subscriptions(
     State(daemon_state): State<DaemonState>,
     Path(node_small_id): Path<i64>,
@@ -327,7 +400,15 @@ async fn get_node_subscriptions(
 ///
 /// # Example Response
 /// Returns a JSON array of Task objects representing all tasks in the system
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/tasks",
+    tag = "tasks",
+    responses(
+        (status = 200, description = "List of all tasks", body = Vec<Task>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Task>>> {
     let all_tasks = daemon_state
         .atoma_state
@@ -344,7 +425,15 @@ async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<V
 ///
 /// # Returns
 /// * `StatusCode::OK` - Always returns OK
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is healthy"),
+        (status = 500, description = "Service is unhealthy")
+    )
+)]
 async fn health() -> StatusCode {
     StatusCode::OK
 }
@@ -361,7 +450,15 @@ async fn health() -> StatusCode {
 ///
 /// # Example Response
 /// Returns a JSON array of Stack objects for all registered nodes
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/stacks",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of all node stacks", body = Vec<Stack>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_node_stacks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
         daemon_state
@@ -394,7 +491,15 @@ async fn get_all_node_stacks(State(daemon_state): State<DaemonState>) -> Result<
 ///
 /// # Example Response
 /// Returns a JSON array of Stack objects for the specified node
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/stacks/:id",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of node stacks", body = Vec<Stack>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_node_stacks(
     State(daemon_state): State<DaemonState>,
     Path(node_small_id): Path<i64>,
@@ -424,7 +529,15 @@ async fn get_node_stacks(
 ///
 /// # Example Response
 /// Returns a JSON array of Stack objects that are filled above the specified fraction threshold
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/almost_filled_stacks/:fraction",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of all almost filled stacks", body = Vec<Stack>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_almost_filled_stacks(
     State(daemon_state): State<DaemonState>,
     Path(fraction): Path<f64>,
@@ -462,7 +575,15 @@ async fn get_all_almost_filled_stacks(
 ///
 /// # Example Response
 /// Returns a JSON array of Stack objects for the specified node that are filled above the fraction threshold
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/almost_filled_stacks/:id/:fraction",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of node stacks", body = Vec<Stack>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_node_almost_filled_stacks(
     State(daemon_state): State<DaemonState>,
     Path((node_small_id, fraction)): Path<(i64, f64)>,
@@ -491,7 +612,15 @@ async fn get_node_almost_filled_stacks(
 ///
 /// # Example Response
 /// Returns a JSON array of StackAttestationDispute objects where the registered nodes are the defendants
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/against_attestation_disputes",
+    tag = "attestation disputes",
+    responses(
+        (status = 200, description = "List of all against attestation disputes", body = Vec<StackAttestationDispute>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_against_attestation_disputes(
     State(daemon_state): State<DaemonState>,
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
@@ -526,7 +655,15 @@ async fn get_all_against_attestation_disputes(
 ///
 /// # Example Response
 /// Returns a JSON array of StackAttestationDispute objects where the specified node is the defendant
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/against_attestation_disputes/:id",
+    tag = "attestation disputes",
+    responses(
+        (status = 200, description = "List of against attestation disputes", body = Vec<StackAttestationDispute>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_against_attestation_dispute(
     State(daemon_state): State<DaemonState>,
     Path(node_small_id): Path<i64>,
@@ -555,7 +692,15 @@ async fn get_against_attestation_dispute(
 ///
 /// # Example Response
 /// Returns a JSON array of StackAttestationDispute objects where the registered nodes are the plaintiffs
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/own_attestation_disputes",
+    tag = "attestation disputes",
+    responses(
+        (status = 200, description = "List of all own attestation disputes", body = Vec<StackAttestationDispute>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_own_attestation_disputes(
     State(daemon_state): State<DaemonState>,
 ) -> Result<Json<Vec<StackAttestationDispute>>> {
@@ -590,7 +735,15 @@ async fn get_all_own_attestation_disputes(
 ///
 /// # Example Response
 /// Returns a JSON array of StackAttestationDispute objects where the specified node is the plaintiff
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/own_attestation_disputes/:id",
+    tag = "attestation disputes",
+    responses(
+        (status = 200, description = "List of own attestation disputes", body = Vec<StackAttestationDispute>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_own_attestation_dispute(
     State(daemon_state): State<DaemonState>,
     Path(node_small_id): Path<i64>,
@@ -619,7 +772,15 @@ async fn get_own_attestation_dispute(
 ///
 /// # Example Response
 /// Returns a JSON array of StackSettlementTicket objects for all registered nodes
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/claimed_stacks",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of all claimed stacks", body = Vec<StackSettlementTicket>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_all_claimed_stacks(
     State(daemon_state): State<DaemonState>,
 ) -> Result<Json<Vec<StackSettlementTicket>>> {
@@ -654,7 +815,15 @@ async fn get_all_claimed_stacks(
 ///
 /// # Example Response
 /// Returns a JSON array of StackSettlementTicket objects for the specified node
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    get,
+    path = "/claimed_stacks/:id",
+    tag = "stacks",
+    responses(
+        (status = 200, description = "List of node stacks", body = Vec<StackSettlementTicket>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_node_claimed_stacks(
     State(daemon_state): State<DaemonState>,
     Path(node_small_id): Path<i64>,
@@ -714,7 +883,16 @@ fn get_all_node_badges(daemon_state: &DaemonState) -> Vec<(ObjectID, u64)> {
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/register",
+    tag = "node",
+    request_body = NodeRegistrationRequest,
+    responses(
+        (status = 200, description = "Node registration successful", body = NodeRegistrationResponse),
+        (status = 500, description = "Failed to submit registration transaction")
+    )
+)]
 async fn submit_node_registration_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeRegistrationRequest>,
@@ -765,7 +943,16 @@ async fn submit_node_registration_tx(
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/model_subscribe",
+    tag = "node",
+    request_body = NodeModelSubscriptionRequest,
+    responses(
+        (status = 200, description = "Node model subscription successful", body = NodeModelSubscriptionResponse),
+        (status = 500, description = "Failed to submit model subscription transaction")
+    )
+)]
 async fn submit_node_model_subscription_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeModelSubscriptionRequest>,
@@ -828,7 +1015,16 @@ async fn submit_node_model_subscription_tx(
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/task_subscribe",
+    tag = "node",
+    request_body = NodeTaskSubscriptionRequest,
+    responses(
+        (status = 200, description = "Node task subscription successful", body = NodeTaskSubscriptionResponse),
+        (status = 500, description = "Failed to submit task subscription transaction")
+    )
+)]
 async fn submit_node_task_subscription_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeTaskSubscriptionRequest>,
@@ -893,7 +1089,16 @@ async fn submit_node_task_subscription_tx(
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/task_update_subscription",
+    tag = "node",
+    request_body = NodeTaskUpdateSubscriptionRequest,
+    responses(
+        (status = 200, description = "Node task update subscription successful", body = NodeTaskUpdateSubscriptionResponse),
+        (status = 500, description = "Failed to submit task update subscription")
+    )
+)]
 pub async fn submit_update_node_task_subscription_tx(
     State(daemon_state): State<DaemonState>,
     Json(request): Json<NodeTaskUpdateSubscriptionRequest>,
@@ -956,7 +1161,16 @@ pub async fn submit_update_node_task_subscription_tx(
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/task_unsubscribe",
+    tag = "node",
+    request_body = NodeTaskUnsubscriptionRequest,
+    responses(
+        (status = 200, description = "Node task unsubscription successful", body = NodeTaskUnsubscriptionResponse),
+        (status = 500, description = "Failed to submit task unsubscription")
+    )
+)]
 async fn submit_node_task_unsubscription_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeTaskUnsubscriptionRequest>,
@@ -1016,7 +1230,16 @@ async fn submit_node_task_unsubscription_tx(
 ///     "tx_digest": "0xabc"
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/try_settle_stack_ids",
+    tag = "node",
+    request_body = NodeTrySettleStacksRequest,
+    responses(
+        (status = 200, description = "Node try settle stacks successful", body = NodeTrySettleStacksResponse),
+        (status = 500, description = "Failed to submit try settle stacks")
+    )
+)]
 async fn submit_node_try_settle_stacks_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeTrySettleStacksRequest>,
@@ -1108,7 +1331,16 @@ async fn submit_node_try_settle_stacks_tx(
 ///    - Collects the transaction digest
 ///
 /// Note: The attestation node index is offset by 1 since the 0th index is reserved for the original selected node.
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/submit_stack_settlement_attestations",
+    tag = "attestation disputes",
+    request_body = NodeAttestationProofRequest,
+    responses(
+        (status = 200, description = "Node attestation proof successful", body = NodeAttestationProofResponse),
+        (status = 500, description = "Failed to submit attestation proof")
+    )
+)]
 async fn submit_stack_settlement_attestations_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeAttestationProofRequest>,
@@ -1240,7 +1472,16 @@ async fn submit_stack_settlement_attestations_tx(
 ///     "tx_digest": "0xabc"  // Transaction digest of the claim funds submission
 /// }
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[utoipa::path(
+    post,
+    path = "/claim_funds",
+    tag = "node",
+    request_body = NodeClaimFundsRequest,
+    responses(
+        (status = 200, description = "Node claim funds successful", body = NodeClaimFundsResponse),
+        (status = 500, description = "Failed to submit claim funds")
+    )
+)]
 async fn submit_claim_funds_tx(
     State(daemon_state): State<DaemonState>,
     Json(value): Json<NodeClaimFundsRequest>,

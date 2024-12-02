@@ -1,8 +1,9 @@
+pub(crate) mod components;
 pub mod config;
-pub mod daemon;
+pub mod server;
 pub mod types;
 
-pub use crate::{config::AtomaDaemonConfig, daemon::DaemonState};
+pub use crate::{config::AtomaDaemonConfig, server::DaemonState};
 
 use axum::http::StatusCode;
 use blake2::{

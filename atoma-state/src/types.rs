@@ -1,3 +1,4 @@
+use crate::state_manager::Result;
 use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
     StackTrySettleEvent, TaskRegisteredEvent,
@@ -5,8 +6,7 @@ use atoma_sui::events::{
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::sync::oneshot;
-
-use crate::state_manager::Result;
+use utoipa::ToSchema;
 
 /// Represents a task in the system
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
@@ -200,7 +200,7 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
 }
 
 /// Represents a node subscription to a task
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct NodeSubscription {
     /// Unique small integer identifier for the node subscription
     pub node_small_id: i64,

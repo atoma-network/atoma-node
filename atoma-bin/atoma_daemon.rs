@@ -3,7 +3,7 @@ use std::{path::Path, str::FromStr, sync::Arc};
 use anyhow::{Context, Result};
 use atoma_daemon::{
     config::AtomaDaemonConfig,
-    daemon::{run_daemon, DaemonState},
+    server::{run_server, DaemonState},
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
 use atoma_sui::client::AtomaSuiClient;
@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
     let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
 
     let daemon_handle = spawn_with_shutdown(
-        run_daemon(daemon_state, tcp_listener, shutdown_receiver.clone()),
+        run_server(daemon_state, tcp_listener, shutdown_receiver.clone()),
         shutdown_sender.clone(),
     );
     info!(

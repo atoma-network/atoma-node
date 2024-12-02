@@ -1,7 +1,7 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
-use atoma_daemon::{daemon::run_daemon, AtomaDaemonConfig, DaemonState};
+use atoma_daemon::{server::run_server, AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
     server::{run_server, AppState},
@@ -306,7 +306,7 @@ async fn main() -> Result<()> {
         "Starting Atoma daemon service"
     );
     let daemon_handle = spawn_with_shutdown(
-        run_daemon(
+        run_server(
             daemon_app_state,
             daemon_tcp_listener,
             shutdown_receiver.clone(),
