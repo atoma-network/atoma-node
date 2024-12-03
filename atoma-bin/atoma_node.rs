@@ -226,10 +226,7 @@ async fn main() -> Result<()> {
     )?;
 
     spawn_with_shutdown(
-        async move {
-            let result = confidential_compute_service.run().await;
-            result
-        },
+        async move { confidential_compute_service.run().await },
         shutdown_sender.clone(),
     );
 
