@@ -227,11 +227,6 @@ async fn main() -> Result<()> {
 
     spawn_with_shutdown(
         async move {
-            info!(
-                target = "atoma-node-service",
-                event = "confidential_compute_service_run",
-                "Running confidential compute service"
-            );
             let result = confidential_compute_service.run().await;
             info!(
                 target = "atoma-node-service",

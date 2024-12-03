@@ -101,6 +101,11 @@ impl AtomaConfidentialComputeService {
     /// Note: Channel receive errors are logged but don't cause the service to return an error.
     #[instrument(level = "trace", skip_all)]
     pub async fn run(mut self) -> Result<()> {
+        tracing::info!(
+            target = "atoma-confidential-compute-service",
+            event = "confidential_compute_service_run",
+            "Running confidential compute service"
+        );
         loop {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
