@@ -162,6 +162,11 @@ impl AtomaConfidentialComputeService {
                 }
             }
         }
+        tracing::info!(
+            target = "atoma-confidential-compute-service",
+            event = "confidential_compute_service_finished",
+            "Confidential compute service finished"
+        );
         Ok(())
     }
 
