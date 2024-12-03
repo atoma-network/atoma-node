@@ -1,6 +1,7 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
+use atoma_confidential::AtomaConfidentialComputeService;
 use atoma_daemon::{daemon::run_daemon, AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
@@ -199,6 +200,36 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
+    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let (app_state_decryption_sender, app_state_decryption_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let (app_state_encryption_sender, app_state_encryption_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+
+    info!(
+        target = "atoma-node-service",
+        event = "confidential_compute_service_spawn",
+        "Spawning confidential compute service"
+    );
+
+    let client = Arc::new(RwLock::new(
+        AtomaSuiClient::new_from_config(args.config_path).await?,
+    ));
+
+    let confidential_compute_service = AtomaConfidentialComputeService::new(
+        client.clone(),
+        subscriber_confidential_compute_receiver,
+        app_state_decryption_receiver,
+        app_state_encryption_receiver,
+        shutdown_receiver.clone(),
+    )?;
+
+    spawn_with_shutdown(
+        async move { confidential_compute_service.run().await },
+        shutdown_sender.clone(),
+    );
+
     let (stack_retrieve_sender, stack_retrieve_receiver) = tokio::sync::mpsc::unbounded_channel();
     let package_id = config.sui.atoma_package_id();
     info!(
@@ -207,10 +238,12 @@ async fn main() -> Result<()> {
         package_id = package_id.to_string(),
         "Spawning subscriber service"
     );
+
     let subscriber = SuiEventSubscriber::new(
         config.sui,
         event_subscriber_sender,
         stack_retrieve_receiver,
+        subscriber_confidential_compute_sender,
         shutdown_receiver.clone(),
     );
 
@@ -248,6 +281,8 @@ async fn main() -> Result<()> {
     let app_state = AppState {
         state_manager_sender,
         stack_retrieve_sender,
+        decryption_sender: app_state_decryption_sender,
+        encryption_sender: app_state_encryption_sender,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.service.models),
         chat_completions_service_url: config
@@ -266,9 +301,6 @@ async fn main() -> Result<()> {
         address_index: args.address_index,
     };
 
-    let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_path).await?,
-    ));
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
         client,

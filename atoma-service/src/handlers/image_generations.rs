@@ -11,8 +11,17 @@ use utoipa::OpenApi;
 
 use super::sign_response_and_update_stack_hash;
 
+/// The path for confidential image generations requests
+pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
+
+/// The path for image generations requests
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
+/// OpenAPI documentation structure for the image generations endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the image generations API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(image_generations_handler))]
 pub(crate) struct ImageGenerationsOpenApi;

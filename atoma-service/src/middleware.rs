@@ -7,6 +7,9 @@ use crate::{
     },
     server::AppState,
 };
+use atoma_confidential::types::{
+    ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{hashing::blake2b_hash, verify_signature};
 use axum::{
@@ -16,6 +19,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sui_sdk::types::{
     base_types::SuiAddress,
@@ -27,16 +31,22 @@ use tracing::{error, instrument};
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+
 /// The key for the model in the request body
 const MODEL: &str = "model";
+
 /// The key for the max tokens in the request body
 const MAX_TOKENS: &str = "max_tokens";
+
 /// The key for the messages in the request body
 const MESSAGES: &str = "messages";
+
 /// The key for the input tokens in the request body
 const INPUT: &str = "input";
+
 /// The key for the image size in the request body
 const IMAGE_SIZE: &str = "size";
+
 /// The key for the number of images in the request body
 const IMAGE_N: &str = "n";
 
@@ -83,6 +93,21 @@ impl RequestMetadata {
         self
     }
 
+    /// Sets the request type for this metadata instance
+    ///
+    /// # Arguments
+    /// * `request_type` - The type of request (ChatCompletions, Embeddings, ImageGenerations, or NonInference)
+    ///
+    /// # Returns
+    /// Returns self with the updated request type for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::{RequestMetadata, RequestType};
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///     .with_request_type(RequestType::ChatCompletions);
+    /// ```
     pub fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
         self
@@ -112,8 +137,6 @@ impl RequestMetadata {
 /// # Headers
 /// The middleware expects the following custom headers:
 /// - `X-Signature`: The signature of the request body, base64 encoded.
-/// - `X-PublicKey`: The public key used for verification, base64 encoded.
-/// - `X-Scheme`: The signature scheme used (e.g., "ed25519").
 ///
 /// # Extensions
 /// This middleware adds or updates a `RequestMetadata` extension to the request containing:
@@ -131,15 +154,22 @@ impl RequestMetadata {
 /// # Security Note
 /// This middleware is crucial for ensuring that only authorized clients can access the
 /// chat completions endpoint, protecting against unauthorized use and potential abuse.
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
 pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
+    tracing::info!("Request parts: {:?}", req_parts);
     let base64_signature = req_parts
         .headers
-        .get("X-Signature")
+        .get(atoma_utils::constants::SIGNATURE)
         .ok_or_else(|| {
             error!("Signature header not found");
             StatusCode::BAD_REQUEST
@@ -189,7 +219,6 @@ pub async fn signature_verification_middleware(
 ///
 /// # Headers
 /// The middleware expects the following custom headers:
-/// - `X-PublicKey`: The public key of the user, base64 encoded.
 /// - `X-Stack-Small-Id`: The ID of the stack being used for this request.
 ///
 /// # Request Body
@@ -218,7 +247,13 @@ pub async fn signature_verification_middleware(
 /// # Security Note
 /// This middleware is crucial for ensuring that users only consume resources they're
 /// authorized to use and have sufficient compute units for their requests.
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
 pub async fn verify_stack_permissions(
     state: State<AppState>,
     req: Request<Body>,
@@ -236,7 +271,7 @@ pub async fn verify_stack_permissions(
 
     let base64_signature = req_parts
         .headers
-        .get("X-Signature")
+        .get(atoma_utils::constants::SIGNATURE)
         .ok_or_else(|| {
             error!("Signature header not found");
             StatusCode::BAD_REQUEST
@@ -257,10 +292,13 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?;
     let sui_address = SuiAddress::from(&public_key);
-    let stack_small_id = req_parts.headers.get("X-Stack-Small-Id").ok_or_else(|| {
-        error!("Stack ID header not found");
-        StatusCode::BAD_REQUEST
-    })?;
+    let stack_small_id = req_parts
+        .headers
+        .get(atoma_utils::constants::STACK_SMALL_ID)
+        .ok_or_else(|| {
+            error!("Stack ID header not found");
+            StatusCode::BAD_REQUEST
+        })?;
     let stack_small_id = stack_small_id
         .to_str()
         .map_err(|_| {
@@ -332,7 +370,7 @@ pub async fn verify_stack_permissions(
     if available_stack.is_none() {
         let tx_digest_str = req_parts
             .headers
-            .get("X-Tx-Digest")
+            .get(atoma_utils::constants::TX_DIGEST)
             .ok_or_else(|| {
                 error!("Stack not found, tx digest header expected but not found");
                 StatusCode::BAD_REQUEST
@@ -356,11 +394,147 @@ pub async fn verify_stack_permissions(
             return Err(StatusCode::UNAUTHORIZED);
         }
     }
-    let request_metadata = RequestMetadata::default()
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default()
         .with_stack_info(stack_small_id, total_num_compute_units)
         .with_request_type(request_type);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
+    Ok(next.run(req).await)
+}
+
+/// Middleware for handling confidential compute requests by decrypting encrypted payloads.
+///
+/// This middleware intercepts requests containing encrypted data and processes them through
+/// a confidential compute pipeline before passing them to the next handler. It performs
+/// decryption using a combination of:
+/// - A salt for key derivation
+/// - A nonce for encryption uniqueness
+/// - A Diffie-Hellman public key for secure key exchange
+///
+/// # Headers Required
+/// The middleware expects the following headers:
+/// - `X-Salt`: Base string containing the salt used in key derivation
+/// - `X-Nonce`: Base string containing the nonce used in encryption
+/// - `X-Node-X25519-PublicKey`: Base64-encoded public key (32 bytes) for key exchange
+///
+/// # Request Flow
+/// 1. Extracts and validates required headers
+/// 2. Decodes the Diffie-Hellman public key from base64
+/// 3. Reads the encrypted request body
+/// 4. Sends decryption request to confidential compute service
+/// 5. Receives decrypted plaintext
+/// 6. Reconstructs request with decrypted body
+///
+/// # Returns
+/// * `Ok(Response)` - The response from the next handler after successful decryption
+/// * `Err(StatusCode)` - One of:
+///   - `BAD_REQUEST` if headers are missing or invalid
+///   - `INTERNAL_SERVER_ERROR` if decryption service communication fails
+///
+/// # Example Headers
+/// ```text
+/// X-Salt: randomsaltvalue
+/// X-Nonce: uniquenoncevalue
+/// X-Node-X25519-PublicKey: base64encodedkey...
+/// ```
+///
+/// # Security Notes
+/// - The salt and nonce should be unique for each request
+/// - The Diffie-Hellman public key must be exactly 32 bytes when decoded
+/// - All cryptographic operations are performed in a separate confidential compute service
+#[instrument(
+    level = "info", skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
+pub async fn confidential_compute_middleware(
+    state: State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let (req_parts, req_body) = req.into_parts();
+    let salt = req_parts
+        .headers
+        .get(atoma_utils::constants::SALT)
+        .ok_or_else(|| {
+            error!("Salt header not found");
+            StatusCode::BAD_REQUEST
+        })?;
+    let salt_str = salt.to_str().map_err(|_| {
+        error!("Salt cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let salt_bytes = STANDARD.decode(salt_str).map_err(|_| {
+        error!("Failed to decode salt from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce = req_parts
+        .headers
+        .get(atoma_utils::constants::NONCE)
+        .ok_or_else(|| {
+            error!("Nonce header not found");
+            StatusCode::BAD_REQUEST
+        })?;
+    let nonce_str = nonce.to_str().map_err(|_| {
+        error!("Nonce cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce_bytes = STANDARD.decode(nonce_str).map_err(|_| {
+        error!("Failed to decode nonce from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
+    let diffie_hellman_public_key = req_parts
+        .headers
+        .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
+        .ok_or_else(|| {
+            error!("Diffie-Hellman public key header not found");
+            StatusCode::BAD_REQUEST
+        })?;
+    let diffie_hellman_public_key_bytes = diffie_hellman_public_key.to_str().map_err(|_| {
+        error!("Diffie-Hellman public key cannot be converted to a string");
+        StatusCode::BAD_REQUEST
+    })?;
+    let diffie_hellman_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(diffie_hellman_public_key).map_err(|_| {
+        error!("Failed to decode Diffie-Hellman public key from base64 encoding");
+            StatusCode::BAD_REQUEST
+        })?
+        .try_into()
+        .map_err(|_| {
+            error!("Failed to convert Diffie-Hellman public key bytes to 32-byte array, incorrect length: {}", diffie_hellman_public_key_bytes.len());
+            StatusCode::BAD_REQUEST
+        })?;
+    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
+        .await
+        .map_err(|_| {
+            error!("Failed to convert body to bytes");
+            StatusCode::BAD_REQUEST
+        })?;
+    let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
+        ciphertext: body_bytes.as_ref().to_vec(),
+        nonce: nonce_bytes,
+        salt: salt_bytes,
+        diffie_hellman_public_key: diffie_hellman_public_key_bytes,
+    };
+    let (result_sender, result_receiver) = oneshot::channel();
+    state
+        .decryption_sender
+        .send((confidential_compute_decryption_request, result_sender))
+        .map_err(|_| {
+            error!("Failed to send confidential compute request");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let ConfidentialComputeDecryptionResponse { plaintext } =
+        result_receiver.await.map_err(|_| {
+            error!("Failed to receive confidential compute response");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let body = Body::from(plaintext);
+    let req = Request::from_parts(req_parts, body);
     Ok(next.run(req).await)
 }
 

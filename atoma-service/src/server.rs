@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+use atoma_confidential::types::{
+    ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
+    ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
@@ -17,7 +21,11 @@ use sui_sdk::types::digests::TransactionDigest;
 use tokenizers::Tokenizer;
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, oneshot, watch::Receiver},
+    sync::{
+        mpsc::{self, UnboundedSender},
+        oneshot,
+        watch::Receiver,
+    },
 };
 use tower::ServiceBuilder;
 use tracing::error;
@@ -26,11 +34,18 @@ use utoipa::OpenApi;
 use crate::{
     components::openapi::openapi_routes,
     handlers::{
-        chat_completions::{chat_completions_handler, CHAT_COMPLETIONS_PATH},
-        embeddings::{embeddings_handler, EMBEDDINGS_PATH},
-        image_generations::{image_generations_handler, IMAGE_GENERATIONS_PATH},
+        chat_completions::{
+            chat_completions_handler, CHAT_COMPLETIONS_PATH, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+        },
+        embeddings::{embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH, EMBEDDINGS_PATH},
+        image_generations::{
+            image_generations_handler, CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
+        },
     },
-    middleware::{signature_verification_middleware, verify_stack_permissions},
+    middleware::{
+        confidential_compute_middleware, signature_verification_middleware,
+        verify_stack_permissions,
+    },
 };
 
 /// The path for the health check endpoint.
@@ -48,6 +63,17 @@ type ComputeUnits = u64;
 /// Represents the result of a blockchain query for stack information.
 type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
 
+/// Represents a request for confidential compute decryption.
+type DecryptionRequest = (
+    ConfidentialComputeDecryptionRequest,
+    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+);
+
+type EncryptionRequest = (
+    ConfidentialComputeEncryptionRequest,
+    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+);
+
 /// Represents the shared state of the application.
 ///
 /// This struct holds various components and configurations that are shared
@@ -61,6 +87,20 @@ pub struct AppState {
     /// state manager, allowing for efficient handling of application state
     /// updates and notifications across different components.
     pub state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
+
+    /// Channel sender for confidential compute decryption requests.
+    ///
+    /// This sender is used to communicate decryption requests to the
+    /// confidential compute service, allowing for efficient handling of
+    /// confidential data processing across different components.
+    pub decryption_sender: UnboundedSender<DecryptionRequest>,
+
+    /// Channel sender for confidential compute encryption requests.
+    ///
+    /// This sender is used to communicate encryption requests to the
+    /// confidential compute service, allowing for efficient handling of
+    /// confidential data processing across different components.
+    pub encryption_sender: UnboundedSender<EncryptionRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:
@@ -137,6 +177,30 @@ pub struct AppState {
 /// // Use the router to start the server
 /// ```
 pub fn create_router(app_state: AppState) -> Router {
+    let confidential_routes = Router::new()
+        .route(
+            CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+            post(chat_completions_handler),
+        )
+        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(
+            CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+            post(image_generations_handler),
+        )
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn_with_state(
+                    app_state.clone(),
+                    confidential_compute_middleware,
+                ))
+                .layer(from_fn(signature_verification_middleware))
+                .layer(from_fn_with_state(
+                    app_state.clone(),
+                    verify_stack_permissions,
+                ))
+                .into_inner(),
+        )
+        .with_state(app_state.clone());
     Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
@@ -153,6 +217,7 @@ pub fn create_router(app_state: AppState) -> Router {
         .with_state(app_state)
         .route(HEALTH_PATH, get(health))
         .route(METRICS_PATH, get(metrics_handler))
+        .merge(confidential_routes)
         .merge(openapi_routes())
 }
 
