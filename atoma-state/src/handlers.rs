@@ -1,5 +1,5 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeKeyRotationEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
     NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
     StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
     StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
@@ -103,7 +103,7 @@ pub async fn handle_atoma_event(
             info!("New key rotation event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::NodeKeyRotationEvent(event) => {
+        AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
             handle_node_key_rotation_event(state_manager, event).await
         }
     }
@@ -716,7 +716,7 @@ pub(crate) async fn handle_state_manager_event(
 /// # Arguments
 ///
 /// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
-/// * `event` - A `NodeKeyRotationEvent` containing the details of the key rotation event.
+/// * `event` - A `NodePublicKeyCommittmentEvent` containing the details of the key rotation event.
 ///
 /// # Returns
 ///
@@ -735,14 +735,14 @@ pub(crate) async fn handle_state_manager_event(
 #[instrument(level = "info", skip_all)]
 async fn handle_node_key_rotation_event(
     state_manager: &AtomaStateManager,
-    event: NodeKeyRotationEvent,
+    event: NodePublicKeyCommittmentEvent,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
         event = "handle-new-key-rotation-event",
         "Processing new key rotation event"
     );
-    let NodeKeyRotationEvent {
+    let NodePublicKeyCommittmentEvent {
         epoch,
         node_id,
         new_public_key,

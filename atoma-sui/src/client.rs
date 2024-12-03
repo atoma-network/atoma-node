@@ -44,7 +44,7 @@ const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
 /// The Atoma's contract method name for submitting a node key rotation attestation
-const SUBMIT_NODE_KEY_ROTATION_ATTESTATION_METHOD: &str = "submit_node_key_rotation_attestation";
+const ROTATE_NODE_PUBLIC_KEY: &str = "rotate_node_public_key";
 
 /// A client for interacting with the Atoma network using the Sui blockchain.
 ///
@@ -1073,8 +1073,8 @@ impl AtomaSuiClient {
     ))]
     pub async fn submit_key_rotation_remote_attestation(
         &mut self,
-        tdx_quote_bytes: Vec<u8>,
         public_key_bytes: [u8; 32],
+        tdx_quote_bytes: Vec<u8>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -1093,13 +1093,13 @@ impl AtomaSuiClient {
                 active_address,
                 self.config.atoma_package_id(),
                 MODULE_ID,
-                SUBMIT_NODE_KEY_ROTATION_ATTESTATION_METHOD,
+                ROTATE_NODE_PUBLIC_KEY,
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
-                    SuiJsonValue::new(tdx_quote_bytes.into())?,
                     SuiJsonValue::new(public_key_bytes.to_vec().into())?,
+                    SuiJsonValue::new(tdx_quote_bytes.into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),

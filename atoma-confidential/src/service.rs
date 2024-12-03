@@ -85,7 +85,6 @@ impl AtomaConfidentialComputeService {
     /// This method runs continuously until a shutdown signal is received, processing two types of events:
     /// 1. Atoma events from the event receiver:
     ///    - `NewKeyRotationEvent`: Triggers a node key rotation attestation submission
-    ///    - `NodeKeyRotationEvent`: Currently unimplemented (TODO)
     ///    - Other events are logged as warnings
     ///
     /// 2. Shutdown signals that terminate the service loop when received
@@ -197,8 +196,8 @@ impl AtomaConfidentialComputeService {
             .write()
             .await
             .submit_key_rotation_remote_attestation(
-                tdx_quote_bytes.clone(),
                 public_key_bytes,
+                tdx_quote_bytes,
                 None,
                 None,
                 None,
