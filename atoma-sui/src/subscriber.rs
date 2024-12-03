@@ -614,9 +614,9 @@ async fn parse_event(
         AtomaEventIdentifier::NewKeyRotationEvent => Ok(AtomaEvent::NewKeyRotationEvent(
             serde_json::from_value(value)?,
         )),
-        AtomaEventIdentifier::NodePublicKeyCommittmentEvent => Ok(AtomaEvent::NodePublicKeyCommittmentEvent(
-            serde_json::from_value(value)?,
-        )),
+        AtomaEventIdentifier::NodePublicKeyCommittmentEvent => Ok(
+            AtomaEvent::NodePublicKeyCommittmentEvent(serde_json::from_value(value)?),
+        ),
     }
 }
 
