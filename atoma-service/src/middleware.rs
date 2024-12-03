@@ -154,12 +154,19 @@ impl RequestMetadata {
 /// # Security Note
 /// This middleware is crucial for ensuring that only authorized clients can access the
 /// chat completions endpoint, protecting against unauthorized use and potential abuse.
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
 pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
+    tracing::info!("Request parts: {:?}", req_parts);
     let base64_signature = req_parts
         .headers
         .get(atoma_utils::constants::SIGNATURE)
@@ -240,7 +247,13 @@ pub async fn signature_verification_middleware(
 /// # Security Note
 /// This middleware is crucial for ensuring that users only consume resources they're
 /// authorized to use and have sufficient compute units for their requests.
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
 pub async fn verify_stack_permissions(
     state: State<AppState>,
     req: Request<Body>,
@@ -381,7 +394,11 @@ pub async fn verify_stack_permissions(
             return Err(StatusCode::UNAUTHORIZED);
         }
     }
-    let request_metadata = RequestMetadata::default()
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default()
         .with_stack_info(stack_small_id, total_num_compute_units)
         .with_request_type(request_type);
     req_parts.extensions.insert(request_metadata);
@@ -429,7 +446,12 @@ pub async fn verify_stack_permissions(
 /// - The salt and nonce should be unique for each request
 /// - The Diffie-Hellman public key must be exactly 32 bytes when decoded
 /// - All cryptographic operations are performed in a separate confidential compute service
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info", skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    )
+)]
 pub async fn confidential_compute_middleware(
     state: State<AppState>,
     req: Request<Body>,

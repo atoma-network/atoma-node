@@ -82,7 +82,7 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 
 ```toml
 [atoma-service]
-chat_completions_service_url = "http://chat-completions:8000"    # Internal Docker network URL
+chat_completions_service_url = "http://chat-completions:80"    # Internal Docker network URL
 embeddings_service_url = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
 image_generations_service_url = ""
