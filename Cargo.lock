@@ -752,6 +752,7 @@ dependencies = [
  "rs_merkle",
  "serde",
  "serde_json",
+ "serde_yaml 0.9.34+deprecated",
  "sui-sdk",
  "tokio",
  "tracing",

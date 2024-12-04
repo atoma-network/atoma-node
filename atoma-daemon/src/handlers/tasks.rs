@@ -1,0 +1,39 @@
+use atoma_state::types::Task;
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use tracing::error;
+use utoipa::OpenApi;
+
+use crate::DaemonState;
+
+pub const TASKS_PATH: &str = "/tasks";
+
+#[derive(OpenApi)]
+#[openapi(paths(tasks_list), components(schemas(Task)))]
+pub(crate) struct TasksOpenApi;
+
+pub fn tasks_router() -> Router<DaemonState> {
+    Router::new().route(TASKS_PATH, get(tasks_list))
+}
+
+/// Retrieves all tasks from the state manager.
+#[utoipa::path(
+    get,
+    path = "/",
+    responses(
+        (status = 200, description = "List of all tasks", body = Vec<Task>),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn tasks_list(
+    State(daemon_state): State<DaemonState>,
+) -> Result<Json<Vec<Task>>, StatusCode> {
+    daemon_state
+        .atoma_state
+        .get_all_tasks()
+        .await
+        .map_err(|_| {
+            error!("Failed to get all tasks");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+        .map(Json)
+}

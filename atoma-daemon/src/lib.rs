@@ -1,5 +1,6 @@
 pub(crate) mod components;
 pub mod config;
+pub(crate) mod handlers;
 pub mod server;
 pub mod types;
 

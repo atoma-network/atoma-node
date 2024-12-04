@@ -1,0 +1,1218 @@
+openapi: 3.1.0
+info:
+  title: atoma-daemon
+  description: ''
+  license:
+    name: Apache-2.0
+  version: 0.1.0
+servers:
+- url: http://localhost:8080
+  description: Local development server
+paths:
+  /almost_filled_stacks/{fraction}:
+    get:
+      tags:
+      - almost_filled_stacks
+      summary: Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
+      operationId: almost_filled_stacks_fraction_get
+      parameters:
+      - name: fraction
+        in: path
+        description: The fraction threshold (0.0 to 100.0) to filter stacks
+        required: true
+        schema:
+          type: number
+          format: double
+      responses:
+        '200':
+          description: Stack objects that are filled above the specified fraction threshold
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stack'
+        '500':
+          description: Internal server error
+  /almost_filled_stacks/{id}/{fraction}:
+    get:
+      tags:
+      - almost_filled_stacks
+      summary: Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
+      description: |-
+        # Arguments
+        * `daemon_state` - The shared state containing the state manager
+        * `node_small_id` - The small ID of the node whose stacks should be retrieved
+        * `fraction` - The fraction threshold (0.0 to 100.0) to filter stacks
+
+        # Returns
+        * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
+          - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
+
+        # Example Response
+        Returns a JSON array of Stack objects for the specified node that are filled above the fraction threshold
+      operationId: almost_filled_stacks_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose stacks should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: fraction
+        in: path
+        description: The fraction threshold (0.0 to 100.0) to filter stacks
+        required: true
+        schema:
+          type: number
+          format: double
+      responses:
+        '200':
+          description: List of node stacks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stack'
+        '500':
+          description: Internal server error
+  /attestation_disputes/against:
+    get:
+      tags:
+      - attestation_disputes
+      summary: Retrieves all attestation disputes against the currently registered nodes.
+      operationId: attestation_disputes_against_list
+      responses:
+        '200':
+          description: List of all against attestation disputes where the registered nodes are the defendants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackAttestationDispute'
+        '500':
+          description: Internal server error
+  /attestation_disputes/against/{id}:
+    get:
+      tags:
+      - attestation_disputes
+      summary: Retrieves all attestation disputes against a specific node.
+      operationId: attestation_disputes_against_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose disputes should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of against attestation disputes where the specified node is the defendant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackAttestationDispute'
+        '500':
+          description: Internal server error
+  /attestation_disputes/own:
+    get:
+      tags:
+      - attestation_disputes
+      summary: Retrieves all attestation disputes initiated by the currently registered nodes.
+      operationId: attestation_disputes_own_list
+      responses:
+        '200':
+          description: List of all own attestation disputes where the registered nodes are the plaintiffs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackAttestationDispute'
+        '500':
+          description: Internal server error
+  /attestation_disputes/own/{id}:
+    get:
+      tags:
+      - attestation_disputes
+      summary: Retrieves all attestation disputes initiated by a specific node.
+      operationId: attestation_disputes_own_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose initiated disputes should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of own attestation disputes where the specified node is the plaintiff
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackAttestationDispute'
+        '500':
+          description: Internal server error
+  /nodes/claim-funds:
+    post:
+      tags:
+      - nodes
+      summary: Claims funds for completed stacks.
+      operationId: nodes_claim_funds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeClaimFundsRequest'
+        required: true
+      responses:
+        '200':
+          description: Node claim funds successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeClaimFundsResponse'
+        '500':
+          description: Failed to submit claim funds
+  /nodes/model-subscribe:
+    post:
+      tags:
+      - nodes
+      summary: Subscribes a node to a specific model.
+      operationId: nodes_model_subscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeModelSubscriptionRequest'
+        required: true
+      responses:
+        '200':
+          description: Node model subscription successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeModelSubscriptionResponse'
+        '500':
+          description: Failed to submit model subscription transaction
+  /nodes/register:
+    post:
+      tags:
+      - nodes
+      summary: Registers a new node in the system.
+      operationId: nodes_register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeRegistrationRequest'
+        required: true
+      responses:
+        '200':
+          description: Node registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeRegistrationResponse'
+        '500':
+          description: Failed to submit registration transaction
+  /nodes/submit-attestations:
+    post:
+      tags:
+      - nodes
+      summary: Submits attestations for stack settlement.
+      operationId: nodes_submit_attestations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeAttestationProofRequest'
+        required: true
+      responses:
+        '200':
+          description: Node attestation proof successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeAttestationProofResponse'
+        '500':
+          description: Failed to submit attestation proof
+  /nodes/task-subscribe:
+    post:
+      tags:
+      - nodes
+      summary: Subscribes a node to a specific task.
+      operationId: nodes_task_subscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeTaskSubscriptionRequest'
+        required: true
+      responses:
+        '200':
+          description: Node task subscription successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeTaskSubscriptionResponse'
+        '500':
+          description: Failed to submit task subscription transaction
+  /nodes/task-unsubscribe:
+    post:
+      tags:
+      - nodes
+      summary: Unsubscribes a node from a specific task.
+      operationId: nodes_task_unsubscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeTaskUnsubscriptionRequest'
+        required: true
+      responses:
+        '200':
+          description: Node task unsubscription successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeTaskUnsubscriptionResponse'
+        '500':
+          description: Failed to submit task unsubscription
+  /nodes/task-update-subscription:
+    post:
+      tags:
+      - nodes
+      summary: Updates an existing task subscription for a node.
+      operationId: nodes_task_update_subscription
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeTaskUpdateSubscriptionRequest'
+        required: true
+      responses:
+        '200':
+          description: Node task update subscription successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeTaskUpdateSubscriptionResponse'
+        '500':
+          description: Failed to submit task update subscription
+  /nodes/try-settle-stacks:
+    post:
+      tags:
+      - nodes
+      summary: Attempts to settle stacks for a node.
+      operationId: nodes_try_settle_stacks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeTrySettleStacksRequest'
+        required: true
+      responses:
+        '200':
+          description: Node try settle stacks successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeTrySettleStacksResponse'
+        '500':
+          description: Failed to submit try settle stacks
+  /stacks/claimed_stacks:
+    get:
+      tags:
+      - stacks
+      summary: Retrieves all claimed stacks for the currently registered node badges.
+      operationId: claimed_stacks_list
+      responses:
+        '200':
+          description: List of all StackSettlementTicket objects for all registered nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackSettlementTicket'
+        '500':
+          description: Internal server error
+  /stacks/claimed_stacks/{id}:
+    get:
+      tags:
+      - stacks
+      summary: Retrieves all claimed stacks for a specific node identified by its small ID.
+      operationId: claimed_stacks_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose claimed stacks should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of StackSettlementTicket objects for the specified node
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackSettlementTicket'
+        '500':
+          description: Internal server error
+  /stacks/stacks:
+    get:
+      tags:
+      - stacks
+      summary: Retrieves all stacks associated with the currently registered node badges.
+      operationId: stacks_list
+      responses:
+        '200':
+          description: List of all Stack objects for all registered nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stack'
+        '500':
+          description: Internal server error
+  /stacks/stacks/{id}:
+    get:
+      tags:
+      - stacks
+      summary: Retrieves all stacks for a specific node identified by its small ID.
+      operationId: stacks_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose stacks should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of Stack objects for the specified node
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stack'
+        '500':
+          description: Internal server error
+  /subscriptions/:
+    get:
+      tags:
+      - subscriptions
+      summary: Retrieves all node subscriptions for the currently registered node badges.
+      operationId: subscriptions_list
+      responses:
+        '200':
+          description: List of all node subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NodeSubscription'
+        '404':
+          description: No node badges registered
+        '500':
+          description: Internal server error
+  /subscriptions/{id}:
+    get:
+      tags:
+      - subscriptions
+      summary: Retrieves all subscriptions for a specific node identified by its small ID.
+      operationId: subscriptions_get
+      parameters:
+      - name: id
+        in: path
+        description: The small ID of the node whose subscriptions should be retrieved
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of node subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NodeSubscription'
+        '500':
+          description: Internal server error
+  /tasks/:
+    get:
+      tags:
+      - tasks
+      summary: Retrieves all tasks from the state manager.
+      operationId: tasks_list
+      responses:
+        '200':
+          description: List of all tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    NodeAttestationProofRequest:
+      type: object
+      description: |-
+        Represents a request to submit a node attestation proof.
+
+        This struct encapsulates the necessary parameters for submitting
+        a node attestation proof.
+      required:
+      - stack_small_ids
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        node_small_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+        stack_small_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: The small IDs of the stacks to attest to.
+    NodeAttestationProofResponse:
+      type: object
+      description: |-
+        Represents a response to a node attestation proof request.
+
+        This struct contains the transaction digests, which are unique
+        identifiers for the transactions associated with the attestation proof.
+      required:
+      - tx_digests
+      properties:
+        tx_digests:
+          type: array
+          items:
+            type: string
+          description: The transaction digests.
+    NodeClaimFundsRequest:
+      type: object
+      description: |-
+        Represents a request to claim funds from a stack.
+
+        This struct encapsulates the necessary parameters for claiming funds
+        from a stack, including optional gas-related fields.
+      required:
+      - stack_small_ids
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge IDs.
+            If not provided, the default is `None`.
+        stack_small_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: The small IDs of the stacks to claim funds from.
+    NodeClaimFundsResponse:
+      type: object
+      description: |-
+        Represents a response to a node claim funds request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the claim funds.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: The associated transaction digest.
+    NodeModelSubscriptionRequest:
+      type: object
+      description: |-
+        Represents a request to subscribe to a node model.
+
+        This struct encapsulates the necessary parameters for subscribing
+        to a node model, including optional gas-related fields.
+      required:
+      - model_name
+      - echelon_id
+      properties:
+        echelon_id:
+          type: integer
+          format: int64
+          description: The echelon ID associated with the subscription.
+          minimum: 0
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        model_name:
+          type: string
+          description: The name of the model to subscribe to.
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+    NodeModelSubscriptionResponse:
+      type: object
+      description: |-
+        Represents a response to a node model subscription request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the node model subscription.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: |-
+            The transaction digest.
+            This is a unique identifier for the transaction.
+    NodeRegistrationRequest:
+      type: object
+      description: |-
+        Represents a request to register a node.
+
+        This struct is used to encapsulate the necessary parameters
+        for registering a node, including optional gas-related fields.
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+    NodeRegistrationResponse:
+      type: object
+      description: |-
+        Represents a response to a node registration request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the node registration.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: |-
+            The transaction digest.
+            This is a unique identifier for the transaction.
+    NodeSubscription:
+      type: object
+      description: Represents a node subscription to a task
+      required:
+      - node_small_id
+      - task_small_id
+      - price_per_compute_unit
+      - max_num_compute_units
+      - valid
+      properties:
+        max_num_compute_units:
+          type: integer
+          format: int64
+          description: Maximum number of compute units for the subscription
+        node_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the node subscription
+        price_per_compute_unit:
+          type: integer
+          format: int64
+          description: Price per compute unit for the subscription
+        task_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the task
+        valid:
+          type: boolean
+          description: Indicates whether the subscription is valid
+    NodeTaskSubscriptionRequest:
+      type: object
+      description: |-
+        Represents a request to subscribe to a node task.
+
+        This struct encapsulates the necessary parameters for subscribing
+        to a node task, including optional gas-related fields.
+      required:
+      - task_small_id
+      - price_per_compute_unit
+      - max_num_compute_units
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        max_num_compute_units:
+          type: integer
+          format: int64
+          description: The maximum number of compute units.
+          minimum: 0
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+        price_per_compute_unit:
+          type: integer
+          format: int64
+          description: The price per compute unit.
+          minimum: 0
+        task_small_id:
+          type: integer
+          format: int64
+          description: The small ID of the task to subscribe to.
+    NodeTaskSubscriptionResponse:
+      type: object
+      description: |-
+        Represents a response to a node task subscription request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the node task subscription.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: |-
+            The transaction digest.
+            This is a unique identifier for the transaction.
+    NodeTaskUnsubscriptionRequest:
+      type: object
+      description: |-
+        Represents a request to unsubscribe from a node task.
+
+        This struct encapsulates the necessary parameters for unsubscribing
+        from a node task, including optional gas-related fields.
+      required:
+      - task_small_id
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+        task_small_id:
+          type: integer
+          format: int64
+          description: The small ID of the task to unsubscribe from.
+    NodeTaskUnsubscriptionResponse:
+      type: object
+      description: |-
+        Represents a response to a node task unsubscription request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the node task unsubscription.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: |-
+            The transaction digest.
+            This is a unique identifier for the transaction.
+    NodeTaskUpdateSubscriptionRequest:
+      type: object
+      required:
+      - task_small_id
+      - price_per_compute_unit
+      - max_num_compute_units
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        max_num_compute_units:
+          type: integer
+          format: int64
+          description: The maximum number of compute units.
+          minimum: 0
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+        price_per_compute_unit:
+          type: integer
+          format: int64
+          description: The price per compute unit.
+          minimum: 0
+        task_small_id:
+          type: integer
+          format: int64
+          description: The small ID of the task to subscribe to.
+    NodeTaskUpdateSubscriptionResponse:
+      type: object
+      description: |-
+        Represents a response to a node task update subscription request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the node task subscription.
+      required:
+      - tx_digest
+      properties:
+        tx_digest:
+          type: string
+          description: |-
+            The transaction digest.
+            This is a unique identifier for the transaction.
+    NodeTrySettleStacksRequest:
+      type: object
+      description: |-
+        Represents a request to try settling a stack.
+
+        This struct encapsulates the necessary parameters for attempting
+        to settle a stack, including optional gas-related fields.
+      required:
+      - stack_small_ids
+      - num_claimed_compute_units
+      properties:
+        gas:
+          type: string
+          description: |-
+            Optional gas object ID.
+            If not provided, the default is `None`.
+        gas_budget:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas budget.
+            If not provided, the default is `None`.
+          minimum: 0
+        gas_price:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Optional gas price.
+            If not provided, the default is `None`.
+          minimum: 0
+        node_badge_id:
+          type: string
+          description: |-
+            Optional node badge ID.
+            If not provided, the default is `None`.
+        num_claimed_compute_units:
+          type: integer
+          format: int64
+          description: The number of compute units claimed.
+          minimum: 0
+        stack_small_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: The small IDs of the stacks to settle.
+    NodeTrySettleStacksResponse:
+      type: object
+      description: |-
+        Represents a response to a node try settle stack request.
+
+        This struct contains the transaction digest, which is a unique
+        identifier for the transaction associated with the attempt to settle a stack.
+      required:
+      - tx_digests
+      properties:
+        tx_digests:
+          type: array
+          items:
+            type: string
+          description: |-
+            The transaction digests.
+            This is a unique identifier for the transaction.
+    Stack:
+      type: object
+      description: Represents a stack of compute units for a specific task
+      required:
+      - owner_address
+      - stack_small_id
+      - stack_id
+      - task_small_id
+      - selected_node_id
+      - num_compute_units
+      - price
+      - already_computed_units
+      - in_settle_period
+      - total_hash
+      - num_total_messages
+      properties:
+        already_computed_units:
+          type: integer
+          format: int64
+          description: Number of compute units already processed
+        in_settle_period:
+          type: boolean
+          description: Indicates whether the stack is currently in the settle period
+        num_compute_units:
+          type: integer
+          format: int64
+          description: Total number of compute units in this stack
+        num_total_messages:
+          type: integer
+          format: int64
+          description: Number of payload requests that were received by the node for this stack.
+        owner_address:
+          type: string
+          description: Address of the owner of the stack
+        price:
+          type: integer
+          format: int64
+          description: Price of the stack (likely in smallest currency unit)
+        selected_node_id:
+          type: integer
+          format: int64
+          description: Identifier of the selected node for computation
+        stack_id:
+          type: string
+          description: Unique string identifier for the stack
+        stack_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the stack
+        task_small_id:
+          type: integer
+          format: int64
+          description: Small integer identifier of the associated task
+        total_hash:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: |-
+            Joint concatenation of Blake2b hashes of each payload and response pairs that was already processed
+            by the node for this stack.
+    StackAttestationDispute:
+      type: object
+      description: Represents a dispute in the stack attestation process
+      required:
+      - stack_small_id
+      - attestation_commitment
+      - attestation_node_id
+      - original_node_id
+      - original_commitment
+      properties:
+        attestation_commitment:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Cryptographic commitment provided by the attesting node
+        attestation_node_id:
+          type: integer
+          format: int64
+          description: Identifier of the node that provided the attestation
+        original_commitment:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Original cryptographic commitment provided by the computing node
+        original_node_id:
+          type: integer
+          format: int64
+          description: Identifier of the original node that performed the computation
+        stack_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the stack involved in the dispute
+    StackSettlementTicket:
+      type: object
+      description: Represents a settlement ticket for a compute stack
+      required:
+      - stack_small_id
+      - selected_node_id
+      - num_claimed_compute_units
+      - requested_attestation_nodes
+      - committed_stack_proofs
+      - stack_merkle_leaves
+      - already_attested_nodes
+      - is_in_dispute
+      - user_refund_amount
+      - is_claimed
+      properties:
+        already_attested_nodes:
+          type: string
+          description: Comma-separated list of node IDs that have already attested
+        committed_stack_proofs:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Cryptographic proof of the committed stack state
+        dispute_settled_at_epoch:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Optional epoch timestamp when a dispute was settled
+        is_claimed:
+          type: boolean
+          description: Indicates whether the settlement ticket has been claimed
+        is_in_dispute:
+          type: boolean
+          description: Indicates whether the stack is currently in a dispute
+        num_claimed_compute_units:
+          type: integer
+          format: int64
+          description: Number of compute units claimed to be processed
+        requested_attestation_nodes:
+          type: string
+          description: Comma-separated list of node IDs requested for attestation
+        selected_node_id:
+          type: integer
+          format: int64
+          description: Identifier of the node selected for computation
+        stack_merkle_leaves:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Merkle leaf representing the stack in a larger tree structure
+        stack_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the stack
+        user_refund_amount:
+          type: integer
+          format: int64
+          description: Amount to be refunded to the user (likely in smallest currency unit)
+    Task:
+      type: object
+      description: Represents a task in the system
+      required:
+      - task_small_id
+      - task_id
+      - role
+      - is_deprecated
+      - security_level
+      properties:
+        deprecated_at_epoch:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Optional epoch timestamp when the task was deprecated
+        is_deprecated:
+          type: boolean
+          description: Indicates whether the task is deprecated
+        minimum_reputation_score:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Optional minimum reputation score required for the task
+        model_name:
+          type:
+          - string
+          - 'null'
+          description: Optional name of the model used for the task
+        role:
+          type: integer
+          format: int64
+          description: Role associated with the task (encoded as an integer)
+        security_level:
+          type: integer
+          format: int64
+          description: Security level of the task (encoded as an integer)
+        task_id:
+          type: string
+          description: Unique string identifier for the task
+        task_small_id:
+          type: integer
+          format: int64
+          description: Unique small integer identifier for the task
+        valid_until_epoch:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Optional epoch timestamp until which the task is valid
+tags:
+- name: almost_filled_stacks
+  description: Almost filled stacks management
+- name: attestation_disputes
+  description: Attestation disputes management
+- name: nodes
+  description: Nodes management
+- name: stacks
+  description: Stacks management
+- name: subscriptions
+  description: Subscriptions management
+- name: tasks
+  description: Tasks management

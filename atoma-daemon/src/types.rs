@@ -2,10 +2,6 @@ use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-#[schema(value_type = String)]
-pub struct ObjectIDSchema(ObjectID);
-
 /// Represents a request to register a node.
 ///
 /// This struct is used to encapsulate the necessary parameters
@@ -15,7 +11,8 @@ pub struct NodeRegistrationRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -54,12 +51,14 @@ pub struct NodeModelSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -95,7 +94,8 @@ pub struct NodeTaskSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -106,7 +106,8 @@ pub struct NodeTaskSubscriptionRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -138,7 +139,8 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
     pub price_per_compute_unit: u64,
@@ -149,7 +151,8 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -185,12 +188,14 @@ pub struct NodeTaskUnsubscriptionRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -229,12 +234,14 @@ pub struct NodeTrySettleStacksRequest {
     /// Optional node badge ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -275,7 +282,8 @@ pub struct NodeAttestationProofRequest {
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
@@ -310,12 +318,14 @@ pub struct NodeClaimFundsRequest {
     /// Optional node badge IDs.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_badge_id: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub node_badge_id: Option<ObjectID>,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<ObjectIDSchema>,
+    #[schema(value_type = String)]
+    pub gas: Option<ObjectID>,
 
     /// Optional gas budget.
     /// If not provided, the default is `None`.
