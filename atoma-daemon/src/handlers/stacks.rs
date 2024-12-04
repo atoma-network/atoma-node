@@ -38,8 +38,8 @@ pub fn stacks_router() -> Router<DaemonState> {
     get,
     path = "/stacks",
     responses(
-        (status = 200, description = "List of all Stack objects for all registered nodes", body = Vec<Stack>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all Stack objects for all registered nodes", body = Vec<Stack>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn stacks_list(
@@ -71,8 +71,8 @@ pub async fn stacks_list(
         ("id" = i64, Path, description = "The small ID of the node whose stacks should be retrieved")
     ),
     responses(
-        (status = 200, description = "List of Stack objects for the specified node", body = Vec<Stack>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of Stack objects for the specified node", body = Vec<Stack>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn stacks_get(
@@ -96,8 +96,8 @@ pub async fn stacks_get(
     get,
     path = "/claimed_stacks",
     responses(
-        (status = 200, description = "List of all StackSettlementTicket objects for all registered nodes", body = Vec<StackSettlementTicket>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all StackSettlementTicket objects for all registered nodes", body = Vec<StackSettlementTicket>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn claimed_stacks_list(
@@ -129,8 +129,8 @@ pub async fn claimed_stacks_list(
         ("id" = i64, Path, description = "The small ID of the node whose claimed stacks should be retrieved")
     ),
     responses(
-        (status = 200, description = "List of StackSettlementTicket objects for the specified node", body = Vec<StackSettlementTicket>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of StackSettlementTicket objects for the specified node", body = Vec<StackSettlementTicket>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn claimed_stacks_get(

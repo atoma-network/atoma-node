@@ -25,8 +25,8 @@ pub fn tasks_router() -> Router<DaemonState> {
     get,
     path = "/",
     responses(
-        (status = 200, description = "List of all tasks", body = Vec<Task>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all tasks", body = Vec<Task>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn tasks_list(

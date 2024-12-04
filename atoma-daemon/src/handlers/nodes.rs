@@ -96,8 +96,8 @@ pub fn nodes_router() -> Router<DaemonState> {
     path = "/register",
     request_body = NodeRegistrationRequest,
     responses(
-        (status = 200, description = "Node registration successful", body = NodeRegistrationResponse),
-        (status = 500, description = "Failed to submit registration transaction")
+        (status = OK, description = "Node registration successful", body = NodeRegistrationResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit registration transaction")
     )
 )]
 pub async fn nodes_register(
@@ -127,8 +127,8 @@ pub async fn nodes_register(
     path = "/model-subscribe",
     request_body = NodeModelSubscriptionRequest,
     responses(
-        (status = 200, description = "Node model subscription successful", body = NodeModelSubscriptionResponse),
-        (status = 500, description = "Failed to submit model subscription transaction")
+        (status = OK, description = "Node model subscription successful", body = NodeModelSubscriptionResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit model subscription transaction")
     )
 )]
 pub async fn nodes_model_subscribe(
@@ -169,8 +169,8 @@ pub async fn nodes_model_subscribe(
     path = "/task-subscribe",
     request_body = NodeTaskSubscriptionRequest,
     responses(
-        (status = 200, description = "Node task subscription successful", body = NodeTaskSubscriptionResponse),
-        (status = 500, description = "Failed to submit task subscription transaction")
+        (status = OK, description = "Node task subscription successful", body = NodeTaskSubscriptionResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit task subscription transaction")
     )
 )]
 pub async fn nodes_task_subscribe(
@@ -213,8 +213,8 @@ pub async fn nodes_task_subscribe(
     path = "/task-update-subscription",
     request_body = NodeTaskUpdateSubscriptionRequest,
     responses(
-        (status = 200, description = "Node task update subscription successful", body = NodeTaskUpdateSubscriptionResponse),
-        (status = 500, description = "Failed to submit task update subscription")
+        (status = OK, description = "Node task update subscription successful", body = NodeTaskUpdateSubscriptionResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit task update subscription")
     )
 )]
 pub async fn nodes_task_update_subscription(
@@ -257,8 +257,8 @@ pub async fn nodes_task_update_subscription(
     path = "/task-unsubscribe",
     request_body = NodeTaskUnsubscriptionRequest,
     responses(
-        (status = 200, description = "Node task unsubscription successful", body = NodeTaskUnsubscriptionResponse),
-        (status = 500, description = "Failed to submit task unsubscription")
+        (status = OK, description = "Node task unsubscription successful", body = NodeTaskUnsubscriptionResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit task unsubscription")
     )
 )]
 pub async fn nodes_task_unsubscribe(
@@ -297,8 +297,8 @@ pub async fn nodes_task_unsubscribe(
     path = "/try-settle-stacks",
     request_body = NodeTrySettleStacksRequest,
     responses(
-        (status = 200, description = "Node try settle stacks successful", body = NodeTrySettleStacksResponse),
-        (status = 500, description = "Failed to submit try settle stacks")
+        (status = OK, description = "Node try settle stacks successful", body = NodeTrySettleStacksResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit try settle stacks")
     )
 )]
 pub async fn nodes_try_settle_stacks(
@@ -360,8 +360,8 @@ pub async fn nodes_try_settle_stacks(
     path = "/submit-attestations",
     request_body = NodeAttestationProofRequest,
     responses(
-        (status = 200, description = "Node attestation proof successful", body = NodeAttestationProofResponse),
-        (status = 500, description = "Failed to submit attestation proof")
+        (status = OK, description = "Node attestation proof successful", body = NodeAttestationProofResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit attestation proof")
     )
 )]
 pub async fn nodes_submit_attestations(
@@ -471,8 +471,8 @@ pub async fn nodes_submit_attestations(
     path = "/claim-funds",
     request_body = NodeClaimFundsRequest,
     responses(
-        (status = 200, description = "Node claim funds successful", body = NodeClaimFundsResponse),
-        (status = 500, description = "Failed to submit claim funds")
+        (status = OK, description = "Node claim funds successful", body = NodeClaimFundsResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit claim funds")
     )
 )]
 pub async fn nodes_claim_funds(

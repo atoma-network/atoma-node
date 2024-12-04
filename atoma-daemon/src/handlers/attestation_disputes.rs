@@ -56,8 +56,8 @@ pub fn attestation_disputes_router() -> Router<DaemonState> {
     get,
     path = "/against",
     responses(
-        (status = 200, description = "List of all against attestation disputes where the registered nodes are the defendants", body = Vec<StackAttestationDispute>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all against attestation disputes where the registered nodes are the defendants", body = Vec<StackAttestationDispute>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn attestation_disputes_against_list(
@@ -89,8 +89,8 @@ pub async fn attestation_disputes_against_list(
         ("id" = i64, Path, description = "The small ID of the node whose disputes should be retrieved")
     ),
     responses(
-        (status = 200, description = "List of against attestation disputes where the specified node is the defendant", body = Vec<StackAttestationDispute>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of against attestation disputes where the specified node is the defendant", body = Vec<StackAttestationDispute>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn attestation_disputes_against_get(
@@ -114,8 +114,8 @@ pub async fn attestation_disputes_against_get(
     get,
     path = "/own",
     responses(
-        (status = 200, description = "List of all own attestation disputes where the registered nodes are the plaintiffs", body = Vec<StackAttestationDispute>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all own attestation disputes where the registered nodes are the plaintiffs", body = Vec<StackAttestationDispute>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn attestation_disputes_own_list(
@@ -147,8 +147,8 @@ pub async fn attestation_disputes_own_list(
         ("id" = i64, Path, description = "The small ID of the node whose initiated disputes should be retrieved")
     ),
     responses(
-        (status = 200, description = "List of own attestation disputes where the specified node is the plaintiff", body = Vec<StackAttestationDispute>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of own attestation disputes where the specified node is the plaintiff", body = Vec<StackAttestationDispute>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn attestation_disputes_own_get(

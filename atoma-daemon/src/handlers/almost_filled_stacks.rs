@@ -44,8 +44,8 @@ pub fn almost_filled_stacks_router() -> Router<DaemonState> {
         ("fraction" = f64, Path, description = "The fraction threshold (0.0 to 100.0) to filter stacks")
     ),
     responses(
-        (status = 200, description = "Stack objects that are filled above the specified fraction threshold", body = Vec<Stack>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "Stack objects that are filled above the specified fraction threshold", body = Vec<Stack>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn almost_filled_stacks_fraction_get(
@@ -93,8 +93,8 @@ pub async fn almost_filled_stacks_fraction_get(
         ("fraction" = f64, Path, description = "The fraction threshold (0.0 to 100.0) to filter stacks")
     ),
     responses(
-        (status = 200, description = "List of node stacks", body = Vec<Stack>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of node stacks", body = Vec<Stack>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn almost_filled_stacks_get(

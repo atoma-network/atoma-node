@@ -36,9 +36,9 @@ pub fn subscriptions_router() -> Router<DaemonState> {
     get,
     path = "/",
     responses(
-        (status = 200, description = "List of all node subscriptions", body = Vec<NodeSubscription>),
-        (status = 404, description = "No node badges registered"),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of all node subscriptions", body = Vec<NodeSubscription>),
+        (status = NOT_FOUND, description = "No node badges registered"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn subscriptions_list(
@@ -72,8 +72,8 @@ pub async fn subscriptions_list(
         ("id" = i64, Path, description = "The small ID of the node whose subscriptions should be retrieved")
     ),
     responses(
-        (status = 200, description = "List of node subscriptions", body = Vec<NodeSubscription>),
-        (status = 500, description = "Internal server error")
+        (status = OK, description = "List of node subscriptions", body = Vec<NodeSubscription>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
 pub async fn subscriptions_get(
