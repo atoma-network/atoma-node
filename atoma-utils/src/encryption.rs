@@ -4,7 +4,7 @@ use sha2::Sha256;
 use thiserror::Error;
 use x25519_dalek::SharedSecret;
 
-const NONCE_BYTE_SIZE: usize = 12;
+pub const NONCE_BYTE_SIZE: usize = 12;
 
 type Result<T> = std::result::Result<T, EncryptionError>;
 

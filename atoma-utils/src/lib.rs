@@ -14,6 +14,15 @@ use sui_sdk::types::crypto::{PublicKey, Signature, SignatureScheme, SuiSignature
 use tokio::sync::watch;
 use tracing::{error, instrument};
 
+pub mod constants {
+    pub const STACK_SMALL_ID: &str = "X-Stack-Small-Id";
+    pub const SIGNATURE: &str = "X-Signature";
+    pub const NONCE: &str = "X-Nonce";
+    pub const SALT: &str = "X-Salt";
+    pub const TX_DIGEST: &str = "X-Tx-Digest";
+    pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
+}
+
 /// Spawns a task that will automatically trigger shutdown if it encounters an error
 ///
 /// This helper function wraps a future in a tokio task that monitors its execution.

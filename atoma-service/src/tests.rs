@@ -1,14 +1,17 @@
 mod middleware {
+    use atoma_confidential::AtomaConfidentialComputeService;
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
     };
-    use atoma_sui::events::AtomaEvent;
-    use atoma_utils::{hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL};
+    use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
+    use atoma_utils::{
+        encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
+    };
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
-    use base64::{prelude::BASE64_STANDARD, Engine};
+    use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
     use flume::Sender;
     use serde_json::json;
     use serial_test::serial;
@@ -16,12 +19,12 @@ mod middleware {
     use std::{str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
-        base_types::SuiAddress,
+        base_types::{ObjectID, SuiAddress},
         crypto::{EncodeDecodeBase64, PublicKey, Signature, SignatureScheme},
     };
     use tempfile::tempdir;
     use tokenizers::Tokenizer;
-    use tokio::task::JoinHandle;
+    use tokio::{sync::RwLock, task::JoinHandle};
     use tower::Service;
 
     use crate::{
@@ -30,8 +33,8 @@ mod middleware {
             image_generations::IMAGE_GENERATIONS_PATH,
         },
         middleware::{
-            signature_verification_middleware, verify_stack_permissions, RequestMetadata,
-            RequestType,
+            confidential_compute_middleware, signature_verification_middleware,
+            verify_stack_permissions, RequestMetadata, RequestType,
         },
         server::AppState,
     };
@@ -104,6 +107,7 @@ mod middleware {
         Sender<AtomaAtomaStateManagerEvent>,
         tokio::sync::watch::Sender<bool>,
         Sender<AtomaEvent>,
+        tokio::sync::watch::Receiver<bool>,
     ) {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
@@ -147,8 +151,9 @@ mod middleware {
         };
         state_manager.state.insert_new_stack(stack).await.unwrap();
         let (shutdown_sender, shutdown_signal) = tokio::sync::watch::channel(false);
+        let shutdown_signal_clone = shutdown_signal.clone();
         let state_manager_handle = tokio::spawn(async move {
-            state_manager.run(shutdown_signal).await.unwrap();
+            state_manager.run(shutdown_signal_clone).await.unwrap();
         });
         // NOTE: We don't need the event subscriber sender for the tests,
         // but we need to return it so the tests can send events to the state manager
@@ -158,6 +163,7 @@ mod middleware {
             state_manager_sender,
             shutdown_sender,
             _event_subscriber_sender,
+            shutdown_signal,
         )
     }
 
@@ -168,6 +174,7 @@ mod middleware {
         tokio::sync::watch::Sender<bool>,
         JoinHandle<()>,
         Sender<AtomaEvent>,
+        x25519_dalek::PublicKey,
     ) {
         let keystore = setup_keystore();
         let models = vec![
@@ -181,14 +188,93 @@ mod middleware {
             .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
             .expect("Failed to sign message");
         let tokenizer = load_tokenizer().await;
-        let (state_manager_handle, state_manager_sender, shutdown_sender, _event_subscriber_sender) =
-            setup_database(public_key.clone()).await;
+        let (
+            state_manager_handle,
+            state_manager_sender,
+            shutdown_sender,
+            _event_subscriber_sender,
+            shutdown_receiver,
+        ) = setup_database(public_key.clone()).await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let (_, event_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
+        let client_yaml_contents = r#"
+            keystore:
+                File: ./.sui/keystore
+            envs:
+                - alias: testnet
+                  rpc: "https://fullnode.testnet.sui.io:443"
+                  ws: ~
+                  basic_auth: ~
+            active_env: testnet
+            active_address: "0xe9068128f7b0955412f8b825cd3bab6e1a5dd49cde8c51a72091481df9bca609"
+        "#;
+        let sui_keystore_contents = r#"
+        [
+            "AIgaZOcV4LWOsLMY37SfkEalngk2nbUM9S3SDhSe+rHq"
+        ]
+        "#;
+        const CLIENT_YAML_PATH: &str = "./.sui/sui_config/client.yaml";
+        let client_yaml_path = std::path::PathBuf::from(CLIENT_YAML_PATH);
+        // Create directory structure
+        std::fs::create_dir_all(client_yaml_path.parent().unwrap())
+            .expect("Failed to create .sui/sui_config directory");
+        std::fs::write(&client_yaml_path, client_yaml_contents)
+            .expect("Failed to write to client.yaml");
+        const KEYSTORE_PATH: &str = "./.sui/keystore";
+        let keystore_path = std::path::PathBuf::from(KEYSTORE_PATH);
+        std::fs::create_dir_all(keystore_path.parent().unwrap())
+            .expect("Failed to create .sui/keystore directory");
+        std::fs::write(keystore_path.clone(), sui_keystore_contents)
+            .expect("Failed to write to keystore");
+        let client_config = AtomaSuiConfig::new(
+            "http://localhost:9000".to_string(),
+            ObjectID::from_str("0x1").unwrap(),
+            ObjectID::from_str("0x2").unwrap(),
+            ObjectID::from_str("0x3").unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            client_yaml_path.to_string_lossy().to_string(),
+            "./keystore".to_string(),
+            "./".to_string(),
+        );
+        let _join_handle = tokio::spawn(async move {
+            let confidential_compute_service = AtomaConfidentialComputeService::new(
+                Arc::new(RwLock::new(
+                    AtomaSuiClient::new(client_config)
+                        .await
+                        .expect("Failed to create Sui client"),
+                )),
+                event_receiver,
+                decryption_receiver,
+                encryption_receiver,
+                shutdown_receiver,
+            )
+            .expect("Failed to create confidential compute service");
+            let public_key = confidential_compute_service.get_public_key();
+            pk_sender.send(public_key).unwrap();
+            confidential_compute_service
+                .run()
+                .await
+                .expect("Failed to run confidential compute service");
+        });
+        let dh_public_key = pk_receiver.await.unwrap();
+        std::fs::remove_dir_all(client_yaml_path.parent().unwrap())
+            .expect("Failed to remove client.yaml");
+        std::fs::remove_dir_all(keystore_path.parent().unwrap())
+            .expect("Failed to remove keystore");
         (
             AppState {
                 models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
+                decryption_sender,
+                encryption_sender,
                 chat_completions_service_url: "".to_string(),
                 embeddings_service_url: "".to_string(),
                 image_generations_service_url: "".to_string(),
@@ -201,6 +287,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            dh_public_key,
         )
     }
 
@@ -236,6 +323,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         // Create request body
@@ -279,7 +367,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_missing_public_key() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender) =
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender, _) =
             setup_app_state().await;
 
         let body = json!({
@@ -321,6 +409,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -362,6 +451,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -403,6 +493,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -440,7 +531,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_invalid_stack() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender) =
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender, _) =
             setup_app_state().await;
 
         let body = json!({
@@ -482,6 +573,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -540,6 +632,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -876,6 +969,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         // Test single string input
@@ -951,6 +1045,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         let body = json!({
@@ -1052,6 +1147,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _,
         ) = setup_app_state().await;
 
         // Test with invalid input type (number instead of string or array)
@@ -1075,6 +1171,192 @@ mod middleware {
                 app_state,
                 verify_stack_permissions,
             ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_encryption_decryption() {
+        const MESSAGE_CONTENT: &str = "plaintext data";
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, server_dh_public_key) =
+            setup_app_state().await;
+
+        // Create encrypted test data
+        let plaintext_data = MESSAGE_CONTENT.as_bytes().to_vec();
+        let salt = "test_salt";
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
+        let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
+        let (encrypted_data, nonce) =
+            encrypt_plaintext(&plaintext_data, shared_secret, salt.as_bytes())
+                .expect("Failed to encrypt plaintext data");
+
+        // Build request
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header(
+                atoma_utils::constants::SALT,
+                STANDARD.encode(salt.as_bytes()),
+            )
+            .header(
+                atoma_utils::constants::NONCE,
+                STANDARD.encode(nonce.as_slice()),
+            )
+            .header(
+                atoma_utils::constants::NODE_X25519_PUBLIC_KEY,
+                client_dh_public_key_b64,
+            )
+            .body(Body::from(encrypted_data.clone()))
+            .expect("Failed to build request");
+
+        async fn verify_decrypted_body(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
+            let body = axum::body::to_bytes(req.into_body(), 1024)
+                .await
+                .expect("Failed to read body");
+            assert_eq!(body, MESSAGE_CONTENT.as_bytes());
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new().route("/", post(verify_decrypted_body)).layer(
+            axum::middleware::from_fn_with_state(app_state, confidential_compute_middleware),
+        );
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_missing_headers() {
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+            setup_app_state().await;
+
+        // Test missing salt
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Nonce", "test_nonce")
+            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .body(Body::from("test"))
+            .unwrap();
+
+        let mut app = Router::new().route("/", post(test_handler)).layer(
+            axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                confidential_compute_middleware,
+            ),
+        );
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Test missing nonce
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Salt", "test_salt")
+            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .body(Body::from("test"))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Test missing DH public key
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Salt", "test_salt")
+            .header("X-Nonce", "test_nonce")
+            .body(Body::from("test"))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_invalid_dh_key() {
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+            setup_app_state().await;
+
+        // Test invalid base64
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Salt", "test_salt")
+            .header("X-Nonce", "test_nonce")
+            .header("X-Diffie-Hellman-Public-Key", "invalid-base64!")
+            .body(Body::from("test"))
+            .unwrap();
+
+        let mut app = Router::new().route("/", post(test_handler)).layer(
+            axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                confidential_compute_middleware,
+            ),
+        );
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Test wrong key length
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Salt", "test_salt")
+            .header("X-Nonce", "test_nonce")
+            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 16])) // Wrong length
+            .body(Body::from("test"))
+            .unwrap();
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_large_body() {
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+            setup_app_state().await;
+
+        // Create body larger than MAX_BODY_SIZE
+        let large_body = "x".repeat(2 * 1024 * 1024); // 2MB
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("X-Salt", "test_salt")
+            .header("X-Nonce", "test_nonce")
+            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .body(Body::from(large_body))
+            .unwrap();
+
+        let mut app = Router::new().route("/", post(test_handler)).layer(
+            axum::middleware::from_fn_with_state(app_state, confidential_compute_middleware),
+        );
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);

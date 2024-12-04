@@ -69,7 +69,7 @@ pub enum AtomaEventIdentifier {
     /// Emitted when a node's public key is rotated.
     NewKeyRotationEvent,
     /// Emitted when a node's key rotation remote attestation is verified.
-    NodeKeyRotationEvent,
+    NodePublicKeyCommittmentEvent,
 }
 
 impl FromStr for AtomaEventIdentifier {
@@ -100,7 +100,7 @@ impl FromStr for AtomaEventIdentifier {
             "Text2TextPromptEvent" => Ok(Self::Text2TextPromptEvent),
             "NodeSubscriptionUpdatedEvent" => Ok(Self::NodeSubscriptionUpdatedEvent),
             "NewKeyRotationEvent" => Ok(Self::NewKeyRotationEvent),
-            "NodeKeyRotationEvent" => Ok(Self::NodeKeyRotationEvent),
+            "NodePublicKeyCommittmentEvent" => Ok(Self::NodePublicKeyCommittmentEvent),
             _ => Err(SuiEventParseError::UnknownEvent(s.to_string())),
         }
     }
@@ -185,7 +185,7 @@ pub enum AtomaEvent {
     NewKeyRotationEvent(NewKeyRotationEvent),
 
     /// An event emitted when a node's key rotation remote attestation is verified successfully.
-    NodeKeyRotationEvent(NodeKeyRotationEvent),
+    NodePublicKeyCommittmentEvent(NodePublicKeyCommittmentEvent),
 }
 
 fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -821,7 +821,7 @@ pub struct Text2TextPromptEvent {
 
 /// Represents an event emitted when a node's public key is rotated.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeKeyRotationEvent {
+pub struct NodePublicKeyCommittmentEvent {
     /// The epoch number when the node key rotation was requested.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,

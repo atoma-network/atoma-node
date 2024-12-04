@@ -9,8 +9,8 @@ aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 blake2 = { workspace = true }
-hkdf = { workspace = true }
 fastcrypto = { workspace = true }
+hkdf = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 sui-sdk = { workspace = true }

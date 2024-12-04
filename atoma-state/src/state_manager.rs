@@ -718,6 +718,65 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Inserts or updates a node's public key rotation record in the database.
+    ///
+    /// This method inserts a new entry into the `node_public_key_rotations` table with the provided
+    /// epoch, node ID, public key bytes, and TEE remote attestation bytes. If a record with the same
+    /// `node_small_id` already exists, it updates the existing record with the new values.
+    ///
+    /// # Arguments
+    ///
+    /// * `epoch` - The epoch at which the public key rotation is recorded.
+    /// * `node_small_id` - The unique identifier of the node.
+    /// * `public_key_bytes` - A vector of bytes representing the node's public key.
+    /// * `tee_remote_attestation_bytes` - A vector of bytes representing the TEE remote attestation.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn rotate_node_key(state_manager: &AtomaStateManager, epoch: u64, node_id: u64, public_key: Vec<u8>, attestation: Vec<u8>) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.insert_node_public_key_rotation(epoch, node_id, public_key, attestation).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(epoch = %epoch, node_small_id = %node_small_id)
+    )]
+    pub async fn insert_node_public_key_rotation(
+        &self,
+        epoch: u64,
+        node_small_id: u64,
+        public_key_bytes: Vec<u8>,
+        tee_remote_attestation_bytes: Vec<u8>,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_public_key_rotations (epoch, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4)
+                ON CONFLICT (node_small_id) 
+                    DO UPDATE SET 
+                        epoch = $1, 
+                        public_key_bytes = $3, 
+                        tdx_quote_bytes = $4",
+        )
+        .bind(epoch as i64)
+        .bind(node_small_id as i64)
+        .bind(public_key_bytes)
+        .bind(tee_remote_attestation_bytes)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
     /// Retrieves the stack associated with a specific stack ID.
     ///
     /// This method fetches the stack details from the `stacks` table based on the provided `stack_id`.
