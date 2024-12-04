@@ -124,13 +124,16 @@ pub async fn run_server(
 ///
 /// # API Endpoints
 ///
+/// ## Health Check
+/// * `GET /health` - Check service health status
+///
 /// ## Subscription Management
 /// * `GET /subscriptions` - Get all subscriptions for registered nodes
 /// * `GET /subscriptions/:id` - Get subscriptions for a specific node
-/// * `POST /model_subscribe` - Subscribe a node to a model
-/// * `POST /task_subscribe` - Subscribe a node to a task
-/// * `POST /task_update_subscription` - Updates an already existing subscription to a task
-/// * `POST /task_unsubscribe` - Unsubscribe a node from a task
+/// * `POST /nodes/model-subscribe` - Subscribe a node to a model
+/// * `POST /nodes/task-subscribe` - Subscribe a node to a task
+/// * `POST /nodes/task-update-subscription` - Updates an existing task subscription
+/// * `POST /nodes/task-unsubscribe` - Unsubscribe a node from a task
 ///
 /// ## Task Management
 /// * `GET /tasks` - Get all available tasks
@@ -140,30 +143,35 @@ pub async fn run_server(
 /// * `GET /stacks/:id` - Get stacks for a specific node
 /// * `GET /almost_filled_stacks/:fraction` - Get stacks filled above specified fraction
 /// * `GET /almost_filled_stacks/:id/:fraction` - Get node's stacks filled above fraction
-/// * `GET /claimed_stacks` - Get all claimed stacks
-/// * `GET /claimed_stacks/:id` - Get claimed stacks for a specific node
-/// * `POST /try_settle_stack_ids` - Attempt to settle specified stacks
+/// * `GET /stacks/claimed_stacks` - Get all claimed stacks
+/// * `GET /stacks/claimed_stacks/:id` - Get claimed stacks for a specific node
+/// * `POST /nodes/try-settle-stacks` - Attempt to settle specified stacks
 /// * `POST /submit_stack_settlement_attestations` - Submit attestations for stack settlement
 /// * `POST /claim_funds` - Claim funds from completed stacks
 ///
 /// ## Attestation Disputes
-/// * `GET /against_attestation_disputes` - Get disputes against registered nodes
-/// * `GET /against_attestation_disputes/:id` - Get disputes against a specific node
-/// * `GET /own_attestation_disputes` - Get disputes initiated by registered nodes
-/// * `GET /own_attestation_disputes/:id` - Get disputes initiated by a specific node
+/// * `GET /attestation_disputes/against` - Get disputes against registered nodes
+/// * `GET /attestation_disputes/against/:id` - Get disputes against a specific node
+/// * `GET /attestation_disputes/own` - Get disputes initiated by registered nodes
+/// * `GET /attestation_disputes/own/:id` - Get disputes initiated by a specific node
 ///
 /// ## Node Registration
-/// * `POST /register` - Register a new node
+/// * `POST /nodes/register` - Register a new node
+///
+/// ## API Documentation
+/// * `GET /swagger-ui` - Interactive API documentation UI
+/// * `GET /api-docs/openapi.json` - OpenAPI specification in JSON format
 ///
 /// # Example
 /// ```rust,ignore
 /// use atoma_daemon::DaemonState;
 ///
 /// let daemon_state = DaemonState::new(/* ... */);
-/// let app = create_daemon_router(daemon_state);
+/// let app = create_router(daemon_state);
+///
 /// // Start the server with the configured router
-/// axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-///     .serve(app.into_make_service())
+/// let listener = TcpListener::bind("0.0.0.0:3000").await?;
+/// axum::serve(listener, app.into_make_service())
 ///     .await?;
 /// ```
 pub fn create_router(daemon_state: DaemonState) -> Router {
