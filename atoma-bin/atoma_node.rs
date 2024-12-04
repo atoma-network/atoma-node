@@ -2,11 +2,8 @@ use std::{path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
-use atoma_daemon::{server::run_server, AtomaDaemonConfig, DaemonState};
-use atoma_service::{
-    config::AtomaServiceConfig,
-    server::{run_server, AppState},
-};
+use atoma_daemon::{AtomaDaemonConfig, DaemonState};
+use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -326,8 +323,8 @@ async fn main() -> Result<()> {
         "Starting Atoma node service"
     );
 
-    let server_handle = spawn_with_shutdown(
-        run_server(app_state, tcp_listener, shutdown_receiver.clone()),
+    let service_handle = spawn_with_shutdown(
+        atoma_service::server::run_server(app_state, tcp_listener, shutdown_receiver.clone()),
         shutdown_sender.clone(),
     );
 
@@ -338,7 +335,7 @@ async fn main() -> Result<()> {
         "Starting Atoma daemon service"
     );
     let daemon_handle = spawn_with_shutdown(
-        run_server(
+        atoma_daemon::server::run_server(
             daemon_app_state,
             daemon_tcp_listener,
             shutdown_receiver.clone(),
@@ -369,7 +366,7 @@ async fn main() -> Result<()> {
     let (subscriber_result, state_manager_result, server_result, daemon_result, _) = try_join!(
         subscriber_handle,
         state_manager_handle,
-        server_handle,
+        service_handle,
         daemon_handle,
         ctrl_c
     )?;
