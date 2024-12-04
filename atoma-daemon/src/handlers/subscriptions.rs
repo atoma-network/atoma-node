@@ -19,6 +19,12 @@ pub const SUBSCRIPTIONS_PATH: &str = "/subscriptions";
 )]
 pub(crate) struct SubscriptionsOpenApi;
 
+/// Router for handling subscription-related endpoints
+///
+/// This function sets up the routing for various subscription-related operations,
+/// including listing all subscriptions and retrieving specific subscriptions by ID.
+/// Each route corresponds to a specific operation that can be performed on subscriptions
+/// within the system.
 pub fn subscriptions_router() -> Router<DaemonState> {
     Router::new()
         .route(SUBSCRIPTIONS_PATH, get(subscriptions_list))

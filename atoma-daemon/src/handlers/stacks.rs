@@ -19,6 +19,12 @@ pub const STACKS_PATH: &str = "/stacks";
 )]
 pub(crate) struct StacksOpenApi;
 
+/// Router for handling stack-related endpoints
+///
+/// This function sets up the routing for various stack-related operations,
+/// including listing all stacks, retrieving specific stacks by ID, listing claimed stacks,
+/// and retrieving specific claimed stacks by ID. Each route corresponds to a specific
+/// operation that can be performed on stacks within the system.
 pub fn stacks_router() -> Router<DaemonState> {
     Router::new()
         .route(STACKS_PATH, get(stacks_list))

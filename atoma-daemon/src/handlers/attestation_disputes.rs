@@ -24,6 +24,13 @@ pub const ATTESTATION_DISPUTES_PATH: &str = "/attestation_disputes";
 )]
 pub(crate) struct AttestationDisputesOpenApi;
 
+/// Router for handling attestation disputes endpoints
+///
+/// Creates routes for:
+/// - GET /attestation_disputes/against - Get all attestation disputes against the registered nodes
+/// - GET /attestation_disputes/against/:id - Get attestation disputes against a specific node
+/// - GET /attestation_disputes/own - Get all attestation disputes initiated by the registered nodes
+/// - GET /attestation_disputes/own/:id - Get attestation disputes initiated by a specific node
 pub fn attestation_disputes_router() -> Router<DaemonState> {
     Router::new()
         .route(

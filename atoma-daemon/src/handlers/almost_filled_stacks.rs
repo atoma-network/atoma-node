@@ -19,6 +19,11 @@ pub const ALMOST_FILLED_STACKS_PATH: &str = "/almost_filled_stacks";
 )]
 pub(crate) struct AlmostFilledStacksOpenApi;
 
+/// Router for handling almost filled stacks endpoints
+///
+/// Creates routes for:
+/// - GET /almost_filled_stacks - Get stacks above threshold for all nodes
+/// - GET /almost_filled_stacks/:id - Get stacks above threshold for specific node
 pub fn almost_filled_stacks_router() -> Router<DaemonState> {
     Router::new()
         .route(

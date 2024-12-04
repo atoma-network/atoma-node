@@ -51,6 +51,12 @@ pub const NODES_PATH: &str = "/nodes";
 )]
 pub(crate) struct NodesOpenApi;
 
+/// Router for handling node-related endpoints
+///
+/// This function sets up the routing for various node-related operations,
+/// including registration, model subscription, task subscription, and more.
+/// Each route corresponds to a specific operation that nodes can perform
+/// within the system.
 pub fn nodes_router() -> Router<DaemonState> {
     Router::new()
         .route(&format!("{NODES_PATH}/register"), post(nodes_register))

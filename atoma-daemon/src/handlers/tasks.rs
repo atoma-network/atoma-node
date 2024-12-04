@@ -11,6 +11,11 @@ pub const TASKS_PATH: &str = "/tasks";
 #[openapi(paths(tasks_list), components(schemas(Task)))]
 pub(crate) struct TasksOpenApi;
 
+/// Router for handling task-related endpoints
+///
+/// This function sets up the routing for various task-related operations,
+/// including listing all tasks. Each route corresponds to a specific
+/// operation that can be performed on tasks within the system.
 pub fn tasks_router() -> Router<DaemonState> {
     Router::new().route(TASKS_PATH, get(tasks_list))
 }
