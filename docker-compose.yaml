@@ -57,6 +57,110 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - atoma-network
+
+  atoma-node:
+    <<: *atoma-node
+    build:
+      args:
+        TRACE_LEVEL: ${TRACE_LEVEL:-info}
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "${ATOMA_DAEMON_PORT:-3001}:3001"
+    profiles:
+      - chat_completions_vllm
+      - chat_completions_vllm_cpu
+      - chat_completions_vllm_rocm
+      - chat_completions_mistralrs_cpu
+      - embeddings_tei
+      - image_generations_mistralrs
+    depends_on:
+      postgres-db:
+        condition: service_started
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
+
+  vllm:
+    <<: *inference-service-cuda
+    container_name: chat-completions
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.6.3
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    ipc: host
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
+  vllm-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_cpu]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN}
+
+  vllm-rocm:
+    <<: *inference-service-rocm
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_rocm]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.rocm
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
+  mistralrs-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_mistralrs_cpu]
+    build:
+      context: https://github.com/EricLBuehler/mistral.rs.git
+      dockerfile: Dockerfile
+    ports:
+      - "${CHAT_COMPLETIONS_SERVER_PORT}:80"
+    command: plain -m ${CHAT_COMPLETIONS_MODEL}
+
+  tei:
+    <<: *inference-service-cuda
+    container_name: embeddings
+    profiles: [embeddings_tei]
+    image: ${TEI_IMAGE}
+    ports:
+      - "${EMBEDDINGS_SERVER_PORT}:80"
+    command: --model-id ${EMBEDDINGS_MODEL} --huggingface-hub-cache /root/.cache/huggingface/hub
+
+  mistralrs:
+    <<: *inference-service-cuda
+    container_name: image-generations
+    profiles: [image_generations_mistralrs]
+    image: ${MISTRALRS_IMAGE}
+    ports:
+      - "${IMAGE_GENERATIONS_SERVER_PORT}:80"
+    command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
+
+networks:
+  atoma-network:
+    driver: bridge
 
 volumes:
   postgres-data:
