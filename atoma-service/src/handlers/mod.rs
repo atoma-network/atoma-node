@@ -3,12 +3,18 @@ pub(crate) mod embeddings;
 pub(crate) mod image_generations;
 pub(crate) mod prometheus;
 
+use atoma_confidential::types::{
+    ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
+};
 use atoma_utils::hashing::blake2b_hash;
 use axum::http::StatusCode;
 use serde_json::{json, Value};
-use tracing::error;
+use tracing::{error, info, instrument};
 
-use crate::server::{utils, AppState};
+use crate::{
+    middleware::EncryptionMetadata,
+    server::{utils, AppState},
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 
 /// Updates response signature and stack hash state
@@ -23,6 +29,11 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 /// # Returns
 ///
 /// Returns Result<(), StatusCode> indicating success or failure
+#[instrument(
+    level = "info",
+    skip(response_body, state),
+    fields(event = "sign-response-and-update-stack-hash",)
+)]
 async fn sign_response_and_update_stack_hash(
     response_body: &mut Value,
     payload_hash: [u8; 32],
@@ -58,5 +69,60 @@ async fn sign_response_and_update_stack_hash(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    Ok(())
+}
+
+#[instrument(
+    level = "info",
+    skip(state, response_body, client_encryption_metadata),
+    fields(event = "confidential-compute-encryption-response",)
+)]
+pub(crate) async fn handle_confidential_compute_encryption_response(
+    state: &AppState,
+    response_body: &mut Value,
+    client_encryption_metadata: Option<EncryptionMetadata>,
+) -> Result<(), StatusCode> {
+    if let Some(EncryptionMetadata {
+        client_dh_public_key,
+        salt,
+    }) = client_encryption_metadata
+    {
+        info!(
+            target = "atoma-service",
+            event = "chat-completions-handler",
+            "Confidential chat completions response: {:#?}",
+            response_body
+        );
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        state
+            .encryption_sender
+            .send((
+                ConfidentialComputeEncryptionRequest {
+                    plaintext: response_body.to_string().as_bytes().to_vec(),
+                    salt,
+                    diffie_hellman_public_key: client_dh_public_key,
+                },
+                sender,
+            ))
+            .map_err(|_| {
+                error!(
+                    target = "atoma-service",
+                    event = "chat-completions-handler",
+                    "Error sending encryption request"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        let ConfidentialComputeEncryptionResponse { ciphertext, nonce } =
+            receiver.await.map_err(|_| {
+                error!(
+                    target = "atoma-service",
+                    event = "chat-completions-handler",
+                    "Error receiving encryption response"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        response_body["nonce"] = json!(nonce);
+        response_body["ciphertext"] = json!(ciphertext);
+    }
     Ok(())
 }

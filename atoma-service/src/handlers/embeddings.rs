@@ -1,5 +1,6 @@
 use crate::{
     handlers::{
+        handle_confidential_compute_encryption_response,
         prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
         sign_response_and_update_stack_hash,
     },
@@ -82,6 +83,7 @@ pub async fn embeddings_handler(
         stack_small_id,
         estimated_total_compute_units: _,
         payload_hash,
+        client_encryption_metadata,
         request_type: _,
     } = request_metadata;
 
@@ -103,8 +105,40 @@ pub async fn embeddings_handler(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
-        .await?;
+    // Sign the response and update the stack hashs
+    if let Err(e) = sign_response_and_update_stack_hash(
+        &mut response_body,
+        payload_hash,
+        &state,
+        stack_small_id,
+    )
+    .await
+    {
+        error!(
+            target = "atoma-service",
+            event = "embeddings-handler",
+            "Error signing response and updating stack hash: {}",
+            e
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // Handle confidential compute encryption response
+    if let Err(e) = handle_confidential_compute_encryption_response(
+        &state,
+        &mut response_body,
+        client_encryption_metadata,
+    )
+    .await
+    {
+        error!(
+            target = "atoma-service",
+            event = "embeddings-handler",
+            "Error handling confidential compute encryption response: {}",
+            e
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     // Stop the timer before returning the response
     timer.observe_duration();

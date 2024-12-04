@@ -50,6 +50,15 @@ const IMAGE_SIZE: &str = "size";
 /// The key for the number of images in the request body
 const IMAGE_N: &str = "n";
 
+/// Metadata for confidential compute encryption requests
+#[derive(Clone, Debug)]
+pub struct EncryptionMetadata {
+    /// The client's Diffie-Hellman public key
+    pub client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// The salt
+    pub salt: Vec<u8>,
+}
+
 /// Metadata extracted from the request
 #[derive(Clone, Debug, Default)]
 pub struct RequestMetadata {
@@ -61,6 +70,8 @@ pub struct RequestMetadata {
     pub payload_hash: [u8; 32],
     /// The type of request
     pub request_type: RequestType,
+    /// The client's Diffie-Hellman public key and salt
+    pub client_encryption_metadata: Option<EncryptionMetadata>,
 }
 
 /// The type of request
@@ -110,6 +121,34 @@ impl RequestMetadata {
     /// ```
     pub fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
+        self
+    }
+
+    /// Sets the client's encryption metadata for this metadata instance
+    ///
+    /// # Arguments
+    /// * `client_dh_public_key` - The client's Diffie-Hellman public key
+    /// * `salt` - The salt
+    ///
+    /// # Returns
+    /// Returns self with the updated client's encryption metadata for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///     .with_client_encryption_metadata(client_dh_public_key, salt);
+    /// ```
+    pub fn with_client_encryption_metadata(
+        mut self,
+        client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+        salt: Vec<u8>,
+    ) -> Self {
+        self.client_encryption_metadata = Some(EncryptionMetadata {
+            client_dh_public_key,
+            salt,
+        });
         self
     }
 }
@@ -457,7 +496,7 @@ pub async fn confidential_compute_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let (req_parts, req_body) = req.into_parts();
+    let (mut req_parts, req_body) = req.into_parts();
     let salt = req_parts
         .headers
         .get(atoma_utils::constants::SALT)
@@ -517,7 +556,7 @@ pub async fn confidential_compute_middleware(
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
         ciphertext: body_bytes.as_ref().to_vec(),
         nonce: nonce_bytes,
-        salt: salt_bytes,
+        salt: salt_bytes.clone(),
         diffie_hellman_public_key: diffie_hellman_public_key_bytes,
     };
     let (result_sender, result_receiver) = oneshot::channel();
@@ -534,6 +573,10 @@ pub async fn confidential_compute_middleware(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     let body = Body::from(plaintext);
+    req_parts.extensions.insert(
+        RequestMetadata::default()
+            .with_client_encryption_metadata(diffie_hellman_public_key_bytes, salt_bytes),
+    );
     let req = Request::from_parts(req_parts, body);
     Ok(next.run(req).await)
 }
