@@ -1,5 +1,5 @@
 # Builder stage
-FROM --platform=$BUILDPLATFORM rust:1.76-slim-bullseye AS builder
+FROM --platform=$BUILDPLATFORM rust:1.83-slim-bullseye AS builder
 
 # Add platform-specific arguments
 ARG TARGETPLATFORM
