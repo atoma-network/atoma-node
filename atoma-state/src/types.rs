@@ -1,3 +1,4 @@
+use crate::state_manager::Result;
 use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
     StackTrySettleEvent, TaskRegisteredEvent,
@@ -5,11 +6,10 @@ use atoma_sui::events::{
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::sync::oneshot;
-
-use crate::state_manager::Result;
+use utoipa::ToSchema;
 
 /// Represents a task in the system
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Task {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
@@ -48,7 +48,7 @@ impl From<TaskRegisteredEvent> for Task {
 }
 
 /// Represents a stack of compute units for a specific task
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Stack {
     /// Address of the owner of the stack
     pub owner_address: String,
@@ -112,7 +112,7 @@ impl From<StackCreateAndUpdateEvent> for Stack {
 }
 
 /// Represents a settlement ticket for a compute stack
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StackSettlementTicket {
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
@@ -173,7 +173,7 @@ impl From<StackTrySettleEvent> for StackSettlementTicket {
 }
 
 /// Represents a dispute in the stack attestation process
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StackAttestationDispute {
     /// Unique small integer identifier for the stack involved in the dispute
     pub stack_small_id: i64,
@@ -200,7 +200,7 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
 }
 
 /// Represents a node subscription to a task
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct NodeSubscription {
     /// Unique small integer identifier for the node subscription
     pub node_small_id: i64,
