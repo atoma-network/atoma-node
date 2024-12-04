@@ -78,6 +78,7 @@ services:
     depends_on:
       postgres-db:
         condition: service_started
+        required: true
       vllm:
         condition: service_started
         required: false
