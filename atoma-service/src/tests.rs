@@ -807,11 +807,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_signature_verification_empty_body() {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .with_test_writer()
-            .init();
-
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
         let message = json!({});

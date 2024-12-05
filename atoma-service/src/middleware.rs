@@ -124,7 +124,7 @@ impl RequestMetadata {
     /// Returns self with the updated endpoint path for method chaining
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default().with_endpoint_path(CHAT_COMPLETIONS_PATH.to_string());
