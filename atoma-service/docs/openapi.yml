@@ -12,6 +12,24 @@ paths:
     get:
       tags:
       - health
+      summary: Handles the health check endpoint.
+      description: |-
+        This function is used to verify that the server is running and responsive.
+        It's typically used by load balancers or monitoring systems to check the
+        health status of the service.
+
+        # Returns
+
+        Returns a static string "OK" to indicate that the server is healthy and
+        functioning properly.
+
+        # Examples
+
+        This function is usually mapped to a GET endpoint, for example:
+
+        ```rust,ignore
+        app.route("/health", get(health_check))
+        ```
       operationId: health
       responses:
         '200':
@@ -19,6 +37,21 @@ paths:
           content:
             application/json:
               schema: {}
+  /metrics:
+    get:
+      tags:
+      - metrics
+      summary: Handles the metrics endpoint.
+      description: |-
+        This function is used to return the metrics for the service.
+
+        # Returns
+
+        Returns the metrics for the service as a plain text response.
+      operationId: metrics_handler
+      responses:
+        '200':
+          description: Metrics for the service
   /v1/chat/completions:
     post:
       tags:
@@ -555,6 +588,8 @@ components:
 tags:
 - name: health
   description: Health check
+- name: metrics
+  description: Metrics
 - name: chat
   description: Chat completions
 - name: embeddings

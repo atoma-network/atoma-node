@@ -10,3 +10,4 @@ logs/
 data/
 
 ./cursor.toml
+./keys/dh_privkey

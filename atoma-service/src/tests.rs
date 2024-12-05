@@ -915,6 +915,7 @@ mod middleware {
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
+            endpoint_path: "/".to_string(),
         };
 
         let mut req = Request::builder()

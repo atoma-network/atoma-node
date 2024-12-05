@@ -13,6 +13,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
+use x25519_dalek::PublicKey;
 
 // TODO: How large can the `ServiceData` be ? Is it feasible to use a Flume channel ?
 
@@ -57,7 +58,7 @@ impl AtomaConfidentialComputeService {
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
-        let key_manager = X25519KeyPairManager::new();
+        let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
             sui_client,
             key_manager,
@@ -99,25 +100,53 @@ impl AtomaConfidentialComputeService {
     /// - `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
     ///
     /// Note: Channel receive errors are logged but don't cause the service to return an error.
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "info", skip_all)]
     pub async fn run(mut self) -> Result<()> {
         tracing::info!(
             target = "atoma-confidential-compute-service",
             event = "confidential_compute_service_run",
-            "Running confidential compute service"
+            "Running confidential compute service, with dh public key: {:?}",
+            self.key_manager.get_public_key().as_bytes()
         );
         loop {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
-                    let ConfidentialComputeDecryptionRequest { ciphertext, nonce, salt, diffie_hellman_public_key } = decryption_request;
-                    let plaintext = self.key_manager.decrypt_cyphertext(diffie_hellman_public_key, &ciphertext, &salt, &nonce)?;
+                    let ConfidentialComputeDecryptionRequest { ciphertext, nonce, salt, proxy_x25519_public_key, node_x25519_public_key } = decryption_request;
+                    if PublicKey::from(node_x25519_public_key) != self.key_manager.get_public_key() {
+                        tracing::error!(
+                            target = "atoma-confidential-compute-service",
+                            event = "confidential_compute_service_decryption_error",
+                            "Node X25519 public key does not match the expected key: {:?} != {:?}",
+                            node_x25519_public_key,
+                            self.key_manager.get_public_key().as_bytes()
+                        );
+                        // TODO: Send error response to the client
+                        // sender.send(Err(AtomaConfidentialComputeError::KeyManagementError(KeyManagementError::InvalidKey))).map_err(|_| AtomaConfidentialComputeError::SenderError)?;
+                    }
+                    let plaintext = self.key_manager.decrypt_cyphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce).map_err(|e| {
+                        tracing::error!(
+                            target = "atoma-confidential-compute-service",
+                            event = "confidential_compute_service_decryption_error",
+                            "Failed to decrypt cyphertext, with error: {:?}",
+                            e
+                        );
+                        AtomaConfidentialComputeError::KeyManagementError(e)
+                    })?;
                     sender
                         .send(ConfidentialComputeDecryptionResponse { plaintext })
                         .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 Some((encryption_request, sender)) = self.service_encryption_receiver.recv() => {
-                    let ConfidentialComputeEncryptionRequest { plaintext, salt, diffie_hellman_public_key } = encryption_request;
-                    let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt)?;
+                    let ConfidentialComputeEncryptionRequest { plaintext, salt, proxy_x25519_public_key } = encryption_request;
+                    let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(proxy_x25519_public_key, &plaintext, &salt).map_err(|e| {
+                        tracing::error!(
+                            target = "atoma-confidential-compute-service",
+                            event = "confidential_compute_service_encryption_error",
+                            "Failed to encrypt plaintext, with error: {:?}",
+                            e
+                        );
+                        AtomaConfidentialComputeError::KeyManagementError(e)
+                    })?;
                     sender
                         .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce })
                         .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
@@ -188,7 +217,7 @@ impl AtomaConfidentialComputeService {
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "trace", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
-        self.key_manager.rotate_keys();
+        self.key_manager.rotate_keys()?;
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
         #[cfg(feature = "tdx")]

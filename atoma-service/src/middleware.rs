@@ -61,6 +61,8 @@ pub struct RequestMetadata {
     pub payload_hash: [u8; 32],
     /// The type of request
     pub request_type: RequestType,
+    /// endpoint path
+    pub endpoint_path: String,
 }
 
 /// The type of request
@@ -110,6 +112,25 @@ impl RequestMetadata {
     /// ```
     pub fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
+        self
+    }
+
+    /// Sets the endpoint path for this metadata instance
+    ///
+    /// # Arguments
+    /// * `endpoint_path` - The path of the endpoint
+    ///
+    /// # Returns
+    /// Returns self with the updated endpoint path for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default().with_endpoint_path(CHAT_COMPLETIONS_PATH.to_string());
+    /// ```
+    pub fn with_endpoint_path(mut self, endpoint_path: String) -> Self {
+        self.endpoint_path = endpoint_path;
         self
     }
 }
@@ -185,7 +206,11 @@ pub async fn signature_verification_middleware(
             error!("Failed to convert body to bytes");
             StatusCode::BAD_REQUEST
         })?;
-    let body_blake2b_hash = blake2b_hash(&body_bytes);
+    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|_| {
+        error!("Failed to parse body as JSON");
+        StatusCode::BAD_REQUEST
+    })?;
+    let body_blake2b_hash = blake2b_hash(body_json.to_string().as_bytes());
     let body_blake2b_hash_bytes: [u8; 32] = body_blake2b_hash
         .as_slice()
         .try_into()
@@ -400,7 +425,8 @@ pub async fn verify_stack_permissions(
         .cloned()
         .unwrap_or_default()
         .with_stack_info(stack_small_id, total_num_compute_units)
-        .with_request_type(request_type);
+        .with_request_type(request_type)
+        .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
@@ -488,37 +514,80 @@ pub async fn confidential_compute_middleware(
         error!("Failed to decode nonce from base64 encoding");
         StatusCode::BAD_REQUEST
     })?;
-    let diffie_hellman_public_key = req_parts
+    let proxy_x25519_public_key = req_parts
         .headers
-        .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
+        .get(atoma_utils::constants::PROXY_X25519_PUBLIC_KEY)
         .ok_or_else(|| {
             error!("Diffie-Hellman public key header not found");
             StatusCode::BAD_REQUEST
         })?;
-    let diffie_hellman_public_key_bytes = diffie_hellman_public_key.to_str().map_err(|_| {
-        error!("Diffie-Hellman public key cannot be converted to a string");
-        StatusCode::BAD_REQUEST
-    })?;
-    let diffie_hellman_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(diffie_hellman_public_key).map_err(|_| {
-        error!("Failed to decode Diffie-Hellman public key from base64 encoding");
+    let proxy_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(proxy_x25519_public_key).map_err(|_| {
+        error!("Failed to decode Proxy X25519 public key from base64 encoding");
             StatusCode::BAD_REQUEST
         })?
         .try_into()
-        .map_err(|_| {
-            error!("Failed to convert Diffie-Hellman public key bytes to 32-byte array, incorrect length: {}", diffie_hellman_public_key_bytes.len());
+        .map_err(|e| {
+            error!("Failed to convert Proxy X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}", e);
             StatusCode::BAD_REQUEST
         })?;
-    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
+    let node_x25519_public_key = req_parts
+        .headers
+        .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
+        .ok_or_else(|| {
+            error!("Node X25519 public key header not found");
+            StatusCode::BAD_REQUEST
+        })?;
+    let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(node_x25519_public_key).map_err(|_| {
+        error!("Failed to decode Node X25519 public key from base64 encoding");
+            StatusCode::BAD_REQUEST
+        })?
+        .try_into()
+        .map_err(|e| {
+            error!("Failed to convert Node X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}", e);
+            StatusCode::BAD_REQUEST
+        })?;
+    let body_bytes = axum::body::to_bytes(req_body, 1024 * MAX_BODY_SIZE)
         .await
         .map_err(|_| {
             error!("Failed to convert body to bytes");
             StatusCode::BAD_REQUEST
         })?;
+    // Convert body bytes to string since it was created with .to_string() on the client
+    let body_str = String::from_utf8(body_bytes.to_vec()).map_err(|e| {
+        error!("Failed to convert body bytes to string: {}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let body_json: Value = serde_json::from_str(&body_str).map_err(|_| {
+        error!("Failed to parse body as JSON");
+        StatusCode::BAD_REQUEST
+    })?;
+    let cyphertext = body_json
+        .get(atoma_utils::constants::CYPHERTEXT)
+        .ok_or_else(|| {
+            error!("Cyphertext not found in body");
+            StatusCode::BAD_REQUEST
+        })?
+        .as_array()
+        .ok_or_else(|| {
+            error!("Cyphertext is not a string");
+            StatusCode::BAD_REQUEST
+        })?;
+    let cyphertext_bytes: Vec<u8> = cyphertext
+        .iter()
+        .map(|value| {
+            value.as_u64().map(|u| u as u8).ok_or_else(|| {
+                error!("Cyphertext contains non-integer value");
+                StatusCode::BAD_REQUEST
+            })
+        })
+        .collect::<Result<Vec<u8>, StatusCode>>()?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
-        ciphertext: body_bytes.as_ref().to_vec(),
+        ciphertext: cyphertext_bytes,
         nonce: nonce_bytes,
         salt: salt_bytes,
-        diffie_hellman_public_key: diffie_hellman_public_key_bytes,
+        proxy_x25519_public_key: proxy_x25519_public_key_bytes,
+        node_x25519_public_key: node_x25519_public_key_bytes,
     };
     let (result_sender, result_receiver) = oneshot::channel();
     state
