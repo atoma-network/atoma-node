@@ -66,8 +66,10 @@ mod middleware {
     async fn get_signature() -> String {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = TEST_MESSAGE;
-        let body_message = Body::from(message);
+        let message = json!({
+            "message": TEST_MESSAGE
+        });
+        let body_message = Body::from(message.to_string());
 
         // Create signature
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
@@ -324,7 +326,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions() {
-        setup_subscriber();
         let (
             app_state,
             _,
@@ -705,12 +706,15 @@ mod middleware {
     #[serial]
     async fn test_signature_verification_success() {
         let signature = get_signature().await;
+        let message = json!({
+            "message": TEST_MESSAGE
+        });
 
         let req = Request::builder()
             .method("POST")
             .uri("/")
             .header(constants::SIGNATURE, signature)
-            .body(Body::from(TEST_MESSAGE))
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         async fn check_metadata_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
@@ -771,11 +775,15 @@ mod middleware {
     async fn test_signature_verification_invalid_signature() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = "Test message";
+        let message = json!({
+            "message": "Test message"
+        });
 
         // Sign a different message than what we'll send
-        let different_message = "Different message";
-        let blake2b_hash = blake2b_hash(different_message.as_bytes());
+        let different_message = json!({
+            "message": "Different message"
+        });
+        let blake2b_hash = blake2b_hash(different_message.to_string().as_bytes());
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -785,7 +793,7 @@ mod middleware {
             .method("POST")
             .uri("/")
             .header(constants::SIGNATURE, signature_b64)
-            .body(Body::from(message)) // Send original message with signature for different message
+            .body(Body::from(message.to_string())) // Send original message with signature for different message
             .unwrap();
 
         let mut app = Router::new()
@@ -806,9 +814,10 @@ mod middleware {
 
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
+        let message = json!({});
 
         // Sign empty message
-        let blake2b_hash = blake2b_hash(&[]);
+        let blake2b_hash = blake2b_hash(message.to_string().as_bytes());
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
@@ -819,7 +828,7 @@ mod middleware {
             .method("POST")
             .uri("/")
             .header(constants::SIGNATURE, signature_b64)
-            .body(Body::empty())
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         let mut app = Router::new()
@@ -1211,7 +1220,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_encryption_decryption() {
-        setup_subscriber();
         const MESSAGE_CONTENT: &str = "plaintext data";
         let (app_state, _, _, shutdown_sender, state_manager_handle, _, server_dh_public_key) =
             setup_app_state().await;
@@ -1284,7 +1292,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_missing_headers() {
-        setup_subscriber();
         let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
             setup_app_state().await;
 
@@ -1353,7 +1360,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_invalid_dh_key() {
-        setup_subscriber();
         let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
             setup_app_state().await;
 
