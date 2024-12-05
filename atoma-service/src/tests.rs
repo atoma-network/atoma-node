@@ -41,6 +41,7 @@ mod middleware {
 
     const TEST_MESSAGE: &str = "Test message";
 
+    #[allow(dead_code)]
     fn setup_subscriber() {
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
@@ -306,7 +307,6 @@ mod middleware {
 
     #[test]
     fn test_request_metadata() {
-        setup_subscriber();
         let request_metadata = RequestMetadata::default();
 
         assert_eq!(request_metadata.stack_small_id, 0);
