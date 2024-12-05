@@ -141,5 +141,5 @@ pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<
 }
 
 pub mod test {
-    pub const POSTGRES_TEST_DB_URL: &str = "postgres://atoma:atoma@localhost:5432/atoma";
+    pub const POSTGRES_TEST_DB_URL: &str = "postgres://atoma:atoma@localhost:5435/atoma";
 }
