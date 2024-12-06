@@ -72,6 +72,39 @@ async fn sign_response_and_update_stack_hash(
     Ok(())
 }
 
+/// Handles the encryption of response data for confidential compute requests
+///
+/// This function processes the response body based on the presence of encryption metadata.
+/// If encryption metadata is provided, it encrypts the response using the provided
+/// public key and salt. Otherwise, it returns the response body unchanged.
+///
+/// # Arguments
+///
+/// * `state` - Reference to the application state containing encryption channels
+/// * `response_body` - The response data to potentially encrypt
+/// * `client_encryption_metadata` - Optional metadata containing encryption parameters
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * An encrypted response as JSON with `nonce` and `ciphertext` fields
+/// * The original response body if no encryption was requested
+///
+/// # Errors
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// * Failed to send encryption request through the channel
+/// * Failed to receive encryption response
+///
+/// # Example Response
+///
+/// When encryption is performed:
+/// ```json
+/// {
+///     "nonce": "base64_encoded_nonce",
+///     "ciphertext": "base64_encoded_encrypted_data"
+/// }
+/// ```
 #[instrument(
     level = "info",
     skip(state, response_body, client_encryption_metadata),
