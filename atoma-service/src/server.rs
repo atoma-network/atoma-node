@@ -69,7 +69,7 @@ type DecryptionRequest = (
     oneshot::Sender<ConfidentialComputeDecryptionResponse>,
 );
 
-type EncryptionRequest = (
+pub(crate) type EncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
     oneshot::Sender<ConfidentialComputeEncryptionResponse>,
 );

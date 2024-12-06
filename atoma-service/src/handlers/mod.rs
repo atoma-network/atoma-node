@@ -83,7 +83,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<(), StatusCode> {
     if let Some(EncryptionMetadata {
-        client_dh_public_key,
+        proxy_x25519_public_key,
         salt,
     }) = client_encryption_metadata
     {
@@ -100,7 +100,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 ConfidentialComputeEncryptionRequest {
                     plaintext: response_body.to_string().as_bytes().to_vec(),
                     salt,
-                    diffie_hellman_public_key: client_dh_public_key,
+                    proxy_x25519_public_key,
                 },
                 sender,
             ))

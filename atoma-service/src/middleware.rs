@@ -53,8 +53,8 @@ const IMAGE_N: &str = "n";
 /// Metadata for confidential compute encryption requests
 #[derive(Clone, Debug)]
 pub struct EncryptionMetadata {
-    /// The client's Diffie-Hellman public key
-    pub client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// The client's proxy X25519 public key
+    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
     /// The salt
     pub salt: Vec<u8>,
 }
@@ -143,11 +143,11 @@ impl RequestMetadata {
     /// ```
     pub fn with_client_encryption_metadata(
         mut self,
-        client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+        proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
         salt: Vec<u8>,
     ) -> Self {
         self.client_encryption_metadata = Some(EncryptionMetadata {
-            client_dh_public_key,
+            proxy_x25519_public_key,
             salt,
         });
         self
@@ -170,6 +170,7 @@ impl RequestMetadata {
         self.endpoint_path = endpoint_path;
         self
     }
+}
 
 /// Middleware for verifying the signature of incoming requests.
 ///
@@ -621,7 +622,7 @@ pub async fn confidential_compute_middleware(
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
         ciphertext: cyphertext_bytes,
         nonce: nonce_bytes,
-        salt: salt_bytes,
+        salt: salt_bytes.clone(),
         proxy_x25519_public_key: proxy_x25519_public_key_bytes,
         node_x25519_public_key: node_x25519_public_key_bytes,
     };
@@ -641,7 +642,7 @@ pub async fn confidential_compute_middleware(
     let body = Body::from(plaintext);
     req_parts.extensions.insert(
         RequestMetadata::default()
-            .with_client_encryption_metadata(diffie_hellman_public_key_bytes, salt_bytes),
+            .with_client_encryption_metadata(proxy_x25519_public_key_bytes, salt_bytes),
     );
     let req = Request::from_parts(req_parts, body);
     Ok(next.run(req).await)

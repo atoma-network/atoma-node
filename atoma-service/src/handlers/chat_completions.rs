@@ -442,7 +442,9 @@ async fn handle_streaming_response(
         state.keystore.clone(),
         state.address_index,
         model.to_string(),
+        client_encryption_metadata,
         timer,
+        state.encryption_sender.clone(),
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
