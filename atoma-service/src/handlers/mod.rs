@@ -122,9 +122,9 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     {
         info!(
             target = "atoma-service",
-            event = "chat-completions-handler",
-            "Confidential chat completions response: {:#?}",
-            response_body
+            event = "ai-inference-handler",
+            "Confidential AI inference response, with proxy x25519 public key: {:#?}",
+            proxy_x25519_public_key
         );
         let (sender, receiver) = tokio::sync::oneshot::channel();
         state
