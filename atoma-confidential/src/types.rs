@@ -19,7 +19,9 @@ pub struct ConfidentialComputeDecryptionRequest {
     /// Salt value used in key derivation
     pub salt: Vec<u8>,
     /// Public key component for Diffie-Hellman key exchange
-    pub diffie_hellman_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// Public key component for Diffie-Hellman key exchange
+    pub node_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the decrypted data from a confidential computation request
@@ -44,7 +46,7 @@ pub struct ConfidentialComputeEncryptionRequest {
     /// Salt value used in key derivation
     pub salt: Vec<u8>,
     /// Public key component for Diffie-Hellman key exchange
-    pub diffie_hellman_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the encrypted data from a confidential computation request

@@ -57,7 +57,7 @@ pub(crate) struct ImageGenerationsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = IMAGE_GENERATIONS_PATH)
+    fields(path = request_metadata.endpoint_path)
 )]
 pub async fn image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -80,6 +80,7 @@ pub async fn image_generations_handler(
         estimated_total_compute_units: _,
         payload_hash,
         request_type: _,
+        endpoint_path: _,
     } = request_metadata;
 
     let client = Client::new();

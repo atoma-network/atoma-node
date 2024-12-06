@@ -4,6 +4,15 @@ use atoma_utils::encryption::{
 use thiserror::Error;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
+/// The size of the X25519 secret key in bytes.
+const DH_SECRET_KEY_SIZE: usize = 32;
+
+/// The directory where the private key file is stored.
+const KEY_FILE_DIR: &str = "keys";
+
+/// The name of the private key file.
+const KEY_FILE_NAME: &str = "dh_privkey";
+
 type Result<T> = std::result::Result<T, KeyManagementError>;
 
 /// A struct that manages X25519 key pair operations.
@@ -22,10 +31,24 @@ pub struct X25519KeyPairManager {
 impl X25519KeyPairManager {
     /// Constructor
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let secret_key = StaticSecret::random_from_rng(&mut rng);
-        Self { secret_key }
+    pub fn new() -> Result<Self> {
+        let path = Self::get_key_file_path();
+
+        if path.exists() {
+            // Read the existing key from the file
+            let key_bytes = std::fs::read(&path).map_err(KeyManagementError::IoError)?;
+            let mut key_bytes_array: [u8; DH_SECRET_KEY_SIZE] = [0u8; DH_SECRET_KEY_SIZE];
+            key_bytes_array.copy_from_slice(&key_bytes[..DH_SECRET_KEY_SIZE]);
+            let secret_key = StaticSecret::from(key_bytes_array);
+            Ok(Self { secret_key })
+        } else {
+            // Generate a new key
+            let mut rng = rand::thread_rng();
+            let secret_key = StaticSecret::random_from_rng(&mut rng);
+            let this = Self { secret_key };
+            this.write_private_key_to_file()?;
+            Ok(this)
+        }
     }
 
     /// Returns a reference to the current X25519 public key.
@@ -60,9 +83,10 @@ impl X25519KeyPairManager {
     ///
     /// Note: This operation automatically updates the device options to ensure
     /// the attestation report reflects the new keypair.
-    pub fn rotate_keys(&mut self) {
+    pub fn rotate_keys(&mut self) -> Result<()> {
         let mut rng = rand::thread_rng();
         self.secret_key = StaticSecret::random_from_rng(&mut rng);
+        self.write_private_key_to_file()
     }
 
     /// Computes the shared secret between the current secret key and a given public key.
@@ -154,10 +178,65 @@ impl X25519KeyPairManager {
         let shared_secret = self.compute_shared_secret(&public_key);
         Ok(encrypt_plaintext(plaintext, shared_secret, salt)?)
     }
+
+    /// Returns the file path where the private key should be stored.
+    ///
+    /// This method constructs a path by:
+    /// 1. Starting from the current working directory
+    /// 2. Adding a "keys" subdirectory
+    /// 3. Adding the "dh_privkey" file name
+    ///
+    /// # Returns
+    /// * `PathBuf` - Path to the private key file: `./keys/dh_privkey`
+    ///
+    /// # Note
+    /// Currently uses a hardcoded path relative to the current directory.
+    /// This is primarily intended for development/testing purposes.
+    /// Production environments should use a more secure and configurable location.
+    fn get_key_file_path() -> std::path::PathBuf {
+        // Use a more appropriate path, possibly from config
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join(KEY_FILE_DIR)
+            .join(KEY_FILE_NAME)
+    }
+
+    /// Writes the current private key to a file at the root directory.
+    ///
+    /// # Warning
+    /// This function is intended for development/testing purposes only.
+    /// Writing private keys to disk in production is a security risk.
+    ///
+    /// # Returns
+    /// * `Ok(())` if the write was successful
+    /// * `Err(KeyManagementError)` if the write failed
+    pub fn write_private_key_to_file(&self) -> Result<()> {
+        use std::fs::{self, create_dir_all};
+        use std::os::unix::fs::PermissionsExt; // Unix-specific permissions
+
+        let path = Self::get_key_file_path();
+
+        // Ensure directory exists
+        if let Some(parent) = path.parent() {
+            create_dir_all(parent).map_err(KeyManagementError::IoError)?;
+        }
+
+        // Write key with restricted permissions
+        fs::write(&path, self.secret_key.to_bytes()).map_err(KeyManagementError::IoError)?;
+
+        // Set file permissions to owner read/write only (0600)
+        #[cfg(unix)]
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .map_err(KeyManagementError::IoError)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum KeyManagementError {
     #[error("Encryption error: `{0}`")]
     EncryptionError(#[from] EncryptionError),
+    #[error("IO error: `{0}`")]
+    IoError(#[from] std::io::Error),
 }

@@ -6,14 +6,14 @@ mod middleware {
     };
     use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
     use atoma_utils::{
-        encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
+        constants, encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
     };
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
     use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
     use flume::Sender;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use serial_test::serial;
     use sqlx::PgPool;
     use std::{str::FromStr, sync::Arc};
@@ -41,6 +41,14 @@ mod middleware {
 
     const TEST_MESSAGE: &str = "Test message";
 
+    #[allow(dead_code)]
+    fn setup_subscriber() {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_test_writer()
+            .init();
+    }
+
     fn setup_keystore() -> FileBasedKeystore {
         let temp_dir = tempdir().unwrap();
         let keystore_path = temp_dir.path().join("keystore");
@@ -59,8 +67,10 @@ mod middleware {
     async fn get_signature() -> String {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = TEST_MESSAGE;
-        let body_message = Body::from(message);
+        let message = json!({
+            "message": TEST_MESSAGE
+        });
+        let body_message = Body::from(message.to_string());
 
         // Create signature
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
@@ -117,7 +127,7 @@ mod middleware {
             state_manager_receiver,
         )
         .await
-        .unwrap();
+        .expect("Failed to create state manager");
         let task = Task {
             task_small_id: 1,
             task_id: "1".to_string(),
@@ -335,7 +345,7 @@ mod middleware {
             },
             {
                 "role": "user",
-                "content": "What is the capital of the moon?"
+                "content": "What is the capital of Mars?"
             }],
             "max_tokens": 100,
         });
@@ -344,13 +354,13 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
 
-        // Build a router with your middleware applied
+        // Build a router with the middleware applied
         let mut app = Router::new().route("/", post(test_handler)).layer(
             axum::middleware::from_fn_with_state(app_state.clone(), verify_stack_permissions),
         );
@@ -383,7 +393,7 @@ mod middleware {
             .method("POST")
             .uri("/")
             // Intentionally omitting X-Signature header
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -424,8 +434,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -463,8 +473,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(CHAT_COMPLETIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -508,8 +518,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(CHAT_COMPLETIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -546,8 +556,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", "invalid signature here") // Invalid signature
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, "invalid signature here") // Invalid signature
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -588,8 +598,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(CHAT_COMPLETIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -653,8 +663,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(CHAT_COMPLETIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -696,12 +706,15 @@ mod middleware {
     #[serial]
     async fn test_signature_verification_success() {
         let signature = get_signature().await;
+        let message = json!({
+            "message": TEST_MESSAGE
+        });
 
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature)
-            .body(Body::from(TEST_MESSAGE))
+            .header(constants::SIGNATURE, signature)
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         async fn check_metadata_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
@@ -745,7 +758,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", "not-valid-base64!")
+            .header(constants::SIGNATURE, "not-valid-base64!")
             .body(Body::from("Test message"))
             .unwrap();
 
@@ -762,11 +775,15 @@ mod middleware {
     async fn test_signature_verification_invalid_signature() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = "Test message";
+        let message = json!({
+            "message": "Test message"
+        });
 
         // Sign a different message than what we'll send
-        let different_message = "Different message";
-        let blake2b_hash = blake2b_hash(different_message.as_bytes());
+        let different_message = json!({
+            "message": "Different message"
+        });
+        let blake2b_hash = blake2b_hash(different_message.to_string().as_bytes());
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
             .expect("Failed to sign message");
@@ -775,8 +792,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature_b64)
-            .body(Body::from(message)) // Send original message with signature for different message
+            .header(constants::SIGNATURE, signature_b64)
+            .body(Body::from(message.to_string())) // Send original message with signature for different message
             .unwrap();
 
         let mut app = Router::new()
@@ -792,9 +809,10 @@ mod middleware {
     async fn test_signature_verification_empty_body() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
+        let message = json!({});
 
         // Sign empty message
-        let blake2b_hash = blake2b_hash(&[]);
+        let blake2b_hash = blake2b_hash(message.to_string().as_bytes());
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
@@ -804,8 +822,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature_b64)
-            .body(Body::empty())
+            .header(constants::SIGNATURE, signature_b64)
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         let mut app = Router::new()
@@ -835,7 +853,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature_b64)
+            .header(constants::SIGNATURE, signature_b64)
             .body(Body::from(large_body))
             .unwrap();
 
@@ -852,8 +870,10 @@ mod middleware {
     async fn test_signature_verification_preserves_body() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = "Test message";
-        let body_message = Body::from(message);
+        let message = json!({
+            "message": "Test message"
+        });
+        let body_message = Body::from(message.to_string());
 
         // Create signature
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
@@ -869,8 +889,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature_b64)
-            .body(Body::from(message))
+            .header(constants::SIGNATURE, signature_b64)
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         // Custom handler that verifies the body content
@@ -878,7 +898,10 @@ mod middleware {
             let body_bytes = axum::body::to_bytes(req.into_body(), 1024)
                 .await
                 .expect("Failed to read body");
-            assert_eq!(body_bytes, "Test message");
+            let should_be_message = json!({
+                "message": "Test message"
+            });
+            assert_eq!(body_bytes, should_be_message.to_string().as_bytes());
             Ok(Response::new(Body::empty()))
         }
 
@@ -895,14 +918,19 @@ mod middleware {
     async fn test_signature_verification_updates_extensions() {
         let keystore = setup_keystore();
         let address = keystore.addresses()[0];
-        let message = "Test message";
-        let body_message = Body::from(message);
+        let message = json!({
+            "message": "Test message"
+        });
+        let body_message = Body::from(message.to_string());
 
         // Create signature
         let body_message_bytes = axum::body::to_bytes(body_message, 1024)
             .await
             .expect("Failed to convert body to bytes");
-        let blake2b_hash = blake2b_hash(body_message_bytes.as_ref());
+        let body_message_json: Value =
+            serde_json::from_slice(&body_message_bytes).expect("Failed to parse body as JSON");
+        let body_message_json_string = body_message_json.to_string();
+        let blake2b_hash = blake2b_hash(body_message_json_string.as_bytes());
 
         let signature = keystore
             .sign_hashed(&address, blake2b_hash.as_slice())
@@ -915,13 +943,14 @@ mod middleware {
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
+            endpoint_path: "/".to_string(),
         };
 
         let mut req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Signature", signature_b64)
-            .body(Body::from(message))
+            .header(constants::SIGNATURE, signature_b64)
+            .body(Body::from(message.to_string()))
             .unwrap();
 
         // Insert initial metadata
@@ -931,6 +960,9 @@ mod middleware {
         async fn verify_extensions_handler(
             req: Request<Body>,
         ) -> Result<Response<Body>, StatusCode> {
+            eprintln!("=== Entering verify_extensions_handler ===");
+            dbg!("=== Entering verify_extensions_handler ===");
+
             let metadata = req
                 .extensions()
                 .get::<RequestMetadata>()
@@ -943,8 +975,8 @@ mod middleware {
             assert_eq!(
                 metadata.payload_hash,
                 [
-                    11, 151, 188, 173, 230, 19, 73, 18, 62, 134, 60, 28, 15, 134, 77, 75, 122, 182,
-                    183, 33, 61, 174, 218, 225, 71, 33, 234, 229, 168, 253, 243, 109
+                    132, 118, 103, 186, 29, 147, 160, 55, 89, 104, 131, 129, 43, 4, 195, 71, 112,
+                    79, 12, 158, 207, 235, 113, 218, 133, 157, 210, 180, 91, 58, 62, 120
                 ]
             );
 
@@ -981,8 +1013,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(EMBEDDINGS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1021,8 +1053,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(EMBEDDINGS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1058,8 +1090,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(IMAGE_GENERATIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1103,8 +1135,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(IMAGE_GENERATIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1123,8 +1155,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(IMAGE_GENERATIONS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1159,8 +1191,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri(EMBEDDINGS_PATH)
-            .header("X-Signature", signature.encode_base64())
-            .header("X-Stack-Small-Id", "1")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
             .header("Content-Type", "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
@@ -1188,7 +1220,10 @@ mod middleware {
             setup_app_state().await;
 
         // Create encrypted test data
-        let plaintext_data = MESSAGE_CONTENT.as_bytes().to_vec();
+        let plaintext_data = json!({
+            "message": MESSAGE_CONTENT
+        })
+        .to_string();
         let salt = "test_salt";
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
@@ -1196,9 +1231,12 @@ mod middleware {
         let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
-            encrypt_plaintext(&plaintext_data, shared_secret, salt.as_bytes())
+            encrypt_plaintext(plaintext_data.as_bytes(), shared_secret, salt.as_bytes())
                 .expect("Failed to encrypt plaintext data");
-
+        let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
+        let encrypted_body_json = json!({
+            constants::CYPHERTEXT: encrypted_data,
+        });
         // Build request
         let req = Request::builder()
             .method("POST")
@@ -1213,16 +1251,24 @@ mod middleware {
             )
             .header(
                 atoma_utils::constants::NODE_X25519_PUBLIC_KEY,
+                server_dh_public_key_b64,
+            )
+            .header(
+                atoma_utils::constants::PROXY_X25519_PUBLIC_KEY,
                 client_dh_public_key_b64,
             )
-            .body(Body::from(encrypted_data.clone()))
+            .body(Body::from(encrypted_body_json.to_string()))
             .expect("Failed to build request");
 
         async fn verify_decrypted_body(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
             let body = axum::body::to_bytes(req.into_body(), 1024)
                 .await
                 .expect("Failed to read body");
-            assert_eq!(body, MESSAGE_CONTENT.as_bytes());
+            let message = json!({
+                "message": MESSAGE_CONTENT
+            })
+            .to_string();
+            assert_eq!(body, message.as_bytes());
             Ok(Response::new(Body::empty()))
         }
 
@@ -1248,8 +1294,15 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Nonce", "test_nonce")
-            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .header(constants::NONCE, "test_nonce")
+            .header(
+                constants::NODE_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
+            .header(
+                constants::PROXY_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
             .body(Body::from("test"))
             .unwrap();
 
@@ -1267,8 +1320,15 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", "test_salt")
-            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .header(constants::SALT, "test_salt")
+            .header(
+                constants::NODE_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
+            .header(
+                constants::PROXY_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
             .body(Body::from("test"))
             .unwrap();
 
@@ -1279,8 +1339,8 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", "test_salt")
-            .header("X-Nonce", "test_nonce")
+            .header(constants::SALT, "test_salt")
+            .header(constants::NONCE, "test_nonce")
             .body(Body::from("test"))
             .unwrap();
 
@@ -1302,9 +1362,13 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", "test_salt")
-            .header("X-Nonce", "test_nonce")
-            .header("X-Diffie-Hellman-Public-Key", "invalid-base64!")
+            .header(constants::SALT, "test_salt")
+            .header(constants::NONCE, "test_nonce")
+            .header(constants::NODE_X25519_PUBLIC_KEY, "invalid-base64!")
+            .header(
+                constants::PROXY_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
             .body(Body::from("test"))
             .unwrap();
 
@@ -1322,9 +1386,16 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", "test_salt")
-            .header("X-Nonce", "test_nonce")
-            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 16])) // Wrong length
+            .header(constants::SALT, "test_salt")
+            .header(constants::NONCE, "test_nonce")
+            .header(
+                constants::NODE_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 16]),
+            ) // Wrong length
+            .header(
+                constants::PROXY_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
             .body(Body::from("test"))
             .unwrap();
 
@@ -1348,9 +1419,16 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header("X-Salt", "test_salt")
-            .header("X-Nonce", "test_nonce")
-            .header("X-Diffie-Hellman-Public-Key", STANDARD.encode([1u8; 32]))
+            .header(constants::SALT, "test_salt")
+            .header(constants::NONCE, "test_nonce")
+            .header(
+                constants::NODE_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
+            .header(
+                constants::PROXY_X25519_PUBLIC_KEY,
+                STANDARD.encode([1u8; 32]),
+            )
             .body(Body::from(large_body))
             .unwrap();
 
