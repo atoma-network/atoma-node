@@ -66,12 +66,12 @@ type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
 /// Represents a request for confidential compute decryption.
 type DecryptionRequest = (
     ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
 );
 
 type EncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
 );
 
 /// Represents the shared state of the application.
@@ -93,14 +93,14 @@ pub struct AppState {
     /// This sender is used to communicate decryption requests to the
     /// confidential compute service, allowing for efficient handling of
     /// confidential data processing across different components.
-    pub decryption_sender: UnboundedSender<anyhow::Result<DecryptionRequest>>,
+    pub decryption_sender: UnboundedSender<DecryptionRequest>,
 
     /// Channel sender for confidential compute encryption requests.
     ///
     /// This sender is used to communicate encryption requests to the
     /// confidential compute service, allowing for efficient handling of
     /// confidential data processing across different components.
-    pub encryption_sender: UnboundedSender<anyhow::Result<EncryptionRequest>>,
+    pub encryption_sender: UnboundedSender<EncryptionRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:

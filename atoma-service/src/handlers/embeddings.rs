@@ -58,7 +58,7 @@ pub(crate) struct EmbeddingsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = EMBEDDINGS_PATH)
+    fields(path = request_metadata.endpoint_path)
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -83,6 +83,7 @@ pub async fn embeddings_handler(
         estimated_total_compute_units: _,
         payload_hash,
         request_type: _,
+        endpoint_path: _,
     } = request_metadata;
 
     let client = Client::new();
@@ -103,8 +104,23 @@ pub async fn embeddings_handler(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
-        .await?;
+    // Sign the response and update the stack hash
+    if let Err(e) = sign_response_and_update_stack_hash(
+        &mut response_body,
+        payload_hash,
+        &state,
+        stack_small_id,
+    )
+    .await
+    {
+        error!(
+            target = "atoma-service",
+            event = "embeddings-handler",
+            "Error signing response and updating stack hash: {}",
+            e
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     // Stop the timer before returning the response
     timer.observe_duration();
