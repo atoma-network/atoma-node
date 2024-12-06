@@ -289,9 +289,9 @@ impl Streamer {
                     if e == TryRecvError::Empty {
                         return Ok(None);
                     }
-                    return Err(Error::new(format!(
-                        "Oneshot sender channel has been dropped"
-                    )));
+                    return Err(Error::new(
+                        "Oneshot sender channel has been dropped".to_string(),
+                    ));
                 }
             }
         }

@@ -1236,7 +1236,7 @@ mod middleware {
                 .expect("Failed to encrypt plaintext data");
         let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
         let encrypted_body_json = json!({
-            constants::CYPHERTEXT: encrypted_data,
+            constants::CIPHERTEXT: encrypted_data,
         });
         // Build request
         let req = Request::builder()

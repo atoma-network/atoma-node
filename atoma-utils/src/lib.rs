@@ -45,7 +45,16 @@ pub mod constants {
 
     /// Field name for encrypted data in the request/response body.
     /// Contains the encrypted payload of the message.
-    pub const CYPHERTEXT: &str = "cyphertext";
+    pub const CIPHERTEXT: &str = "ciphertext";
+
+    /// Size of a cryptographic nonce in bytes
+    pub const NONCE_SIZE: usize = 12;
+
+    /// Size of a cryptographic salt in bytes
+    pub const SALT_SIZE: usize = 16;
+
+    /// Size of a Diffie-Hellman public key in bytes
+    pub const X25519_PUBLIC_KEY_BYTES_SIZE: usize = 32;
 }
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error

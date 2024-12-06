@@ -29,7 +29,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// # Example
 ///
 /// ```rust,ignore
-/// use atoma_tdx::decryption::decrypt_cyphertext;
+/// use atoma_tdx::decryption::decrypt_ciphertext;
 /// # use your_crate::SharedSecret;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +38,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// let salt = b"unique_salt_value";
 /// let nonce = b"unique_nonce_12"; // Must be 12 bytes for AES-GCM
 ///
-/// let plaintext = decrypt_cyphertext(
+/// let plaintext = decrypt_ciphertext(
 ///     shared_secret,
 ///     &ciphertext,
 ///     salt,
@@ -53,7 +53,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// - The nonce must be unique for each encryption operation
 /// - The salt should be randomly generated for each key derivation
 /// - The shared secret should be derived using secure key exchange
-pub fn decrypt_cyphertext(
+pub fn decrypt_ciphertext(
     shared_secret: SharedSecret,
     ciphertext: &[u8],
     salt: &[u8],

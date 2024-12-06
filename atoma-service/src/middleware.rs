@@ -599,28 +599,28 @@ pub async fn confidential_compute_middleware(
         error!("Failed to parse body as JSON");
         StatusCode::BAD_REQUEST
     })?;
-    let cyphertext = body_json
-        .get(atoma_utils::constants::CYPHERTEXT)
+    let ciphertext = body_json
+        .get(atoma_utils::constants::CIPHERTEXT)
         .ok_or_else(|| {
-            error!("Cyphertext not found in body");
+            error!("ciphertext not found in body");
             StatusCode::BAD_REQUEST
         })?
         .as_array()
         .ok_or_else(|| {
-            error!("Cyphertext is not an array");
+            error!("ciphertext is not an array");
             StatusCode::BAD_REQUEST
         })?;
-    let cyphertext_bytes: Vec<u8> = cyphertext
+    let ciphertext_bytes: Vec<u8> = ciphertext
         .iter()
         .map(|value| {
             value.as_u64().map(|u| u as u8).ok_or_else(|| {
-                error!("Cyphertext contains non-integer value");
+                error!("ciphertext contains non-integer value");
                 StatusCode::BAD_REQUEST
             })
         })
         .collect::<Result<Vec<u8>, StatusCode>>()?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
-        ciphertext: cyphertext_bytes,
+        ciphertext: ciphertext_bytes,
         nonce: nonce_bytes,
         salt: salt_bytes.clone(),
         proxy_x25519_public_key: proxy_x25519_public_key_bytes,
