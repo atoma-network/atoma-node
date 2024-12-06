@@ -79,9 +79,9 @@ async fn sign_response_and_update_stack_hash(
 )]
 pub(crate) async fn handle_confidential_compute_encryption_response(
     state: &AppState,
-    response_body: &mut Value,
+    response_body: Value,
     client_encryption_metadata: Option<EncryptionMetadata>,
-) -> Result<(), StatusCode> {
+) -> Result<Value, StatusCode> {
     if let Some(EncryptionMetadata {
         proxy_x25519_public_key,
         salt,
@@ -121,8 +121,11 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        response_body["nonce"] = json!(nonce);
-        response_body["ciphertext"] = json!(ciphertext);
+        Ok(json!({
+            "nonce": nonce,
+            "ciphertext": ciphertext,
+        }))
+    } else {
+        Ok(response_body)
     }
-    Ok(())
 }

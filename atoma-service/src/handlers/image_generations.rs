@@ -121,23 +121,26 @@ pub async fn image_generations_handler(
     }
 
     // Handle confidential compute encryption response
-    if let Err(e) = handle_confidential_compute_encryption_response(
+    match handle_confidential_compute_encryption_response(
         &state,
-        &mut response_body,
+        response_body,
         client_encryption_metadata,
     )
     .await
     {
-        error!(
-            target = "atoma-service",
-            event = "image-generations-handler",
-            "Error handling confidential compute encryption response: {}",
-            e
-        );
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(response_body) => {
+            // Stop the timer before returning the valid response
+            timer.observe_duration();
+            Ok(Json(response_body))
+        }
+        Err(e) => {
+            error!(
+                target = "atoma-service",
+                event = "image-generations-handler",
+                "Error handling confidential compute encryption response: {}",
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
-
-    timer.observe_duration();
-
-    Ok(Json(response_body))
 }
