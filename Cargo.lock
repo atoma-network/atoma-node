@@ -732,6 +732,7 @@ name = "atoma-confidential"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "anyhow",
  "atoma-sui",
  "atoma-utils",
  "blake2",

@@ -20,11 +20,11 @@ use x25519_dalek::PublicKey;
 type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
 type ServiceDecryptionRequest = (
     ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
 );
 type ServiceEncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
 );
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
@@ -111,66 +111,13 @@ impl AtomaConfidentialComputeService {
         loop {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
-                    let ConfidentialComputeDecryptionRequest { ciphertext, nonce, salt, proxy_x25519_public_key, node_x25519_public_key } = decryption_request;
-                    if PublicKey::from(node_x25519_public_key) != self.key_manager.get_public_key() {
-                        tracing::error!(
-                            target = "atoma-confidential-compute-service",
-                            event = "confidential_compute_service_decryption_error",
-                            "Node X25519 public key does not match the expected key: {:?} != {:?}",
-                            node_x25519_public_key,
-                            self.key_manager.get_public_key().as_bytes()
-                        );
-                        // TODO: Send error response to the client
-                        // sender.send(Err(AtomaConfidentialComputeError::KeyManagementError(KeyManagementError::InvalidKey))).map_err(|_| AtomaConfidentialComputeError::SenderError)?;
-                    }
-                    let plaintext = self.key_manager.decrypt_cyphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce).map_err(|e| {
-                        tracing::error!(
-                            target = "atoma-confidential-compute-service",
-                            event = "confidential_compute_service_decryption_error",
-                            "Failed to decrypt cyphertext, with error: {:?}",
-                            e
-                        );
-                        AtomaConfidentialComputeError::KeyManagementError(e)
-                    })?;
-                    sender
-                        .send(ConfidentialComputeDecryptionResponse { plaintext })
-                        .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
+                    self.handle_decryption_request(decryption_request, sender)?;
                 }
                 Some((encryption_request, sender)) = self.service_encryption_receiver.recv() => {
-                    let ConfidentialComputeEncryptionRequest { plaintext, salt, proxy_x25519_public_key } = encryption_request;
-                    let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(proxy_x25519_public_key, &plaintext, &salt).map_err(|e| {
-                        tracing::error!(
-                            target = "atoma-confidential-compute-service",
-                            event = "confidential_compute_service_encryption_error",
-                            "Failed to encrypt plaintext, with error: {:?}",
-                            e
-                        );
-                        AtomaConfidentialComputeError::KeyManagementError(e)
-                    })?;
-                    sender
-                        .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce })
-                        .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
+                    self.handle_encryption_request(encryption_request, sender)?;
                 }
-                event_result = self.event_receiver.recv() => {
-                    if let Some(event) = event_result {
-                        match event {
-                            AtomaEvent::NewKeyRotationEvent(_event) => {
-                                tracing::trace!(
-                                    target = "atoma-tdx-service",
-                                    event = "new_key_rotation_event",
-                                    "New key rotation event received from event receiver"
-                                );
-                                self.submit_node_key_rotation_tdx_attestation().await?
-                            }
-                            _ => {
-                                tracing::warn!(
-                                    target = "atoma-tdx-service",
-                                    event = "unhandled_event",
-                                    "Unhandled event received from event receiver"
-                                );
-                            }
-                        }
-                    }
+                Some(event) = self.event_receiver.recv() => {
+                    self.handle_atoma_event(event).await?;
                 }
                 shutdown_result = self.shutdown_signal.changed() => {
                     match shutdown_result {
@@ -215,7 +162,7 @@ impl AtomaConfidentialComputeService {
     /// This function can return:
     /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation or public key retrieval fails
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
         self.key_manager.rotate_keys()?;
         let public_key = self.key_manager.get_public_key();
@@ -260,6 +207,185 @@ impl AtomaConfidentialComputeService {
                 Err(AtomaConfidentialComputeError::SuiClientError(e))
             }
         }
+    }
+
+    /// Handles a decryption request from a client by validating the node's public key and decrypting the ciphertext.
+    ///
+    /// This method performs the following steps:
+    /// 1. Validates that the provided node public key matches the service's current public key
+    /// 2. If valid, attempts to decrypt the ciphertext using the key manager
+    /// 3. Sends the decryption result back through the provided sender channel
+    ///
+    /// # Arguments
+    /// * `decryption_request` - A tuple containing:
+    ///   - The decryption request with ciphertext, nonce, salt, and public keys
+    ///   - A oneshot sender channel for returning the decryption response
+    ///
+    /// # Returns
+    /// * `Ok(())` if the request was handled and response sent successfully
+    /// * `Err(AtomaConfidentialComputeError)` if key validation fails, decryption fails, or the response cannot be sent
+    ///
+    /// # Errors
+    /// This function can return `AtomaConfidentialComputeError::SenderError` if the response channel is closed
+    #[instrument(
+        level = "debug",
+        name = "handle_decryption_request",
+        skip_all,
+        fields(
+            proxy_public_key = ?decryption_request.proxy_x25519_public_key,
+            node_public_key = ?self.key_manager.get_public_key().as_bytes()
+        )
+    )]
+    fn handle_decryption_request(
+        &mut self,
+        decryption_request: ConfidentialComputeDecryptionRequest,
+        sender: oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
+    ) -> Result<()> {
+        let ConfidentialComputeDecryptionRequest {
+            ciphertext,
+            nonce,
+            salt,
+            proxy_x25519_public_key,
+            node_x25519_public_key,
+        } = decryption_request;
+        let result = if PublicKey::from(node_x25519_public_key) != self.key_manager.get_public_key()
+        {
+            tracing::error!(
+                target = "atoma-confidential-compute-service",
+                event = "confidential_compute_service_decryption_error",
+                "Node X25519 public key does not match the expected key: {:?} != {:?}",
+                node_x25519_public_key,
+                self.key_manager.get_public_key().as_bytes()
+            );
+            Err(anyhow::anyhow!(
+                "Node X25519 public key does not match the expected key"
+            ))
+        } else {
+            self.key_manager
+                .decrypt_cyphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce)
+                .map_err(|e| {
+                    tracing::error!(
+                        target = "atoma-confidential-compute-service",
+                        event = "confidential_compute_service_decryption_error",
+                        "Failed to decrypt cyphertext, with error: {:?}",
+                        e
+                    );
+                    anyhow::anyhow!(e)
+                })
+        };
+        let message = result
+            .map(|plaintext| ConfidentialComputeDecryptionResponse { plaintext })
+            .map_err(|e| anyhow::anyhow!(e));
+        sender
+            .send(message)
+            .map_err(|_| AtomaConfidentialComputeError::SenderError)
+    }
+
+    /// Handles an encryption request from a client by encrypting the provided plaintext using the key manager.
+    ///
+    /// This method performs the following steps:
+    /// 1. Extracts the plaintext, salt, and proxy public key from the request
+    /// 2. Encrypts the plaintext using the key manager with the provided parameters
+    /// 3. Sends the encryption result (ciphertext and nonce) back through the provided sender channel
+    ///
+    /// # Arguments
+    /// * `encryption_request` - The encryption request containing:
+    ///   - plaintext: The data to be encrypted
+    ///   - salt: The salt value for the encryption
+    ///   - proxy_x25519_public_key: The public key of the proxy requesting encryption
+    /// * `sender` - A oneshot sender channel for returning the encryption response
+    ///
+    /// # Returns
+    /// * `Ok(())` if the request was handled and response sent successfully
+    /// * `Err(AtomaConfidentialComputeError)` if encryption fails or the response cannot be sent
+    ///
+    /// # Errors
+    /// This function can return:
+    /// * `AtomaConfidentialComputeError::KeyManagementError` if encryption fails
+    /// * `AtomaConfidentialComputeError::SenderError` if the response channel is closed
+    #[instrument(
+        level = "debug",
+        name = "handle_encryption_request",
+        skip_all,
+        fields(
+            proxy_public_key = ?encryption_request.proxy_x25519_public_key,
+            proxy_public_key = ?self.key_manager.get_public_key().as_bytes()
+        )
+    )]
+    fn handle_encryption_request(
+        &mut self,
+        encryption_request: ConfidentialComputeEncryptionRequest,
+        sender: oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
+    ) -> Result<()> {
+        let ConfidentialComputeEncryptionRequest {
+            plaintext,
+            salt,
+            proxy_x25519_public_key,
+        } = encryption_request;
+        let result = self
+            .key_manager
+            .encrypt_plaintext(proxy_x25519_public_key, &plaintext, &salt)
+            .map_err(|e| {
+                tracing::error!(
+                    target = "atoma-confidential-compute-service",
+                    event = "confidential_compute_service_encryption_error",
+                    "Failed to encrypt plaintext, with error: {:?}",
+                    e
+                );
+                AtomaConfidentialComputeError::KeyManagementError(e)
+            });
+        let message = result
+            .map(|(ciphertext, nonce)| ConfidentialComputeEncryptionResponse { ciphertext, nonce })
+            .map_err(|e| anyhow::anyhow!(e));
+        sender
+            .send(message)
+            .map_err(|_| AtomaConfidentialComputeError::SenderError)
+    }
+
+    /// Processes incoming Atoma events and handles key rotation requests.
+    ///
+    /// This method handles two types of events:
+    /// 1. `NewKeyRotationEvent`: Triggers a node key rotation attestation submission
+    /// 2. Other events: Logged as warnings and ignored
+    ///
+    /// # Arguments
+    /// * `event` - The Atoma event to be processed
+    ///
+    /// # Returns
+    /// - `Ok(())` if the event was processed successfully
+    /// - `Err(AtomaConfidentialComputeError)` if there's an error during key rotation or attestation submission
+    ///
+    /// # Errors
+    /// This method can return:
+    /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation fails
+    /// - `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
+    #[instrument(
+        level = "debug",
+        name = "handle_atoma_event",
+        skip_all,
+        fields(
+            event_type = ?std::any::type_name_of_val(&event)
+        )
+    )]
+    async fn handle_atoma_event(&mut self, event: AtomaEvent) -> Result<()> {
+        match event {
+            AtomaEvent::NewKeyRotationEvent(_event) => {
+                tracing::trace!(
+                    target = "atoma-tdx-service",
+                    event = "new_key_rotation_event",
+                    "New key rotation event received from event receiver"
+                );
+                self.submit_node_key_rotation_tdx_attestation().await?
+            }
+            _ => {
+                tracing::warn!(
+                    target = "atoma-tdx-service",
+                    event = "unhandled_event",
+                    "Unhandled event received from event receiver"
+                );
+            }
+        }
+        Ok(())
     }
 }
 
