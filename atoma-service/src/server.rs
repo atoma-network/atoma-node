@@ -93,14 +93,14 @@ pub struct AppState {
     /// This sender is used to communicate decryption requests to the
     /// confidential compute service, allowing for efficient handling of
     /// confidential data processing across different components.
-    pub decryption_sender: UnboundedSender<DecryptionRequest>,
+    pub decryption_sender: UnboundedSender<anyhow::Result<DecryptionRequest>>,
 
     /// Channel sender for confidential compute encryption requests.
     ///
     /// This sender is used to communicate encryption requests to the
     /// confidential compute service, allowing for efficient handling of
     /// confidential data processing across different components.
-    pub encryption_sender: UnboundedSender<EncryptionRequest>,
+    pub encryption_sender: UnboundedSender<anyhow::Result<EncryptionRequest>>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:

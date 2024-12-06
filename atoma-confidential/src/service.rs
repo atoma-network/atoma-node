@@ -19,11 +19,11 @@ use tracing::instrument;
 type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
 type ServiceDecryptionRequest = (
     ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
 );
 type ServiceEncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
 );
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
@@ -110,16 +110,18 @@ impl AtomaConfidentialComputeService {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
                     let ConfidentialComputeDecryptionRequest { ciphertext, nonce, salt, diffie_hellman_public_key } = decryption_request;
-                    let plaintext = self.key_manager.decrypt_cyphertext(diffie_hellman_public_key, &ciphertext, &salt, &nonce)?;
+                    let result = self.key_manager.decrypt_cyphertext(diffie_hellman_public_key, &ciphertext, &salt, &nonce);
+                    let message = result.map(|plaintext| ConfidentialComputeDecryptionResponse { plaintext }).map_err(|e| anyhow::anyhow!(e));
                     sender
-                        .send(ConfidentialComputeDecryptionResponse { plaintext })
+                        .send(message)
                         .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 Some((encryption_request, sender)) = self.service_encryption_receiver.recv() => {
                     let ConfidentialComputeEncryptionRequest { plaintext, salt, diffie_hellman_public_key } = encryption_request;
-                    let (ciphertext, nonce) = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt)?;
+                    let result = self.key_manager.encrypt_plaintext(diffie_hellman_public_key, &plaintext, &salt);
+                    let message = result.map(|(ciphertext, nonce)| ConfidentialComputeEncryptionResponse { ciphertext, nonce }).map_err(|e| anyhow::anyhow!(e));
                     sender
-                        .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce })
+                        .send(message)
                         .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 event_result = self.event_receiver.recv() => {
