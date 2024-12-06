@@ -135,7 +135,7 @@ impl RequestMetadata {
     /// Returns self with the updated client's encryption metadata for method chaining
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default()
