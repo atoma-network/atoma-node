@@ -21,6 +21,8 @@ pub mod constants {
     pub const SALT: &str = "X-Salt";
     pub const TX_DIGEST: &str = "X-Tx-Digest";
     pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
+    pub const PROXY_X25519_PUBLIC_KEY: &str = "X-Proxy-X25519-PublicKey";
+    pub const CYPHERTEXT: &str = "cyphertext";
 }
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error

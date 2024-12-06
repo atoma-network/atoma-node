@@ -121,7 +121,7 @@ pub(crate) struct ChatCompletionsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = CHAT_COMPLETIONS_PATH)
+    fields(path = request_metadata.endpoint_path)
 )]
 pub async fn chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -231,7 +231,6 @@ async fn handle_non_streaming_response(
         .get("model")
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
-
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
         .with_label_values(&[model])
         .start_timer();
@@ -253,7 +252,6 @@ async fn handle_non_streaming_response(
             );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
     let mut response_body = response.json::<Value>().await.map_err(|e| {
         error!(
             target = "atoma-service",

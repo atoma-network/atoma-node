@@ -59,7 +59,7 @@ pub(crate) struct EmbeddingsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = EMBEDDINGS_PATH)
+    fields(path = request_metadata.endpoint_path)
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -85,6 +85,7 @@ pub async fn embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         request_type: _,
+        endpoint_path: _,
     } = request_metadata;
 
     let client = Client::new();
@@ -105,7 +106,7 @@ pub async fn embeddings_handler(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Sign the response and update the stack hashs
+    // Sign the response and update the stack hash
     if let Err(e) = sign_response_and_update_stack_hash(
         &mut response_body,
         payload_hash,
