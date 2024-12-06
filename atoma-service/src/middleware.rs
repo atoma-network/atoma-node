@@ -570,7 +570,7 @@ pub async fn confidential_compute_middleware(
         })?
         .as_array()
         .ok_or_else(|| {
-            error!("Cyphertext is not a string");
+            error!("Cyphertext is not an array");
             StatusCode::BAD_REQUEST
         })?;
     let cyphertext_bytes: Vec<u8> = cyphertext
