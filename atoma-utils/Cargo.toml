@@ -12,6 +12,7 @@ blake2 = { workspace = true }
 fastcrypto = { workspace = true }
 hkdf = { workspace = true }
 rand = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 sui-sdk = { workspace = true }
 thiserror = { workspace = true }

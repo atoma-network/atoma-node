@@ -1,4 +1,7 @@
-use crate::{handlers::sign_response_and_update_stack_hash, server::AppState, streamer::Streamer};
+use crate::{
+    handlers::sign_response_and_update_stack_hash, middleware::EncryptionMetadata,
+    server::AppState, streamer::Streamer,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
@@ -17,6 +20,8 @@ use std::{collections::HashMap, time::Duration};
 use utoipa::ToSchema;
 
 use crate::{handlers::prometheus::*, middleware::RequestMetadata};
+
+use super::handle_confidential_compute_encryption_response;
 
 /// The path for confidential chat completions requests
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
@@ -127,6 +132,7 @@ pub async fn chat_completions_handler(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash,
+        client_encryption_metadata,
         ..
     } = request_metadata;
     info!("Received chat completions request, with payload hash: {payload_hash:?}");
@@ -144,6 +150,7 @@ pub async fn chat_completions_handler(
             stack_small_id,
             estimated_total_compute_units,
             payload_hash,
+            client_encryption_metadata,
         )
         .await
     } else {
@@ -153,6 +160,7 @@ pub async fn chat_completions_handler(
             stack_small_id,
             estimated_total_compute_units,
             payload_hash,
+            client_encryption_metadata,
         )
         .await
     }
@@ -216,6 +224,7 @@ async fn handle_non_streaming_response(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
+    client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<Response<Body>, StatusCode> {
     // Record token metrics and extract the response total number of tokens
     let model = payload
@@ -235,11 +244,21 @@ async fn handle_non_streaming_response(
         .send()
         .await
         .map_err(|e| {
-            error!("Error sending request to inference service: {}", e);
+            error!(
+                target = "atoma-service",
+                event = "chat-completions-handler",
+                "Error sending request to inference service: {}",
+                e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     let mut response_body = response.json::<Value>().await.map_err(|e| {
-        error!("Error reading response body: {}", e);
+        error!(
+            target = "atoma-service",
+            event = "chat-completions-handler",
+            "Error reading response body: {}",
+            e
+        );
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -270,7 +289,12 @@ async fn handle_non_streaming_response(
             total_compute_units: total_compute_units as i64,
         })
         .map_err(|e| {
-            error!("Error updating stack num tokens: {}", e);
+            error!(
+                target = "atoma-service",
+                event = "chat-completions-handler",
+                "Error updating stack num tokens: {}",
+                e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -285,16 +309,37 @@ async fn handle_non_streaming_response(
     .await
     {
         error!(
+            target = "atoma-service",
+            event = "chat-completions-handler",
             "Error updating state manager: {}, for request with payload hash: {payload_hash:?}",
             e
         );
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    // Stop the timer before returning the response
-    timer.observe_duration();
-
-    Ok(Json(response_body).into_response())
+    // Handle confidential compute encryption response
+    match handle_confidential_compute_encryption_response(
+        &state,
+        response_body,
+        client_encryption_metadata,
+    )
+    .await
+    {
+        Ok(response_body) => {
+            // Stop the timer before returning the valid response
+            timer.observe_duration();
+            Ok(Json(response_body).into_response())
+        }
+        Err(e) => {
+            error!(
+                target = "atoma-service",
+                event = "chat-completions-handler",
+                "Error handling confidential compute encryption response: {}",
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 /// Handles streaming chat completion requests by establishing a Server-Sent Events (SSE) connection.
@@ -348,6 +393,7 @@ async fn handle_streaming_response(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
+    client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -398,7 +444,9 @@ async fn handle_streaming_response(
         state.keystore.clone(),
         state.address_index,
         model.to_string(),
+        client_encryption_metadata,
         timer,
+        state.encryption_sender.clone(),
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()

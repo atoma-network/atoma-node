@@ -944,6 +944,7 @@ mod middleware {
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
+            client_encryption_metadata: None,
         };
 
         let mut req = Request::builder()
@@ -1231,11 +1232,11 @@ mod middleware {
         let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
-            encrypt_plaintext(plaintext_data.as_bytes(), shared_secret, salt.as_bytes())
+            encrypt_plaintext(plaintext_data.as_bytes(), &shared_secret, salt.as_bytes())
                 .expect("Failed to encrypt plaintext data");
         let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
         let encrypted_body_json = json!({
-            constants::CYPHERTEXT: encrypted_data,
+            constants::CIPHERTEXT: encrypted_data,
         });
         // Build request
         let req = Request::builder()

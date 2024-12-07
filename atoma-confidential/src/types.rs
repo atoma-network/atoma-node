@@ -1,8 +1,7 @@
+use atoma_utils::constants::NONCE_SIZE;
+
 /// Size of a Diffie-Hellman public key in bytes
 pub const DH_PUBLIC_KEY_SIZE: usize = 32;
-
-/// Size of a cryptographic nonce in bytes
-pub const NONCE_SIZE: usize = 12;
 
 /// A request for confidential computation that includes encrypted data and key exchange parameters
 ///

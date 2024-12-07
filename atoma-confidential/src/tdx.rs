@@ -3,6 +3,7 @@ use dcap_rs::types::quotes::body::QuoteBody;
 use tdx::device::{Device, DeviceOptions, QuoteV4};
 use thiserror::Error;
 
+/// The size of the data to be attested, for a intel TDX quote.
 pub const TDX_REPORT_DATA_SIZE: usize = 64;
 
 /// Generates a TDX attestation report for the given compute data.

@@ -18,10 +18,12 @@ use x25519_dalek::PublicKey;
 // TODO: How large can the `ServiceData` be ? Is it feasible to use a Flume channel ?
 
 type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
+
 type ServiceDecryptionRequest = (
     ConfidentialComputeDecryptionRequest,
     oneshot::Sender<ConfidentialComputeDecryptionResponse>,
 );
+
 type ServiceEncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
     oneshot::Sender<ConfidentialComputeEncryptionResponse>,
@@ -123,11 +125,11 @@ impl AtomaConfidentialComputeService {
                         // TODO: Send error response to the client
                         // sender.send(Err(AtomaConfidentialComputeError::KeyManagementError(KeyManagementError::InvalidKey))).map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                     }
-                    let plaintext = self.key_manager.decrypt_cyphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce).map_err(|e| {
+                    let plaintext = self.key_manager.decrypt_ciphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce).map_err(|e| {
                         tracing::error!(
                             target = "atoma-confidential-compute-service",
                             event = "confidential_compute_service_decryption_error",
-                            "Failed to decrypt cyphertext, with error: {:?}",
+                            "Failed to decrypt ciphertext, with error: {:?}",
                             e
                         );
                         AtomaConfidentialComputeError::KeyManagementError(e)
