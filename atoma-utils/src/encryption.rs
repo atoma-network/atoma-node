@@ -54,7 +54,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// - The salt should be randomly generated for each key derivation
 /// - The shared secret should be derived using secure key exchange
 pub fn decrypt_ciphertext(
-    shared_secret: SharedSecret,
+    shared_secret: &SharedSecret,
     ciphertext: &[u8],
     salt: &[u8],
     nonce: &[u8],
@@ -115,7 +115,7 @@ pub fn decrypt_ciphertext(
 /// - The generated nonce is guaranteed to be unique for each encryption operation
 pub fn encrypt_plaintext(
     plaintext: &[u8],
-    shared_secret: SharedSecret,
+    shared_secret: &SharedSecret,
     salt: &[u8],
 ) -> Result<(Vec<u8>, [u8; NONCE_BYTE_SIZE])> {
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());

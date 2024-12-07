@@ -172,6 +172,72 @@ pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<
     Ok(())
 }
 
+/// Converts a JSON array of numbers into a vector of bytes.
+///
+/// # Arguments
+///
+/// * `value` - A JSON value that contains an array of numbers
+/// * `field` - The field name in the JSON object that contains the byte array
+///
+/// # Type Parameters
+///
+/// * `E` - The error type that implements `std::error::Error` and can be created from a `String`
+/// * `T` - Unused type parameter (consider removing if not needed)
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Ok(Vec<u8>)` - A vector of bytes parsed from the JSON array
+/// * `Err(E)` - An error if:
+///   - The field doesn't exist in the JSON
+///   - The field's value is not an array
+///   - Any array element cannot be converted to a `u8`
+///
+/// # Example
+///
+/// ```
+/// use serde_json::json;
+///
+/// let json = json!({
+///     "bytes": [255, 0, 127]
+/// });
+///
+/// let bytes: Result<Vec<u8>, String> = parse_json_byte_array(&json, "bytes");
+/// assert_eq!(bytes.unwrap(), vec![255, 0, 127]);
+/// ```
+///
+/// # Logging
+///
+/// This function logs errors at the trace level using the `tracing` crate,
+/// including the field name in the log context.
+#[instrument(
+    level = "trace",
+    skip_all,
+    fields(field = %field)
+)]
+pub fn parse_json_byte_array(value: &serde_json::Value, field: &str) -> Result<Vec<u8>, String> {
+    let array = value.get(field).and_then(|v| v.as_array()).ok_or_else(|| {
+        error!("Error getting field array {} from JSON", field);
+        format!("Error getting field array {} from JSON", field)
+    })?;
+
+    array
+        .iter()
+        .map(|b| {
+            b.as_u64().map(|u| u as u8).ok_or_else(|| {
+                error!(
+                    "Error parsing field array {} values as bytes from JSON",
+                    field
+                );
+                format!(
+                    "Error parsing field array {} values as bytes from JSON",
+                    field
+                )
+            })
+        })
+        .collect()
+}
+
 pub mod test {
     pub const POSTGRES_TEST_DB_URL: &str = "postgres://atoma:atoma@localhost:5432/atoma";
 }

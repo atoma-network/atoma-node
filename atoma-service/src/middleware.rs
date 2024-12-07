@@ -11,7 +11,7 @@ use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::{hashing::blake2b_hash, verify_signature};
+use atoma_utils::{hashing::blake2b_hash, parse_json_byte_array, verify_signature};
 use axum::{
     body::Body,
     extract::State,
@@ -599,26 +599,8 @@ pub async fn confidential_compute_middleware(
         error!("Failed to parse body as JSON");
         StatusCode::BAD_REQUEST
     })?;
-    let ciphertext = body_json
-        .get(atoma_utils::constants::CIPHERTEXT)
-        .ok_or_else(|| {
-            error!("ciphertext not found in body");
-            StatusCode::BAD_REQUEST
-        })?
-        .as_array()
-        .ok_or_else(|| {
-            error!("ciphertext is not an array");
-            StatusCode::BAD_REQUEST
-        })?;
-    let ciphertext_bytes: Vec<u8> = ciphertext
-        .iter()
-        .map(|value| {
-            value.as_u64().map(|u| u as u8).ok_or_else(|| {
-                error!("ciphertext contains non-integer value");
-                StatusCode::BAD_REQUEST
-            })
-        })
-        .collect::<Result<Vec<u8>, StatusCode>>()?;
+    let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
         ciphertext: ciphertext_bytes,
         nonce: nonce_bytes,
