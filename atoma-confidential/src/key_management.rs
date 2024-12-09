@@ -176,7 +176,7 @@ impl X25519KeyPairManager {
     ) -> Result<(Vec<u8>, [u8; NONCE_BYTE_SIZE])> {
         let public_key = PublicKey::from(public_key);
         let shared_secret = self.compute_shared_secret(&public_key);
-        Ok(encrypt_plaintext(plaintext, &shared_secret, salt)?)
+        Ok(encrypt_plaintext(plaintext, &shared_secret, salt, None)?)
     }
 
     /// Returns the file path where the private key should be stored.

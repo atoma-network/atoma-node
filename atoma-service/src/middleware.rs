@@ -11,7 +11,11 @@ use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::{hashing::blake2b_hash, parse_json_byte_array, verify_signature};
+use atoma_utils::{
+    constants::{NONCE_SIZE, SALT_SIZE},
+    hashing::blake2b_hash,
+    parse_json_byte_array, verify_signature,
+};
 use axum::{
     body::Body,
     extract::State,
@@ -56,7 +60,7 @@ pub struct EncryptionMetadata {
     /// The client's proxy X25519 public key
     pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
     /// The salt
-    pub salt: Vec<u8>,
+    pub salt: [u8; SALT_SIZE],
 }
 
 /// Metadata extracted from the request
@@ -144,7 +148,7 @@ impl RequestMetadata {
     pub fn with_client_encryption_metadata(
         mut self,
         proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
-        salt: Vec<u8>,
+        salt: [u8; SALT_SIZE],
     ) -> Self {
         self.client_encryption_metadata = Some(EncryptionMetadata {
             proxy_x25519_public_key,
@@ -536,6 +540,13 @@ pub async fn confidential_compute_middleware(
         error!("Failed to decode salt from base64 encoding");
         StatusCode::BAD_REQUEST
     })?;
+    let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
+        error!(
+            "Failed to convert salt bytes to 16-byte array, incorrect length, with error: {:?}",
+            e
+        );
+        StatusCode::BAD_REQUEST
+    })?;
     let nonce = req_parts
         .headers
         .get(atoma_utils::constants::NONCE)
@@ -549,6 +560,13 @@ pub async fn confidential_compute_middleware(
     })?;
     let nonce_bytes = STANDARD.decode(nonce_str).map_err(|_| {
         error!("Failed to decode nonce from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
+        error!(
+            "Failed to convert nonce bytes to 12-byte array, incorrect length, with error: {:?}",
+            e
+        );
         StatusCode::BAD_REQUEST
     })?;
     let proxy_x25519_public_key = req_parts
@@ -604,7 +622,7 @@ pub async fn confidential_compute_middleware(
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
         ciphertext: ciphertext_bytes,
         nonce: nonce_bytes,
-        salt: salt_bytes.clone(),
+        salt: salt_bytes,
         proxy_x25519_public_key: proxy_x25519_public_key_bytes,
         node_x25519_public_key: node_x25519_public_key_bytes,
     };

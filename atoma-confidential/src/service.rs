@@ -5,10 +5,12 @@ use crate::{
     types::{
         ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
+        ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
 };
 use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
+use atoma_utils::constants::NONCE_SIZE;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
@@ -29,6 +31,11 @@ type ServiceEncryptionRequest = (
     oneshot::Sender<ConfidentialComputeEncryptionResponse>,
 );
 
+type ServiceSharedSecretRequest = (
+    ConfidentialComputeSharedSecretRequest,
+    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
+);
+
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
 /// The `AtomaConfidentialCompute` handles:
@@ -47,6 +54,8 @@ pub struct AtomaConfidentialComputeService {
     service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
     /// Channel receiver for incoming Atoma service requests for encryption and processing
     service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
+    /// Channel receiver for incoming Atoma service requests for shared secret computation
+    service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
@@ -58,6 +67,7 @@ impl AtomaConfidentialComputeService {
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
+        service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
@@ -67,6 +77,7 @@ impl AtomaConfidentialComputeService {
             event_receiver,
             service_decryption_receiver,
             service_encryption_receiver,
+            service_shared_secret_receiver,
             shutdown_signal,
         })
     }
@@ -81,6 +92,21 @@ impl AtomaConfidentialComputeService {
     /// - `x25519_dalek::PublicKey`: The current public key from the key manager
     pub fn get_public_key(&self) -> x25519_dalek::PublicKey {
         self.key_manager.get_public_key()
+    }
+
+    /// Returns the shared secret between the node and the proxy
+    ///
+    /// This method computes the shared secret using the node's secret key and the proxy's public key
+    /// and returns it as a `x25519_dalek::StaticSecret`
+    ///
+    /// # Returns
+    /// - `x25519_dalek::StaticSecret`: The shared secret between the node and the proxy
+    pub fn compute_shared_secret(
+        &self,
+        proxy_x25519_public_key: &PublicKey,
+    ) -> x25519_dalek::SharedSecret {
+        self.key_manager
+            .compute_shared_secret(proxy_x25519_public_key)
     }
 
     /// Starts the TDX service event loop that processes Atoma events and handles graceful shutdown.
@@ -151,6 +177,14 @@ impl AtomaConfidentialComputeService {
                     })?;
                     sender
                         .send(ConfidentialComputeEncryptionResponse { ciphertext, nonce })
+                        .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
+                }
+                Some((shared_secret_request, sender)) = self.service_shared_secret_receiver.recv() => {
+                    let ConfidentialComputeSharedSecretRequest { proxy_x25519_public_key } = shared_secret_request;
+                    let shared_secret = self.compute_shared_secret(&PublicKey::from(proxy_x25519_public_key));
+                    let nonce = rand::random::<[u8; NONCE_SIZE]>();
+                    sender
+                        .send(ConfidentialComputeSharedSecretResponse { shared_secret, nonce })
                         .map_err(|_| AtomaConfidentialComputeError::SenderError)?;
                 }
                 event_result = self.event_receiver.recv() => {

@@ -1,6 +1,11 @@
 use crate::{
-    handlers::sign_response_and_update_stack_hash, middleware::EncryptionMetadata,
-    server::AppState, streamer::Streamer,
+    handlers::sign_response_and_update_stack_hash,
+    middleware::EncryptionMetadata,
+    server::AppState,
+    streamer::{Streamer, StreamingEncryptionMetadata},
+};
+use atoma_confidential::types::{
+    ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
@@ -154,13 +159,45 @@ pub async fn chat_completions_handler(
         )
         .await
     } else {
+        let streaming_encryption_metadata = if let Some(client_encryption_metadata) =
+            client_encryption_metadata
+        {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            state
+                .compute_shared_secret_sender
+                .send((
+                    ConfidentialComputeSharedSecretRequest {
+                        proxy_x25519_public_key: client_encryption_metadata.proxy_x25519_public_key,
+                    },
+                    sender,
+                ))
+                .map_err(|e| {
+                    error!("Error sending encryption request: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            let ConfidentialComputeSharedSecretResponse {
+                shared_secret,
+                nonce,
+            } = receiver.await.map_err(|e| {
+                error!("Error receiving encryption response: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            Some(StreamingEncryptionMetadata {
+                shared_secret,
+                nonce,
+                salt: client_encryption_metadata.salt,
+            })
+        } else {
+            None
+        };
+
         handle_streaming_response(
             state,
             payload,
             stack_small_id,
             estimated_total_compute_units,
             payload_hash,
-            client_encryption_metadata,
+            streaming_encryption_metadata,
         )
         .await
     }
@@ -393,7 +430,7 @@ async fn handle_streaming_response(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
-    client_encryption_metadata: Option<EncryptionMetadata>,
+    streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -444,9 +481,8 @@ async fn handle_streaming_response(
         state.keystore.clone(),
         state.address_index,
         model.to_string(),
-        client_encryption_metadata,
+        streaming_encryption_metadata,
         timer,
-        state.encryption_sender.clone(),
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
