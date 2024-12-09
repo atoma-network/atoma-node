@@ -542,7 +542,7 @@ pub async fn confidential_compute_middleware(
     })?;
     let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
         error!(
-            "Failed to convert salt bytes to 16-byte array, incorrect length, with error: {:?}",
+            "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
             e
         );
         StatusCode::BAD_REQUEST
@@ -564,7 +564,7 @@ pub async fn confidential_compute_middleware(
     })?;
     let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
         error!(
-            "Failed to convert nonce bytes to 12-byte array, incorrect length, with error: {:?}",
+            "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
             e
         );
         StatusCode::BAD_REQUEST
