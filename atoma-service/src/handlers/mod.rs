@@ -122,7 +122,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     {
         info!(
             target = "atoma-service",
-            event = "ai-inference-handler",
+            event = "confidential-compute-encryption-response",
             "Confidential AI inference response, with proxy x25519 public key: {:#?}",
             proxy_x25519_public_key
         );
@@ -140,24 +140,29 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             .map_err(|_| {
                 error!(
                     target = "atoma-service",
-                    event = "chat-completions-handler",
+                    event = "confidential-compute-encryption-response",
                     "Error sending encryption request"
                 );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let ConfidentialComputeEncryptionResponse { ciphertext, nonce } =
-            receiver.await.map_err(|_| {
-                error!(
-                    target = "atoma-service",
-                    event = "chat-completions-handler",
-                    "Error receiving encryption response"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-        Ok(json!({
-            "nonce": nonce,
-            "ciphertext": ciphertext,
-        }))
+        let result = receiver.await.map_err(|_| {
+            error!(
+                target = "atoma-service",
+                event = "confidential-compute-encryption-response",
+                "Error receiving encryption response"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        match result {
+            Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => Ok(json!({
+                "nonce": nonce,
+                "ciphertext": ciphertext,
+            })),
+            Err(e) => {
+                error!("Failed to encrypt confidential compute response: {:?}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     } else {
         Ok(response_body)
     }

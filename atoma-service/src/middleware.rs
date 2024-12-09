@@ -634,18 +634,25 @@ pub async fn confidential_compute_middleware(
             error!("Failed to send confidential compute request");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    let ConfidentialComputeDecryptionResponse { plaintext } =
-        result_receiver.await.map_err(|_| {
-            error!("Failed to receive confidential compute response");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let body = Body::from(plaintext);
-    req_parts.extensions.insert(
-        RequestMetadata::default()
-            .with_client_encryption_metadata(proxy_x25519_public_key_bytes, salt_bytes),
-    );
-    let req = Request::from_parts(req_parts, body);
-    Ok(next.run(req).await)
+    let result = result_receiver.await.map_err(|_| {
+        error!("Failed to receive confidential compute response");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    match result {
+        Ok(ConfidentialComputeDecryptionResponse { plaintext }) => {
+            let body = Body::from(plaintext);
+            req_parts.extensions.insert(
+                RequestMetadata::default()
+                    .with_client_encryption_metadata(proxy_x25519_public_key_bytes, salt_bytes),
+            );
+            let req = Request::from_parts(req_parts, body);
+            Ok(next.run(req).await)
+        }
+        Err(e) => {
+            error!("Failed to decrypt confidential compute response: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub(crate) mod utils {

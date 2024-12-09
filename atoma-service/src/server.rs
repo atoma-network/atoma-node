@@ -67,12 +67,12 @@ type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
 /// Represents a request for confidential compute decryption.
 type DecryptionRequest = (
     ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<ConfidentialComputeDecryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
 );
 
 pub(crate) type EncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<ConfidentialComputeEncryptionResponse>,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
 );
 
 /// Represents a request for computing the shared secret.
