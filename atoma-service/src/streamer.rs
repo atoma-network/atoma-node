@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -18,7 +19,7 @@ use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tokio::sync::{
     mpsc::UnboundedSender,
-    oneshot::{self, error::TryRecvError},
+    oneshot::{self},
 };
 use tracing::{error, instrument};
 
@@ -273,29 +274,34 @@ impl Streamer {
         skip(self),
         fields(path = "streamer-handle_encrypted_chunk")
     )]
-    fn handle_encrypted_chunk(&mut self) -> Result<Option<Value>, Error> {
+    fn handle_encrypted_chunk(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Event, Error>>> {
         if let Some(mut receiver) = self.encryption_response_receiver.take() {
-            match receiver.try_recv() {
-                Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => {
-                    // Construct encrypted JSON
+            match Pin::new(&mut receiver).poll(cx) {
+                Poll::Ready(Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce })) => {
                     let encrypted_chunk = json!({
                         "ciphertext": ciphertext,
                         "nonce": nonce,
                     });
-
-                    return Ok(Some(encrypted_chunk));
+                    self.waiting_for_encrypted_chunk = false;
+                    // Return the encrypted chunk as an Event
+                    return Poll::Ready(Some(Ok(Event::default().json_data(&encrypted_chunk)?)));
                 }
-                Err(e) => {
-                    if e == TryRecvError::Empty {
-                        return Ok(None);
-                    }
-                    return Err(Error::new(
-                        "Oneshot sender channel has been dropped".to_string(),
-                    ));
+                Poll::Ready(Err(_)) => {
+                    return Poll::Ready(Some(Err(Error::new(
+                        "Oneshot channel closed".to_string(),
+                    ))));
+                }
+                Poll::Pending => {
+                    // Encryption not ready yet, put the receiver back and return Pending
+                    self.encryption_response_receiver = Some(receiver);
+                    return Poll::Pending;
                 }
             }
         }
-        Ok(None)
+        Poll::Ready(None)
     }
 
     /// Handles the encryption request for a chunk of streaming data.
@@ -365,13 +371,13 @@ impl Stream for Streamer {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
                 if self.waiting_for_encrypted_chunk {
-                    match self.handle_encrypted_chunk() {
-                        Ok(Some(chunk)) => {
-                            self.waiting_for_encrypted_chunk = false;
-                            return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
+                    match self.handle_encrypted_chunk(cx) {
+                        Poll::Ready(Some(Ok(chunk))) => {
+                            return Poll::Ready(Some(Ok(chunk)));
                         }
-                        Err(e) => return Poll::Ready(Some(Err(e))),
-                        Ok(None) => return Poll::Pending,
+                        Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(None) => return Poll::Ready(None),
                     }
                 }
 
@@ -393,7 +399,6 @@ impl Stream for Streamer {
                         )))));
                     }
                 };
-
                 let chunk_str = chunk_str.strip_prefix(DATA_PREFIX).unwrap_or(chunk_str);
 
                 if chunk_str.starts_with(DONE_CHUNK) {
