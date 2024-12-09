@@ -6,7 +6,7 @@ mod middleware {
     };
     use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
     use atoma_utils::{
-        constants, encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
+        constants::{self, SALT_SIZE}, encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
     };
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
@@ -1229,7 +1229,7 @@ mod middleware {
             "message": MESSAGE_CONTENT
         })
         .to_string();
-        let salt = "test_salt";
+        let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
@@ -1238,7 +1238,7 @@ mod middleware {
         let (encrypted_data, nonce) = encrypt_plaintext(
             plaintext_data.as_bytes(),
             &shared_secret,
-            salt.as_bytes(),
+            &salt,
             None,
         )
         .expect("Failed to encrypt plaintext data");
@@ -1252,7 +1252,7 @@ mod middleware {
             .uri("/")
             .header(
                 atoma_utils::constants::SALT,
-                STANDARD.encode(salt.as_bytes()),
+                STANDARD.encode(&salt),
             )
             .header(
                 atoma_utils::constants::NONCE,
@@ -1277,6 +1277,7 @@ mod middleware {
                 "message": MESSAGE_CONTENT
             })
             .to_string();
+
             assert_eq!(body, message.as_bytes());
             Ok(Response::new(Body::empty()))
         }

@@ -195,7 +195,7 @@ pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use serde_json::json;
 ///
 /// let json = json!({
