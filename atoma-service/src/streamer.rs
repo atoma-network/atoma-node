@@ -274,7 +274,7 @@ impl Streamer {
             nonce,
             salt,
         } = streaming_encryption_metadata;
-        let encrypted_chunk = encrypt_plaintext(
+        let (encrypted_chunk, nonce) = encrypt_plaintext(
             chunk.to_string().as_bytes(),
             shared_secret,
             salt,
