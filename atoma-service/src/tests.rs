@@ -6,7 +6,10 @@ mod middleware {
     };
     use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
     use atoma_utils::{
-        constants::{self, SALT_SIZE}, encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
+        constants::{self, SALT_SIZE},
+        encryption::encrypt_plaintext,
+        hashing::blake2b_hash,
+        test::POSTGRES_TEST_DB_URL,
     };
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
@@ -1235,13 +1238,9 @@ mod middleware {
 
         let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
-        let (encrypted_data, nonce) = encrypt_plaintext(
-            plaintext_data.as_bytes(),
-            &shared_secret,
-            &salt,
-            None,
-        )
-        .expect("Failed to encrypt plaintext data");
+        let (encrypted_data, nonce) =
+            encrypt_plaintext(plaintext_data.as_bytes(), &shared_secret, &salt, None)
+                .expect("Failed to encrypt plaintext data");
         let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
         let encrypted_body_json = json!({
             constants::CIPHERTEXT: encrypted_data,
@@ -1250,10 +1249,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(
-                atoma_utils::constants::SALT,
-                STANDARD.encode(&salt),
-            )
+            .header(atoma_utils::constants::SALT, STANDARD.encode(&salt))
             .header(
                 atoma_utils::constants::NONCE,
                 STANDARD.encode(nonce.as_slice()),
