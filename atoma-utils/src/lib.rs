@@ -15,14 +15,46 @@ use tokio::sync::watch;
 use tracing::{error, instrument};
 
 pub mod constants {
+    /// HTTP header name for the Stack Small ID.
+    /// Used to identify specific stacks in the system.
     pub const STACK_SMALL_ID: &str = "X-Stack-Small-Id";
+
+    /// HTTP header name for the cryptographic signature.
+    /// Contains the signature used for request authentication.
     pub const SIGNATURE: &str = "X-Signature";
+
+    /// HTTP header name for the nonce value.
+    /// A unique random number used once to prevent replay attacks.
     pub const NONCE: &str = "X-Nonce";
+
+    /// HTTP header name for the salt value.
+    /// Random data used as additional input to a one-way function that hashes data.
     pub const SALT: &str = "X-Salt";
+
+    /// HTTP header name for the transaction digest.
+    /// Contains a unique identifier for a blockchain transaction.
     pub const TX_DIGEST: &str = "X-Tx-Digest";
+
+    /// HTTP header name for the Node's X25519 public key.
+    /// Used for establishing secure communication channels with nodes.
     pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
+
+    /// HTTP header name for the Proxy's X25519 public key.
+    /// Used for establishing secure communication channels with proxies.
     pub const PROXY_X25519_PUBLIC_KEY: &str = "X-Proxy-X25519-PublicKey";
-    pub const CYPHERTEXT: &str = "cyphertext";
+
+    /// Field name for encrypted data in the request/response body.
+    /// Contains the encrypted payload of the message.
+    pub const CIPHERTEXT: &str = "ciphertext";
+
+    /// Size of a cryptographic nonce in bytes
+    pub const NONCE_SIZE: usize = 12;
+
+    /// Size of a cryptographic salt in bytes
+    pub const SALT_SIZE: usize = 16;
+
+    /// Size of a Diffie-Hellman public key in bytes
+    pub const X25519_PUBLIC_KEY_BYTES_SIZE: usize = 32;
 }
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error
@@ -138,6 +170,72 @@ pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<
         }
     }
     Ok(())
+}
+
+/// Converts a JSON array of numbers into a vector of bytes.
+///
+/// # Arguments
+///
+/// * `value` - A JSON value that contains an array of numbers
+/// * `field` - The field name in the JSON object that contains the byte array
+///
+/// # Type Parameters
+///
+/// * `E` - The error type that implements `std::error::Error` and can be created from a `String`
+/// * `T` - Unused type parameter (consider removing if not needed)
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Ok(Vec<u8>)` - A vector of bytes parsed from the JSON array
+/// * `Err(E)` - An error if:
+///   - The field doesn't exist in the JSON
+///   - The field's value is not an array
+///   - Any array element cannot be converted to a `u8`
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use serde_json::json;
+///
+/// let json = json!({
+///     "bytes": [255, 0, 127]
+/// });
+///
+/// let bytes: Result<Vec<u8>, String> = parse_json_byte_array(&json, "bytes");
+/// assert_eq!(bytes.unwrap(), vec![255, 0, 127]);
+/// ```
+///
+/// # Logging
+///
+/// This function logs errors at the trace level using the `tracing` crate,
+/// including the field name in the log context.
+#[instrument(
+    level = "trace",
+    skip_all,
+    fields(field = %field)
+)]
+pub fn parse_json_byte_array(value: &serde_json::Value, field: &str) -> Result<Vec<u8>, String> {
+    let array = value.get(field).and_then(|v| v.as_array()).ok_or_else(|| {
+        error!("Error getting field array {} from JSON", field);
+        format!("Error getting field array {} from JSON", field)
+    })?;
+
+    array
+        .iter()
+        .map(|b| {
+            b.as_u64().map(|u| u as u8).ok_or_else(|| {
+                error!(
+                    "Error parsing field array {} values as bytes from JSON",
+                    field
+                );
+                format!(
+                    "Error parsing field array {} values as bytes from JSON",
+                    field
+                )
+            })
+        })
+        .collect()
 }
 
 pub mod test {

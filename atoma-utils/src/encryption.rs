@@ -29,7 +29,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// # Example
 ///
 /// ```rust,ignore
-/// use atoma_tdx::decryption::decrypt_cyphertext;
+/// use atoma_tdx::decryption::decrypt_ciphertext;
 /// # use your_crate::SharedSecret;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +38,7 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// let salt = b"unique_salt_value";
 /// let nonce = b"unique_nonce_12"; // Must be 12 bytes for AES-GCM
 ///
-/// let plaintext = decrypt_cyphertext(
+/// let plaintext = decrypt_ciphertext(
 ///     shared_secret,
 ///     &ciphertext,
 ///     salt,
@@ -53,8 +53,8 @@ type Result<T> = std::result::Result<T, EncryptionError>;
 /// - The nonce must be unique for each encryption operation
 /// - The salt should be randomly generated for each key derivation
 /// - The shared secret should be derived using secure key exchange
-pub fn decrypt_cyphertext(
-    shared_secret: SharedSecret,
+pub fn decrypt_ciphertext(
+    shared_secret: &SharedSecret,
     ciphertext: &[u8],
     salt: &[u8],
     nonce: &[u8],
@@ -115,8 +115,9 @@ pub fn decrypt_cyphertext(
 /// - The generated nonce is guaranteed to be unique for each encryption operation
 pub fn encrypt_plaintext(
     plaintext: &[u8],
-    shared_secret: SharedSecret,
+    shared_secret: &SharedSecret,
     salt: &[u8],
+    nonce: Option<[u8; NONCE_BYTE_SIZE]>,
 ) -> Result<(Vec<u8>, [u8; NONCE_BYTE_SIZE])> {
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());
     let mut symmetric_key = [0u8; 32];
@@ -124,12 +125,12 @@ pub fn encrypt_plaintext(
         .map_err(EncryptionError::KeyExpansionFailed)?;
 
     let cipher = Aes256Gcm::new(&symmetric_key.into());
-    let nonce = rand::random::<[u8; NONCE_BYTE_SIZE]>().into();
+    let nonce = nonce.unwrap_or(rand::random::<[u8; NONCE_BYTE_SIZE]>());
     let ciphertext = cipher
-        .encrypt(&nonce, plaintext)
+        .encrypt(&nonce.into(), plaintext)
         .map_err(EncryptionError::EncryptionFailed)?;
 
-    Ok((ciphertext, nonce.into()))
+    Ok((ciphertext, nonce))
 }
 
 #[derive(Debug, Error)]

@@ -6,7 +6,10 @@ mod middleware {
     };
     use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
     use atoma_utils::{
-        constants, encryption::encrypt_plaintext, hashing::blake2b_hash, test::POSTGRES_TEST_DB_URL,
+        constants::{self, SALT_SIZE},
+        encryption::encrypt_plaintext,
+        hashing::blake2b_hash,
+        test::POSTGRES_TEST_DB_URL,
     };
     use axum::{
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
@@ -253,6 +256,8 @@ mod middleware {
             "./keystore".to_string(),
             "./".to_string(),
         );
+        let (compute_shared_secret_sender, compute_shared_secret_receiver) =
+            tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
             let confidential_compute_service = AtomaConfidentialComputeService::new(
                 Arc::new(RwLock::new(
@@ -263,6 +268,7 @@ mod middleware {
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,
+                compute_shared_secret_receiver,
                 shutdown_receiver,
             )
             .expect("Failed to create confidential compute service");
@@ -285,6 +291,7 @@ mod middleware {
                 state_manager_sender,
                 decryption_sender,
                 encryption_sender,
+                compute_shared_secret_sender,
                 chat_completions_service_url: "".to_string(),
                 embeddings_service_url: "".to_string(),
                 image_generations_service_url: "".to_string(),
@@ -944,6 +951,7 @@ mod middleware {
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
+            client_encryption_metadata: None,
         };
 
         let mut req = Request::builder()
@@ -1224,27 +1232,24 @@ mod middleware {
             "message": MESSAGE_CONTENT
         })
         .to_string();
-        let salt = "test_salt";
+        let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
         let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
-            encrypt_plaintext(plaintext_data.as_bytes(), shared_secret, salt.as_bytes())
+            encrypt_plaintext(plaintext_data.as_bytes(), &shared_secret, &salt, None)
                 .expect("Failed to encrypt plaintext data");
         let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
         let encrypted_body_json = json!({
-            constants::CYPHERTEXT: encrypted_data,
+            constants::CIPHERTEXT: encrypted_data,
         });
         // Build request
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(
-                atoma_utils::constants::SALT,
-                STANDARD.encode(salt.as_bytes()),
-            )
+            .header(atoma_utils::constants::SALT, STANDARD.encode(&salt))
             .header(
                 atoma_utils::constants::NONCE,
                 STANDARD.encode(nonce.as_slice()),
@@ -1268,6 +1273,7 @@ mod middleware {
                 "message": MESSAGE_CONTENT
             })
             .to_string();
+
             assert_eq!(body, message.as_bytes());
             Ok(Response::new(Body::empty()))
         }

@@ -9,7 +9,7 @@ use serde_json::Value;
 use tracing::{error, info, instrument};
 use utoipa::OpenApi;
 
-use super::sign_response_and_update_stack_hash;
+use super::{handle_confidential_compute_encryption_response, sign_response_and_update_stack_hash};
 
 /// The path for confidential image generations requests
 pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
@@ -79,6 +79,7 @@ pub async fn image_generations_handler(
         stack_small_id,
         estimated_total_compute_units: _,
         payload_hash,
+        client_encryption_metadata,
         request_type: _,
         endpoint_path: _,
     } = request_metadata;
@@ -101,11 +102,45 @@ pub async fn image_generations_handler(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    sign_response_and_update_stack_hash(&mut response_body, payload_hash, &state, stack_small_id)
-        .await?;
+    // Sign the response and update the stack hash
+    if let Err(e) = sign_response_and_update_stack_hash(
+        &mut response_body,
+        payload_hash,
+        &state,
+        stack_small_id,
+    )
+    .await
+    {
+        error!(
+            target = "atoma-service",
+            event = "image-generations-handler",
+            "Error signing response and updating stack hash: {}",
+            e
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
-    // Stop the timer before returning the response
-    timer.observe_duration();
-
-    Ok(Json(response_body))
+    // Handle confidential compute encryption response
+    match handle_confidential_compute_encryption_response(
+        &state,
+        response_body,
+        client_encryption_metadata,
+    )
+    .await
+    {
+        Ok(response_body) => {
+            // Stop the timer before returning the valid response
+            timer.observe_duration();
+            Ok(Json(response_body))
+        }
+        Err(e) => {
+            error!(
+                target = "atoma-service",
+                event = "image-generations-handler",
+                "Error handling confidential compute encryption response: {}",
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

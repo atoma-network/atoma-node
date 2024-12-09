@@ -1,5 +1,5 @@
 use atoma_utils::encryption::{
-    decrypt_cyphertext, encrypt_plaintext, EncryptionError, NONCE_BYTE_SIZE,
+    decrypt_ciphertext, encrypt_plaintext, EncryptionError, NONCE_BYTE_SIZE,
 };
 use thiserror::Error;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
@@ -126,9 +126,9 @@ impl X25519KeyPairManager {
     /// let salt = vec![/* salt bytes */];
     /// let nonce = vec![/* nonce bytes */];
     ///
-    /// let plaintext = manager.decrypt_cyphertext(public_key, &ciphertext, &salt, &nonce)?;
+    /// let plaintext = manager.decrypt_ciphertext(public_key, &ciphertext, &salt, &nonce)?;
     /// ```
-    pub fn decrypt_cyphertext(
+    pub fn decrypt_ciphertext(
         &self,
         public_key: [u8; 32],
         ciphertext: &[u8],
@@ -137,7 +137,7 @@ impl X25519KeyPairManager {
     ) -> Result<Vec<u8>> {
         let public_key = PublicKey::from(public_key);
         let shared_secret = self.compute_shared_secret(&public_key);
-        Ok(decrypt_cyphertext(shared_secret, ciphertext, salt, nonce)?)
+        Ok(decrypt_ciphertext(&shared_secret, ciphertext, salt, nonce)?)
     }
 
     /// Encrypts plaintext using X25519 key exchange and symmetric encryption.
@@ -176,7 +176,7 @@ impl X25519KeyPairManager {
     ) -> Result<(Vec<u8>, [u8; NONCE_BYTE_SIZE])> {
         let public_key = PublicKey::from(public_key);
         let shared_secret = self.compute_shared_secret(&public_key);
-        Ok(encrypt_plaintext(plaintext, shared_secret, salt)?)
+        Ok(encrypt_plaintext(plaintext, &shared_secret, salt, None)?)
     }
 
     /// Returns the file path where the private key should be stored.

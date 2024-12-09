@@ -5,7 +5,11 @@ use std::{
 };
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::hashing::blake2b_hash;
+use atoma_utils::{
+    constants::{NONCE_SIZE, SALT_SIZE},
+    encryption::encrypt_plaintext,
+    hashing::blake2b_hash,
+};
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
 use flume::Sender as FlumeSender;
@@ -14,6 +18,7 @@ use prometheus::HistogramTimer;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tracing::{error, instrument};
+use x25519_dalek::SharedSecret;
 
 use crate::{
     handlers::prometheus::{
@@ -33,6 +38,19 @@ const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
 const CHOICES: &str = "choices";
 /// The usage key
 const USAGE: &str = "usage";
+
+/// Metadata required for encrypting streaming responses to clients.
+///
+/// This structure contains the cryptographic elements needed to establish
+/// secure communication during streaming operations.
+pub struct StreamingEncryptionMetadata {
+    /// The shared secret key derived from ECDH key exchange
+    pub shared_secret: SharedSecret,
+    /// A unique nonce value to prevent replay attacks
+    pub nonce: [u8; NONCE_SIZE],
+    /// Additional randomness used in the encryption process
+    pub salt: [u8; SALT_SIZE],
+}
 
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
@@ -62,6 +80,8 @@ pub struct Streamer {
     first_token_generation_timer: Option<HistogramTimer>,
     /// The decoding phase timer for the request.
     decoding_phase_timer: Option<HistogramTimer>,
+    /// The client encryption metadata for the request
+    streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
 }
 
 /// Represents the various states of a streaming process
@@ -89,6 +109,7 @@ impl Streamer {
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
         model: String,
+        streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
         first_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
@@ -104,6 +125,7 @@ impl Streamer {
             model,
             first_token_generation_timer: Some(first_token_generation_timer),
             decoding_phase_timer: None,
+            streaming_encryption_metadata,
         }
     }
 
@@ -218,6 +240,55 @@ impl Streamer {
 
         Ok(signature)
     }
+
+    /// Handles the encryption request for a chunk of streaming data.
+    ///
+    /// This method initiates the encryption process for a given chunk by:
+    /// 1. Creating a oneshot channel for receiving the encryption response
+    /// 2. Sending the encryption request with the chunk data to the confidential compute service
+    /// 3. Setting up the streamer to wait for the encrypted response
+    ///
+    /// # Arguments
+    ///
+    /// * `chunk` - The JSON value containing the data to be encrypted
+    /// * `proxy_x25519_public_key` - The X25519 public key of the proxy (32 bytes)
+    /// * `salt` - The salt value used in the encryption process
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<(), Error>` where:
+    /// * `Ok(())` - The encryption request was successfully sent
+    /// * `Err(Error)` - An error occurred while sending the encryption request
+    ///
+    /// # State Changes
+    ///
+    /// * Sets `waiting_for_encrypted_chunk` to `true`
+    /// * Updates `encryption_response_receiver` with the new receiver
+    #[instrument(level = "debug", skip_all)]
+    fn handle_encryption_request(
+        chunk: &Value,
+        streaming_encryption_metadata: &StreamingEncryptionMetadata,
+    ) -> Result<Value, Error> {
+        let StreamingEncryptionMetadata {
+            shared_secret,
+            nonce,
+            salt,
+        } = streaming_encryption_metadata;
+        let (encrypted_chunk, nonce) = encrypt_plaintext(
+            chunk.to_string().as_bytes(),
+            shared_secret,
+            salt,
+            Some(*nonce),
+        )
+        .map_err(|e| {
+            error!("Error encrypting chunk: {}", e);
+            Error::new(format!("Error encrypting chunk: {}", e))
+        })?;
+        Ok(json!({
+            "ciphertext": encrypted_chunk,
+            "nonce": nonce,
+        }))
+    }
 }
 
 impl Stream for Streamer {
@@ -248,7 +319,6 @@ impl Stream for Streamer {
                         )))));
                     }
                 };
-
                 let chunk_str = chunk_str.strip_prefix(DATA_PREFIX).unwrap_or(chunk_str);
 
                 if chunk_str.starts_with(DONE_CHUNK) {
@@ -286,6 +356,14 @@ impl Stream for Streamer {
                         self.status = StreamStatus::Completed;
                         let signature = self.handle_final_chunk(usage)?;
                         chunk["signature"] = json!(signature);
+                        let chunk = if let Some(streaming_encryption_metadata) =
+                            self.streaming_encryption_metadata.as_ref()
+                        {
+                            // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
+                            Self::handle_encryption_request(&chunk, streaming_encryption_metadata)?
+                        } else {
+                            chunk
+                        };
                         Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
                     } else {
                         error!("Error getting usage from chunk");
@@ -294,6 +372,14 @@ impl Stream for Streamer {
                 } else {
                     // Accumulate regular chunks
                     self.accumulated_response.push(chunk.clone());
+                    let chunk = if let Some(streaming_encryption_metadata) =
+                        self.streaming_encryption_metadata.as_ref()
+                    {
+                        // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
+                        Self::handle_encryption_request(&chunk, streaming_encryption_metadata)?
+                    } else {
+                        chunk
+                    };
                     Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
                 }
             }

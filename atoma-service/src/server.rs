@@ -3,6 +3,7 @@ use std::sync::Arc;
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
+    ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
@@ -69,9 +70,15 @@ type DecryptionRequest = (
     oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
 );
 
-type EncryptionRequest = (
+pub(crate) type EncryptionRequest = (
     ConfidentialComputeEncryptionRequest,
     oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
+);
+
+/// Represents a request for computing the shared secret.
+type SharedSecretRequest = (
+    ConfidentialComputeSharedSecretRequest,
+    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
 );
 
 /// Represents the shared state of the application.
@@ -101,6 +108,13 @@ pub struct AppState {
     /// confidential compute service, allowing for efficient handling of
     /// confidential data processing across different components.
     pub encryption_sender: UnboundedSender<EncryptionRequest>,
+
+    /// Channel sender for computing the shared secret.
+    ///
+    /// This sender is used to communicate shared secret requests to the
+    /// confidential compute service, allowing for efficient handling of
+    /// shared secret computation across different components.
+    pub compute_shared_secret_sender: UnboundedSender<SharedSecretRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
     pub stack_retrieve_sender:

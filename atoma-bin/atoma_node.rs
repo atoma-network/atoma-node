@@ -213,12 +213,14 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
-
+    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
     let confidential_compute_service = AtomaConfidentialComputeService::new(
         client.clone(),
         subscriber_confidential_compute_receiver,
         app_state_decryption_receiver,
         app_state_encryption_receiver,
+        compute_shared_secret_receiver,
         shutdown_receiver.clone(),
     )?;
 
@@ -280,6 +282,7 @@ async fn main() -> Result<()> {
         stack_retrieve_sender,
         decryption_sender: app_state_decryption_sender,
         encryption_sender: app_state_encryption_sender,
+        compute_shared_secret_sender,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.service.models),
         chat_completions_service_url: config

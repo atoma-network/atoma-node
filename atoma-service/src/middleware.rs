@@ -11,7 +11,11 @@ use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::{hashing::blake2b_hash, verify_signature};
+use atoma_utils::{
+    constants::{NONCE_SIZE, SALT_SIZE},
+    hashing::blake2b_hash,
+    parse_json_byte_array, verify_signature,
+};
 use axum::{
     body::Body,
     extract::State,
@@ -50,6 +54,15 @@ const IMAGE_SIZE: &str = "size";
 /// The key for the number of images in the request body
 const IMAGE_N: &str = "n";
 
+/// Metadata for confidential compute encryption requests
+#[derive(Clone, Debug)]
+pub struct EncryptionMetadata {
+    /// The client's proxy X25519 public key
+    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// The salt
+    pub salt: [u8; SALT_SIZE],
+}
+
 /// Metadata extracted from the request
 #[derive(Clone, Debug, Default)]
 pub struct RequestMetadata {
@@ -61,6 +74,8 @@ pub struct RequestMetadata {
     pub payload_hash: [u8; 32],
     /// The type of request
     pub request_type: RequestType,
+    /// The client's Diffie-Hellman public key and salt
+    pub client_encryption_metadata: Option<EncryptionMetadata>,
     /// endpoint path
     pub endpoint_path: String,
 }
@@ -115,9 +130,35 @@ impl RequestMetadata {
         self
     }
 
+    /// Sets the client's encryption metadata for this metadata instance
+    ///
+    /// * `client_dh_public_key` - The client's Diffie-Hellman public key
+    /// * `salt` - The salt
+    ///
+    /// # Returns
+    /// Returns self with the updated client's encryption metadata for method chaining
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///     .with_client_encryption_metadata(client_dh_public_key, salt);
+    /// ```
+    pub fn with_client_encryption_metadata(
+        mut self,
+        proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+        salt: [u8; SALT_SIZE],
+    ) -> Self {
+        self.client_encryption_metadata = Some(EncryptionMetadata {
+            proxy_x25519_public_key,
+            salt,
+        });
+        self
+    }
+
     /// Sets the endpoint path for this metadata instance
     ///
-    /// # Arguments
     /// * `endpoint_path` - The path of the endpoint
     ///
     /// # Returns
@@ -483,7 +524,7 @@ pub async fn confidential_compute_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let (req_parts, req_body) = req.into_parts();
+    let (mut req_parts, req_body) = req.into_parts();
     let salt = req_parts
         .headers
         .get(atoma_utils::constants::SALT)
@@ -499,6 +540,13 @@ pub async fn confidential_compute_middleware(
         error!("Failed to decode salt from base64 encoding");
         StatusCode::BAD_REQUEST
     })?;
+    let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
+        error!(
+            "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
+            e
+        );
+        StatusCode::BAD_REQUEST
+    })?;
     let nonce = req_parts
         .headers
         .get(atoma_utils::constants::NONCE)
@@ -512,6 +560,13 @@ pub async fn confidential_compute_middleware(
     })?;
     let nonce_bytes = STANDARD.decode(nonce_str).map_err(|_| {
         error!("Failed to decode nonce from base64 encoding");
+        StatusCode::BAD_REQUEST
+    })?;
+    let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
+        error!(
+            "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
+            e
+        );
         StatusCode::BAD_REQUEST
     })?;
     let proxy_x25519_public_key = req_parts
@@ -562,28 +617,10 @@ pub async fn confidential_compute_middleware(
         error!("Failed to parse body as JSON");
         StatusCode::BAD_REQUEST
     })?;
-    let cyphertext = body_json
-        .get(atoma_utils::constants::CYPHERTEXT)
-        .ok_or_else(|| {
-            error!("Cyphertext not found in body");
-            StatusCode::BAD_REQUEST
-        })?
-        .as_array()
-        .ok_or_else(|| {
-            error!("Cyphertext is not an array");
-            StatusCode::BAD_REQUEST
-        })?;
-    let cyphertext_bytes: Vec<u8> = cyphertext
-        .iter()
-        .map(|value| {
-            value.as_u64().map(|u| u as u8).ok_or_else(|| {
-                error!("Cyphertext contains non-integer value");
-                StatusCode::BAD_REQUEST
-            })
-        })
-        .collect::<Result<Vec<u8>, StatusCode>>()?;
+    let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
-        ciphertext: cyphertext_bytes,
+        ciphertext: ciphertext_bytes,
         nonce: nonce_bytes,
         salt: salt_bytes,
         proxy_x25519_public_key: proxy_x25519_public_key_bytes,
@@ -604,6 +641,10 @@ pub async fn confidential_compute_middleware(
     match result {
         Ok(ConfidentialComputeDecryptionResponse { plaintext }) => {
             let body = Body::from(plaintext);
+            req_parts.extensions.insert(
+                RequestMetadata::default()
+                    .with_client_encryption_metadata(proxy_x25519_public_key_bytes, salt_bytes),
+            );
             let req = Request::from_parts(req_parts, body);
             Ok(next.run(req).await)
         }
