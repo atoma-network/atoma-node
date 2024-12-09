@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 aes-gcm = { workspace = true }
+anyhow = { workspace = true }
 atoma-sui = { workspace = true }
 atoma-utils = { workspace = true }
 blake2 = { workspace = true }
