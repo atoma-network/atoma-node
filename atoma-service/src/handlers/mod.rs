@@ -108,7 +108,11 @@ async fn sign_response_and_update_stack_hash(
 #[instrument(
     level = "info",
     skip(state, response_body, client_encryption_metadata),
-    fields(event = "confidential-compute-encryption-response")
+    fields(
+        event = "confidential-compute-encryption-response",
+        proxy_x25519_public_key = %proxy_x25519_public_key,
+        salt = %salt
+    )
 )]
 pub(crate) async fn handle_confidential_compute_encryption_response(
     state: &AppState,
