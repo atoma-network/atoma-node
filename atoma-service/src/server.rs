@@ -290,7 +290,7 @@ pub async fn run_server(
 #[openapi(paths(health))]
 pub(crate) struct HealthOpenApi;
 
-/// Handles the health check endpoint.
+/// Health
 ///
 /// This function is used to verify that the server is running and responsive.
 /// It's typically used by load balancers or monitoring systems to check the
@@ -330,7 +330,7 @@ async fn health() -> impl IntoResponse {
 #[openapi(paths(metrics_handler))]
 pub(crate) struct MetricsOpenApi;
 
-/// Handles the metrics endpoint.
+/// Metrics
 ///
 /// This function is used to return the metrics for the service.
 ///

@@ -19,6 +19,8 @@ pub const STACKS_PATH: &str = "/stacks";
 )]
 pub(crate) struct StacksOpenApi;
 
+//TODO: all of these endpoints should be deleted and replaced with the ones I suggested in the TODO of almost_filled_stacks.rs. If necessary, we can add additional filters to the endpoints to accomplish the functionality present in these endpoints.
+
 /// Router for handling stack-related endpoints
 ///
 /// This function sets up the routing for various stack-related operations,
@@ -33,6 +35,8 @@ pub fn stacks_router() -> Router<DaemonState> {
         .route("/claimed_stacks/:id", get(claimed_stacks_get))
 }
 
+/// List all stacks for currently registered nodes
+///
 /// Retrieves all stacks associated with the currently registered node badges.
 #[utoipa::path(
     get,
@@ -63,6 +67,8 @@ pub async fn stacks_list(
     ))
 }
 
+/// List all stacks for a specific node
+///
 /// Retrieves all stacks for a specific node identified by its small ID.
 #[utoipa::path(
     get,
@@ -91,6 +97,8 @@ pub async fn stacks_get(
     ))
 }
 
+/// List all claimed stacks for currently registered nodes
+///
 /// Retrieves all claimed stacks for the currently registered node badges.
 #[utoipa::path(
     get,
@@ -121,6 +129,8 @@ pub async fn claimed_stacks_list(
     ))
 }
 
+/// List all claimed stacks for a specific node
+///
 /// Retrieves all claimed stacks for a specific node identified by its small ID.
 #[utoipa::path(
     get,
