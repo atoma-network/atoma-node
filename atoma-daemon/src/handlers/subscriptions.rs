@@ -31,6 +31,8 @@ pub fn subscriptions_router() -> Router<DaemonState> {
         .route(&format!("{SUBSCRIPTIONS_PATH}/:id"), get(subscriptions_get))
 }
 
+/// List all subscriptions for currently registered nodes
+///
 /// Retrieves all node subscriptions for the currently registered node badges.
 #[utoipa::path(
     get,
@@ -64,6 +66,9 @@ pub async fn subscriptions_list(
     Ok(Json(all_node_subscriptions))
 }
 
+//TODO: this endpoint should be deleted and add filter on subscriptions_list.
+/// List all subscriptions for a specific node
+///
 /// Retrieves all subscriptions for a specific node identified by its small ID.
 #[utoipa::path(
     get,

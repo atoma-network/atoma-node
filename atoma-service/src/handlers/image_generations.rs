@@ -26,7 +26,8 @@ pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 #[openapi(paths(image_generations_handler))]
 pub(crate) struct ImageGenerationsOpenApi;
 
-/// Handles image generation requests by proxying them to the image generations service.
+/// Create image generation
+///
 ///
 /// This handler simply forwards the request to the image generations service and returns the response.
 ///

@@ -19,6 +19,11 @@ pub const ALMOST_FILLED_STACKS_PATH: &str = "/almost_filled_stacks";
 )]
 pub(crate) struct AlmostFilledStacksOpenApi;
 
+//TODO: we should implement the following endpoints:
+// - GET /stacks - List all stacks. A filter `fraction` can be applied
+// - GET /stacks/nodes/:id - List all stacks for a specific node. A filter `fraction` can be applied
+// Move into stacks.rs
+
 /// Router for handling almost filled stacks endpoints
 ///
 /// Creates routes for:
@@ -36,6 +41,8 @@ pub fn almost_filled_stacks_router() -> Router<DaemonState> {
         )
 }
 
+/// List almost filled stacks
+///
 /// Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
 #[utoipa::path(
     get,
@@ -71,6 +78,8 @@ pub async fn almost_filled_stacks_fraction_get(
     ))
 }
 
+/// List almost filled stacks for a specific node
+///
 /// Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
 ///
 /// # Arguments
