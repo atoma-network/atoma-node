@@ -34,7 +34,12 @@ impl P2pAtomaNode {
                 yamux::Config::default,
             )
             .map_err(|e| {
-                error!("Failed to build swarm, with error: {e}");
+                error!(
+                    target = "atoma-p2p",
+                    event = "build_swarm",
+                    error = %e,
+                    "Failed to build swarm"
+                );
                 P2pAtomaNodeError::SwarmBuildError(e.to_string())
             })?
             .with_quic()
@@ -64,7 +69,12 @@ impl P2pAtomaNode {
                 Ok(MyBehaviour { gossipsub, mdns })
             })
             .map_err(|e| {
-                error!("Failed to build behaviour, with error: {e}");
+                error!(
+                    target = "atoma-p2p",
+                    event = "build_behaviour",
+                    error = %e,
+                    "Failed to build behaviour"
+                );
                 P2pAtomaNodeError::BehaviourBuildError(e.to_string())
             })?
             .with_swarm_config(|c| c.with_idle_connection_timeout(config.idle_connection_timeout))
@@ -76,11 +86,22 @@ impl P2pAtomaNode {
             .gossipsub
             .subscribe(&topic)
             .map_err(|e| {
-                error!("Failed to subscribe to topic, with error: {e}");
+                error!(
+                    target = "atoma-p2p",
+                    event = "subscribe_to_topic",
+                    error = %e,
+                    "Failed to subscribe to topic"
+                );
                 P2pAtomaNodeError::GossipsubSubscriptionError(e)
             })?;
         swarm.listen_on(config.listen_addr.parse()?).map_err(|e| {
-            error!("Failed to listen on address, with error: {e}");
+            error!(
+                target = "atoma-p2p",
+                event = "listen_on_error",
+                listen_addr = config.listen_addr,
+                error = %e,
+                "Failed to listen on address"
+            );
             P2pAtomaNodeError::SwarmListenOnError(e)
         })?;
 
@@ -102,7 +123,7 @@ impl P2pAtomaNode {
                         Ok(()) => {
                             if *shutdown_signal.borrow() {
                                 tracing::trace!(
-                                    target = "atoma-state-manager",
+                                    target = "atoma-p2p",
                                     event = "shutdown_signal",
                                     "Shutdown signal received, shutting down"
                                 );
@@ -111,7 +132,7 @@ impl P2pAtomaNode {
                         }
                         Err(e) => {
                             tracing::error!(
-                                target = "atoma-state-manager",
+                                target = "atoma-p2p",
                                 event = "shutdown_signal_error",
                                 error = %e,
                                 "Shutdown signal channel closed"
