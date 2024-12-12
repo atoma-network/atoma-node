@@ -13,7 +13,8 @@ paths:
     get:
       tags:
       - Almost filled stacks
-      summary: Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
+      summary: List almost filled stacks
+      description: Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
       operationId: almost_filled_stacks_fraction_get
       parameters:
       - name: fraction
@@ -38,8 +39,10 @@ paths:
     get:
       tags:
       - Almost filled stacks
-      summary: Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
+      summary: List almost filled stacks for a specific node
       description: |-
+        Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
+
         # Arguments
         * `daemon_state` - The shared state containing the state manager
         * `node_small_id` - The small ID of the node whose stacks should be retrieved
@@ -83,7 +86,8 @@ paths:
     get:
       tags:
       - Attestation disputes
-      summary: Retrieves all attestation disputes against the currently registered nodes.
+      summary: List attestation disputes against currently registered nodes
+      description: Retrieves all attestation disputes against the currently registered nodes.
       operationId: attestation_disputes_against_list
       responses:
         '200':
@@ -100,7 +104,8 @@ paths:
     get:
       tags:
       - Attestation disputes
-      summary: Retrieves all attestation disputes against a specific node.
+      summary: List attestation disputes against a specific node
+      description: Retrieves all attestation disputes against a specific node.
       operationId: attestation_disputes_against_get
       parameters:
       - name: id
@@ -125,7 +130,8 @@ paths:
     get:
       tags:
       - Attestation disputes
-      summary: Retrieves all attestation disputes initiated by the currently registered nodes.
+      summary: List attestation disputes initiated by currently registered nodes
+      description: Retrieves all attestation disputes initiated by the currently registered nodes.
       operationId: attestation_disputes_own_list
       responses:
         '200':
@@ -142,7 +148,8 @@ paths:
     get:
       tags:
       - Attestation disputes
-      summary: Retrieves all attestation disputes initiated by a specific node.
+      summary: List attestation disputes initiated by a specific node
+      description: Retrieves all attestation disputes initiated by a specific node.
       operationId: attestation_disputes_own_get
       parameters:
       - name: id
@@ -167,7 +174,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Claims funds for completed stacks.
+      summary: Create claim funds transaction
+      description: Claims funds for completed stacks.
       operationId: nodes_claim_funds
       requestBody:
         content:
@@ -188,7 +196,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Subscribes a node to a specific model.
+      summary: Create model subscription transaction
+      description: Subscribes a node to a specific model.
       operationId: nodes_model_subscribe
       requestBody:
         content:
@@ -209,7 +218,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Registers a new node in the system.
+      summary: Create node registration transaction
+      description: Registers a new node in the system.
       operationId: nodes_register
       requestBody:
         content:
@@ -230,7 +240,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Submits attestations for stack settlement.
+      summary: Create attestation proof transaction
+      description: Submits attestations for stack settlement.
       operationId: nodes_submit_attestations
       requestBody:
         content:
@@ -251,7 +262,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Subscribes a node to a specific task.
+      summary: Create task subscription transaction
+      description: Subscribes a node to a specific task.
       operationId: nodes_task_subscribe
       requestBody:
         content:
@@ -293,7 +305,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Updates an existing task subscription for a node.
+      summary: Modify task subscription
+      description: Updates an existing task subscription for a node.
       operationId: nodes_task_update_subscription
       requestBody:
         content:
@@ -314,7 +327,8 @@ paths:
     post:
       tags:
       - Nodes
-      summary: Attempts to settle stacks for a node.
+      summary: Create try settle stacks transaction
+      description: Attempts to settle stacks for a node.
       operationId: nodes_try_settle_stacks
       requestBody:
         content:
@@ -335,7 +349,8 @@ paths:
     get:
       tags:
       - Stacks
-      summary: Retrieves all claimed stacks for the currently registered node badges.
+      summary: List all claimed stacks for currently registered nodes
+      description: Retrieves all claimed stacks for the currently registered node badges.
       operationId: claimed_stacks_list
       responses:
         '200':
@@ -352,7 +367,8 @@ paths:
     get:
       tags:
       - Stacks
-      summary: Retrieves all claimed stacks for a specific node identified by its small ID.
+      summary: List all claimed stacks for a specific node
+      description: Retrieves all claimed stacks for a specific node identified by its small ID.
       operationId: claimed_stacks_get
       parameters:
       - name: id
@@ -377,7 +393,8 @@ paths:
     get:
       tags:
       - Stacks
-      summary: Retrieves all stacks associated with the currently registered node badges.
+      summary: List all stacks for currently registered nodes
+      description: Retrieves all stacks associated with the currently registered node badges.
       operationId: stacks_list
       responses:
         '200':
@@ -394,7 +411,8 @@ paths:
     get:
       tags:
       - Stacks
-      summary: Retrieves all stacks for a specific node identified by its small ID.
+      summary: List all stacks for a specific node
+      description: Retrieves all stacks for a specific node identified by its small ID.
       operationId: stacks_get
       parameters:
       - name: id
@@ -419,7 +437,8 @@ paths:
     get:
       tags:
       - Subscriptions
-      summary: Retrieves all node subscriptions for the currently registered node badges.
+      summary: List all subscriptions for currently registered nodes
+      description: Retrieves all node subscriptions for the currently registered node badges.
       operationId: subscriptions_list
       responses:
         '200':
@@ -438,7 +457,8 @@ paths:
     get:
       tags:
       - Subscriptions
-      summary: Retrieves all subscriptions for a specific node identified by its small ID.
+      summary: List all subscriptions for a specific node
+      description: Retrieves all subscriptions for a specific node identified by its small ID.
       operationId: subscriptions_get
       parameters:
       - name: id
@@ -463,7 +483,8 @@ paths:
     get:
       tags:
       - Tasks
-      summary: Retrieves all tasks from the state manager.
+      summary: List all tasks
+      description: Retrieves all tasks from the state manager.
       operationId: tasks_list
       responses:
         '200':

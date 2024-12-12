@@ -87,7 +87,7 @@ const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 )]
 pub(crate) struct ChatCompletionsOpenApi;
 
-/// Handles chat completion requests by forwarding them to the inference service and managing token usage.
+/// Create chat completion
 ///
 /// This handler performs several key operations:
 /// 1. Forwards the chat completion request to the inference service

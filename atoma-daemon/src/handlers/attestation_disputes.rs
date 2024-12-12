@@ -24,6 +24,8 @@ pub const ATTESTATION_DISPUTES_PATH: &str = "/attestation_disputes";
 )]
 pub(crate) struct AttestationDisputesOpenApi;
 
+//TODO: this endpoint can be merged into one (I think) through filters
+
 /// Router for handling attestation disputes endpoints
 ///
 /// Creates routes for:
@@ -51,6 +53,8 @@ pub fn attestation_disputes_router() -> Router<DaemonState> {
         )
 }
 
+/// List attestation disputes against currently registered nodes
+///
 /// Retrieves all attestation disputes against the currently registered nodes.
 #[utoipa::path(
     get,
@@ -81,6 +85,8 @@ pub async fn attestation_disputes_against_list(
     ))
 }
 
+/// List attestation disputes against a specific node
+///
 /// Retrieves all attestation disputes against a specific node.
 #[utoipa::path(
     get,
@@ -109,6 +115,8 @@ pub async fn attestation_disputes_against_get(
     ))
 }
 
+/// List attestation disputes initiated by currently registered nodes
+///
 /// Retrieves all attestation disputes initiated by the currently registered nodes.
 #[utoipa::path(
     get,
@@ -139,6 +147,8 @@ pub async fn attestation_disputes_own_list(
     ))
 }
 
+/// List attestation disputes initiated by a specific node
+///
 /// Retrieves all attestation disputes initiated by a specific node.
 #[utoipa::path(
     get,
