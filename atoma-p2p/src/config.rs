@@ -28,6 +28,15 @@ pub struct P2pAtomaNodeConfig {
     /// It is a string in the format of "/ip4/x.x.x.x/tcp/x".
     pub listen_addr: String,
 
+    /// The public URL of the node.
+    ///
+    /// This is the URL that the node will use to send requests to the network.
+    /// It is a string in the format of "https://x.x.x.x:x".
+    pub public_url: String,
+
+    /// The node's small id (assigned by the Atoma smart contract)
+    pub node_small_id: u64,
+
     /// The list of seed nodes to connect to.
     ///
     /// Seed nodes are nodes that the node will use to bootstrap its network connection.

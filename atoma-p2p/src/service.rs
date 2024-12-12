@@ -1,9 +1,17 @@
-use crate::config::P2pAtomaNodeConfig;
+use crate::{
+    config::P2pAtomaNodeConfig,
+    types::{GossipMessage, PublicAddressMessage, RequestPublicAddressMessage},
+};
 use futures::StreamExt;
 use libp2p::{
-    gossipsub::{self, ConfigBuilderError}, mdns, noise, swarm::{DialError, NetworkBehaviour}, tcp, yamux, Multiaddr, Swarm, SwarmBuilder, TransportError
+    gossipsub::{self, ConfigBuilderError},
+    mdns, noise,
+    swarm::{DialError, NetworkBehaviour, SwarmEvent},
+    tcp, yamux, Multiaddr, Swarm, SwarmBuilder, TransportError,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
+use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use thiserror::Error;
 use tokio::sync::watch;
 use tracing::{debug, error, instrument};
@@ -17,12 +25,18 @@ struct MyBehaviour {
 }
 
 pub struct P2pAtomaNode {
+    keystore: Arc<FileBasedKeystore>,
     swarm: Swarm<MyBehaviour>,
+    public_url: String,
+    node_small_id: u64,
 }
 
 impl P2pAtomaNode {
-    #[instrument(level = "info", skip(config))]
-    pub fn start(config: P2pAtomaNodeConfig) -> Result<Self, P2pAtomaNodeError> {
+    #[instrument(level = "info", skip_all)]
+    pub fn start(
+        config: P2pAtomaNodeConfig,
+        keystore: Arc<FileBasedKeystore>,
+    ) -> Result<Self, P2pAtomaNodeError> {
         let mut swarm = SwarmBuilder::with_new_identity()
             .with_tokio()
             .with_tcp(
@@ -104,7 +118,7 @@ impl P2pAtomaNode {
 
         for seed_addr in config.seed_nodes {
             match seed_addr.parse::<Multiaddr>() {
-                Ok(addr) => { 
+                Ok(addr) => {
                     swarm.dial(addr).map_err(|e| {
                         error!(
                             target = "atoma-p2p",
@@ -121,7 +135,7 @@ impl P2pAtomaNode {
                         seed_node = seed_addr,
                         "Dialed seed node"
                     );
-                },
+                }
                 Err(e) => {
                     error!(
                         target = "atoma-p2p",
@@ -134,7 +148,12 @@ impl P2pAtomaNode {
             }
         }
 
-        Ok(Self { swarm })
+        Ok(Self {
+            swarm,
+            public_url: config.public_url,
+            node_small_id: config.node_small_id,
+            keystore,
+        })
     }
 
     #[instrument(level = "info", skip(self))]
@@ -144,7 +163,88 @@ impl P2pAtomaNode {
     ) -> Result<(), P2pAtomaNodeError> {
         loop {
             tokio::select! {
-                _ = self.swarm.select_next_some() => {
+                event = self.swarm.select_next_some() => {
+                    match event {
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                            propagation_source,
+                            message_id,
+                            message,
+                        })) => {
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "gossipsub_message",
+                                message_id = %message_id,
+                                "Received gossipsub message"
+                            );
+                            let gossip_message: GossipMessage = serde_json::from_slice(&message.data)?;
+                            match gossip_message {
+                                GossipMessage::PublicAddressMessage(_) => {
+                                    debug!(
+                                        target = "atoma-p2p",
+                                        event = "gossipsub_message_data",
+                                        "Received gossipsub message data"
+                                    );
+
+                                    // Rebroadcast the message to the network peers
+                                    let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(
+                                        topic,
+                                        message.data.clone()
+                                    ) {
+                                        error!(
+                                            target = "atoma-p2p",
+                                            event = "gossipsub_message_rebroadcast_error",
+                                            error = %e,
+                                            "Failed to rebroadcast gossipsub message"
+                                        );
+                                    }
+                                },
+                                GossipMessage::RequestPublicAddressMessage(_) => {
+                                    debug!(
+                                        target = "atoma-p2p",
+                                        event = "gossipsub_message_data",
+                                        "Received gossipsub message data"
+                                    );
+                                    let timestamp = std::time::Instant::now().elapsed().as_secs();
+                                    let public_url_hash = blake3::hash(&self.public_url.as_bytes());
+                                    let address = self.keystore.addresses()[0];
+                                    let signature = self.keystore.sign_hashed(&address, public_url_hash.as_bytes()).map_err(|e| {
+                                        error!(
+                                            target = "atoma-p2p",
+                                            event = "gossipsub_message_sign_hashed_error",
+                                            error = %e,
+                                            "Failed to sign hashed message"
+                                        );
+                                        P2pAtomaNodeError::SignHashedMessageError(e.to_string())
+                                    })?;
+                                    let response = GossipMessage::PublicAddressMessage(
+                                        PublicAddressMessage {
+                                            address: self.public_url.clone(),
+                                            signature: signature.as_ref().to_vec(),
+                                            timestamp,
+                                            node_small_id: self.node_small_id,
+                                        }
+                                    );
+                                    let serialized_response = serde_json::to_vec(&response)?;
+                                    let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(
+                                        topic,
+                                        serialized_response
+                                    ) {
+                                        error!(
+                                            target = "atoma-p2p",
+                                            event = "gossipsub_message_rebroadcast_error",
+                                            error = %e,
+                                            "Failed to rebroadcast gossipsub message"
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+
+                        }
+                        _ => {}
+                    }
                     // Handle incoming connections
                 }
                 shutdown_signal_changed = shutdown_signal.changed() => {
@@ -197,4 +297,8 @@ pub enum P2pAtomaNodeError {
     ListenAddressParseError(#[from] libp2p::multiaddr::Error),
     #[error("Failed to dial seed node: {0}")]
     SeedNodeDialError(#[from] DialError),
+    #[error("Failed to parse gossipsub message data: {0}")]
+    GossipsubMessageDataParseError(#[from] serde_json::Error),
+    #[error("Failed to sign hashed message: {0}")]
+    SignHashedMessageError(String),
 }
