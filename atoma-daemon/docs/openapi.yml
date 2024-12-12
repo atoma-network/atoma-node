@@ -9,33 +9,15 @@ servers:
 - url: http://localhost:8080
   description: Local development server
 paths:
-  /attestation_disputes/against:
+  /attestation_disputes/against/nodes/{node_id}:
     get:
       tags:
       - Attestation disputes
-      summary: List attestation disputes against currently registered nodes
-      description: Retrieves all attestation disputes against the currently registered nodes.
-      operationId: attestation_disputes_against_list
-      responses:
-        '200':
-          description: List of all against attestation disputes where the registered nodes are the defendants
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackAttestationDispute'
-        '500':
-          description: Internal server error
-  /attestation_disputes/against/{id}:
-    get:
-      tags:
-      - Attestation disputes
-      summary: List attestation disputes against a specific node
-      description: Retrieves all attestation disputes against a specific node.
-      operationId: attestation_disputes_against_get
+      summary: List against attestation disputes
+      description: Lists all attestation disputes against a specific node.
+      operationId: attestation_disputes_against_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
         description: The small ID of the node whose disputes should be retrieved
         required: true
@@ -53,33 +35,15 @@ paths:
                   $ref: '#/components/schemas/StackAttestationDispute'
         '500':
           description: Internal server error
-  /attestation_disputes/own:
+  /attestation_disputes/own/nodes/{node_id}:
     get:
       tags:
       - Attestation disputes
-      summary: List attestation disputes initiated by currently registered nodes
-      description: Retrieves all attestation disputes initiated by the currently registered nodes.
-      operationId: attestation_disputes_own_list
-      responses:
-        '200':
-          description: List of all own attestation disputes where the registered nodes are the plaintiffs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackAttestationDispute'
-        '500':
-          description: Internal server error
-  /attestation_disputes/own/{id}:
-    get:
-      tags:
-      - Attestation disputes
-      summary: List attestation disputes initiated by a specific node
-      description: Retrieves all attestation disputes initiated by a specific node.
-      operationId: attestation_disputes_own_get
+      summary: List own attestation disputes
+      description: Lists all attestation disputes initiated by a specific node.
+      operationId: attestation_disputes_own_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
         description: The small ID of the node whose initiated disputes should be retrieved
         required: true
