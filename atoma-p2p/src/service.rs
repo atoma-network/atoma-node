@@ -1,15 +1,12 @@
 use crate::config::P2pAtomaNodeConfig;
 use futures::StreamExt;
 use libp2p::{
-    gossipsub::{self, ConfigBuilderError},
-    mdns, noise,
-    swarm::NetworkBehaviour,
-    tcp, yamux, Swarm, SwarmBuilder, TransportError,
+    gossipsub::{self, ConfigBuilderError}, mdns, noise, swarm::{DialError, NetworkBehaviour}, tcp, yamux, Multiaddr, Swarm, SwarmBuilder, TransportError
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 use thiserror::Error;
 use tokio::sync::watch;
-use tracing::{error, instrument};
+use tracing::{debug, error, instrument};
 
 const GOSPUBSUB_TOPIC: &str = "atoma-p2p";
 
@@ -105,6 +102,38 @@ impl P2pAtomaNode {
             P2pAtomaNodeError::SwarmListenOnError(e)
         })?;
 
+        for seed_addr in config.seed_nodes {
+            match seed_addr.parse::<Multiaddr>() {
+                Ok(addr) => { 
+                    swarm.dial(addr).map_err(|e| {
+                        error!(
+                            target = "atoma-p2p",
+                            event = "dial_seed_node",
+                            seed_node = seed_addr,
+                            error = %e,
+                            "Failed to dial seed node"
+                        );
+                        P2pAtomaNodeError::SeedNodeDialError(e)
+                    })?;
+                    debug!(
+                        target = "atoma-p2p",
+                        event = "dialed_seed_node",
+                        seed_node = seed_addr,
+                        "Dialed seed node"
+                    );
+                },
+                Err(e) => {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "seed_node_parse_error",
+                        seed_node = seed_addr,
+                        error = %e,
+                        "Failed to parse seed node address"
+                    );
+                }
+            }
+        }
+
         Ok(Self { swarm })
     }
 
@@ -166,4 +195,6 @@ pub enum P2pAtomaNodeError {
     SwarmListenOnError(#[from] TransportError<std::io::Error>),
     #[error("Failed to parse listen address: {0}")]
     ListenAddressParseError(#[from] libp2p::multiaddr::Error),
+    #[error("Failed to dial seed node: {0}")]
+    SeedNodeDialError(#[from] DialError),
 }

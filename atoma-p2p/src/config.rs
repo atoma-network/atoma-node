@@ -10,12 +10,6 @@ use std::time::Duration;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct P2pAtomaNodeConfig {
-    /// The address to listen on for incoming tcp connections.
-    ///
-    /// This is the address that the node will use to listen for incoming connections.
-    /// It is a string in the format of "/ip4/x.x.x.x/tcp/x".
-    pub listen_addr: String,
-
     /// The interval at which heartbeat messages are sent to peers.
     ///
     /// Heartbeats are used to verify that connections are still alive and
@@ -27,6 +21,18 @@ pub struct P2pAtomaNodeConfig {
     /// If no messages are exchanged within this duration, the connection
     /// will be terminated to free up resources.
     pub idle_connection_timeout: Duration,
+
+    /// The address to listen on for incoming tcp connections.
+    ///
+    /// This is the address that the node will use to listen for incoming connections.
+    /// It is a string in the format of "/ip4/x.x.x.x/tcp/x".
+    pub listen_addr: String,
+
+    /// The list of seed nodes to connect to.
+    ///
+    /// Seed nodes are nodes that the node will use to bootstrap its network connection.
+    /// They are a list of strings in the format of "/ip4/x.x.x.x/tcp/x".
+    pub seed_nodes: Vec<String>,
 }
 
 impl P2pAtomaNodeConfig {
