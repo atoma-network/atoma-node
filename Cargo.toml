@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "atoma-confidential",
-    "atoma-daemon",
+    "atoma-daemon", 
     "atoma-service",
     "atoma-state",
     "atoma-sui",
@@ -20,6 +20,7 @@ aes-gcm = "0.10.3"
 anyhow = "1.0.81"
 atoma-confidential = { path = "./atoma-confidential" }
 atoma-daemon = { path = "./atoma-daemon" }
+atoma-p2p = { path = "./atoma-p2p" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { path = "./atoma-sui" }
 atoma-utils = { path = "./atoma-utils" }
