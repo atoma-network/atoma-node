@@ -1,4 +1,9 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{delete, post},
+    Json, Router,
+};
 use tracing::{error, info};
 use utoipa::OpenApi;
 
@@ -74,7 +79,7 @@ pub fn nodes_router() -> Router<DaemonState> {
         )
         .route(
             &format!("{NODES_PATH}/task-unsubscribe"),
-            post(nodes_task_unsubscribe),
+            delete(nodes_task_unsubscribe),
         )
         .route(
             &format!("{NODES_PATH}/try-settle-stacks"),
@@ -259,11 +264,11 @@ pub async fn nodes_task_update_subscription(
     Ok(Json(NodeTaskUpdateSubscriptionResponse { tx_digest }))
 }
 
-//TODO: change to delete
-
+/// Delete task subscription
+///
 /// Unsubscribes a node from a specific task.
 #[utoipa::path(
-    post,
+    delete,
     path = "/task-unsubscribe",
     request_body = NodeTaskUnsubscriptionRequest,
     responses(
