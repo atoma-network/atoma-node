@@ -1,10 +1,11 @@
 use crate::{
     config::P2pAtomaNodeConfig,
-    types::{GossipMessage, PublicAddressMessage, RequestPublicAddressMessage},
+    types::{AddressResponse, GossipMessage},
 };
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{self, ConfigBuilderError},
+    kad::{self, store::MemoryStore},
     mdns, noise,
     swarm::{DialError, NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr, Swarm, SwarmBuilder, TransportError,
@@ -16,22 +17,128 @@ use thiserror::Error;
 use tokio::sync::watch;
 use tracing::{debug, error, instrument};
 
+/// The topic that the P2P network will use to gossip messages
 const GOSPUBSUB_TOPIC: &str = "atoma-p2p";
 
+/// Network behavior configuration for the P2P Atoma node, combining multiple libp2p protocols.
+///
+/// This struct implements the `NetworkBehaviour` trait and coordinates three main networking components
+/// for peer discovery, message broadcasting, and distributed routing.
 #[derive(NetworkBehaviour)]
 struct MyBehaviour {
+    /// Handles publish-subscribe messaging across the P2P network.
+    /// Used for broadcasting node addresses and other network messages using a gossip protocol
+    /// that ensures efficient message propagation.
     gossipsub: gossipsub::Behaviour,
+
+    /// Enables automatic peer discovery on local networks using multicast DNS.
+    /// Particularly useful for development and local testing environments where nodes
+    /// need to find each other without explicit configuration.
     mdns: mdns::tokio::Behaviour,
+
+    /// Provides distributed hash table (DHT) functionality for peer discovery and routing.
+    /// Helps maintain network connectivity in larger, distributed deployments by implementing
+    /// the Kademlia protocol with a memory-based storage backend.
+    kademlia: kad::Behaviour<MemoryStore>,
 }
 
+/// A P2P node implementation for the Atoma network that handles peer discovery,
+/// message broadcasting, and network communication.
 pub struct P2pAtomaNode {
+    /// The cryptographic keystore containing the node's keys for signing messages
+    /// and managing identities. Wrapped in an Arc for thread-safe shared access.
     keystore: Arc<FileBasedKeystore>,
+
+    /// The libp2p swarm that manages all network behaviors and connections.
+    /// Handles peer discovery, message routing, and protocol negotiations using
+    /// the configured MyBehaviour protocols (gossipsub, mdns, kademlia).
     swarm: Swarm<MyBehaviour>,
+
+    /// The publicly accessible URL of this node that other peers can use to connect.
+    /// This URL is shared with other nodes during peer discovery and address exchange.
     public_url: String,
+
+    /// A compact numerical identifier for the node, used in network messages and logging.
+    /// Provides a shorter alternative to the full node ID for quick reference and debugging.
     node_small_id: u64,
 }
 
 impl P2pAtomaNode {
+    /// Initializes and configures a new P2P Atoma node with networking capabilities.
+    ///
+    /// This method sets up a complete libp2p node with the following features:
+    /// - TCP and QUIC transport layers with noise encryption and yamux multiplexing
+    /// - Gossipsub for peer-to-peer message broadcasting
+    /// - MDNS for local peer discovery
+    /// - Kademlia DHT for distributed peer routing
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration parameters for the P2P node including:
+    ///   - `heartbeat_interval` - Interval for gossipsub protocol heartbeats
+    ///   - `idle_connection_timeout` - Duration after which inactive connections are closed
+    ///   - `listen_addr` - Network address the node will listen on
+    ///   - `seed_nodes` - List of bootstrap nodes to connect to initially
+    ///   - `public_url` - Publicly accessible URL for this node
+    ///   - `node_small_id` - Compact numerical identifier for the node
+    ///
+    /// * `keystore` - Thread-safe reference to a file-based keystore containing the node's
+    ///   cryptographic keys for signing messages and establishing secure connections
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing either:
+    /// - `Ok(P2pAtomaNode)` - A fully configured P2P node ready to start
+    /// - `Err(P2pAtomaNodeError)` - An error indicating what went wrong during setup
+    ///
+    /// # Errors
+    ///
+    /// This function can return several error types:
+    /// - `SwarmBuildError` - Failed to create the libp2p swarm
+    /// - `BehaviourBuildError` - Failed to configure networking behaviors
+    /// - `GossipsubSubscriptionError` - Failed to subscribe to the gossip topic
+    /// - `SwarmListenOnError` - Failed to bind to the specified network address
+    /// - `ListenAddressParseError` - Invalid listen address format
+    /// - `SeedNodeDialError` - Failed to connect to a seed node
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_p2p::{P2pAtomaNode, P2pAtomaNodeConfig};
+    /// use std::sync::Arc;
+    /// use sui_keys::keystore::FileBasedKeystore;
+    ///
+    /// async fn setup_node() -> Result<P2pAtomaNode, P2pAtomaNodeError> {
+    ///     let config = P2pAtomaNodeConfig {
+    ///         heartbeat_interval: std::time::Duration::from_secs(1),
+    ///         idle_connection_timeout: std::time::Duration::from_secs(30),
+    ///         listen_addr: "/ip4/127.0.0.1/tcp/8080".to_string(),
+    ///         seed_nodes: vec![],
+    ///         public_url: "node1.example.com".to_string(),
+    ///         node_small_id: 1,
+    ///     };
+    ///     let keystore = Arc::new(FileBasedKeystore::new(&std::path::PathBuf::from("keys"))?);
+    ///     
+    ///     P2pAtomaNode::start(config, keystore)
+    /// }
+    /// ```
+    ///
+    /// # Network Architecture
+    ///
+    /// The node uses a layered networking approach:
+    /// 1. Transport Layer: TCP/QUIC with noise encryption
+    /// 2. Protocol Layer: 
+    ///    - Gossipsub for message broadcasting
+    ///    - MDNS for local peer discovery
+    ///    - Kademlia for distributed routing
+    /// 3. Application Layer: Custom message handling for node addresses and requests
+    ///
+    /// # Security Considerations
+    ///
+    /// - All network connections are encrypted using the noise protocol
+    /// - Messages are signed using the node's private key
+    /// - Peer connections are authenticated
+    /// - The node validates all incoming messages
     #[instrument(level = "info", skip_all)]
     pub fn start(
         config: P2pAtomaNodeConfig,
@@ -77,7 +184,15 @@ impl P2pAtomaNode {
                     mdns::Config::default(),
                     key.public().to_peer_id(),
                 )?;
-                Ok(MyBehaviour { gossipsub, mdns })
+
+                let store = kad::store::MemoryStore::new(key.public().to_peer_id());
+                let kademlia = kad::Behaviour::new(key.public().to_peer_id(), store);
+
+                Ok(MyBehaviour {
+                    gossipsub,
+                    mdns,
+                    kademlia,
+                })
             })
             .map_err(|e| {
                 error!(
@@ -156,6 +271,66 @@ impl P2pAtomaNode {
         })
     }
 
+    /// Starts the P2P node's main event loop, handling network events and shutdown signals.
+    ///
+    /// This method runs an infinite loop that processes:
+    /// - Network events from the libp2p swarm (gossipsub messages, peer discovery, routing updates)
+    /// - Shutdown signals for graceful termination
+    ///
+    /// # Event Handling
+    ///
+    /// ## Gossipsub Messages
+    /// Processes incoming messages on the gossip network using `handle_gossipsub_message`.
+    ///
+    /// ## MDNS Events
+    /// - Discovered: Adds newly discovered peers to the gossipsub mesh
+    /// - Expired: Removes expired peers from the gossipsub mesh
+    ///
+    /// ## Kademlia Events
+    /// - RoutingUpdated: Updates the gossipsub peer list when Kademlia routing changes
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - Takes ownership of the P2P node instance
+    /// * `shutdown_signal` - A watch channel receiver for shutdown coordination
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the node shuts down gracefully, or a `P2pAtomaNodeError` if an error occurs.
+    ///
+    /// # Errors
+    ///
+    /// Can return errors from:
+    /// - Gossipsub message handling
+    /// - Network event processing
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokio::sync::watch;
+    /// use atoma_p2p::{P2pAtomaNode, P2pAtomaNodeConfig};
+    ///
+    /// async fn run_node(node: P2pAtomaNode) {
+    ///     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    ///     
+    ///     // Run the node in the background
+    ///     let node_handle = tokio::spawn(node.run(shutdown_rx));
+    ///     
+    ///     // Signal shutdown when needed
+    ///     shutdown_tx.send(true).expect("Failed to send shutdown signal");
+    ///     
+    ///     // Wait for the node to shut down
+    ///     node_handle.await.expect("Node failed to shut down cleanly");
+    /// }
+    /// ```
+    ///
+    /// # Shutdown Behavior
+    ///
+    /// The node will shut down when either:
+    /// - The shutdown signal is set to `true`
+    /// - The shutdown channel is closed
+    ///
+    /// In both cases, the node will break from its event loop and terminate gracefully.
     #[instrument(level = "info", skip(self))]
     pub async fn run(
         mut self,
@@ -170,82 +345,50 @@ impl P2pAtomaNode {
                             message_id,
                             message,
                         })) => {
+                            self.handle_gossipsub_message(&message.data, &message_id)?;
+                        }
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
+                            for (peer_id, _) in peers {
+                                debug!(
+                                    target = "atoma-p2p",
+                                    event = "mdns_discovered",
+                                    peer_id = %peer_id,
+                                    "MDNS discovered"
+                                );
+                                self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+                            }
+                        }
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Expired(peers))) => {
+                            for (peer_id, _) in peers {
+                                debug!(
+                                    target = "atoma-p2p",
+                                    event = "mdns_expired",
+                                    peer_id = %peer_id,
+                                    "MDNS expired"
+                                );
+                                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
+                            }
+                        }
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
+                            peer,
+                            is_new_peer,
+                            old_peer,
+                            ..
+                        })) => {
                             debug!(
                                 target = "atoma-p2p",
-                                event = "gossipsub_message",
-                                message_id = %message_id,
-                                "Received gossipsub message"
+                                event = "kademlia_inbound_request",
+                                "Kademlia inbound request"
                             );
-                            let gossip_message: GossipMessage = serde_json::from_slice(&message.data)?;
-                            match gossip_message {
-                                GossipMessage::PublicAddressMessage(_) => {
-                                    debug!(
-                                        target = "atoma-p2p",
-                                        event = "gossipsub_message_data",
-                                        "Received gossipsub message data"
-                                    );
-
-                                    // Rebroadcast the message to the network peers
-                                    let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
-                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(
-                                        topic,
-                                        message.data.clone()
-                                    ) {
-                                        error!(
-                                            target = "atoma-p2p",
-                                            event = "gossipsub_message_rebroadcast_error",
-                                            error = %e,
-                                            "Failed to rebroadcast gossipsub message"
-                                        );
-                                    }
-                                },
-                                GossipMessage::RequestPublicAddressMessage(_) => {
-                                    debug!(
-                                        target = "atoma-p2p",
-                                        event = "gossipsub_message_data",
-                                        "Received gossipsub message data"
-                                    );
-                                    let timestamp = std::time::Instant::now().elapsed().as_secs();
-                                    let public_url_hash = blake3::hash(&self.public_url.as_bytes());
-                                    let address = self.keystore.addresses()[0];
-                                    let signature = self.keystore.sign_hashed(&address, public_url_hash.as_bytes()).map_err(|e| {
-                                        error!(
-                                            target = "atoma-p2p",
-                                            event = "gossipsub_message_sign_hashed_error",
-                                            error = %e,
-                                            "Failed to sign hashed message"
-                                        );
-                                        P2pAtomaNodeError::SignHashedMessageError(e.to_string())
-                                    })?;
-                                    let response = GossipMessage::PublicAddressMessage(
-                                        PublicAddressMessage {
-                                            address: self.public_url.clone(),
-                                            signature: signature.as_ref().to_vec(),
-                                            timestamp,
-                                            node_small_id: self.node_small_id,
-                                        }
-                                    );
-                                    let serialized_response = serde_json::to_vec(&response)?;
-                                    let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
-                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(
-                                        topic,
-                                        serialized_response
-                                    ) {
-                                        error!(
-                                            target = "atoma-p2p",
-                                            event = "gossipsub_message_rebroadcast_error",
-                                            error = %e,
-                                            "Failed to rebroadcast gossipsub message"
-                                        );
-                                    }
-                                }
-                                _ => {}
+                            if is_new_peer {
+                                self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
                             }
-
+                            if let Some(old_peer) = old_peer {
+                                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&old_peer);
+                            }
                         }
                         _ => {}
                     }
-                    // Handle incoming connections
                 }
                 shutdown_signal_changed = shutdown_signal.changed() => {
                     match shutdown_signal_changed {
@@ -271,6 +414,297 @@ impl P2pAtomaNode {
                         }
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Handles incoming gossipsub messages in the P2P network.
+    ///
+    /// This method processes two types of messages:
+    /// 1. Address Response messages - Contains node address information with cryptographic proof
+    /// 2. Address Request messages - Requests for node address information
+    ///
+    /// # Message Flow
+    ///
+    /// ## Address Response
+    /// When receiving an address response:
+    /// 1. Deserializes the message data
+    /// 2. Extracts address, signature, timestamp, and node ID
+    /// 3. Verifies the cryptographic signature by:
+    ///    - Creating a message hash from the address, node ID, and timestamp
+    ///    - Validating the signature against this hash
+    /// 4. If valid, rebroadcasts the message to other peers
+    /// 5. If invalid, drops the message and returns an error
+    ///
+    /// ## Address Request
+    /// When receiving an address request:
+    /// 1. Generates current timestamp
+    /// 2. Creates a message hash from the node's public URL, ID, and timestamp
+    /// 3. Signs the hash using the node's keystore
+    /// 4. Constructs and serializes an AddressResponse
+    /// 5. Publishes the response to the network
+    ///
+    /// # Arguments
+    ///
+    /// * `message_data` - Raw bytes of the received gossipsub message
+    /// * `message_id` - Unique identifier for the gossipsub message
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if message processing succeeds, or an error variant if any step fails.
+    ///
+    /// # Errors
+    ///
+    /// This function can return several error types:
+    /// * `GossipsubMessageDataParseError` - If message deserialization fails
+    /// * `SignatureVerificationError` - If signature verification fails for an address response
+    /// * `GossipsubMessageRebroadcastError` - If rebroadcasting the message fails
+    /// * `SignHashedMessageError` - If signing the response message fails
+    ///
+    /// # Security Considerations
+    ///
+    /// - Messages are cryptographically signed to prevent tampering
+    /// - Timestamps are included to prevent replay attacks
+    /// - Invalid signatures cause messages to be dropped without rebroadcast
+    /// - Uses blake3 for secure message hashing
+    ///
+    /// # Example Message Format
+    ///
+    /// ```json
+    /// // Address Response
+    /// {
+    ///     "address": "node1.example.com:8080",
+    ///     "signature": [bytes],
+    ///     "timestamp": 1234567890,
+    ///     "node_small_id": 42
+    /// }
+    /// ```
+    #[instrument(level = "debug", skip_all)]
+    pub fn handle_gossipsub_message(
+        &mut self,
+        message_data: &[u8],
+        message_id: &gossipsub::MessageId,
+    ) -> Result<(), P2pAtomaNodeError> {
+        debug!(
+            target = "atoma-p2p",
+            event = "gossipsub_message",
+            message_id = %message_id,
+            "Received gossipsub message"
+        );
+        let gossip_message: GossipMessage = serde_json::from_slice(&message_data)?;
+        match gossip_message {
+            GossipMessage::AddressResponse(response) => {
+                debug!(
+                    target = "atoma-p2p",
+                    event = "gossipsub_message_data",
+                    "Received gossipsub message data"
+                );
+                // Check if the signature is valid
+                let AddressResponse {
+                    address,
+                    signature,
+                    timestamp,
+                    node_small_id,
+                } = response;
+                let message_hash = blake3::hash(
+                    &[
+                        address.as_bytes(),
+                        &node_small_id.to_le_bytes(),
+                        &timestamp.to_le_bytes(),
+                    ]
+                    .concat(),
+                );
+                if let Err(e) =
+                    utils::verify_signature(signature.as_slice(), message_hash.as_bytes())
+                {
+                    // if signature is invalid, we don't want to rebroadcast the message to the network
+                    error!(
+                        target = "atoma-p2p",
+                        event = "gossipsub_message_signature_verification_error",
+                        error = %e,
+                        "Failed to verify signature"
+                    );
+                    return Err(P2pAtomaNodeError::SignatureVerificationError(e.to_string()));
+                }
+                // Rebroadcast the message to the network peers
+                let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(topic, message_data)
+                {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "gossipsub_message_rebroadcast_error",
+                        error = %e,
+                        "Failed to rebroadcast gossipsub message"
+                    );
+                    return Err(P2pAtomaNodeError::GossipsubMessageRebroadcastError(
+                        e.to_string(),
+                    ));
+                }
+            }
+            GossipMessage::AddressRequest => {
+                debug!(
+                    target = "atoma-p2p",
+                    event = "gossipsub_message_data",
+                    "Received gossipsub message data"
+                );
+                let timestamp = std::time::Instant::now().elapsed().as_secs();
+                let message_hash = blake3::hash(
+                    &[
+                        self.public_url.as_bytes(),
+                        &self.node_small_id.to_le_bytes(),
+                        &timestamp.to_le_bytes(),
+                    ]
+                    .concat(),
+                );
+                let address = self.keystore.addresses()[0];
+                let signature = self
+                    .keystore
+                    .sign_hashed(&address, message_hash.as_bytes())
+                    .map_err(|e| {
+                        error!(
+                            target = "atoma-p2p",
+                            event = "gossipsub_message_sign_hashed_error",
+                            error = %e,
+                            "Failed to sign hashed message"
+                        );
+                        P2pAtomaNodeError::SignHashedMessageError(e.to_string())
+                    })?;
+                let response = GossipMessage::AddressResponse(AddressResponse {
+                    address: self.public_url.clone(),
+                    signature: signature.as_ref().to_vec(),
+                    timestamp,
+                    node_small_id: self.node_small_id,
+                });
+                let serialized_response = serde_json::to_vec(&response)?;
+                let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+                if let Err(e) = self
+                    .swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(topic, serialized_response)
+                {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "gossipsub_message_rebroadcast_error",
+                        error = %e,
+                        "Failed to rebroadcast gossipsub message"
+                    );
+                    return Err(P2pAtomaNodeError::GossipsubMessageRebroadcastError(
+                        e.to_string(),
+                    ));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+mod utils {
+    use fastcrypto::{
+        ed25519::{Ed25519PublicKey, Ed25519Signature},
+        secp256k1::{Secp256k1PublicKey, Secp256k1Signature},
+        secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
+        traits::{ToFromBytes as FastCryptoToFromBytes, VerifyingKey},
+    };
+    use sui_sdk::types::crypto::{
+        PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes,
+    };
+
+    use super::*;
+
+    /// Verifies a cryptographic signature against a message hash using the signature scheme embedded in the signature.
+    ///
+    /// This function supports multiple signature schemes:
+    /// - ED25519
+    /// - Secp256k1
+    /// - Secp256r1
+    ///
+    /// # Arguments
+    ///
+    /// * `signature_bytes` - Raw bytes of the signature. This should include both the signature data and metadata
+    ///   that allows extracting the public key and signature scheme.
+    /// * `body_hash` - A 32-byte array containing the hash of the message that was signed. This is typically
+    ///   produced using blake3 or another cryptographic hash function.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If the signature is valid for the given message hash
+    /// * `Err(P2pAtomaNodeError)` - If any step of the verification process fails
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error in the following situations:
+    /// * `SignatureParseError` - If the signature bytes cannot be parsed into a valid signature structure
+    ///   or if the public key cannot be extracted from the signature
+    /// * `SignatureVerificationError` - If the signature verification fails (indicating the signature is invalid
+    ///   for the given message)
+    /// * `SignatureParseError` - If the signature uses an unsupported signature scheme
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use your_crate::utils::verify_signature;
+    ///
+    /// let message = b"Hello, world!";
+    /// let message_hash = blake3::hash(message).as_bytes();
+    /// let signature_bytes = // ... obtained from somewhere ...
+    ///
+    /// match verify_signature(&signature_bytes, &message_hash) {
+    ///     Ok(()) => println!("Signature is valid!"),
+    ///     Err(e) => println!("Signature verification failed: {}", e),
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub fn verify_signature(
+        signature_bytes: &[u8],
+        body_hash: &[u8; 32],
+    ) -> Result<(), P2pAtomaNodeError> {
+        let signature = Signature::from_bytes(signature_bytes).map_err(|e| {
+            error!("Failed to parse signature");
+            P2pAtomaNodeError::SignatureParseError(e.to_string())
+        })?;
+        let public_key_bytes = signature.public_key_bytes();
+        let signature_scheme = signature.scheme();
+        let public_key =
+            PublicKey::try_from_bytes(signature_scheme, public_key_bytes).map_err(|e| {
+                error!("Failed to extract public key from bytes, with error: {e}");
+                P2pAtomaNodeError::SignatureParseError(e.to_string())
+            })?;
+
+        match signature_scheme {
+            SignatureScheme::ED25519 => {
+                let public_key = Ed25519PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Ed25519Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|e| {
+                    error!("Failed to verify signature");
+                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                })?;
+            }
+            SignatureScheme::Secp256k1 => {
+                let public_key = Secp256k1PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Secp256k1Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|e| {
+                    error!("Failed to verify signature");
+                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                })?;
+            }
+            SignatureScheme::Secp256r1 => {
+                let public_key = Secp256r1PublicKey::from_bytes(public_key.as_ref()).unwrap();
+                let signature = Secp256r1Signature::from_bytes(signature_bytes).unwrap();
+                public_key.verify(body_hash, &signature).map_err(|e| {
+                    error!("Failed to verify signature");
+                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                })?;
+            }
+            e => {
+                error!("Currently unsupported signature scheme, error: {e}");
+                return Err(P2pAtomaNodeError::SignatureParseError(e.to_string()));
             }
         }
         Ok(())
@@ -301,4 +735,10 @@ pub enum P2pAtomaNodeError {
     GossipsubMessageDataParseError(#[from] serde_json::Error),
     #[error("Failed to sign hashed message: {0}")]
     SignHashedMessageError(String),
+    #[error("Failed to parse signature: {0}")]
+    SignatureParseError(String),
+    #[error("Failed to verify signature: {0}")]
+    SignatureVerificationError(String),
+    #[error("Failed to rebroadcast gossipsub message: {0}")]
+    GossipsubMessageRebroadcastError(String),
 }
