@@ -20,6 +20,8 @@ pub fn tasks_router() -> Router<DaemonState> {
     Router::new().route(TASKS_PATH, get(tasks_list))
 }
 
+/// List all tasks
+///
 /// Retrieves all tasks from the state manager.
 #[utoipa::path(
     get,

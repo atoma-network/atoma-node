@@ -4,7 +4,6 @@ resolver = "2"
 members = [
     "atoma-confidential",
     "atoma-daemon", 
-    "atoma-p2p",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
@@ -41,7 +40,6 @@ hex = "0.4.3"
 hf-hub = "0.3.2"
 hkdf = "0.12.4"
 hyper = "1.5.0"
-libp2p = "0.54.1"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.14.0"
 lazy_static = "1.5.0"

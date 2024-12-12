@@ -28,7 +28,8 @@ pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 #[openapi(paths(embeddings_handler))]
 pub(crate) struct EmbeddingsOpenApi;
 
-/// Handles embedding requests by proxying them to the embeddings service.
+/// Create embeddings
+///
 ///
 /// This handler simply forwards the request to the embeddings service and returns the response.
 ///
