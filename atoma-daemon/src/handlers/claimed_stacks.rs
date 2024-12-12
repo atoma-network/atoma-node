@@ -1,5 +1,5 @@
 use atoma_state::types::StackSettlementTicket;
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::Path, extract::State, http::StatusCode, routing::get, Json, Router};
 use tracing::error;
 use utoipa::OpenApi;
 
@@ -37,7 +37,7 @@ pub fn claimed_stacks_router() -> Router<DaemonState> {
 )]
 pub async fn claimed_stacks_nodes_list(
     State(daemon_state): State<DaemonState>,
-    axum::extract::Path(node_id): axum::extract::Path<i64>,
+    Path(node_id): Path<i64>,
 ) -> Result<Json<Vec<StackSettlementTicket>>, StatusCode> {
     let node_ids = vec![node_id];
 

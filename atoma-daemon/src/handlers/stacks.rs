@@ -1,6 +1,6 @@
 use atoma_state::types::{Stack, StackSettlementTicket};
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
@@ -49,7 +49,7 @@ pub fn stacks_router() -> Router<DaemonState> {
 )]
 pub async fn stacks_nodes_list(
     State(daemon_state): State<DaemonState>,
-    axum::extract::Path(node_id): axum::extract::Path<i64>,
+    Path(node_id): Path<i64>,
     Query(query): Query<StackQuery>,
 ) -> Result<Json<Vec<Stack>>, StatusCode> {
     let node_ids = vec![node_id];
