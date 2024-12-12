@@ -88,7 +88,6 @@ const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 pub(crate) struct ChatCompletionsOpenApi;
 
 /// Create chat completion
-/// 
 ///
 /// This handler performs several key operations:
 /// 1. Forwards the chat completion request to the inference service
