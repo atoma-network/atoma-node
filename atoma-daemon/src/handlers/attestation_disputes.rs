@@ -24,6 +24,8 @@ pub(crate) struct AttestationDisputesOpenApi;
 
 //TODO: this endpoint can be merged into one (I think) through filters
 
+//TODO: this endpoint can be merged into one (I think) through filters
+
 /// Router for handling attestation disputes endpoints
 pub fn attestation_disputes_router() -> Router<DaemonState> {
     Router::new()

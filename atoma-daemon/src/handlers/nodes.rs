@@ -97,6 +97,8 @@ pub fn nodes_router() -> Router<DaemonState> {
 
 /// Create node registration transaction
 ///
+/// Create node registration transaction
+///
 /// Registers a new node in the system.
 #[utoipa::path(
     post,
@@ -128,6 +130,8 @@ pub async fn nodes_register(
     Ok(Json(NodeRegistrationResponse { tx_digest }))
 }
 
+/// Create model subscription transaction
+///
 /// Create model subscription transaction
 ///
 /// Subscribes a node to a specific model.
@@ -174,6 +178,8 @@ pub async fn nodes_model_subscribe(
 
 /// Create task subscription transaction
 ///
+/// Create task subscription transaction
+///
 /// Subscribes a node to a specific task.
 #[utoipa::path(
     post,
@@ -218,6 +224,8 @@ pub async fn nodes_task_subscribe(
     Ok(Json(NodeTaskSubscriptionResponse { tx_digest }))
 }
 
+/// Modify task subscription
+///
 /// Modify task subscription
 ///
 /// Updates an existing task subscription for a node.
@@ -308,6 +316,8 @@ pub async fn nodes_task_unsubscribe(
 
 /// Create try settle stacks transaction
 ///
+/// Create try settle stacks transaction
+///
 /// Attempts to settle stacks for a node.
 #[utoipa::path(
     post,
@@ -371,6 +381,8 @@ pub async fn nodes_try_settle_stacks(
     Ok(Json(NodeTrySettleStacksResponse { tx_digests }))
 }
 
+/// Create attestation proof transaction
+///
 /// Create attestation proof transaction
 ///
 /// Submits attestations for stack settlement.
@@ -484,6 +496,8 @@ pub async fn nodes_submit_attestations(
     Ok(Json(NodeAttestationProofResponse { tx_digests }))
 }
 
+/// Create claim funds transaction
+///
 /// Create claim funds transaction
 ///
 /// Claims funds for completed stacks.

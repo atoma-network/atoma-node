@@ -93,6 +93,8 @@ paths:
       - Nodes
       summary: Create claim funds transaction
       description: Claims funds for completed stacks.
+      summary: Create claim funds transaction
+      description: Claims funds for completed stacks.
       operationId: nodes_claim_funds
       requestBody:
         content:
@@ -113,6 +115,8 @@ paths:
     post:
       tags:
       - Nodes
+      summary: Create model subscription transaction
+      description: Subscribes a node to a specific model.
       summary: Create model subscription transaction
       description: Subscribes a node to a specific model.
       operationId: nodes_model_subscribe
@@ -137,6 +141,8 @@ paths:
       - Nodes
       summary: Create node registration transaction
       description: Registers a new node in the system.
+      summary: Create node registration transaction
+      description: Registers a new node in the system.
       operationId: nodes_register
       requestBody:
         content:
@@ -159,6 +165,8 @@ paths:
       - Nodes
       summary: Create attestation proof transaction
       description: Submits attestations for stack settlement.
+      summary: Create attestation proof transaction
+      description: Submits attestations for stack settlement.
       operationId: nodes_submit_attestations
       requestBody:
         content:
@@ -179,6 +187,8 @@ paths:
     post:
       tags:
       - Nodes
+      summary: Create task subscription transaction
+      description: Subscribes a node to a specific task.
       summary: Create task subscription transaction
       description: Subscribes a node to a specific task.
       operationId: nodes_task_subscribe
@@ -225,6 +235,8 @@ paths:
       - Nodes
       summary: Modify task subscription
       description: Updates an existing task subscription for a node.
+      summary: Modify task subscription
+      description: Updates an existing task subscription for a node.
       operationId: nodes_task_update_subscription
       requestBody:
         content:
@@ -245,6 +257,8 @@ paths:
     post:
       tags:
       - Nodes
+      summary: Create try settle stacks transaction
+      description: Attempts to settle stacks for a node.
       summary: Create try settle stacks transaction
       description: Attempts to settle stacks for a node.
       operationId: nodes_try_settle_stacks
@@ -328,6 +342,8 @@ paths:
     get:
       tags:
       - Tasks
+      summary: List all tasks
+      description: Retrieves all tasks from the state manager.
       summary: List all tasks
       description: Retrieves all tasks from the state manager.
       operationId: tasks_list
