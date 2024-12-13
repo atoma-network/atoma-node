@@ -345,7 +345,17 @@ impl P2pAtomaNode {
                             message,
                             ..
                         })) => {
-                            self.handle_gossipsub_message(&message.data, &message_id)?;
+                            match self.handle_gossipsub_message(&message.data, &message_id) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    error!(
+                                        target = "atoma-p2p",
+                                        event = "gossipsub_message_error",
+                                        error = %e,
+                                        "Failed to handle gossipsub message"
+                                    );
+                                }
+                            }
                         }
                         SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
                             self.handle_mdns_discovered_peers_event(peers);
@@ -403,7 +413,7 @@ impl P2pAtomaNode {
     ///
     /// ## Address Response
     /// When receiving an address response:
-    /// 1. Deserializes the message data
+    /// 1. Deserializes the CBOR message data
     /// 2. Extracts address, signature, timestamp, and node ID
     /// 3. Verifies the cryptographic signature by:
     ///    - Creating a message hash from the address, node ID, and timestamp
@@ -416,12 +426,12 @@ impl P2pAtomaNode {
     /// 1. Generates current timestamp
     /// 2. Creates a message hash from the node's public URL, ID, and timestamp
     /// 3. Signs the hash using the node's keystore
-    /// 4. Constructs and serializes an AddressResponse
+    /// 4. Constructs and serializes an AddressResponse using CBOR
     /// 5. Publishes the response to the network
     ///
     /// # Arguments
     ///
-    /// * `message_data` - Raw bytes of the received gossipsub message
+    /// * `message_data` - Raw bytes of the received gossipsub message (CBOR encoded)
     /// * `message_id` - Unique identifier for the gossipsub message
     ///
     /// # Returns
@@ -431,7 +441,7 @@ impl P2pAtomaNode {
     /// # Errors
     ///
     /// This function can return several error types:
-    /// * `GossipsubMessageDataParseError` - If message deserialization fails
+    /// * `GossipsubMessageDataParseError` - If CBOR message deserialization fails
     /// * `SignatureVerificationError` - If signature verification fails for an address response
     /// * `GossipsubMessageRebroadcastError` - If rebroadcasting the message fails
     /// * `SignHashedMessageError` - If signing the response message fails
@@ -442,8 +452,11 @@ impl P2pAtomaNode {
     /// - Timestamps are included to prevent replay attacks
     /// - Invalid signatures cause messages to be dropped without rebroadcast
     /// - Uses blake3 for secure message hashing
+    /// - Uses CBOR for efficient binary serialization
     ///
-    /// # Example Message Format
+    /// # Message Format
+    ///
+    /// The messages are serialized using CBOR, but here's a JSON representation for readability:
     ///
     /// ```json
     /// // Address Response
@@ -454,6 +467,9 @@ impl P2pAtomaNode {
     ///     "node_small_id": 42
     /// }
     /// ```
+    ///
+    /// The actual wire format uses CBOR encoding for more efficient binary representation
+    /// and better handling of binary data like signatures.
     #[instrument(level = "debug", skip_all)]
     pub fn handle_gossipsub_message(
         &mut self,
@@ -466,7 +482,7 @@ impl P2pAtomaNode {
             message_id = %message_id,
             "Received gossipsub message"
         );
-        let gossip_message: GossipMessage = serde_json::from_slice(&message_data)?;
+        let gossip_message: GossipMessage = serde_cbor::from_slice(&message_data)?;
         match gossip_message {
             GossipMessage::AddressResponse(response) => {
                 debug!(
@@ -474,6 +490,8 @@ impl P2pAtomaNode {
                     event = "gossipsub_message_data",
                     "Received gossipsub message data"
                 );
+                // Validate the message
+                utils::validate_public_address_message(&response)?;
                 // Check if the signature is valid
                 let AddressResponse {
                     address,
@@ -554,7 +572,7 @@ impl P2pAtomaNode {
                     timestamp,
                     node_small_id: self.node_small_id,
                 });
-                let serialized_response = serde_json::to_vec(&response)?;
+                let serialized_response = serde_cbor::to_vec(&response)?;
                 let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
                 if let Err(e) = self
                     .swarm
@@ -759,6 +777,40 @@ impl P2pAtomaNode {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum P2pAtomaNodeError {
+    #[error("Failed to build gossipsub config: {0}")]
+    GossipsubConfigError(#[from] ConfigBuilderError),
+    #[error("Failed to build gossipsub: {0}")]
+    GossipsubBuildError(String),
+    #[error("Failed to build swarm: {0}")]
+    SwarmBuildError(String),
+    #[error("Failed to build mdns: {0}")]
+    MdnsBuildError(String),
+    #[error("Failed to build behaviour: {0}")]
+    BehaviourBuildError(String),
+    #[error("Failed to subscribe to topic: {0}")]
+    GossipsubSubscriptionError(#[from] gossipsub::SubscriptionError),
+    #[error("Failed to listen on address: {0}")]
+    SwarmListenOnError(#[from] TransportError<std::io::Error>),
+    #[error("Failed to parse listen address: {0}")]
+    ListenAddressParseError(#[from] libp2p::multiaddr::Error),
+    #[error("Failed to dial seed node: {0}")]
+    SeedNodeDialError(#[from] DialError),
+    #[error("Failed to parse gossipsub message data: {0}")]
+    GossipsubMessageDataParseError(#[from] serde_cbor::Error),
+    #[error("Failed to sign hashed message: {0}")]
+    SignHashedMessageError(String),
+    #[error("Failed to parse signature: {0}")]
+    SignatureParseError(String),
+    #[error("Failed to verify signature: {0}")]
+    SignatureVerificationError(String),
+    #[error("Failed to rebroadcast gossipsub message: {0}")]
+    GossipsubMessageRebroadcastError(String),
+    #[error("Invalid public address: {0}")]
+    InvalidPublicAddressError(String),
+}
+
 mod utils {
     use fastcrypto::{
         ed25519::{Ed25519PublicKey, Ed25519Signature},
@@ -771,6 +823,89 @@ mod utils {
     };
 
     use super::*;
+
+    /// The threshold for considering a timestamp as expired
+    const EXPIRED_TIMESTAMP_THRESHOLD: u64 = 10 * 60; // 10 minutes
+
+    /// Validates an address response message by checking URL format and timestamp freshness.
+    ///
+    /// This function performs two key validations:
+    /// 1. Ensures the address URL starts with either "http://" or "https://"
+    /// 2. Verifies the timestamp is within an acceptable time window relative to the current time
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - The `AddressResponse` containing the address and timestamp to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If all validation checks pass
+    /// * `Err(P2pAtomaNodeError)` - If any validation fails
+    ///
+    /// # Errors
+    ///
+    /// Returns `P2pAtomaNodeError::InvalidPublicAddressError` when:
+    /// * The URL doesn't start with "http://" or "https://"
+    /// * The timestamp is older than `EXPIRED_TIMESTAMP_THRESHOLD` (10 minutes)
+    /// * The timestamp is in the future
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let response = AddressResponse {
+    ///     address: "https://example.com".to_string(),
+    ///     timestamp: std::time::Instant::now().elapsed().as_secs(),
+    ///     signature: vec![],
+    ///     node_small_id: 1,
+    /// };
+    ///
+    /// match validate_public_address_message(response) {
+    ///     Ok(()) => println!("Address response is valid"),
+    ///     Err(e) => println!("Invalid address response: {}", e),
+    /// }
+    /// ```
+    ///
+    /// # Security Considerations
+    ///
+    /// This validation helps prevent:
+    /// * Invalid or malicious URLs from being propagated
+    /// * Replay attacks by enforcing timestamp freshness
+    /// * Future timestamp manipulation attempts
+    #[instrument(level = "debug", skip_all)]
+    pub(crate) fn validate_public_address_message(
+        response: &AddressResponse,
+    ) -> Result<(), P2pAtomaNodeError> {
+        let now = std::time::Instant::now().elapsed().as_secs();
+
+        // Check if the URL is valid
+        // TODO: Better validation using URL crate with `parse` method ?
+        if !response.address.starts_with("http://") && !response.address.starts_with("https://") {
+            error!(
+                target = "atoma-p2p",
+                event = "invalid_url_format",
+                "Invalid URL format"
+            );
+            return Err(P2pAtomaNodeError::InvalidPublicAddressError(
+                "Invalid URL format".to_string(),
+            ));
+        }
+
+        // Check if the timestamp is within a reasonable time frame
+        if now - response.timestamp > EXPIRED_TIMESTAMP_THRESHOLD || response.timestamp > now {
+            error!(
+                target = "atoma-p2p",
+                event = "invalid_timestamp",
+                "Timestamp is invalid, timestamp: {}, now: {}",
+                response.timestamp,
+                now
+            );
+            return Err(P2pAtomaNodeError::InvalidPublicAddressError(
+                "Timestamp is too old".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 
     /// Verifies a cryptographic signature against a message hash using the signature scheme embedded in the signature.
     ///
@@ -815,7 +950,7 @@ mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub fn verify_signature(
+    pub(crate) fn verify_signature(
         signature_bytes: &[u8],
         body_hash: &[u8; 32],
     ) -> Result<(), P2pAtomaNodeError> {
@@ -863,36 +998,4 @@ mod utils {
         }
         Ok(())
     }
-}
-
-#[derive(Debug, Error)]
-pub enum P2pAtomaNodeError {
-    #[error("Failed to build gossipsub config: {0}")]
-    GossipsubConfigError(#[from] ConfigBuilderError),
-    #[error("Failed to build gossipsub: {0}")]
-    GossipsubBuildError(String),
-    #[error("Failed to build swarm: {0}")]
-    SwarmBuildError(String),
-    #[error("Failed to build mdns: {0}")]
-    MdnsBuildError(String),
-    #[error("Failed to build behaviour: {0}")]
-    BehaviourBuildError(String),
-    #[error("Failed to subscribe to topic: {0}")]
-    GossipsubSubscriptionError(#[from] gossipsub::SubscriptionError),
-    #[error("Failed to listen on address: {0}")]
-    SwarmListenOnError(#[from] TransportError<std::io::Error>),
-    #[error("Failed to parse listen address: {0}")]
-    ListenAddressParseError(#[from] libp2p::multiaddr::Error),
-    #[error("Failed to dial seed node: {0}")]
-    SeedNodeDialError(#[from] DialError),
-    #[error("Failed to parse gossipsub message data: {0}")]
-    GossipsubMessageDataParseError(#[from] serde_json::Error),
-    #[error("Failed to sign hashed message: {0}")]
-    SignHashedMessageError(String),
-    #[error("Failed to parse signature: {0}")]
-    SignatureParseError(String),
-    #[error("Failed to verify signature: {0}")]
-    SignatureVerificationError(String),
-    #[error("Failed to rebroadcast gossipsub message: {0}")]
-    GossipsubMessageRebroadcastError(String),
 }

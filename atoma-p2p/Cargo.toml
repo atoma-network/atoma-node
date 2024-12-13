@@ -11,7 +11,7 @@ libp2p = { workspace = true, features = [ "tokio", "gossipsub", "mdns", "kad", "
 fastcrypto = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde_cbor = { workspace = true }
 sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
 thiserror = { workspace = true }
