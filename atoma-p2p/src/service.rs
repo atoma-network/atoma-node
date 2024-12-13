@@ -8,7 +8,7 @@ use libp2p::{
     kad::{self, store::MemoryStore},
     mdns, noise,
     swarm::{DialError, NetworkBehaviour, SwarmEvent},
-    tcp, yamux, Multiaddr, Swarm, SwarmBuilder, TransportError,
+    tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, TransportError,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
@@ -127,7 +127,7 @@ impl P2pAtomaNode {
     ///
     /// The node uses a layered networking approach:
     /// 1. Transport Layer: TCP/QUIC with noise encryption
-    /// 2. Protocol Layer: 
+    /// 2. Protocol Layer:
     ///    - Gossipsub for message broadcasting
     ///    - MDNS for local peer discovery
     ///    - Kademlia for distributed routing
@@ -341,33 +341,17 @@ impl P2pAtomaNode {
                 event = self.swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                            propagation_source,
                             message_id,
                             message,
+                            ..
                         })) => {
                             self.handle_gossipsub_message(&message.data, &message_id)?;
                         }
                         SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                            for (peer_id, _) in peers {
-                                debug!(
-                                    target = "atoma-p2p",
-                                    event = "mdns_discovered",
-                                    peer_id = %peer_id,
-                                    "MDNS discovered"
-                                );
-                                self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-                            }
+                            self.handle_mdns_discovered_peers_event(peers);
                         }
                         SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Expired(peers))) => {
-                            for (peer_id, _) in peers {
-                                debug!(
-                                    target = "atoma-p2p",
-                                    event = "mdns_expired",
-                                    peer_id = %peer_id,
-                                    "MDNS expired"
-                                );
-                                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
-                            }
+                            self.handle_mdns_expired_peers_event(peers);
                         }
                         SwarmEvent::Behaviour(MyBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
                             peer,
@@ -375,17 +359,7 @@ impl P2pAtomaNode {
                             old_peer,
                             ..
                         })) => {
-                            debug!(
-                                target = "atoma-p2p",
-                                event = "kademlia_inbound_request",
-                                "Kademlia inbound request"
-                            );
-                            if is_new_peer {
-                                self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-                            }
-                            if let Some(old_peer) = old_peer {
-                                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&old_peer);
-                            }
+                            self.handle_kademlia_routing_updated_event(peer, is_new_peer, old_peer);
                         }
                         _ => {}
                     }
@@ -599,9 +573,189 @@ impl P2pAtomaNode {
                     ));
                 }
             }
-            _ => {}
         }
         Ok(())
+    }
+
+    /// Handles the discovery of new peers through multicast DNS (mDNS) on the local network.
+    ///
+    /// When new peers are discovered on the local network, this method:
+    /// - Adds them to the gossipsub peer mesh
+    /// - Enables direct message exchange with newly discovered peers
+    /// - Expands the network topology to include local participants
+    ///
+    /// # Arguments
+    ///
+    /// * `peers` - A vector of `(PeerId, Multiaddr)` tuples where:
+    ///   - `PeerId` is the unique identifier of the discovered peer
+    ///   - `Multiaddr` is the peer's network address for establishing connections
+    ///
+    /// # Behavior
+    ///
+    /// For each discovered peer:
+    /// 1. Logs the discovery event with the peer's ID
+    /// 2. Adds the peer to gossipsub's explicit peer list
+    /// 3. Enables the node to directly exchange messages with the new peer
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // When new peers are discovered on the local network
+    /// let discovered_peers = vec![
+    ///     (PeerId::random(), "/ip4/192.168.1.1/tcp/1234".parse().unwrap()),
+    ///     (PeerId::random(), "/ip4/192.168.1.2/tcp/1234".parse().unwrap()),
+    /// ];
+    /// node.handle_mdns_discovered_peers_event(discovered_peers);
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method is crucial for local network peer discovery and mesh formation:
+    /// - Enables zero-configuration networking in local environments
+    /// - Automatically establishes connections with nearby peers
+    /// - Particularly useful for development and testing environments
+    /// - Complements other peer discovery mechanisms like Kademlia DHT
+    ///
+    /// The mDNS discovery process is automatic and continuous, allowing the network
+    /// to dynamically adapt as peers join the local network.
+    #[instrument(level = "debug", skip_all)]
+    fn handle_mdns_discovered_peers_event(&mut self, peers: Vec<(PeerId, Multiaddr)>) {
+        for (peer_id, _) in peers {
+            debug!(
+                target = "atoma-p2p",
+                event = "mdns_discovered",
+                peer_id = %peer_id,
+                "MDNS discovered"
+            );
+            self.swarm
+                .behaviour_mut()
+                .gossipsub
+                .add_explicit_peer(&peer_id);
+        }
+    }
+
+    /// Handles the expiration of peers discovered through multicast DNS (mDNS).
+    ///
+    /// When peers become unavailable on the local network, this method:
+    /// - Removes them from the gossipsub peer mesh
+    /// - Updates the network topology accordingly
+    /// - Maintains a clean peer list by removing stale connections
+    ///
+    /// # Arguments
+    ///
+    /// * `peers` - A vector of `(PeerId, Multiaddr)` tuples where:
+    ///   - `PeerId` is the unique identifier of the expired peer
+    ///   - `Multiaddr` is the peer's last known network address (preserved for logging/debugging)
+    ///
+    /// # Behavior
+    ///
+    /// For each expired peer:
+    /// 1. Logs the expiration event with the peer's ID
+    /// 2. Removes the peer from gossipsub's explicit peer list
+    /// 3. Allows the network to adjust its topology without the expired peer
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // When peers become unavailable
+    /// let expired_peers = vec![
+    ///     (PeerId::random(), "/ip4/192.168.1.1/tcp/1234".parse().unwrap()),
+    ///     (PeerId::random(), "/ip4/192.168.1.2/tcp/1234".parse().unwrap()),
+    /// ];
+    /// node.handle_mdns_expired_peers_event(expired_peers);
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method is part of the local peer discovery system and helps maintain
+    /// network health by ensuring that only currently available peers are kept
+    /// in the gossipsub mesh. This is particularly important in dynamic network
+    /// environments where peers may frequently join and leave the network.
+    #[instrument(level = "debug", skip_all)]
+    fn handle_mdns_expired_peers_event(&mut self, peers: Vec<(PeerId, Multiaddr)>) {
+        for (peer_id, _) in peers {
+            debug!(
+                target = "atoma-p2p",
+                event = "mdns_expired",
+                peer_id = %peer_id,
+                "MDNS expired"
+            );
+            self.swarm
+                .behaviour_mut()
+                .gossipsub
+                .remove_explicit_peer(&peer_id);
+        }
+    }
+
+    /// Handles updates to the Kademlia routing table by synchronizing peer connections with gossipsub.
+    ///
+    /// This method maintains consistency between Kademlia's DHT routing and gossipsub's peer mesh by:
+    /// - Adding newly discovered peers to the gossipsub network
+    /// - Removing peers that are no longer part of the Kademlia routing table
+    ///
+    /// # Arguments
+    ///
+    /// * `peer` - The `PeerId` of the peer whose routing status has changed
+    /// * `is_new_peer` - Boolean indicating if this is a newly discovered peer
+    /// * `old_peer` - Optional `PeerId` of a peer that was replaced in the routing table
+    ///
+    /// # Behavior
+    ///
+    /// - When `is_new_peer` is true:
+    ///   - Adds the new peer to gossipsub's explicit peer list
+    ///   - This ensures that important DHT peers are also part of the gossip network
+    ///
+    /// - When `old_peer` contains a value:
+    ///   - Removes the old peer from gossipsub's explicit peer list
+    ///   - This prevents maintaining unnecessary connections to peers no longer in the DHT
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // When a new peer replaces an old one
+    /// node.handle_kademlia_routing_updated_event(
+    ///     new_peer_id,
+    ///     true,
+    ///     Some(old_peer_id)
+    /// );
+    ///
+    /// // When just discovering a new peer
+    /// node.handle_kademlia_routing_updated_event(
+    ///     new_peer_id,
+    ///     true,
+    ///     None
+    /// );
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This synchronization helps maintain an efficient network topology by ensuring
+    /// that peers important for DHT routing are also available for message propagation
+    /// through gossipsub.
+    #[instrument(level = "debug", skip_all)]
+    fn handle_kademlia_routing_updated_event(
+        &mut self,
+        peer: PeerId,
+        is_new_peer: bool,
+        old_peer: Option<PeerId>,
+    ) {
+        debug!(
+            target = "atoma-p2p",
+            event = "kademlia_routing_updated",
+            "Kademlia routing updated"
+        );
+        if is_new_peer {
+            self.swarm
+                .behaviour_mut()
+                .gossipsub
+                .add_explicit_peer(&peer);
+        }
+        if let Some(old_peer) = old_peer {
+            self.swarm
+                .behaviour_mut()
+                .gossipsub
+                .remove_explicit_peer(&old_peer);
+        }
     }
 }
 
