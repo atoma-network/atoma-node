@@ -582,9 +582,10 @@ async fn parse_event(
         AtomaEventIdentifier::FirstSubmissionEvent => Ok(AtomaEvent::FirstSubmissionEvent(
             serde_json::from_value(value)?,
         )),
-        AtomaEventIdentifier::StackCreatedEvent => Ok(AtomaEvent::StackCreatedEvent(
+        AtomaEventIdentifier::StackCreatedEvent => Ok(AtomaEvent::StackCreatedEvent((
             serde_json::from_value(value)?,
-        )),
+            timestamp_ms,
+        ))),
         AtomaEventIdentifier::StackTrySettleEvent => Ok(AtomaEvent::StackTrySettleEvent((
             serde_json::from_value(value)?,
             timestamp_ms,
