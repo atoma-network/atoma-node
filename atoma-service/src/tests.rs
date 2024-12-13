@@ -1249,7 +1249,7 @@ mod middleware {
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(atoma_utils::constants::SALT, STANDARD.encode(&salt))
+            .header(atoma_utils::constants::SALT, STANDARD.encode(salt))
             .header(
                 atoma_utils::constants::NONCE,
                 STANDARD.encode(nonce.as_slice()),

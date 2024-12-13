@@ -212,6 +212,7 @@ impl X25519KeyPairManager {
     /// * `Err(KeyManagementError)` if the write failed
     pub fn write_private_key_to_file(&self) -> Result<()> {
         use std::fs::{self, create_dir_all};
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt; // Unix-specific permissions
 
         let path = Self::get_key_file_path();
