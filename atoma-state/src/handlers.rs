@@ -31,13 +31,13 @@ pub async fn handle_atoma_event(
         AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
             handle_node_task_unsubscription_event(state_manager, event).await
         }
-        AtomaEvent::StackCreatedEvent(event) => {
+        AtomaEvent::StackCreatedEvent((event, _)) => {
             handle_stack_created_event(state_manager, event).await
         }
         AtomaEvent::StackCreateAndUpdateEvent(event) => {
             handle_stack_create_and_update_event(state_manager, event).await
         }
-        AtomaEvent::StackTrySettleEvent(event) => {
+        AtomaEvent::StackTrySettleEvent((event, _)) => {
             handle_stack_try_settle_event(state_manager, event).await
         }
         AtomaEvent::StackSettlementTicketEvent(event) => {
