@@ -271,7 +271,7 @@ impl SuiEventSubscriber {
                             match AtomaEventIdentifier::from_str(event_name.as_str()) {
                                 Ok(atoma_event_id) => {
                                     let sender = sui_event.sender;
-                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json, sender).await {
+                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json, sender, sui_event.timestamp_ms).await {
                                         Ok(atoma_event) => atoma_event,
                                         Err(e) => {
                                             error!(
@@ -542,6 +542,7 @@ async fn parse_event(
     event: &AtomaEventIdentifier,
     value: Value,
     sender: SuiAddress,
+    timestamp_ms: Option<u64>,
 ) -> Result<AtomaEvent> {
     match event {
         AtomaEventIdentifier::DisputeEvent => {
@@ -584,9 +585,10 @@ async fn parse_event(
         AtomaEventIdentifier::StackCreatedEvent => Ok(AtomaEvent::StackCreatedEvent(
             serde_json::from_value(value)?,
         )),
-        AtomaEventIdentifier::StackTrySettleEvent => Ok(AtomaEvent::StackTrySettleEvent(
+        AtomaEventIdentifier::StackTrySettleEvent => Ok(AtomaEvent::StackTrySettleEvent((
             serde_json::from_value(value)?,
-        )),
+            timestamp_ms,
+        ))),
         AtomaEventIdentifier::NewStackSettlementAttestationEvent => Ok(
             AtomaEvent::NewStackSettlementAttestationEvent(serde_json::from_value(value)?),
         ),
@@ -673,11 +675,11 @@ fn filter_event(
                 node_small_ids.contains(&event.node_small_id.inner)
                     && task_small_ids.contains(&event.task_small_id.inner)
             }
-            AtomaEvent::StackCreatedEvent(event) => {
+            AtomaEvent::StackCreatedEvent((event, _)) => {
                 node_small_ids.contains(&event.selected_node_id.inner)
                     && task_small_ids.contains(&event.task_small_id.inner)
             }
-            AtomaEvent::StackTrySettleEvent(event) => {
+            AtomaEvent::StackTrySettleEvent((event, _)) => {
                 node_small_ids.contains(&event.selected_node_id.inner)
                     || event
                         .requested_attestation_nodes
@@ -719,10 +721,10 @@ fn filter_event(
             AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
                 node_small_ids.contains(&event.node_small_id.inner)
             }
-            AtomaEvent::StackCreatedEvent(event) => {
+            AtomaEvent::StackCreatedEvent((event, _)) => {
                 node_small_ids.contains(&event.selected_node_id.inner)
             }
-            AtomaEvent::StackTrySettleEvent(event) => {
+            AtomaEvent::StackTrySettleEvent((event, _)) => {
                 node_small_ids.contains(&event.selected_node_id.inner)
                     || event
                         .requested_attestation_nodes
@@ -755,7 +757,7 @@ fn filter_event(
             AtomaEvent::TaskRemovedEvent(event) => {
                 task_small_ids.contains(&event.task_small_id.inner)
             }
-            AtomaEvent::StackCreatedEvent(event) => {
+            AtomaEvent::StackCreatedEvent((event, _)) => {
                 task_small_ids.contains(&event.task_small_id.inner)
             }
             AtomaEvent::NodeSubscribedToTaskEvent(event) => {
@@ -915,15 +917,18 @@ mod tests {
         let node_small_ids = vec![1, 2, 3];
         let task_small_ids = vec![10, 20, 30];
 
-        let event = AtomaEvent::StackCreatedEvent(StackCreatedEvent {
-            selected_node_id: NodeSmallId { inner: 1 },
-            task_small_id: TaskSmallId { inner: 10 },
-            owner: "test".to_string(),
-            stack_id: "test".to_string(),
-            stack_small_id: StackSmallId { inner: 1 },
-            num_compute_units: 0,
-            price: 0,
-        });
+        let event = AtomaEvent::StackCreatedEvent((
+            StackCreatedEvent {
+                selected_node_id: NodeSmallId { inner: 1 },
+                task_small_id: TaskSmallId { inner: 10 },
+                owner: "test".to_string(),
+                stack_id: "test".to_string(),
+                stack_small_id: StackSmallId { inner: 1 },
+                num_compute_units: 0,
+                price: 0,
+            },
+            None,
+        ));
 
         assert!(filter_event(
             &event,
