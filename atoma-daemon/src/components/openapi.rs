@@ -2,17 +2,15 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{
-    almost_filled_stacks, attestation_disputes, nodes, stacks, subscriptions, tasks,
-};
+use crate::handlers::{attestation_disputes, claimed_stacks, nodes, stacks, subscriptions, tasks};
 
 pub fn openapi_routes() -> Router {
     /// OpenAPI documentation for the Atoma daemon API.
     #[derive(OpenApi)]
     #[openapi(
         nest(
-            (path = almost_filled_stacks::ALMOST_FILLED_STACKS_PATH, api = almost_filled_stacks::AlmostFilledStacksOpenApi, tags = ["Almost filled stacks"]),
             (path = attestation_disputes::ATTESTATION_DISPUTES_PATH, api = attestation_disputes::AttestationDisputesOpenApi, tags = ["Attestation disputes"]),
+            (path = claimed_stacks::CLAIMED_STACKS_PATH, api = claimed_stacks::ClaimedStacksOpenApi, tags = ["Claimed stacks"]),
             (path = nodes::NODES_PATH, api = nodes::NodesOpenApi, tags = ["Nodes"]),
             (path = stacks::STACKS_PATH, api = stacks::StacksOpenApi, tags = ["Stacks"]),
             (path = subscriptions::SUBSCRIPTIONS_PATH, api = subscriptions::SubscriptionsOpenApi, tags = ["Subscriptions"]),
@@ -20,6 +18,7 @@ pub fn openapi_routes() -> Router {
         ),
         tags(
             (name = "Almost filled stacks", description = "Almost filled stacks management"),
+            (name = "Claimed stacks", description = "Claimed stacks management"),
             (name = "Attestation disputes", description = "Attestation disputes management"),
             (name = "Nodes", description = "Nodes management"),
             (name = "Stacks", description = "Stacks management"),

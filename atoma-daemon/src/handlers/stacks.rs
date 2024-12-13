@@ -1,160 +1,73 @@
 use atoma_state::types::{Stack, StackSettlementTicket};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
+use serde::Deserialize;
 use tracing::error;
-use utoipa::OpenApi;
+use utoipa::{OpenApi, ToSchema};
 
 use crate::DaemonState;
 
 pub const STACKS_PATH: &str = "/stacks";
 
+#[derive(Deserialize, ToSchema)]
+pub struct StackQuery {
+    min_fill_fraction: Option<f64>,
+}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(stacks_list, stacks_get, claimed_stacks_list, claimed_stacks_get),
-    components(schemas(Stack, StackSettlementTicket))
+    paths(stacks_nodes_list),
+    components(schemas(Stack, StackSettlementTicket, StackQuery))
 )]
 pub(crate) struct StacksOpenApi;
 
-//TODO: all of these endpoints should be deleted and replaced with the ones I suggested in the TODO of almost_filled_stacks.rs. If necessary, we can add additional filters to the endpoints to accomplish the functionality present in these endpoints.
-
-/// Router for handling stack-related endpoints
-///
-/// This function sets up the routing for various stack-related operations,
-/// including listing all stacks, retrieving specific stacks by ID, listing claimed stacks,
-/// and retrieving specific claimed stacks by ID. Each route corresponds to a specific
-/// operation that can be performed on stacks within the system.
 pub fn stacks_router() -> Router<DaemonState> {
-    Router::new()
-        .route(STACKS_PATH, get(stacks_list))
-        .route(&format!("{STACKS_PATH}/:id"), get(stacks_get))
-        .route("/claimed_stacks", get(claimed_stacks_list))
-        .route("/claimed_stacks/:id", get(claimed_stacks_get))
-}
-
-/// List all stacks for currently registered nodes
-///
-/// Retrieves all stacks associated with the currently registered node badges.
-#[utoipa::path(
-    get,
-    path = "/stacks",
-    responses(
-        (status = OK, description = "List of all Stack objects for all registered nodes", body = Vec<Stack>),
-        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    Router::new().route(
+        &format!("{STACKS_PATH}/nodes/:node_id"),
+        get(stacks_nodes_list),
     )
-)]
-pub async fn stacks_list(
-    State(daemon_state): State<DaemonState>,
-) -> Result<Json<Vec<Stack>>, StatusCode> {
-    Ok(Json(
-        daemon_state
-            .atoma_state
-            .get_stacks_by_node_small_ids(
-                &daemon_state
-                    .node_badges
-                    .iter()
-                    .map(|(_, small_id)| *small_id as i64)
-                    .collect::<Vec<_>>(),
-            )
-            .await
-            .map_err(|_| {
-                error!("Failed to get all node stacks");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
 }
 
-/// List all stacks for a specific node
+/// List stacks
 ///
-/// Retrieves all stacks for a specific node identified by its small ID.
+/// Lists all stacks for a specific node identified by its small ID.
 #[utoipa::path(
     get,
-    path = "/stacks/{id}",
+    path = "/stacks/nodes/{node_id}",
     params(
-        ("id" = i64, Path, description = "The small ID of the node whose stacks should be retrieved")
+        ("node_id" = i64, Path, description = "Node small ID"),
+        ("min_fill_fraction" = Option<f64>, Query, description = "Optional minimum fill fraction (0.0 to 100.0)")
     ),
     responses(
-        (status = OK, description = "List of Stack objects for the specified node", body = Vec<Stack>),
+        (status = OK, description = "List of Stack objects matching the criteria", body = Vec<Stack>),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-pub async fn stacks_get(
+pub async fn stacks_nodes_list(
     State(daemon_state): State<DaemonState>,
-    Path(node_small_id): Path<i64>,
+    Path(node_id): Path<i64>,
+    Query(query): Query<StackQuery>,
 ) -> Result<Json<Vec<Stack>>, StatusCode> {
-    Ok(Json(
-        daemon_state
-            .atoma_state
-            .get_stack_by_id(node_small_id)
-            .await
-            .map_err(|_| {
-                error!("Failed to get node stack");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
+    let node_ids = vec![node_id];
 
-/// List all claimed stacks for currently registered nodes
-///
-/// Retrieves all claimed stacks for the currently registered node badges.
-#[utoipa::path(
-    get,
-    path = "/claimed_stacks",
-    responses(
-        (status = OK, description = "List of all StackSettlementTicket objects for all registered nodes", body = Vec<StackSettlementTicket>),
-        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
-    )
-)]
-pub async fn claimed_stacks_list(
-    State(daemon_state): State<DaemonState>,
-) -> Result<Json<Vec<StackSettlementTicket>>, StatusCode> {
-    Ok(Json(
+    let stacks = if let Some(fraction) = query.min_fill_fraction {
         daemon_state
             .atoma_state
-            .get_claimed_stacks(
-                &daemon_state
-                    .node_badges
-                    .iter()
-                    .map(|(_, small_id)| *small_id as i64)
-                    .collect::<Vec<_>>(),
-            )
+            .get_almost_filled_stacks(&node_ids, fraction)
             .await
-            .map_err(|_| {
-                error!("Failed to get all claimed stacks");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
+    } else {
+        daemon_state
+            .atoma_state
+            .get_stacks_by_node_small_ids(&node_ids)
+            .await
+    };
 
-/// List all claimed stacks for a specific node
-///
-/// Retrieves all claimed stacks for a specific node identified by its small ID.
-#[utoipa::path(
-    get,
-    path = "/claimed_stacks/{id}",
-    params(
-        ("id" = i64, Path, description = "The small ID of the node whose claimed stacks should be retrieved")
-    ),
-    responses(
-        (status = OK, description = "List of StackSettlementTicket objects for the specified node", body = Vec<StackSettlementTicket>),
-        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
-    )
-)]
-pub async fn claimed_stacks_get(
-    State(daemon_state): State<DaemonState>,
-    Path(node_small_id): Path<i64>,
-) -> Result<Json<Vec<StackSettlementTicket>>, StatusCode> {
-    Ok(Json(
-        daemon_state
-            .atoma_state
-            .get_claimed_stacks(&[node_small_id])
-            .await
-            .map_err(|_| {
-                error!("Failed to get node claimed stacks");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
+    stacks.map(Json).map_err(|_| {
+        error!("Failed to get stacks");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }

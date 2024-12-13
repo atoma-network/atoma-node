@@ -9,106 +9,15 @@ servers:
 - url: http://localhost:8080
   description: Local development server
 paths:
-  /almost_filled_stacks/{fraction}:
-    get:
-      tags:
-      - Almost filled stacks
-      summary: List almost filled stacks
-      description: Retrieves all stacks that are filled above a specified fraction threshold for all registered nodes.
-      operationId: almost_filled_stacks_fraction_get
-      parameters:
-      - name: fraction
-        in: path
-        description: The fraction threshold (0.0 to 100.0) to filter stacks
-        required: true
-        schema:
-          type: number
-          format: double
-      responses:
-        '200':
-          description: Stack objects that are filled above the specified fraction threshold
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Stack'
-        '500':
-          description: Internal server error
-  /almost_filled_stacks/{id}/{fraction}:
-    get:
-      tags:
-      - Almost filled stacks
-      summary: List almost filled stacks for a specific node
-      description: |-
-        Retrieves all stacks that are filled above a specified fraction threshold for a specific node.
-
-        # Arguments
-        * `daemon_state` - The shared state containing the state manager
-        * `node_small_id` - The small ID of the node whose stacks should be retrieved
-        * `fraction` - The fraction threshold (0.0 to 100.0) to filter stacks
-
-        # Returns
-        * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
-          - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
-          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
-
-        # Example Response
-        Returns a JSON array of Stack objects for the specified node that are filled above the fraction threshold
-      operationId: almost_filled_stacks_get
-      parameters:
-      - name: id
-        in: path
-        description: The small ID of the node whose stacks should be retrieved
-        required: true
-        schema:
-          type: integer
-          format: int64
-      - name: fraction
-        in: path
-        description: The fraction threshold (0.0 to 100.0) to filter stacks
-        required: true
-        schema:
-          type: number
-          format: double
-      responses:
-        '200':
-          description: List of node stacks
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Stack'
-        '500':
-          description: Internal server error
-  /attestation_disputes/against:
+  /attestation_disputes/against/nodes/{node_id}:
     get:
       tags:
       - Attestation disputes
-      summary: List attestation disputes against currently registered nodes
-      description: Retrieves all attestation disputes against the currently registered nodes.
-      operationId: attestation_disputes_against_list
-      responses:
-        '200':
-          description: List of all against attestation disputes where the registered nodes are the defendants
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackAttestationDispute'
-        '500':
-          description: Internal server error
-  /attestation_disputes/against/{id}:
-    get:
-      tags:
-      - Attestation disputes
-      summary: List attestation disputes against a specific node
-      description: Retrieves all attestation disputes against a specific node.
-      operationId: attestation_disputes_against_get
+      summary: List against attestation disputes
+      description: Lists all attestation disputes against a specific node.
+      operationId: attestation_disputes_against_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
         description: The small ID of the node whose disputes should be retrieved
         required: true
@@ -126,33 +35,15 @@ paths:
                   $ref: '#/components/schemas/StackAttestationDispute'
         '500':
           description: Internal server error
-  /attestation_disputes/own:
+  /attestation_disputes/own/nodes/{node_id}:
     get:
       tags:
       - Attestation disputes
-      summary: List attestation disputes initiated by currently registered nodes
-      description: Retrieves all attestation disputes initiated by the currently registered nodes.
-      operationId: attestation_disputes_own_list
-      responses:
-        '200':
-          description: List of all own attestation disputes where the registered nodes are the plaintiffs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackAttestationDispute'
-        '500':
-          description: Internal server error
-  /attestation_disputes/own/{id}:
-    get:
-      tags:
-      - Attestation disputes
-      summary: List attestation disputes initiated by a specific node
-      description: Retrieves all attestation disputes initiated by a specific node.
-      operationId: attestation_disputes_own_get
+      summary: List own attestation disputes
+      description: Lists all attestation disputes initiated by a specific node.
+      operationId: attestation_disputes_own_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
         description: The small ID of the node whose initiated disputes should be retrieved
         required: true
@@ -170,12 +61,41 @@ paths:
                   $ref: '#/components/schemas/StackAttestationDispute'
         '500':
           description: Internal server error
+  /claimed-stacks/claimed_stacks/nodes/{node_id}:
+    get:
+      tags:
+      - Claimed stacks
+      summary: List claimed stacks
+      description: Lists all claimed stacks for a specific node identified by its small ID.
+      operationId: claimed_stacks_nodes_list
+      parameters:
+      - name: node_id
+        in: path
+        description: Node small ID
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: List of claimed stacks matching the criteria
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StackSettlementTicket'
+        '500':
+          description: Internal server error
   /nodes/claim-funds:
     post:
       tags:
       - Nodes
       summary: Create claim funds transaction
-      description: Claims funds for completed stacks.
+      description: |-
+        Create claim funds transaction
+
+        Claims funds for completed stacks.
       operationId: nodes_claim_funds
       requestBody:
         content:
@@ -197,7 +117,10 @@ paths:
       tags:
       - Nodes
       summary: Create model subscription transaction
-      description: Subscribes a node to a specific model.
+      description: |-
+        Create model subscription transaction
+
+        Subscribes a node to a specific model.
       operationId: nodes_model_subscribe
       requestBody:
         content:
@@ -219,7 +142,10 @@ paths:
       tags:
       - Nodes
       summary: Create node registration transaction
-      description: Registers a new node in the system.
+      description: |-
+        Create node registration transaction
+
+        Registers a new node in the system.
       operationId: nodes_register
       requestBody:
         content:
@@ -241,7 +167,10 @@ paths:
       tags:
       - Nodes
       summary: Create attestation proof transaction
-      description: Submits attestations for stack settlement.
+      description: |-
+        Create attestation proof transaction
+
+        Submits attestations for stack settlement.
       operationId: nodes_submit_attestations
       requestBody:
         content:
@@ -263,7 +192,10 @@ paths:
       tags:
       - Nodes
       summary: Create task subscription transaction
-      description: Subscribes a node to a specific task.
+      description: |-
+        Create task subscription transaction
+
+        Subscribes a node to a specific task.
       operationId: nodes_task_subscribe
       requestBody:
         content:
@@ -281,10 +213,11 @@ paths:
         '500':
           description: Failed to submit task subscription transaction
   /nodes/task-unsubscribe:
-    post:
+    delete:
       tags:
       - Nodes
-      summary: Unsubscribes a node from a specific task.
+      summary: Delete task subscription
+      description: Unsubscribes a node from a specific task.
       operationId: nodes_task_unsubscribe
       requestBody:
         content:
@@ -306,7 +239,10 @@ paths:
       tags:
       - Nodes
       summary: Modify task subscription
-      description: Updates an existing task subscription for a node.
+      description: |-
+        Modify task subscription
+
+        Updates an existing task subscription for a node.
       operationId: nodes_task_update_subscription
       requestBody:
         content:
@@ -328,7 +264,10 @@ paths:
       tags:
       - Nodes
       summary: Create try settle stacks transaction
-      description: Attempts to settle stacks for a node.
+      description: |-
+        Create try settle stacks transaction
+
+        Attempts to settle stacks for a node.
       operationId: nodes_try_settle_stacks
       requestBody:
         content:
@@ -345,60 +284,33 @@ paths:
                 $ref: '#/components/schemas/NodeTrySettleStacksResponse'
         '500':
           description: Failed to submit try settle stacks
-  /stacks/claimed_stacks:
+  /stacks/stacks/nodes/{node_id}:
     get:
       tags:
       - Stacks
-      summary: List all claimed stacks for currently registered nodes
-      description: Retrieves all claimed stacks for the currently registered node badges.
-      operationId: claimed_stacks_list
-      responses:
-        '200':
-          description: List of all StackSettlementTicket objects for all registered nodes
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackSettlementTicket'
-        '500':
-          description: Internal server error
-  /stacks/claimed_stacks/{id}:
-    get:
-      tags:
-      - Stacks
-      summary: List all claimed stacks for a specific node
-      description: Retrieves all claimed stacks for a specific node identified by its small ID.
-      operationId: claimed_stacks_get
+      summary: List stacks
+      description: Lists all stacks for a specific node identified by its small ID.
+      operationId: stacks_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
-        description: The small ID of the node whose claimed stacks should be retrieved
+        description: Node small ID
         required: true
         schema:
           type: integer
           format: int64
+      - name: min_fill_fraction
+        in: query
+        description: Optional minimum fill fraction (0.0 to 100.0)
+        required: false
+        schema:
+          type:
+          - number
+          - 'null'
+          format: double
       responses:
         '200':
-          description: List of StackSettlementTicket objects for the specified node
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StackSettlementTicket'
-        '500':
-          description: Internal server error
-  /stacks/stacks:
-    get:
-      tags:
-      - Stacks
-      summary: List all stacks for currently registered nodes
-      description: Retrieves all stacks associated with the currently registered node badges.
-      operationId: stacks_list
-      responses:
-        '200':
-          description: List of all Stack objects for all registered nodes
+          description: List of Stack objects matching the criteria
           content:
             application/json:
               schema:
@@ -407,61 +319,15 @@ paths:
                   $ref: '#/components/schemas/Stack'
         '500':
           description: Internal server error
-  /stacks/stacks/{id}:
-    get:
-      tags:
-      - Stacks
-      summary: List all stacks for a specific node
-      description: Retrieves all stacks for a specific node identified by its small ID.
-      operationId: stacks_get
-      parameters:
-      - name: id
-        in: path
-        description: The small ID of the node whose stacks should be retrieved
-        required: true
-        schema:
-          type: integer
-          format: int64
-      responses:
-        '200':
-          description: List of Stack objects for the specified node
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Stack'
-        '500':
-          description: Internal server error
-  /subscriptions/:
+  /subscriptions/nodes/{node_id}:
     get:
       tags:
       - Subscriptions
-      summary: List all subscriptions for currently registered nodes
-      description: Retrieves all node subscriptions for the currently registered node badges.
-      operationId: subscriptions_list
-      responses:
-        '200':
-          description: List of all node subscriptions
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/NodeSubscription'
-        '404':
-          description: No node badges registered
-        '500':
-          description: Internal server error
-  /subscriptions/{id}:
-    get:
-      tags:
-      - Subscriptions
-      summary: List all subscriptions for a specific node
-      description: Retrieves all subscriptions for a specific node identified by its small ID.
-      operationId: subscriptions_get
+      summary: List subscriptions
+      description: Lists all subscriptions for a specific node identified by its small ID.
+      operationId: subscriptions_nodes_list
       parameters:
-      - name: id
+      - name: node_id
         in: path
         description: The small ID of the node whose subscriptions should be retrieved
         required: true
@@ -1110,6 +976,14 @@ components:
           type: integer
           format: int64
           description: Unique small integer identifier for the stack involved in the dispute
+    StackQuery:
+      type: object
+      properties:
+        min_fill_fraction:
+          type:
+          - number
+          - 'null'
+          format: double
     StackSettlementTicket:
       type: object
       description: Represents a settlement ticket for a compute stack
@@ -1227,6 +1101,8 @@ components:
 tags:
 - name: Almost filled stacks
   description: Almost filled stacks management
+- name: Claimed stacks
+  description: Claimed stacks management
 - name: Attestation disputes
   description: Attestation disputes management
 - name: Nodes

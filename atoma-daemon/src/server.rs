@@ -12,9 +12,9 @@ use tracing::instrument;
 use crate::{
     components::openapi::openapi_routes,
     handlers::{
-        almost_filled_stacks::almost_filled_stacks_router,
-        attestation_disputes::attestation_disputes_router, nodes::nodes_router,
-        stacks::stacks_router, subscriptions::subscriptions_router, tasks::tasks_router,
+        attestation_disputes::attestation_disputes_router, claimed_stacks::claimed_stacks_router,
+        nodes::nodes_router, stacks::stacks_router, subscriptions::subscriptions_router,
+        tasks::tasks_router,
     },
 };
 
@@ -176,8 +176,8 @@ pub async fn run_server(
 /// ```
 pub fn create_router(daemon_state: DaemonState) -> Router {
     Router::new()
-        .merge(almost_filled_stacks_router())
         .merge(attestation_disputes_router())
+        .merge(claimed_stacks_router())
         .merge(nodes_router())
         .merge(stacks_router())
         .merge(subscriptions_router())
