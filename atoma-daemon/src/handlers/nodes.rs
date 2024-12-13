@@ -1,4 +1,9 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{delete, post},
+    Json, Router,
+};
 use tracing::{error, info};
 use utoipa::OpenApi;
 
@@ -74,7 +79,7 @@ pub fn nodes_router() -> Router<DaemonState> {
         )
         .route(
             &format!("{NODES_PATH}/task-unsubscribe"),
-            post(nodes_task_unsubscribe),
+            delete(nodes_task_unsubscribe),
         )
         .route(
             &format!("{NODES_PATH}/try-settle-stacks"),
@@ -90,6 +95,8 @@ pub fn nodes_router() -> Router<DaemonState> {
         )
 }
 
+/// Create node registration transaction
+///
 /// Create node registration transaction
 ///
 /// Registers a new node in the system.
@@ -123,6 +130,8 @@ pub async fn nodes_register(
     Ok(Json(NodeRegistrationResponse { tx_digest }))
 }
 
+/// Create model subscription transaction
+///
 /// Create model subscription transaction
 ///
 /// Subscribes a node to a specific model.
@@ -167,6 +176,8 @@ pub async fn nodes_model_subscribe(
     Ok(Json(NodeModelSubscriptionResponse { tx_digest }))
 }
 
+/// Create task subscription transaction
+///
 /// Create task subscription transaction
 ///
 /// Subscribes a node to a specific task.
@@ -215,6 +226,8 @@ pub async fn nodes_task_subscribe(
 
 /// Modify task subscription
 ///
+/// Modify task subscription
+///
 /// Updates an existing task subscription for a node.
 #[utoipa::path(
     post,
@@ -259,11 +272,11 @@ pub async fn nodes_task_update_subscription(
     Ok(Json(NodeTaskUpdateSubscriptionResponse { tx_digest }))
 }
 
-//TODO: change to delete
-
+/// Delete task subscription
+///
 /// Unsubscribes a node from a specific task.
 #[utoipa::path(
-    post,
+    delete,
     path = "/task-unsubscribe",
     request_body = NodeTaskUnsubscriptionRequest,
     responses(
@@ -301,6 +314,8 @@ pub async fn nodes_task_unsubscribe(
     Ok(Json(NodeTaskUnsubscriptionResponse { tx_digest }))
 }
 
+/// Create try settle stacks transaction
+///
 /// Create try settle stacks transaction
 ///
 /// Attempts to settle stacks for a node.
@@ -366,6 +381,8 @@ pub async fn nodes_try_settle_stacks(
     Ok(Json(NodeTrySettleStacksResponse { tx_digests }))
 }
 
+/// Create attestation proof transaction
+///
 /// Create attestation proof transaction
 ///
 /// Submits attestations for stack settlement.
@@ -479,6 +496,8 @@ pub async fn nodes_submit_attestations(
     Ok(Json(NodeAttestationProofResponse { tx_digests }))
 }
 
+/// Create claim funds transaction
+///
 /// Create claim funds transaction
 ///
 /// Claims funds for completed stacks.
