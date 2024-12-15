@@ -5,10 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+atoma-sui = { workspace = true }
 blake3 = { workspace = true }
 config = { workspace = true }
 libp2p = { workspace = true, features = [ "tokio", "gossipsub", "mdns", "kad", "noise", "macros", "tcp", "yamux", "quic"] }
 fastcrypto = { workspace = true }
+flume = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_cbor = { workspace = true }

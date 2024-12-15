@@ -2,11 +2,12 @@ use crate::{
     config::P2pAtomaNodeConfig,
     types::{AddressResponse, GossipMessage},
 };
+use atoma_sui::events::{AtomaEvent, NodeSmallId};
+use flume::Sender;
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{self, ConfigBuilderError},
-    kad::{self, store::MemoryStore},
-    mdns, noise,
+    noise,
     swarm::{DialError, NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, TransportError,
 };
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use thiserror::Error;
 use tokio::sync::watch;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, trace};
 
 /// The topic that the P2P network will use to gossip messages
 const GOSPUBSUB_TOPIC: &str = "atoma-p2p";
@@ -30,16 +31,6 @@ struct MyBehaviour {
     /// Used for broadcasting node addresses and other network messages using a gossip protocol
     /// that ensures efficient message propagation.
     gossipsub: gossipsub::Behaviour,
-
-    /// Enables automatic peer discovery on local networks using multicast DNS.
-    /// Particularly useful for development and local testing environments where nodes
-    /// need to find each other without explicit configuration.
-    mdns: mdns::tokio::Behaviour,
-
-    /// Provides distributed hash table (DHT) functionality for peer discovery and routing.
-    /// Helps maintain network connectivity in larger, distributed deployments by implementing
-    /// the Kademlia protocol with a memory-based storage backend.
-    kademlia: kad::Behaviour<MemoryStore>,
 }
 
 /// A P2P node implementation for the Atoma network that handles peer discovery,
@@ -51,7 +42,7 @@ pub struct P2pAtomaNode {
 
     /// The libp2p swarm that manages all network behaviors and connections.
     /// Handles peer discovery, message routing, and protocol negotiations using
-    /// the configured MyBehaviour protocols (gossipsub, mdns, kademlia).
+    /// the configured MyBehaviour protocols (gossipsub).
     swarm: Swarm<MyBehaviour>,
 
     /// The publicly accessible URL of this node that other peers can use to connect.
@@ -61,6 +52,18 @@ pub struct P2pAtomaNode {
     /// A compact numerical identifier for the node, used in network messages and logging.
     /// Provides a shorter alternative to the full node ID for quick reference and debugging.
     node_small_id: u64,
+
+    /// Sender channel to the state manager
+    /// Used to send events to the state manager for storing authenticated
+    /// gossipsub messages (containing public URLs of registered nodes)
+    state_manager_sender: Sender<AtomaEvent>,
+
+    /// Whether this peer is a client or a node in the Atoma network.
+    /// In the case of a client, it will store the public URLs of the participating nodes
+    /// in the protocol. In the case, it is a node, it does not store the public URLs of the
+    /// participating nodes, neither any public URL of clients. That said, a node must
+    /// always share its own public URL with the peers in the network.
+    is_client: bool,
 }
 
 impl P2pAtomaNode {
@@ -69,8 +72,6 @@ impl P2pAtomaNode {
     /// This method sets up a complete libp2p node with the following features:
     /// - TCP and QUIC transport layers with noise encryption and yamux multiplexing
     /// - Gossipsub for peer-to-peer message broadcasting
-    /// - MDNS for local peer discovery
-    /// - Kademlia DHT for distributed peer routing
     ///
     /// # Arguments
     ///
@@ -84,6 +85,10 @@ impl P2pAtomaNode {
     ///
     /// * `keystore` - Thread-safe reference to a file-based keystore containing the node's
     ///   cryptographic keys for signing messages and establishing secure connections
+    ///
+    /// * `state_manager_sender` - Sender channel to the state manager
+    ///
+    /// * `is_client` - Whether this peer is a client or a node in the Atoma network.
     ///
     /// # Returns
     ///
@@ -119,7 +124,7 @@ impl P2pAtomaNode {
     ///     };
     ///     let keystore = Arc::new(FileBasedKeystore::new(&std::path::PathBuf::from("keys"))?);
     ///     
-    ///     P2pAtomaNode::start(config, keystore)
+    ///     P2pAtomaNode::start(config, keystore, state_manager_sender, false)
     /// }
     /// ```
     ///
@@ -129,8 +134,6 @@ impl P2pAtomaNode {
     /// 1. Transport Layer: TCP/QUIC with noise encryption
     /// 2. Protocol Layer:
     ///    - Gossipsub for message broadcasting
-    ///    - MDNS for local peer discovery
-    ///    - Kademlia for distributed routing
     /// 3. Application Layer: Custom message handling for node addresses and requests
     ///
     /// # Security Considerations
@@ -143,6 +146,8 @@ impl P2pAtomaNode {
     pub fn start(
         config: P2pAtomaNodeConfig,
         keystore: Arc<FileBasedKeystore>,
+        state_manager_sender: Sender<AtomaEvent>,
+        is_client: bool,
     ) -> Result<Self, P2pAtomaNodeError> {
         let mut swarm = SwarmBuilder::with_new_identity()
             .with_tokio()
@@ -180,19 +185,7 @@ impl P2pAtomaNode {
                     gossipsub_config,
                 )?;
 
-                let mdns = mdns::tokio::Behaviour::new(
-                    mdns::Config::default(),
-                    key.public().to_peer_id(),
-                )?;
-
-                let store = kad::store::MemoryStore::new(key.public().to_peer_id());
-                let kademlia = kad::Behaviour::new(key.public().to_peer_id(), store);
-
-                Ok(MyBehaviour {
-                    gossipsub,
-                    mdns,
-                    kademlia,
-                })
+                Ok(MyBehaviour { gossipsub })
             })
             .map_err(|e| {
                 error!(
@@ -263,11 +256,21 @@ impl P2pAtomaNode {
             }
         }
 
+        utils::publish_start_message(
+            &mut swarm,
+            &keystore,
+            &config.public_url,
+            config.node_small_id,
+            is_client,
+        )?;
+
         Ok(Self {
             swarm,
             public_url: config.public_url,
             node_small_id: config.node_small_id,
             keystore,
+            state_manager_sender,
+            is_client,
         })
     }
 
@@ -343,9 +346,9 @@ impl P2pAtomaNode {
                         SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                             message_id,
                             message,
-                            ..
+                            propagation_source,
                         })) => {
-                            match self.handle_gossipsub_message(&message.data, &message_id) {
+                            match self.handle_gossipsub_message(&message.data, &message_id, &propagation_source) {
                                 Ok(_) => {}
                                 Err(e) => {
                                     error!(
@@ -357,19 +360,30 @@ impl P2pAtomaNode {
                                 }
                             }
                         }
-                        SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                            self.handle_mdns_discovered_peers_event(peers);
-                        }
-                        SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Expired(peers))) => {
-                            self.handle_mdns_expired_peers_event(peers);
-                        }
-                        SwarmEvent::Behaviour(MyBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
-                            peer,
-                            is_new_peer,
-                            old_peer,
-                            ..
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Subscribed {
+                            peer_id,
+                            topic,
                         })) => {
-                            self.handle_kademlia_routing_updated_event(peer, is_new_peer, old_peer);
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "gossipsub_subscribed",
+                                peer_id = %peer_id,
+                                topic = %topic,
+                                "Peer subscribed to topic"
+                            );
+                        }
+                        SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Unsubscribed {
+                            peer_id,
+                            topic,
+                        })) => {
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "gossipsub_unsubscribed",
+                                peer_id = %peer_id,
+                                topic = %topic,
+                                "Peer unsubscribed from topic"
+                            );
+                            // TODO: should we remove the locally stored public url from an unsubscribed peer?
                         }
                         _ => {}
                     }
@@ -429,10 +443,15 @@ impl P2pAtomaNode {
     /// 4. Constructs and serializes an AddressResponse using CBOR
     /// 5. Publishes the response to the network
     ///
+    /// # Note
+    ///
+    /// We do not re-publish the node's own message, just return `Ok(())`
+    ///
     /// # Arguments
     ///
     /// * `message_data` - Raw bytes of the received gossipsub message (CBOR encoded)
     /// * `message_id` - Unique identifier for the gossipsub message
+    /// * `propagation_source` - The peer that forwarded us this message
     ///
     /// # Returns
     ///
@@ -475,14 +494,25 @@ impl P2pAtomaNode {
         &mut self,
         message_data: &[u8],
         message_id: &gossipsub::MessageId,
+        propagation_source: &PeerId,
     ) -> Result<(), P2pAtomaNodeError> {
         debug!(
             target = "atoma-p2p",
             event = "gossipsub_message",
             message_id = %message_id,
+            propagation_source = %propagation_source,
             "Received gossipsub message"
         );
-        let gossip_message: GossipMessage = serde_cbor::from_slice(&message_data)?;
+        if propagation_source == self.swarm.local_peer_id() {
+            trace!(
+                target = "atoma-p2p",
+                event = "gossipsub_message_from_self",
+                "Gossipsub message from self"
+            );
+            // Do not re-publish the node's own message, just return `Ok(())
+            return Ok(());
+        }
+        let gossip_message: GossipMessage = serde_cbor::from_slice(message_data)?;
         match gossip_message {
             GossipMessage::AddressResponse(response) => {
                 debug!(
@@ -536,6 +566,23 @@ impl P2pAtomaNode {
                     return Err(P2pAtomaNodeError::GossipsubMessageRebroadcastError(
                         e.to_string(),
                     ));
+                }
+                // If the current peer is a client, we need to store the public URL in the state manager
+                if self.is_client {
+                    let event = AtomaEvent::NodePublicUrlRegistration {
+                        public_url: address,
+                        node_small_id: NodeSmallId::from(node_small_id),
+                        timestamp,
+                    };
+                    self.state_manager_sender.send(event).map_err(|e| {
+                        error!(
+                            target = "atoma-p2p",
+                            event = "gossipsub_message_state_manager_error",
+                            error = %e,
+                            "Failed to send event to state manager"
+                        );
+                        P2pAtomaNodeError::StateManagerError(e)
+                    })?;
                 }
             }
             GossipMessage::AddressRequest => {
@@ -594,187 +641,6 @@ impl P2pAtomaNode {
         }
         Ok(())
     }
-
-    /// Handles the discovery of new peers through multicast DNS (mDNS) on the local network.
-    ///
-    /// When new peers are discovered on the local network, this method:
-    /// - Adds them to the gossipsub peer mesh
-    /// - Enables direct message exchange with newly discovered peers
-    /// - Expands the network topology to include local participants
-    ///
-    /// # Arguments
-    ///
-    /// * `peers` - A vector of `(PeerId, Multiaddr)` tuples where:
-    ///   - `PeerId` is the unique identifier of the discovered peer
-    ///   - `Multiaddr` is the peer's network address for establishing connections
-    ///
-    /// # Behavior
-    ///
-    /// For each discovered peer:
-    /// 1. Logs the discovery event with the peer's ID
-    /// 2. Adds the peer to gossipsub's explicit peer list
-    /// 3. Enables the node to directly exchange messages with the new peer
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // When new peers are discovered on the local network
-    /// let discovered_peers = vec![
-    ///     (PeerId::random(), "/ip4/192.168.1.1/tcp/1234".parse().unwrap()),
-    ///     (PeerId::random(), "/ip4/192.168.1.2/tcp/1234".parse().unwrap()),
-    /// ];
-    /// node.handle_mdns_discovered_peers_event(discovered_peers);
-    /// ```
-    ///
-    /// # Note
-    ///
-    /// This method is crucial for local network peer discovery and mesh formation:
-    /// - Enables zero-configuration networking in local environments
-    /// - Automatically establishes connections with nearby peers
-    /// - Particularly useful for development and testing environments
-    /// - Complements other peer discovery mechanisms like Kademlia DHT
-    ///
-    /// The mDNS discovery process is automatic and continuous, allowing the network
-    /// to dynamically adapt as peers join the local network.
-    #[instrument(level = "debug", skip_all)]
-    fn handle_mdns_discovered_peers_event(&mut self, peers: Vec<(PeerId, Multiaddr)>) {
-        for (peer_id, _) in peers {
-            debug!(
-                target = "atoma-p2p",
-                event = "mdns_discovered",
-                peer_id = %peer_id,
-                "MDNS discovered"
-            );
-            self.swarm
-                .behaviour_mut()
-                .gossipsub
-                .add_explicit_peer(&peer_id);
-        }
-    }
-
-    /// Handles the expiration of peers discovered through multicast DNS (mDNS).
-    ///
-    /// When peers become unavailable on the local network, this method:
-    /// - Removes them from the gossipsub peer mesh
-    /// - Updates the network topology accordingly
-    /// - Maintains a clean peer list by removing stale connections
-    ///
-    /// # Arguments
-    ///
-    /// * `peers` - A vector of `(PeerId, Multiaddr)` tuples where:
-    ///   - `PeerId` is the unique identifier of the expired peer
-    ///   - `Multiaddr` is the peer's last known network address (preserved for logging/debugging)
-    ///
-    /// # Behavior
-    ///
-    /// For each expired peer:
-    /// 1. Logs the expiration event with the peer's ID
-    /// 2. Removes the peer from gossipsub's explicit peer list
-    /// 3. Allows the network to adjust its topology without the expired peer
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // When peers become unavailable
-    /// let expired_peers = vec![
-    ///     (PeerId::random(), "/ip4/192.168.1.1/tcp/1234".parse().unwrap()),
-    ///     (PeerId::random(), "/ip4/192.168.1.2/tcp/1234".parse().unwrap()),
-    /// ];
-    /// node.handle_mdns_expired_peers_event(expired_peers);
-    /// ```
-    ///
-    /// # Note
-    ///
-    /// This method is part of the local peer discovery system and helps maintain
-    /// network health by ensuring that only currently available peers are kept
-    /// in the gossipsub mesh. This is particularly important in dynamic network
-    /// environments where peers may frequently join and leave the network.
-    #[instrument(level = "debug", skip_all)]
-    fn handle_mdns_expired_peers_event(&mut self, peers: Vec<(PeerId, Multiaddr)>) {
-        for (peer_id, _) in peers {
-            debug!(
-                target = "atoma-p2p",
-                event = "mdns_expired",
-                peer_id = %peer_id,
-                "MDNS expired"
-            );
-            self.swarm
-                .behaviour_mut()
-                .gossipsub
-                .remove_explicit_peer(&peer_id);
-        }
-    }
-
-    /// Handles updates to the Kademlia routing table by synchronizing peer connections with gossipsub.
-    ///
-    /// This method maintains consistency between Kademlia's DHT routing and gossipsub's peer mesh by:
-    /// - Adding newly discovered peers to the gossipsub network
-    /// - Removing peers that are no longer part of the Kademlia routing table
-    ///
-    /// # Arguments
-    ///
-    /// * `peer` - The `PeerId` of the peer whose routing status has changed
-    /// * `is_new_peer` - Boolean indicating if this is a newly discovered peer
-    /// * `old_peer` - Optional `PeerId` of a peer that was replaced in the routing table
-    ///
-    /// # Behavior
-    ///
-    /// - When `is_new_peer` is true:
-    ///   - Adds the new peer to gossipsub's explicit peer list
-    ///   - This ensures that important DHT peers are also part of the gossip network
-    ///
-    /// - When `old_peer` contains a value:
-    ///   - Removes the old peer from gossipsub's explicit peer list
-    ///   - This prevents maintaining unnecessary connections to peers no longer in the DHT
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // When a new peer replaces an old one
-    /// node.handle_kademlia_routing_updated_event(
-    ///     new_peer_id,
-    ///     true,
-    ///     Some(old_peer_id)
-    /// );
-    ///
-    /// // When just discovering a new peer
-    /// node.handle_kademlia_routing_updated_event(
-    ///     new_peer_id,
-    ///     true,
-    ///     None
-    /// );
-    /// ```
-    ///
-    /// # Note
-    ///
-    /// This synchronization helps maintain an efficient network topology by ensuring
-    /// that peers important for DHT routing are also available for message propagation
-    /// through gossipsub.
-    #[instrument(level = "debug", skip_all)]
-    fn handle_kademlia_routing_updated_event(
-        &mut self,
-        peer: PeerId,
-        is_new_peer: bool,
-        old_peer: Option<PeerId>,
-    ) {
-        debug!(
-            target = "atoma-p2p",
-            event = "kademlia_routing_updated",
-            "Kademlia routing updated"
-        );
-        if is_new_peer {
-            self.swarm
-                .behaviour_mut()
-                .gossipsub
-                .add_explicit_peer(&peer);
-        }
-        if let Some(old_peer) = old_peer {
-            self.swarm
-                .behaviour_mut()
-                .gossipsub
-                .remove_explicit_peer(&old_peer);
-        }
-    }
 }
 
 #[derive(Debug, Error)]
@@ -785,8 +651,6 @@ pub enum P2pAtomaNodeError {
     GossipsubBuildError(String),
     #[error("Failed to build swarm: {0}")]
     SwarmBuildError(String),
-    #[error("Failed to build mdns: {0}")]
-    MdnsBuildError(String),
     #[error("Failed to build behaviour: {0}")]
     BehaviourBuildError(String),
     #[error("Failed to subscribe to topic: {0}")]
@@ -809,6 +673,12 @@ pub enum P2pAtomaNodeError {
     GossipsubMessageRebroadcastError(String),
     #[error("Invalid public address: {0}")]
     InvalidPublicAddressError(String),
+    #[error("Failed to send event to state manager: {0}")]
+    StateManagerError(#[from] flume::SendError<AtomaEvent>),
+    #[error("Failed to sign hashed message, with error: {0}")]
+    SignatureError(String),
+    #[error("Failed to publish gossipsub message: {0}")]
+    GossipsubMessagePublishError(#[from] gossipsub::PublishError),
 }
 
 mod utils {
@@ -995,6 +865,148 @@ mod utils {
                 error!("Currently unsupported signature scheme, error: {e}");
                 return Err(P2pAtomaNodeError::SignatureParseError(e.to_string()));
             }
+        }
+        Ok(())
+    }
+
+    /// Publishes an initial message to the P2P network when a node starts up.
+    ///
+    /// This function handles two different scenarios based on whether the node is a client or a full node:
+    ///
+    /// 1. For clients:
+    ///    - Creates and publishes an address request message
+    ///    - Used to discover active nodes in the network
+    ///
+    /// 2. For full nodes:
+    ///    - Creates a signed address response containing the node's public URL
+    ///    - Signs the message with the node's private key
+    ///    - Includes a timestamp to prevent replay attacks
+    ///
+    /// # Arguments
+    ///
+    /// * `swarm` - Mutable reference to the libp2p swarm managing network behaviors
+    /// * `keystore` - Reference to the file-based keystore containing node credentials
+    /// * `public_url` - The node's publicly accessible URL
+    /// * `node_small_id` - Compact numerical identifier for the node
+    /// * `is_client` - Boolean flag indicating whether this is a client or full node
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the message is published successfully, or a `P2pAtomaNodeError` if any step fails.
+    ///
+    /// # Errors
+    ///
+    /// This function can return several error types:
+    /// * `SignatureError` - If signing the message hash fails
+    /// * `GossipsubMessageDataParseError` - If CBOR serialization fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use libp2p::Swarm;
+    /// use sui_keys::keystore::FileBasedKeystore;
+    ///
+    /// async fn start_node(
+    ///     swarm: &mut Swarm<MyBehaviour>,
+    ///     keystore: &FileBasedKeystore,
+    /// ) -> Result<(), P2pAtomaNodeError> {
+    ///     publish_start_message(
+    ///         swarm,
+    ///         keystore,
+    ///         "https://node1.example.com",
+    ///         1,
+    ///         false,
+    ///     )?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Message Format
+    ///
+    /// For full nodes, the signed message contains:
+    /// ```json
+    /// {
+    ///     "address": "https://node.example.com",
+    ///     "node_small_id": 42,
+    ///     "timestamp": 1234567890,
+    ///     "signature": [bytes]
+    /// }
+    /// ```
+    ///
+    /// For clients, a simple address request message is sent.
+    ///
+    /// # Security Considerations
+    ///
+    /// - Messages from full nodes are cryptographically signed
+    /// - Includes timestamps to prevent replay attacks
+    /// - Uses blake3 for secure message hashing
+    /// - Signatures can be verified by other nodes
+    /// - Messages are broadcast on a specific gossipsub topic
+    ///
+    /// # Network Behavior
+    ///
+    /// - Messages are published to the "atoma-p2p" gossipsub topic
+    /// - All connected peers subscribed to this topic will receive the message
+    /// - Messages are propagated through the P2P network using gossipsub protocol
+    #[instrument(level = "debug", skip_all)]
+    pub(crate) fn publish_start_message(
+        swarm: &mut Swarm<MyBehaviour>,
+        keystore: &FileBasedKeystore,
+        public_url: &str,
+        node_small_id: u64,
+        is_client: bool,
+    ) -> Result<(), P2pAtomaNodeError> {
+        if is_client {
+            let message = GossipMessage::AddressRequest;
+            let serialized_message = serde_cbor::to_vec(&message)?;
+            let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(topic, serialized_message)
+                .map_err(|e| {
+                    error!("Failed to publish address request message, with error: {e}");
+                    P2pAtomaNodeError::GossipsubMessagePublishError(e)
+                })?;
+        } else {
+            let active_address = keystore.addresses()[0];
+            let timestamp = std::time::Instant::now().elapsed().as_secs();
+            let blake3_hash = blake3::hash(
+                &[
+                    public_url.as_bytes(),
+                    &node_small_id.to_le_bytes(),
+                    &timestamp.to_le_bytes(),
+                ]
+                .concat(),
+            );
+            let signature = keystore
+                .sign_hashed(&active_address, blake3_hash.as_bytes())
+                .map_err(|e| {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "sign_hashed_error",
+                        error = %e,
+                        "Failed to sign hashed message"
+                    );
+                    P2pAtomaNodeError::SignatureError(e.to_string())
+                })?;
+            let signature_bytes = signature.signature_bytes().to_vec();
+            let message = GossipMessage::AddressResponse(AddressResponse {
+                address: public_url.to_string(),
+                node_small_id,
+                timestamp,
+                signature: signature_bytes,
+            });
+            let serialized_message = serde_cbor::to_vec(&message)?;
+            let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(topic, serialized_message)
+                .map_err(|e| {
+                    error!("Failed to publish address response message, with error: {e}");
+                    P2pAtomaNodeError::GossipsubMessagePublishError(e)
+                })?;
         }
         Ok(())
     }

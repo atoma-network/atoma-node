@@ -186,6 +186,19 @@ pub enum AtomaEvent {
 
     /// An event emitted when a node's key rotation remote attestation is verified successfully.
     NodePublicKeyCommittmentEvent(NodePublicKeyCommittmentEvent),
+
+    /// An event emitted when a node joins the Atoma network and registers its public URL,
+    /// among its peers.
+    NodePublicUrlRegistration {
+        /// The public URL of the node.
+        public_url: String,
+
+        /// The small ID of the node.
+        node_small_id: NodeSmallId,
+
+        /// The timestamp of the event.
+        timestamp: u64,
+    },
 }
 
 fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -865,6 +878,12 @@ pub struct NodeSmallId {
     /// The unique numerical identifier for the node.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub inner: u64,
+}
+
+impl From<u64> for NodeSmallId {
+    fn from(inner: u64) -> Self {
+        NodeSmallId { inner }
+    }
 }
 
 /// Represents a compact identifier for a stack in the Atoma network.
