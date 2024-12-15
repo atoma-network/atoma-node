@@ -199,6 +199,15 @@ pub enum AtomaEvent {
         /// The timestamp of the event.
         timestamp: u64,
     },
+
+    /// An event emitted when a node's small ID ownership needs to be verified.
+    VerifyNodeSmallIdOwnership {
+        /// The small ID of the node.
+        node_small_id: NodeSmallId,
+
+        /// The Sui address of the node.
+        sui_address: String,
+    },
 }
 
 fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>

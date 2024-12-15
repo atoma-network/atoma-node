@@ -673,6 +673,104 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Inserts a new node registration event into the database.
+    ///
+    /// This method records a new node registration by inserting the node's details into the `nodes` table.
+    /// Each record consists of a small ID (used for internal references), a node ID (unique identifier),
+    /// and the node's Sui blockchain address.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - An internal identifier for the node, used for efficient database operations
+    /// * `node_id` - The unique identifier string for the node
+    /// * `node_address` - The Sui blockchain address associated with the node
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError))
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute
+    /// - There's a constraint violation (e.g., duplicate node_small_id or node_id)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn register_node(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.insert_node_registration_event(
+    ///         1,                              // node_small_id
+    ///         "node_123".to_string(),        // node_id
+    ///         "0x123...abc".to_string()      // node_address
+    ///     ).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id, node_id = %node_id, node_address = %node_address)
+    )]
+    pub async fn insert_node_registration_event(
+        &self,
+        node_small_id: i64,
+        node_id: String,
+        node_address: String,
+    ) -> Result<()> {
+        sqlx::query("INSERT INTO nodes (node_small_id, node_id, node_address) VALUES ($1, $2, $3)")
+            .bind(node_small_id)
+            .bind(node_id)
+            .bind(node_address)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    /// Verifies the ownership of a node's small ID by checking the Sui address.
+    ///
+    /// This method fetches the node's small ID from the database and checks if the provided Sui address
+    /// matches the address stored in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The small ID of the node to verify.
+    /// * `sui_address` - The Sui address to verify against the node's small ID.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails to execute.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id, sui_address = %sui_address)
+    )]
+    pub async fn verify_node_small_id_ownership(
+        &self,
+        node_small_id: u64,
+        sui_address: String,
+    ) -> Result<()> {
+        let exists = sqlx::query(
+            "SELECT EXISTS(SELECT 1 FROM nodes WHERE node_small_id = $1 AND node_address = $2)",
+        )
+        .bind(node_small_id as i64)
+        .bind(sui_address)
+        .fetch_one(&self.db)
+        .await?
+        .get::<bool, _>(0);
+
+        if !exists {
+            return Err(AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed);
+        }
+
+        Ok(())
+    }
+
     /// Unsubscribes a node from a task.
     ///
     /// This method deletes the subscription from the `node_subscriptions` table for the specified node and task combination.
@@ -2170,6 +2268,8 @@ pub enum AtomaStateManagerError {
     FailedToCreateDatabaseDirectory(#[from] std::io::Error),
     #[error("Failed to migrate database")]
     FailedToMigrateDatabase(#[from] sqlx::migrate::MigrateError),
+    #[error("Node small ID ownership verification failed")]
+    NodeSmallIdOwnershipVerificationFailed,
 }
 
 #[cfg(test)]

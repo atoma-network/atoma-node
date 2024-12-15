@@ -199,11 +199,22 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
     }
 }
 
+/// Represents a node registration event
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct NodeRegistrationEvent {
+    /// Unique small integer identifier for the node
+    pub node_small_id: i64,
+    /// Unique string identifier for the node
+    pub node_id: String,
+}
+
 /// Represents a node subscription to a task
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct NodeSubscription {
     /// Unique small integer identifier for the node subscription
     pub node_small_id: i64,
+    /// Sui address of the owner of the node subscription
+    pub node_address: String,
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
     /// Price per compute unit for the subscription

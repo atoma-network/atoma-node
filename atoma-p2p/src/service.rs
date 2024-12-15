@@ -15,11 +15,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use thiserror::Error;
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use tracing::{debug, error, instrument, trace};
 
 /// The topic that the P2P network will use to gossip messages
 const GOSPUBSUB_TOPIC: &str = "atoma-p2p";
+
+type StateManagerEvent = (AtomaEvent, Option<oneshot::Sender<bool>>);
 
 /// Network behavior configuration for the P2P Atoma node, combining multiple libp2p protocols.
 ///
@@ -56,7 +58,7 @@ pub struct P2pAtomaNode {
     /// Sender channel to the state manager
     /// Used to send events to the state manager for storing authenticated
     /// gossipsub messages (containing public URLs of registered nodes)
-    state_manager_sender: Sender<AtomaEvent>,
+    state_manager_sender: Sender<StateManagerEvent>,
 
     /// Whether this peer is a client or a node in the Atoma network.
     /// In the case of a client, it will store the public URLs of the participating nodes
@@ -146,7 +148,7 @@ impl P2pAtomaNode {
     pub fn start(
         config: P2pAtomaNodeConfig,
         keystore: Arc<FileBasedKeystore>,
-        state_manager_sender: Sender<AtomaEvent>,
+        state_manager_sender: Sender<StateManagerEvent>,
         is_client: bool,
     ) -> Result<Self, P2pAtomaNodeError> {
         let mut swarm = SwarmBuilder::with_new_identity()
@@ -348,7 +350,7 @@ impl P2pAtomaNode {
                             message,
                             propagation_source,
                         })) => {
-                            match self.handle_gossipsub_message(&message.data, &message_id, &propagation_source) {
+                            match self.handle_gossipsub_message(&message.data, &message_id, &propagation_source).await {
                                 Ok(_) => {}
                                 Err(e) => {
                                     error!(
@@ -490,7 +492,7 @@ impl P2pAtomaNode {
     /// The actual wire format uses CBOR encoding for more efficient binary representation
     /// and better handling of binary data like signatures.
     #[instrument(level = "debug", skip_all)]
-    pub fn handle_gossipsub_message(
+    pub async fn handle_gossipsub_message(
         &mut self,
         message_data: &[u8],
         message_id: &gossipsub::MessageId,
@@ -537,18 +539,15 @@ impl P2pAtomaNode {
                     ]
                     .concat(),
                 );
-                if let Err(e) =
-                    utils::verify_signature(signature.as_slice(), message_hash.as_bytes())
-                {
-                    // if signature is invalid, we don't want to rebroadcast the message to the network
-                    error!(
-                        target = "atoma-p2p",
-                        event = "gossipsub_message_signature_verification_error",
-                        error = %e,
-                        "Failed to verify signature"
-                    );
-                    return Err(P2pAtomaNodeError::SignatureVerificationError(e.to_string()));
-                }
+                // Verify the signature of the message
+                utils::verify_signature(signature.as_slice(), message_hash.as_bytes())?;
+                // Verify the node small ID ownership
+                utils::verify_node_small_id_ownership(
+                    node_small_id,
+                    signature.as_slice(),
+                    self.state_manager_sender.clone(),
+                )
+                .await?;
                 // Rebroadcast the message to the network peers
                 let topic = gossipsub::IdentTopic::new(GOSPUBSUB_TOPIC);
                 if let Err(e) = self
@@ -574,7 +573,7 @@ impl P2pAtomaNode {
                         node_small_id: NodeSmallId::from(node_small_id),
                         timestamp,
                     };
-                    self.state_manager_sender.send(event).map_err(|e| {
+                    self.state_manager_sender.send((event, None)).map_err(|e| {
                         error!(
                             target = "atoma-p2p",
                             event = "gossipsub_message_state_manager_error",
@@ -674,11 +673,13 @@ pub enum P2pAtomaNodeError {
     #[error("Invalid public address: {0}")]
     InvalidPublicAddressError(String),
     #[error("Failed to send event to state manager: {0}")]
-    StateManagerError(#[from] flume::SendError<AtomaEvent>),
+    StateManagerError(#[from] flume::SendError<StateManagerEvent>),
     #[error("Failed to sign hashed message, with error: {0}")]
     SignatureError(String),
     #[error("Failed to publish gossipsub message: {0}")]
     GossipsubMessagePublishError(#[from] gossipsub::PublishError),
+    #[error("Failed to verify node small ID ownership: {0}")]
+    NodeSmallIdOwnershipVerificationError(String),
 }
 
 mod utils {
@@ -688,8 +689,9 @@ mod utils {
         secp256r1::{Secp256r1PublicKey, Secp256r1Signature},
         traits::{ToFromBytes as FastCryptoToFromBytes, VerifyingKey},
     };
-    use sui_sdk::types::crypto::{
-        PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes,
+    use sui_sdk::types::{
+        base_types::SuiAddress,
+        crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
     };
 
     use super::*;
@@ -867,6 +869,58 @@ mod utils {
             }
         }
         Ok(())
+    }
+
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) async fn verify_node_small_id_ownership(
+        node_small_id: u64,
+        signature: &[u8],
+        state_manager_sender: Sender<StateManagerEvent>,
+    ) -> Result<(), P2pAtomaNodeError> {
+        let signature = Signature::from_bytes(signature).map_err(|e| {
+            error!("Failed to parse signature");
+            P2pAtomaNodeError::SignatureParseError(e.to_string())
+        })?;
+        let public_key_bytes = signature.public_key_bytes();
+        let public_key =
+            PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+                error!("Failed to extract public key from bytes, with error: {e}");
+                P2pAtomaNodeError::SignatureParseError(e.to_string())
+            })?;
+        let sui_address = SuiAddress::from(&public_key);
+        let (sender, receiver) = oneshot::channel();
+        if let Err(e) = state_manager_sender.send((
+            AtomaEvent::VerifyNodeSmallIdOwnership {
+                node_small_id: node_small_id.into(),
+                sui_address: sui_address.to_string(),
+            },
+            Some(sender),
+        )) {
+            error!(
+                target = "atoma-p2p",
+                event = "failed_to_send_event_to_state_manager",
+                error = %e,
+                "Failed to send event to state manager"
+            );
+            return Err(P2pAtomaNodeError::StateManagerError(e));
+        }
+        match receiver.await {
+            Ok(result) => {
+                if result {
+                    Ok(())
+                } else {
+                    Err(P2pAtomaNodeError::NodeSmallIdOwnershipVerificationError(
+                        "Node small ID ownership verification failed".to_string(),
+                    ))
+                }
+            }
+            Err(e) => {
+                error!("Failed to receive result from state manager, with error: {e}");
+                Err(P2pAtomaNodeError::NodeSmallIdOwnershipVerificationError(
+                    e.to_string(),
+                ))
+            }
+        }
     }
 
     /// Publishes an initial message to the P2P network when a node starts up.

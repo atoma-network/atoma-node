@@ -1,9 +1,9 @@
 use atoma_sui::events::{
     AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
-    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
-    StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
-    StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
-    TaskDeprecationEvent, TaskRegisteredEvent,
+    NodeRegisteredEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent,
+    NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreateAndUpdateEvent,
+    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
+    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use tracing::{info, instrument};
 
@@ -57,11 +57,7 @@ pub async fn handle_atoma_event(
             Ok(())
         }
         AtomaEvent::NodeRegisteredEvent((event, sender)) => {
-            info!(
-                "Node registered event: {:?} from sui address {:?}",
-                event, sender
-            );
-            Ok(())
+            handle_node_registered_event(state_manager, event, sender.to_string()).await
         }
         AtomaEvent::NodeSubscribedToModelEvent(event) => {
             info!("Node subscribed to model event: {:?}", event);
@@ -109,6 +105,17 @@ pub async fn handle_atoma_event(
         AtomaEvent::NodePublicUrlRegistration { .. } => {
             info!("Node public URL registration event: {:?}", event);
             Ok(())
+        }
+        AtomaEvent::VerifyNodeSmallIdOwnership {
+            node_small_id,
+            sui_address,
+        } => {
+            handle_node_small_id_ownership_verification_event(
+                state_manager,
+                node_small_id.inner,
+                sui_address,
+            )
+            .await
         }
     }
 }
@@ -760,6 +767,84 @@ async fn handle_node_key_rotation_event(
             new_public_key,
             tee_remote_attestation_bytes,
         )
+        .await?;
+    Ok(())
+}
+
+/// Handles a node small ID ownership verification event.
+///
+/// This function processes events that verify the ownership relationship between a node's small ID
+/// and its corresponding Sui blockchain address. It updates the database to record this verified
+/// ownership relationship.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations
+/// * `node_small_id` - The small ID of the node being verified
+/// * `sui_address` - The Sui blockchain address claiming ownership of the node
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the verification was processed successfully, or an error if something went wrong
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to verify the node small ID ownership fails
+/// * The state manager encounters any internal errors during verification
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use atoma_state::AtomaStateManager;
+///
+/// async fn example(state_manager: &AtomaStateManager) {
+///     let node_small_id = 123;
+///     let sui_address = "0x123...".to_string();
+///     
+///     handle_node_small_id_ownership_verification_event(
+///         state_manager,
+///         node_small_id,
+///         sui_address
+///     ).await.expect("Failed to verify node ownership");
+/// }
+/// ```
+#[instrument(level = "info", skip_all)]
+async fn handle_node_small_id_ownership_verification_event(
+    state_manager: &AtomaStateManager,
+    node_small_id: u64,
+    sui_address: String,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-node-small-id-ownership-verification-event",
+        "Processing node small ID ownership verification event"
+    );
+    state_manager
+        .state
+        .verify_node_small_id_ownership(node_small_id, sui_address)
+        .await?;
+    Ok(())
+}
+
+#[instrument(level = "info", skip_all)]
+async fn handle_node_registered_event(
+    state_manager: &AtomaStateManager,
+    event: NodeRegisteredEvent,
+    node_address: String,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-node-registered-event",
+        "Processing node registered event"
+    );
+    let NodeRegisteredEvent {
+        node_small_id,
+        badge_id,
+    } = event;
+    state_manager
+        .state
+        .insert_node_registration_event(node_small_id.inner as i64, badge_id, node_address)
         .await?;
     Ok(())
 }
