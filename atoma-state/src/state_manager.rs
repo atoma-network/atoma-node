@@ -1,7 +1,7 @@
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
-    AtomaAtomaStateManagerEvent, NodeSubscription, Stack, StackAttestationDispute,
+    AtomaAtomaStateManagerEvent, Node, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
 
@@ -726,6 +726,49 @@ impl AtomaState {
             .execute(&self.db)
             .await?;
         Ok(())
+    }
+
+    /// Retrieves a node from the database by its small ID.
+    ///
+    /// This method fetches a node record from the `nodes` table using the provided `node_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node to retrieve.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Node>`: A result containing either:
+    ///   - `Ok(Node)`: A `Node` object representing the requested node.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified node doesn't exist.
+    /// - There's an issue converting the database row into a `Node` object.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::{AtomaStateManager, Node};
+    ///
+    /// async fn get_node(state_manager: &AtomaStateManager, node_small_id: i64) -> Result<Node, AtomaStateManagerError> {
+    ///     state_manager.get_node_by_small_id(node_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id)
+    )]
+    pub async fn get_node_by_small_id(&self, node_small_id: i64) -> Result<Node> {
+        let node = sqlx::query("SELECT * FROM nodes WHERE node_small_id = $1")
+            .bind(node_small_id)
+            .fetch_one(&self.db)
+            .await?;
+        Ok(Node::from_row(&node)?)
     }
 
     /// Verifies the ownership of a node's small ID by checking the Sui address.
@@ -2389,6 +2432,186 @@ mod tests {
         let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
         assert_eq!(subscribed_tasks.len(), 1);
         assert_eq!(subscribed_tasks[0], task1);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_node_registration_event() {
+        let state_manager = setup_test_db().await;
+
+        // Test data
+        let node_small_id = 42;
+        let node_id = "test_node_123".to_string();
+        let node_address = "0xabc...def".to_string();
+
+        // Test successful insertion
+        let result = state_manager
+            .insert_node_registration_event(node_small_id, node_id.clone(), node_address.clone())
+            .await;
+        assert!(result.is_ok(), "Failed to insert node registration event");
+
+        let node = state_manager
+            .get_node_by_small_id(node_small_id)
+            .await
+            .unwrap();
+        assert_eq!(node.node_small_id, node_small_id);
+        assert_eq!(node.node_id, node_id);
+        assert_eq!(node.node_address, node_address);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_verify_node_small_id_ownership() {
+        let state_manager = setup_test_db().await;
+
+        // Setup: Create nodes with different addresses
+        let nodes = vec![
+            (1, "0x123abc".to_string()),
+            (2, "0x456def".to_string()),
+            (3, "0x789ghi".to_string()),
+        ];
+
+        for (node_small_id, node_address) in nodes.clone() {
+            sqlx::query(
+                "INSERT INTO nodes (node_small_id, node_id, node_address) VALUES ($1, $2, $3)",
+            )
+            .bind(node_small_id)
+            .bind(format!("node{}", node_small_id))
+            .bind(node_address.clone())
+            .execute(&state_manager.db)
+            .await
+            .unwrap();
+        }
+
+        // Test 1: Verify correct ownership
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x123abc".to_string())
+            .await;
+        assert!(
+            result.is_ok(),
+            "Valid ownership verification should succeed"
+        );
+
+        // Test 2: Verify incorrect address for existing node
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x456def".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with wrong address should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 3: Verify non-existent node
+        let result = state_manager
+            .verify_node_small_id_ownership(999, "0x999xyz".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification of non-existent node should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 4: Verify with empty address
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with empty address should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 5: Verify case sensitivity
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x123ABC".to_string())
+            .await;
+        assert!(result.is_err(), "Verification should be case sensitive");
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 6: Verify with leading/trailing whitespace
+        let result = state_manager
+            .verify_node_small_id_ownership(1, " 0x123abc ".to_string())
+            .await;
+        assert!(result.is_err(), "Verification with whitespace should fail");
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 7: Verify multiple nodes in sequence
+        for (node_small_id, node_address) in nodes {
+            let result = state_manager
+                .verify_node_small_id_ownership(node_small_id as u64, node_address)
+                .await;
+            assert!(
+                result.is_ok(),
+                "Valid ownership verification should succeed for all valid nodes"
+            );
+        }
+
+        // Test 8: Verify with maximum u64 value
+        let result = state_manager
+            .verify_node_small_id_ownership(u64::MAX, "0xffffff".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with maximum u64 value should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 9: Verify node zero
+        let result = state_manager
+            .verify_node_small_id_ownership(0, "0x000000".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with node_small_id 0 should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
 
         truncate_tables(&state_manager.db).await;
     }

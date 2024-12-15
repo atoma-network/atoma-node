@@ -827,6 +827,58 @@ async fn handle_node_small_id_ownership_verification_event(
     Ok(())
 }
 
+/// Handles a node registration event by recording the node's registration details in the database.
+///
+/// This function processes events that occur when a new node is registered in the system. It records
+/// the node's small ID (a compact identifier), badge ID (representing node capabilities/permissions),
+/// and blockchain address in the state database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` that provides database operations
+/// * `event` - A `NodeRegisteredEvent` containing the node's registration details:
+///   * `node_small_id` - Compact identifier for the node
+///   * `badge_id` - Identifier representing the node's capabilities/permissions
+/// * `node_address` - The blockchain address associated with the registered node
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the registration was recorded successfully, or an error if something went wrong
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to insert the node registration fails
+/// * The state manager encounters any internal errors during the insertion
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use atoma_state::AtomaStateManager;
+/// use atoma_sui::events::NodeRegisteredEvent;
+///
+/// async fn example(state_manager: &AtomaStateManager) {
+///     let event = NodeRegisteredEvent {
+///         node_small_id: /* ... */,
+///         badge_id: /* ... */
+///     };
+///     let node_address = "0x123...".to_string();
+///     
+///     handle_node_registered_event(
+///         state_manager,
+///         event,
+///         node_address
+///     ).await.expect("Failed to handle node registration");
+/// }
+/// ```
+///
+/// # Implementation Details
+///
+/// The function:
+/// 1. Logs the processing of the registration event
+/// 2. Extracts the node_small_id and badge_id from the event
+/// 3. Converts the node_small_id to i64 for database compatibility
+/// 4. Inserts the registration record into the database via the state manager
 #[instrument(level = "info", skip_all)]
 async fn handle_node_registered_event(
     state_manager: &AtomaStateManager,

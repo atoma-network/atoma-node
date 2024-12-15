@@ -199,15 +199,6 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
     }
 }
 
-/// Represents a node registration event
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
-pub struct NodeRegistrationEvent {
-    /// Unique small integer identifier for the node
-    pub node_small_id: i64,
-    /// Unique string identifier for the node
-    pub node_id: String,
-}
-
 /// Represents a node subscription to a task
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct NodeSubscription {
@@ -223,6 +214,17 @@ pub struct NodeSubscription {
     pub max_num_compute_units: i64,
     /// Indicates whether the subscription is valid
     pub valid: bool,
+}
+
+/// Represents a node in the system
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct Node {
+    /// Unique small integer identifier for the node
+    pub node_small_id: i64,
+    /// Unique string identifier for the node
+    pub node_id: String,
+    /// Sui address of the owner of the node
+    pub node_address: String,
 }
 
 pub enum AtomaAtomaStateManagerEvent {
