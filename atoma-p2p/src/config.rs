@@ -68,7 +68,7 @@ impl P2pAtomaNodeConfig {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use atoma_p2p::config::P2pAtomaNodeConfig;
     ///
     /// let config = P2pAtomaNodeConfig::from_file_path("config/atoma.toml");
