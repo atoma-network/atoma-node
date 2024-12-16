@@ -5,6 +5,7 @@ pub(crate) mod components;
 pub mod config;
 pub(crate) mod handlers;
 pub mod middleware;
+pub mod proxy;
 pub mod server;
 pub mod streamer;
 #[cfg(test)]

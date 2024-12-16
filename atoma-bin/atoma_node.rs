@@ -3,7 +3,11 @@ use std::{path::Path, str::FromStr, sync::Arc};
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
-use atoma_service::{config::AtomaServiceConfig, server::AppState};
+use atoma_service::{
+    config::AtomaServiceConfig,
+    proxy::{config::ProxyConfig, register_on_proxy},
+    server::AppState,
+};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -67,6 +71,8 @@ struct Config {
     state: AtomaStateManagerConfig,
 
     daemon: AtomaDaemonConfig,
+
+    proxy: ProxyConfig,
 }
 
 impl Config {
@@ -76,6 +82,7 @@ impl Config {
             service: AtomaServiceConfig::from_file_path(path),
             state: AtomaStateManagerConfig::from_file_path(path),
             daemon: AtomaDaemonConfig::from_file_path(path),
+            proxy: ProxyConfig::from_file_path(path),
         }
     }
 }
@@ -213,6 +220,11 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
+
+    for (_, node_small_id) in config.daemon.node_badges.iter() {
+        register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
+    }
+
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
     let confidential_compute_service = AtomaConfidentialComputeService::new(
