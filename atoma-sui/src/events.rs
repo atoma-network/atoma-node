@@ -189,7 +189,7 @@ pub enum AtomaEvent {
 
     /// An event emitted when a node joins the Atoma network and registers its public URL,
     /// among its peers.
-    NodePublicUrlRegistration {
+    NodePublicUrlRegistrationEvent {
         /// The public URL of the node.
         public_url: String,
 

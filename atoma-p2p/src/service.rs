@@ -568,7 +568,7 @@ impl P2pAtomaNode {
                 }
                 // If the current peer is a client, we need to store the public URL in the state manager
                 if self.is_client {
-                    let event = AtomaEvent::NodePublicUrlRegistration {
+                    let event = AtomaEvent::NodePublicUrlRegistrationEvent {
                         public_url: address,
                         node_small_id: NodeSmallId::from(node_small_id),
                         timestamp,

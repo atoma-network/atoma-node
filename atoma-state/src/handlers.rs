@@ -102,7 +102,7 @@ pub async fn handle_atoma_event(
         AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
             handle_node_key_rotation_event(state_manager, event).await
         }
-        AtomaEvent::NodePublicUrlRegistration { .. } => {
+        AtomaEvent::NodePublicUrlRegistrationEvent { .. } => {
             info!("Node public URL registration event: {:?}", event);
             Ok(())
         }
