@@ -74,12 +74,16 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    restart: always
     ports:
       - "${GRAFANA_PORT:-30001}:30000"
     depends_on:
       - prometheus
     volumes:
       - grafana_data:/var/lib/grafana
+    env_file: .env
+    networks:
+      - atoma-network
 
   atoma-node:
     <<: *atoma-node
