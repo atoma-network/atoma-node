@@ -6,6 +6,7 @@ use atoma_sui::events::{
     StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
     StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
+use tokio::sync::oneshot;
 use tracing::{info, instrument};
 
 use crate::{
@@ -713,6 +714,7 @@ pub(crate) async fn handle_state_manager_event(
 pub(crate) async fn handle_p2p_event(
     state_manager: &AtomaStateManager,
     event: AtomaP2pEvent,
+    sender: oneshot::Sender<bool>,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
@@ -721,21 +723,26 @@ pub(crate) async fn handle_p2p_event(
     );
     match event {
         AtomaP2pEvent::NodePublicUrlRegistrationEvent { .. } => {
-            // NOTE: Atoma nodes do not need to register public URLs of other peer nodes
-            Ok(())
+            // NOTE: Atoma nodes do not need to register public URLs of other peer nodes, and this event is unreachable
+            // from the Atoma state manager service
+            unreachable!("Atoma nodes do not need to register public URLs of other peer nodes");
         }
         AtomaP2pEvent::VerifyNodeSmallIdOwnership {
             node_small_id,
             sui_address,
         } => {
-            handle_node_small_id_ownership_verification_event(
+            let result = handle_node_small_id_ownership_verification_event(
                 state_manager,
                 node_small_id,
                 sui_address,
             )
-            .await
+            .await;
+            sender
+                .send(result.is_ok())
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
     }
+    Ok(())
 }
 
 /// Handles a node key rotation event.

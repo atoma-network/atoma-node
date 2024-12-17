@@ -11,6 +11,7 @@ use flume::Receiver as FlumeReceiver;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
+use tokio::sync::oneshot;
 use tokio::sync::watch::Receiver;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
@@ -27,7 +28,7 @@ pub struct AtomaStateManager {
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     /// Atoma p2p service receiver
-    pub p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
+    pub p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
 }
 
 impl AtomaStateManager {
@@ -36,7 +37,7 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-        p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
+        p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
@@ -54,7 +55,7 @@ impl AtomaStateManager {
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-        p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
+        p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
         let db = PgPool::connect(database_url).await?;
@@ -141,8 +142,13 @@ impl AtomaStateManager {
                 }
                 p2p_event = self.p2p_service_receiver.recv_async() => {
                     match p2p_event {
-                        Ok(p2p_event) => {
-                            handle_p2p_event(&self, p2p_event).await?;
+                        Ok((p2p_event, Some(sender))) => {
+                            handle_p2p_event(&self, p2p_event, sender).await?;
+                        }
+                        Ok((_, None)) => {
+                            // NOTE: Atoma nodes do not need to register public URLs of other peer nodes, and this event is unreachable
+                            // from the Atoma state manager service
+                            unreachable!("Atoma nodes do not need to register public URLs of other peer nodes");
                         }
                         Err(e) => {
                             tracing::error!(

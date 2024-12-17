@@ -9,7 +9,7 @@ use std::time::Duration;
 /// the behavior of peer-to-peer connections in an Atoma node.
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct P2pAtomaNodeConfig {
+pub struct AtomaP2pNodeConfig {
     /// The interval at which heartbeat messages are sent to peers.
     ///
     /// Heartbeats are used to verify that connections are still alive and
@@ -44,8 +44,8 @@ pub struct P2pAtomaNodeConfig {
     pub seed_nodes: Vec<String>,
 }
 
-impl P2pAtomaNodeConfig {
-    /// Creates a new `P2pAtomaNodeConfig` instance from a configuration file.
+impl AtomaP2pNodeConfig {
+    /// Creates a new `AtomaP2pNodeConfig` instance from a configuration file.
     ///
     /// This method loads configuration settings from both a file and environment variables:
     /// - File: Reads the specified configuration file
@@ -57,7 +57,7 @@ impl P2pAtomaNodeConfig {
     ///
     /// # Returns
     ///
-    /// Returns a new `P2pAtomaNodeConfig` instance with the loaded configuration.
+    /// Returns a new `AtomaP2pNodeConfig` instance with the loaded configuration.
     ///
     /// # Panics
     ///
@@ -69,9 +69,9 @@ impl P2pAtomaNodeConfig {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_p2p::config::P2pAtomaNodeConfig;
+    /// use atoma_p2p::config::AtomaP2pNodeConfig;
     ///
-    /// let config = P2pAtomaNodeConfig::from_file_path("config/atoma.toml");
+    /// let config = AtomaP2pNodeConfig::from_file_path("config/atoma.toml");
     /// ```
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
         let builder = Config::builder()

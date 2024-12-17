@@ -889,6 +889,7 @@ dependencies = [
  "anyhow",
  "atoma-confidential",
  "atoma-daemon",
+ "atoma-p2p",
  "atoma-state",
  "atoma-sui",
  "atoma-utils",

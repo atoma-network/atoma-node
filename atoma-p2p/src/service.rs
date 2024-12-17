@@ -1,5 +1,5 @@
 use crate::{
-    config::P2pAtomaNodeConfig,
+    config::AtomaP2pNodeConfig,
     types::{AddressResponse, AtomaP2pEvent, GossipMessage},
 };
 use flume::Sender;
@@ -36,7 +36,7 @@ struct MyBehaviour {
 
 /// A P2P node implementation for the Atoma network that handles peer discovery,
 /// message broadcasting, and network communication.
-pub struct P2pAtomaNode {
+pub struct AtomaP2pNode {
     /// The cryptographic keystore containing the node's keys for signing messages
     /// and managing identities. Wrapped in an Arc for thread-safe shared access.
     keystore: Arc<FileBasedKeystore>,
@@ -67,7 +67,7 @@ pub struct P2pAtomaNode {
     is_client: bool,
 }
 
-impl P2pAtomaNode {
+impl AtomaP2pNode {
     /// Initializes and configures a new P2P Atoma node with networking capabilities.
     ///
     /// This method sets up a complete libp2p node with the following features:
@@ -94,8 +94,8 @@ impl P2pAtomaNode {
     /// # Returns
     ///
     /// Returns a `Result` containing either:
-    /// - `Ok(P2pAtomaNode)` - A fully configured P2P node ready to start
-    /// - `Err(P2pAtomaNodeError)` - An error indicating what went wrong during setup
+    /// - `Ok(AtomaP2pNode)` - A fully configured P2P node ready to start
+    /// - `Err(AtomaP2pNodeError)` - An error indicating what went wrong during setup
     ///
     /// # Errors
     ///
@@ -110,12 +110,12 @@ impl P2pAtomaNode {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use atoma_p2p::{P2pAtomaNode, P2pAtomaNodeConfig};
+    /// use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
     /// use std::sync::Arc;
     /// use sui_keys::keystore::FileBasedKeystore;
     ///
-    /// async fn setup_node() -> Result<P2pAtomaNode, P2pAtomaNodeError> {
-    ///     let config = P2pAtomaNodeConfig {
+    /// async fn setup_node() -> Result<AtomaP2pNode, AtomaP2pNodeError> {
+    ///     let config = AtomaP2pNodeConfig {
     ///         heartbeat_interval: std::time::Duration::from_secs(1),
     ///         idle_connection_timeout: std::time::Duration::from_secs(30),
     ///         listen_addr: "/ip4/127.0.0.1/tcp/8080".to_string(),
@@ -125,7 +125,7 @@ impl P2pAtomaNode {
     ///     };
     ///     let keystore = Arc::new(FileBasedKeystore::new(&std::path::PathBuf::from("keys"))?);
     ///     
-    ///     P2pAtomaNode::start(config, keystore, state_manager_sender, false)
+    ///     AtomaP2pNode::start(config, keystore, state_manager_sender, false)
     /// }
     /// ```
     ///
@@ -145,11 +145,11 @@ impl P2pAtomaNode {
     /// - The node validates all incoming messages
     #[instrument(level = "info", skip_all)]
     pub fn start(
-        config: P2pAtomaNodeConfig,
+        config: AtomaP2pNodeConfig,
         keystore: Arc<FileBasedKeystore>,
         state_manager_sender: Sender<StateManagerEvent>,
         is_client: bool,
-    ) -> Result<Self, P2pAtomaNodeError> {
+    ) -> Result<Self, AtomaP2pNodeError> {
         let mut swarm = SwarmBuilder::with_new_identity()
             .with_tokio()
             .with_tcp(
@@ -164,7 +164,7 @@ impl P2pAtomaNode {
                     error = %e,
                     "Failed to build swarm"
                 );
-                P2pAtomaNodeError::SwarmBuildError(e.to_string())
+                AtomaP2pNodeError::SwarmBuildError(e.to_string())
             })?
             .with_quic()
             .with_behaviour(|key| {
@@ -195,7 +195,7 @@ impl P2pAtomaNode {
                     error = %e,
                     "Failed to build behaviour"
                 );
-                P2pAtomaNodeError::BehaviourBuildError(e.to_string())
+                AtomaP2pNodeError::BehaviourBuildError(e.to_string())
             })?
             .with_swarm_config(|c| c.with_idle_connection_timeout(config.idle_connection_timeout))
             .build();
@@ -212,7 +212,7 @@ impl P2pAtomaNode {
                     error = %e,
                     "Failed to subscribe to topic"
                 );
-                P2pAtomaNodeError::GossipsubSubscriptionError(e)
+                AtomaP2pNodeError::GossipsubSubscriptionError(e)
             })?;
         swarm.listen_on(config.listen_addr.parse()?).map_err(|e| {
             error!(
@@ -222,7 +222,7 @@ impl P2pAtomaNode {
                 error = %e,
                 "Failed to listen on address"
             );
-            P2pAtomaNodeError::SwarmListenOnError(e)
+            AtomaP2pNodeError::SwarmListenOnError(e)
         })?;
 
         for seed_addr in config.seed_nodes {
@@ -236,7 +236,7 @@ impl P2pAtomaNode {
                             error = %e,
                             "Failed to dial seed node"
                         );
-                        P2pAtomaNodeError::SeedNodeDialError(e)
+                        AtomaP2pNodeError::SeedNodeDialError(e)
                     })?;
                     debug!(
                         target = "atoma-p2p",
@@ -300,7 +300,7 @@ impl P2pAtomaNode {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` when the node shuts down gracefully, or a `P2pAtomaNodeError` if an error occurs.
+    /// Returns `Ok(())` when the node shuts down gracefully, or a `AtomaP2pNodeError` if an error occurs.
     ///
     /// # Errors
     ///
@@ -312,9 +312,9 @@ impl P2pAtomaNode {
     ///
     /// ```rust,ignore
     /// use tokio::sync::watch;
-    /// use atoma_p2p::{P2pAtomaNode, P2pAtomaNodeConfig};
+    /// use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
     ///
-    /// async fn run_node(node: P2pAtomaNode) {
+    /// async fn run_node(node: AtomaP2pNode) {
     ///     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     ///     
     ///     // Run the node in the background
@@ -339,7 +339,7 @@ impl P2pAtomaNode {
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         loop {
             tokio::select! {
                 event = self.swarm.select_next_some() => {
@@ -496,7 +496,7 @@ impl P2pAtomaNode {
         message_data: &[u8],
         message_id: &gossipsub::MessageId,
         propagation_source: &PeerId,
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         debug!(
             target = "atoma-p2p",
             event = "gossipsub_message",
@@ -561,7 +561,7 @@ impl P2pAtomaNode {
                         error = %e,
                         "Failed to rebroadcast gossipsub message"
                     );
-                    return Err(P2pAtomaNodeError::GossipsubMessageRebroadcastError(
+                    return Err(AtomaP2pNodeError::GossipsubMessageRebroadcastError(
                         e.to_string(),
                     ));
                 }
@@ -579,7 +579,7 @@ impl P2pAtomaNode {
                             error = %e,
                             "Failed to send event to state manager"
                         );
-                        P2pAtomaNodeError::StateManagerError(e)
+                        AtomaP2pNodeError::StateManagerError(e)
                     })?;
                 }
             }
@@ -609,7 +609,7 @@ impl P2pAtomaNode {
                             error = %e,
                             "Failed to sign hashed message"
                         );
-                        P2pAtomaNodeError::SignHashedMessageError(e.to_string())
+                        AtomaP2pNodeError::SignHashedMessageError(e.to_string())
                     })?;
                 let response = GossipMessage::AddressResponse(AddressResponse {
                     address: self.public_url.clone(),
@@ -631,7 +631,7 @@ impl P2pAtomaNode {
                         error = %e,
                         "Failed to rebroadcast gossipsub message"
                     );
-                    return Err(P2pAtomaNodeError::GossipsubMessageRebroadcastError(
+                    return Err(AtomaP2pNodeError::GossipsubMessageRebroadcastError(
                         e.to_string(),
                     ));
                 }
@@ -642,7 +642,7 @@ impl P2pAtomaNode {
 }
 
 #[derive(Debug, Error)]
-pub enum P2pAtomaNodeError {
+pub enum AtomaP2pNodeError {
     #[error("Failed to build gossipsub config: {0}")]
     GossipsubConfigError(#[from] ConfigBuilderError),
     #[error("Failed to build gossipsub: {0}")]
@@ -711,11 +711,11 @@ mod utils {
     /// # Returns
     ///
     /// * `Ok(())` - If all validation checks pass
-    /// * `Err(P2pAtomaNodeError)` - If any validation fails
+    /// * `Err(AtomaP2pNodeError)` - If any validation fails
     ///
     /// # Errors
     ///
-    /// Returns `P2pAtomaNodeError::InvalidPublicAddressError` when:
+    /// Returns `AtomaP2pNodeError::InvalidPublicAddressError` when:
     /// * The URL doesn't start with "http://" or "https://"
     /// * The timestamp is older than `EXPIRED_TIMESTAMP_THRESHOLD` (10 minutes)
     /// * The timestamp is in the future
@@ -745,7 +745,7 @@ mod utils {
     #[instrument(level = "debug", skip_all)]
     pub(crate) fn validate_public_address_message(
         response: &AddressResponse,
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         let now = std::time::Instant::now().elapsed().as_secs();
 
         // Check if the URL is valid
@@ -756,7 +756,7 @@ mod utils {
                 event = "invalid_url_format",
                 "Invalid URL format"
             );
-            return Err(P2pAtomaNodeError::InvalidPublicAddressError(
+            return Err(AtomaP2pNodeError::InvalidPublicAddressError(
                 "Invalid URL format".to_string(),
             ));
         }
@@ -770,7 +770,7 @@ mod utils {
                 response.timestamp,
                 now
             );
-            return Err(P2pAtomaNodeError::InvalidPublicAddressError(
+            return Err(AtomaP2pNodeError::InvalidPublicAddressError(
                 "Timestamp is too old".to_string(),
             ));
         }
@@ -795,7 +795,7 @@ mod utils {
     /// # Returns
     ///
     /// * `Ok(())` - If the signature is valid for the given message hash
-    /// * `Err(P2pAtomaNodeError)` - If any step of the verification process fails
+    /// * `Err(AtomaP2pNodeError)` - If any step of the verification process fails
     ///
     /// # Errors
     ///
@@ -824,17 +824,17 @@ mod utils {
     pub(crate) fn verify_signature(
         signature_bytes: &[u8],
         body_hash: &[u8; 32],
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         let signature = Signature::from_bytes(signature_bytes).map_err(|e| {
             error!("Failed to parse signature");
-            P2pAtomaNodeError::SignatureParseError(e.to_string())
+            AtomaP2pNodeError::SignatureParseError(e.to_string())
         })?;
         let public_key_bytes = signature.public_key_bytes();
         let signature_scheme = signature.scheme();
         let public_key =
             PublicKey::try_from_bytes(signature_scheme, public_key_bytes).map_err(|e| {
                 error!("Failed to extract public key from bytes, with error: {e}");
-                P2pAtomaNodeError::SignatureParseError(e.to_string())
+                AtomaP2pNodeError::SignatureParseError(e.to_string())
             })?;
 
         match signature_scheme {
@@ -843,7 +843,7 @@ mod utils {
                 let signature = Ed25519Signature::from_bytes(signature_bytes).unwrap();
                 public_key.verify(body_hash, &signature).map_err(|e| {
                     error!("Failed to verify signature");
-                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                    AtomaP2pNodeError::SignatureVerificationError(e.to_string())
                 })?;
             }
             SignatureScheme::Secp256k1 => {
@@ -851,7 +851,7 @@ mod utils {
                 let signature = Secp256k1Signature::from_bytes(signature_bytes).unwrap();
                 public_key.verify(body_hash, &signature).map_err(|e| {
                     error!("Failed to verify signature");
-                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                    AtomaP2pNodeError::SignatureVerificationError(e.to_string())
                 })?;
             }
             SignatureScheme::Secp256r1 => {
@@ -859,12 +859,12 @@ mod utils {
                 let signature = Secp256r1Signature::from_bytes(signature_bytes).unwrap();
                 public_key.verify(body_hash, &signature).map_err(|e| {
                     error!("Failed to verify signature");
-                    P2pAtomaNodeError::SignatureVerificationError(e.to_string())
+                    AtomaP2pNodeError::SignatureVerificationError(e.to_string())
                 })?;
             }
             e => {
                 error!("Currently unsupported signature scheme, error: {e}");
-                return Err(P2pAtomaNodeError::SignatureParseError(e.to_string()));
+                return Err(AtomaP2pNodeError::SignatureParseError(e.to_string()));
             }
         }
         Ok(())
@@ -875,16 +875,16 @@ mod utils {
         node_small_id: u64,
         signature: &[u8],
         state_manager_sender: Sender<StateManagerEvent>,
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         let signature = Signature::from_bytes(signature).map_err(|e| {
             error!("Failed to parse signature");
-            P2pAtomaNodeError::SignatureParseError(e.to_string())
+            AtomaP2pNodeError::SignatureParseError(e.to_string())
         })?;
         let public_key_bytes = signature.public_key_bytes();
         let public_key =
             PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
                 error!("Failed to extract public key from bytes, with error: {e}");
-                P2pAtomaNodeError::SignatureParseError(e.to_string())
+                AtomaP2pNodeError::SignatureParseError(e.to_string())
             })?;
         let sui_address = SuiAddress::from(&public_key);
         let (sender, receiver) = oneshot::channel();
@@ -901,21 +901,21 @@ mod utils {
                 error = %e,
                 "Failed to send event to state manager"
             );
-            return Err(P2pAtomaNodeError::StateManagerError(e));
+            return Err(AtomaP2pNodeError::StateManagerError(e));
         }
         match receiver.await {
             Ok(result) => {
                 if result {
                     Ok(())
                 } else {
-                    Err(P2pAtomaNodeError::NodeSmallIdOwnershipVerificationError(
+                    Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(
                         "Node small ID ownership verification failed".to_string(),
                     ))
                 }
             }
             Err(e) => {
                 error!("Failed to receive result from state manager, with error: {e}");
-                Err(P2pAtomaNodeError::NodeSmallIdOwnershipVerificationError(
+                Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(
                     e.to_string(),
                 ))
             }
@@ -945,7 +945,7 @@ mod utils {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` if the message is published successfully, or a `P2pAtomaNodeError` if any step fails.
+    /// Returns `Ok(())` if the message is published successfully, or a `AtomaP2pNodeError` if any step fails.
     ///
     /// # Errors
     ///
@@ -962,7 +962,7 @@ mod utils {
     /// async fn start_node(
     ///     swarm: &mut Swarm<MyBehaviour>,
     ///     keystore: &FileBasedKeystore,
-    /// ) -> Result<(), P2pAtomaNodeError> {
+    /// ) -> Result<(), AtomaP2pNodeError> {
     ///     publish_start_message(
     ///         swarm,
     ///         keystore,
@@ -1008,7 +1008,7 @@ mod utils {
         public_url: &str,
         node_small_id: u64,
         is_client: bool,
-    ) -> Result<(), P2pAtomaNodeError> {
+    ) -> Result<(), AtomaP2pNodeError> {
         if is_client {
             let message = GossipMessage::AddressRequest;
             let serialized_message = serde_cbor::to_vec(&message)?;
@@ -1019,7 +1019,7 @@ mod utils {
                 .publish(topic, serialized_message)
                 .map_err(|e| {
                     error!("Failed to publish address request message, with error: {e}");
-                    P2pAtomaNodeError::GossipsubMessagePublishError(e)
+                    AtomaP2pNodeError::GossipsubMessagePublishError(e)
                 })?;
         } else {
             let active_address = keystore.addresses()[0];
@@ -1041,7 +1041,7 @@ mod utils {
                         error = %e,
                         "Failed to sign hashed message"
                     );
-                    P2pAtomaNodeError::SignatureError(e.to_string())
+                    AtomaP2pNodeError::SignatureError(e.to_string())
                 })?;
             let signature_bytes = signature.signature_bytes().to_vec();
             let message = GossipMessage::AddressResponse(AddressResponse {
@@ -1058,7 +1058,7 @@ mod utils {
                 .publish(topic, serialized_message)
                 .map_err(|e| {
                     error!("Failed to publish address response message, with error: {e}");
-                    P2pAtomaNodeError::GossipsubMessagePublishError(e)
+                    AtomaP2pNodeError::GossipsubMessagePublishError(e)
                 })?;
         }
         Ok(())
