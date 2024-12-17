@@ -1,3 +1,4 @@
+use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::{
     AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
     NodeRegisteredEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent,
@@ -101,21 +102,6 @@ pub async fn handle_atoma_event(
         }
         AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
             handle_node_key_rotation_event(state_manager, event).await
-        }
-        AtomaEvent::NodePublicUrlRegistrationEvent { .. } => {
-            info!("Node public URL registration event: {:?}", event);
-            Ok(())
-        }
-        AtomaEvent::VerifyNodeSmallIdOwnership {
-            node_small_id,
-            sui_address,
-        } => {
-            handle_node_small_id_ownership_verification_event(
-                state_manager,
-                node_small_id.inner,
-                sui_address,
-            )
-            .await
         }
     }
 }
@@ -719,6 +705,39 @@ pub(crate) async fn handle_state_manager_event(
     Ok(())
 }
 
+/// Handles a p2p event.
+///
+/// This function processes a p2p event by parsing the event data
+/// and updating the corresponding stack settlement ticket in the database.
+#[instrument(level = "info", skip_all)]
+pub(crate) async fn handle_p2p_event(
+    state_manager: &AtomaStateManager,
+    event: AtomaP2pEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-p2p-event",
+        "Processing p2p event"
+    );
+    match event {
+        AtomaP2pEvent::NodePublicUrlRegistrationEvent { .. } => {
+            // NOTE: Atoma nodes do not need to register public URLs of other peer nodes
+            Ok(())
+        }
+        AtomaP2pEvent::VerifyNodeSmallIdOwnership {
+            node_small_id,
+            sui_address,
+        } => {
+            handle_node_small_id_ownership_verification_event(
+                state_manager,
+                node_small_id,
+                sui_address,
+            )
+            .await
+        }
+    }
+}
+
 /// Handles a node key rotation event.
 ///
 /// This function processes a node key rotation event by extracting the relevant data
@@ -839,7 +858,7 @@ async fn handle_node_small_id_ownership_verification_event(
 /// * `event` - A `NodeRegisteredEvent` containing the node's registration details:
 ///   * `node_small_id` - Compact identifier for the node
 ///   * `badge_id` - Identifier representing the node's capabilities/permissions
-/// * `node_address` - The blockchain address associated with the registered node
+/// * `node_sui_address` - The blockchain address associated with the registered node
 ///
 /// # Returns
 ///
@@ -862,12 +881,12 @@ async fn handle_node_small_id_ownership_verification_event(
 ///         node_small_id: /* ... */,
 ///         badge_id: /* ... */
 ///     };
-///     let node_address = "0x123...".to_string();
+///     let node_sui_address = "0x123...".to_string();
 ///     
 ///     handle_node_registered_event(
 ///         state_manager,
 ///         event,
-///         node_address
+///         node_sui_address
 ///     ).await.expect("Failed to handle node registration");
 /// }
 /// ```
@@ -883,7 +902,7 @@ async fn handle_node_small_id_ownership_verification_event(
 async fn handle_node_registered_event(
     state_manager: &AtomaStateManager,
     event: NodeRegisteredEvent,
-    node_address: String,
+    node_sui_address: String,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
@@ -896,7 +915,7 @@ async fn handle_node_registered_event(
     } = event;
     state_manager
         .state
-        .insert_node_registration_event(node_small_id.inner as i64, badge_id, node_address)
+        .insert_node_registration_event(node_small_id.inner as i64, badge_id, node_sui_address)
         .await?;
     Ok(())
 }

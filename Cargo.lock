@@ -867,7 +867,6 @@ dependencies = [
 name = "atoma-p2p"
 version = "0.1.0"
 dependencies = [
- "atoma-sui",
  "blake3",
  "config",
  "fastcrypto 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -932,6 +931,7 @@ dependencies = [
 name = "atoma-state"
 version = "0.1.0"
 dependencies = [
+ "atoma-p2p",
  "atoma-sui",
  "atoma-utils",
  "config",

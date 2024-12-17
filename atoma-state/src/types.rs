@@ -222,7 +222,7 @@ pub struct Node {
     /// Unique string identifier for the node
     pub node_id: String,
     /// Sui address of the owner of the node
-    pub node_address: String,
+    pub node_sui_address: String,
 }
 
 pub enum AtomaAtomaStateManagerEvent {

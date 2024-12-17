@@ -1,8 +1,7 @@
 use crate::{
     config::P2pAtomaNodeConfig,
-    types::{AddressResponse, GossipMessage},
+    types::{AddressResponse, AtomaP2pEvent, GossipMessage},
 };
-use atoma_sui::events::{AtomaEvent, NodeSmallId};
 use flume::Sender;
 use futures::StreamExt;
 use libp2p::{
@@ -21,7 +20,7 @@ use tracing::{debug, error, instrument, trace};
 /// The topic that the P2P network will use to gossip messages
 const GOSPUBSUB_TOPIC: &str = "atoma-p2p";
 
-type StateManagerEvent = (AtomaEvent, Option<oneshot::Sender<bool>>);
+type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
 /// Network behavior configuration for the P2P Atoma node, combining multiple libp2p protocols.
 ///
@@ -568,9 +567,9 @@ impl P2pAtomaNode {
                 }
                 // If the current peer is a client, we need to store the public URL in the state manager
                 if self.is_client {
-                    let event = AtomaEvent::NodePublicUrlRegistrationEvent {
+                    let event = AtomaP2pEvent::NodePublicUrlRegistrationEvent {
                         public_url: address,
-                        node_small_id: NodeSmallId::from(node_small_id),
+                        node_small_id,
                         timestamp,
                     };
                     self.state_manager_sender.send((event, None)).map_err(|e| {
@@ -890,8 +889,8 @@ mod utils {
         let sui_address = SuiAddress::from(&public_key);
         let (sender, receiver) = oneshot::channel();
         if let Err(e) = state_manager_sender.send((
-            AtomaEvent::VerifyNodeSmallIdOwnership {
-                node_small_id: node_small_id.into(),
+            AtomaP2pEvent::VerifyNodeSmallIdOwnership {
+                node_small_id,
                 sui_address: sui_address.to_string(),
             },
             Some(sender),

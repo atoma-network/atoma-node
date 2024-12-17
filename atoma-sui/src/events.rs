@@ -186,30 +186,48 @@ pub enum AtomaEvent {
 
     /// An event emitted when a node's key rotation remote attestation is verified successfully.
     NodePublicKeyCommittmentEvent(NodePublicKeyCommittmentEvent),
-
-    /// An event emitted when a node joins the Atoma network and registers its public URL,
-    /// among its peers.
-    NodePublicUrlRegistrationEvent {
-        /// The public URL of the node.
-        public_url: String,
-
-        /// The small ID of the node.
-        node_small_id: NodeSmallId,
-
-        /// The timestamp of the event.
-        timestamp: u64,
-    },
-
-    /// An event emitted when a node's small ID ownership needs to be verified.
-    VerifyNodeSmallIdOwnership {
-        /// The small ID of the node.
-        node_small_id: NodeSmallId,
-
-        /// The Sui address of the node.
-        sui_address: String,
-    },
 }
 
+/// Deserializes a string representation of a number into a numeric type that implements `FromStr`.
+///
+/// This function is primarily used as a custom deserializer for serde to handle cases where
+/// numeric values are serialized as strings. It's particularly useful when working with JSON
+/// where large numbers need to be preserved with full precision.
+///
+/// # Type Parameters
+///
+/// * `'de`: The lifetime of the deserializer
+/// * `D`: The type of the deserializer implementing `serde::de::Deserializer`
+/// * `T`: The target numeric type that implements `FromStr`
+///
+/// # Arguments
+///
+/// * `deserializer`: The deserializer that provides the string value
+///
+/// # Returns
+///
+/// * `Ok(T)`: The successfully parsed numeric value
+/// * `Err(D::Error)`: An error if deserialization or parsing fails
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use serde::{Deserialize, Deserializer};
+///
+/// #[derive(Deserialize)]
+/// struct MyStruct {
+///     #[serde(deserialize_with = "deserialize_string_to_u64")]
+///     value: u64,
+/// }
+///
+/// // This will correctly deserialize: {"value": "12345"}
+/// ```
+///
+/// # Note
+///
+/// Despite the function name containing "u64", it can actually deserialize into any
+/// numeric type that implements `FromStr`. The name is historical and reflects its
+/// most common use case in this codebase.s
 fn deserialize_string_to_u64<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
 where
     D: serde::de::Deserializer<'de>,

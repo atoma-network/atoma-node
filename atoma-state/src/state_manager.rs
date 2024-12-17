@@ -1,10 +1,11 @@
 use crate::build_query_with_in;
-use crate::handlers::{handle_atoma_event, handle_state_manager_event};
+use crate::handlers::{handle_atoma_event, handle_p2p_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, Node, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
 
+use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
 use sqlx::PgPool;
@@ -25,6 +26,8 @@ pub struct AtomaStateManager {
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+    /// Atoma p2p service receiver
+    pub p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
 }
 
 impl AtomaStateManager {
@@ -33,11 +36,13 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_service_receiver,
         }
     }
 
@@ -49,6 +54,7 @@ impl AtomaStateManager {
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        p2p_service_receiver: FlumeReceiver<AtomaP2pEvent>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
         let db = PgPool::connect(database_url).await?;
@@ -57,6 +63,7 @@ impl AtomaStateManager {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_service_receiver,
         })
     }
 
@@ -124,6 +131,25 @@ impl AtomaStateManager {
                                 event = "state_manager_receiver_error",
                                 error = %e,
                                 "All state manager senders have been dropped, we will not be able to handle any more events from the Atoma node inference service"
+                            );
+                            // NOTE: We continue the loop, as the inference service might be shutting down,
+                            // but we want to keep the state manager running
+                            // for event synchronization with the Atoma Network protocol.
+                            continue;
+                        }
+                    }
+                }
+                p2p_event = self.p2p_service_receiver.recv_async() => {
+                    match p2p_event {
+                        Ok(p2p_event) => {
+                            handle_p2p_event(&self, p2p_event).await?;
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                target = "atoma-state-manager",
+                                event = "p2p_service_receiver_error",
+                                error = %e,
+                                "All p2p service senders have been dropped, terminating the state manager running process"
                             );
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
@@ -683,7 +709,7 @@ impl AtomaState {
     ///
     /// * `node_small_id` - An internal identifier for the node, used for efficient database operations
     /// * `node_id` - The unique identifier string for the node
-    /// * `node_address` - The Sui blockchain address associated with the node
+    /// * `node_sui_address` - The Sui blockchain address associated with the node
     ///
     /// # Returns
     ///
@@ -704,27 +730,29 @@ impl AtomaState {
     ///     state_manager.insert_node_registration_event(
     ///         1,                              // node_small_id
     ///         "node_123".to_string(),        // node_id
-    ///         "0x123...abc".to_string()      // node_address
+    ///         "0x123...abc".to_string()      // node_sui_address
     ///     ).await
     /// }
     /// ```
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(node_small_id = %node_small_id, node_id = %node_id, node_address = %node_address)
+        fields(node_small_id = %node_small_id, node_id = %node_id, node_sui_address = %node_sui_address)
     )]
     pub async fn insert_node_registration_event(
         &self,
         node_small_id: i64,
         node_id: String,
-        node_address: String,
+        node_sui_address: String,
     ) -> Result<()> {
-        sqlx::query("INSERT INTO nodes (node_small_id, node_id, node_address) VALUES ($1, $2, $3)")
-            .bind(node_small_id)
-            .bind(node_id)
-            .bind(node_address)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "INSERT INTO nodes (node_small_id, node_id, node_sui_address) VALUES ($1, $2, $3)",
+        )
+        .bind(node_small_id)
+        .bind(node_id)
+        .bind(node_sui_address)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -799,7 +827,7 @@ impl AtomaState {
         sui_address: String,
     ) -> Result<()> {
         let exists = sqlx::query(
-            "SELECT EXISTS(SELECT 1 FROM nodes WHERE node_small_id = $1 AND node_address = $2)",
+            "SELECT EXISTS(SELECT 1 FROM nodes WHERE node_small_id = $1 AND node_sui_address = $2)",
         )
         .bind(node_small_id as i64)
         .bind(sui_address)
@@ -2444,11 +2472,15 @@ mod tests {
         // Test data
         let node_small_id = 42;
         let node_id = "test_node_123".to_string();
-        let node_address = "0xabc...def".to_string();
+        let node_sui_address = "0xabc...def".to_string();
 
         // Test successful insertion
         let result = state_manager
-            .insert_node_registration_event(node_small_id, node_id.clone(), node_address.clone())
+            .insert_node_registration_event(
+                node_small_id,
+                node_id.clone(),
+                node_sui_address.clone(),
+            )
             .await;
         assert!(result.is_ok(), "Failed to insert node registration event");
 
@@ -2458,7 +2490,7 @@ mod tests {
             .unwrap();
         assert_eq!(node.node_small_id, node_small_id);
         assert_eq!(node.node_id, node_id);
-        assert_eq!(node.node_address, node_address);
+        assert_eq!(node.node_sui_address, node_sui_address);
 
         truncate_tables(&state_manager.db).await;
     }
@@ -2475,13 +2507,13 @@ mod tests {
             (3, "0x789ghi".to_string()),
         ];
 
-        for (node_small_id, node_address) in nodes.clone() {
+        for (node_small_id, node_sui_address) in nodes.clone() {
             sqlx::query(
-                "INSERT INTO nodes (node_small_id, node_id, node_address) VALUES ($1, $2, $3)",
+                "INSERT INTO nodes (node_small_id, node_id, node_sui_address) VALUES ($1, $2, $3)",
             )
             .bind(node_small_id)
             .bind(format!("node{}", node_small_id))
-            .bind(node_address.clone())
+            .bind(node_sui_address.clone())
             .execute(&state_manager.db)
             .await
             .unwrap();
