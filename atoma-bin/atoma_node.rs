@@ -235,6 +235,7 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
+
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
     let confidential_compute_service = AtomaConfidentialComputeService::new(

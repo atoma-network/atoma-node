@@ -395,21 +395,16 @@ pub(crate) mod utils {
     /// * The SHA-256 hash cannot be converted to a 32-byte array
     pub(crate) fn sign_response_body(
         response_body: &Value,
-        keystore: &Arc<FileBasedKeystore>,
+        keystore: &FileBasedKeystore,
         address_index: usize,
-    ) -> Result<([u8; 32], String), Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<([u8; 32], String)> {
         let address = keystore.addresses()[address_index];
         let response_body_str = response_body.to_string();
         let response_body_bytes = response_body_str.as_bytes();
         let blake2b_hash = blake2b_hash(response_body_bytes);
-        let signature = keystore
-            .sign_hashed(&address, blake2b_hash.as_slice())
-            .expect("Failed to sign response body");
+        let signature = keystore.sign_hashed(&address, blake2b_hash.as_slice())?;
         Ok((
-            blake2b_hash
-                .as_slice()
-                .try_into()
-                .expect("Invalid BLAKE2b hash length"),
+            blake2b_hash.as_slice().try_into()?,
             signature.encode_base64(),
         ))
     }

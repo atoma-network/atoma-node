@@ -12,7 +12,7 @@ paths:
     get:
       tags:
       - health
-      summary: Handles the health check endpoint.
+      summary: Health
       description: |-
         This function is used to verify that the server is running and responsive.
         It's typically used by load balancers or monitoring systems to check the
@@ -41,7 +41,7 @@ paths:
     get:
       tags:
       - metrics
-      summary: Handles the metrics endpoint.
+      summary: Metrics
       description: |-
         This function is used to return the metrics for the service.
 
@@ -56,7 +56,7 @@ paths:
     post:
       tags:
       - chat
-      summary: Handles chat completion requests by forwarding them to the inference service and managing token usage.
+      summary: Create chat completion
       description: |-
         This handler performs several key operations:
         1. Forwards the chat completion request to the inference service
@@ -102,8 +102,10 @@ paths:
     post:
       tags:
       - embeddings
-      summary: Handles embedding requests by proxying them to the embeddings service.
-      description: |-
+      summary: Create embeddings
+      description: |2-
+
+
         This handler simply forwards the request to the embeddings service and returns the response.
 
         # Arguments
@@ -138,8 +140,10 @@ paths:
     post:
       tags:
       - images
-      summary: Handles image generation requests by proxying them to the image generations service.
-      description: |-
+      summary: Create image generation
+      description: |2-
+
+
         This handler simply forwards the request to the image generations service and returns the response.
 
         # Arguments
