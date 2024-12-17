@@ -136,6 +136,8 @@ impl AtomaConfidentialComputeService {
             "Running confidential compute service, with dh public key: {:?}",
             self.key_manager.get_public_key().as_bytes()
         );
+        // Submit the first node key rotation attestation, because the node is starting up afresh
+        self.submit_node_key_rotation_tdx_attestation().await?;
         loop {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
@@ -195,7 +197,7 @@ impl AtomaConfidentialComputeService {
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
-        self.key_manager.rotate_keys()?;
+        self.key_manager.rotate_keys();
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
         #[cfg(feature = "tdx")]
