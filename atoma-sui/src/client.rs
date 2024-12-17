@@ -1,3 +1,4 @@
+use serde_json::json;
 use std::path::Path;
 use sui_sdk::{
     json::SuiJsonValue, rpc_types::SuiData, types::base_types::ObjectID,
@@ -178,6 +179,8 @@ impl AtomaSuiClient {
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(toma_wallet_address),
+                    SuiJsonValue::new(json!([])).unwrap(),
+                    SuiJsonValue::new(json!([])).unwrap(),
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
