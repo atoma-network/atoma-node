@@ -1,8 +1,5 @@
 pub mod encryption;
-pub mod events;
 pub mod hashing;
-
-pub use events::AtomaStateManagerEvent;
 
 use anyhow::{Context, Error, Result};
 use axum::http::StatusCode;

@@ -124,10 +124,12 @@ mod middleware {
     ) {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+        let (_p2p_event_sender, p2p_event_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
             POSTGRES_TEST_DB_URL,
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_event_receiver,
         )
         .await
         .expect("Failed to create state manager");
