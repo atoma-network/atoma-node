@@ -245,7 +245,7 @@ mod middleware {
         std::fs::write(keystore_path.clone(), sui_keystore_contents)
             .expect("Failed to write to keystore");
         let client_config = AtomaSuiConfig::new(
-            "http://localhost:9000".to_string(),
+            "https://fullnode.testnet.sui.io:443".to_string(),
             ObjectID::from_str("0x1").unwrap(),
             ObjectID::from_str("0x2").unwrap(),
             ObjectID::from_str("0x3").unwrap(),

@@ -3,7 +3,7 @@ use std::{path::Path, str::FromStr, sync::Arc};
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
-use atoma_p2p::{AtomaP2pNodeConfig, AtomaP2pNode};
+use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
