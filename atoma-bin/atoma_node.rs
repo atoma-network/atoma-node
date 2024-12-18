@@ -228,20 +228,15 @@ async fn main() -> Result<()> {
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    let client_clone = client.clone();
-    let shutdown_receiver_clone = shutdown_receiver.clone();
     spawn_with_shutdown(
-        async move {
-            AtomaConfidentialComputeService::start_confidential_compute_service(
-                client_clone,
-                subscriber_confidential_compute_receiver,
-                app_state_decryption_receiver,
-                app_state_encryption_receiver,
-                compute_shared_secret_receiver,
-                shutdown_receiver_clone,
-            )
-            .await
-        },
+        AtomaConfidentialComputeService::start_confidential_compute_service(
+            client.clone(),
+            subscriber_confidential_compute_receiver,
+            app_state_decryption_receiver,
+            app_state_encryption_receiver,
+            compute_shared_secret_receiver,
+            shutdown_receiver.clone(),
+        ),
         shutdown_sender.clone(),
     );
 

@@ -81,7 +81,7 @@ impl AtomaConfidentialComputeService {
             shutdown_signal,
         })
     }
-    
+
     /// Initializes and starts the confidential compute service.
     ///
     /// This method performs the following steps:
