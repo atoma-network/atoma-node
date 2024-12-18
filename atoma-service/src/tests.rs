@@ -258,15 +258,16 @@ mod middleware {
             "./keystore".to_string(),
             "./".to_string(),
         );
+        let sui_client = Arc::new(RwLock::new(
+            AtomaSuiClient::new(client_config)
+                .await
+                .expect("Failed to create Sui client"),
+        ));
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
             let confidential_compute_service = AtomaConfidentialComputeService::new(
-                Arc::new(RwLock::new(
-                    AtomaSuiClient::new(client_config)
-                        .await
-                        .expect("Failed to create Sui client"),
-                )),
+                sui_client,
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,

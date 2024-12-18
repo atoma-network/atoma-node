@@ -79,8 +79,9 @@ impl AtomaSuiClient {
             config.request_timeout(),
             config.max_concurrent_requests(),
         )?;
+        let client = wallet_ctx.get_client().await?;
         let node_badge = utils::get_node_badge(
-            &wallet_ctx.get_client().await?,
+            &client,
             config.atoma_package_id(),
             wallet_ctx.active_address()?,
         )
