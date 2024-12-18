@@ -11,6 +11,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     minimum_reputation_score BIGINT
 );
 
+-- Create nodes table
+CREATE TABLE IF NOT EXISTS nodes (
+    node_small_id          BIGINT  PRIMARY KEY,
+    node_id                TEXT    NOT NULL,
+    node_sui_address        TEXT    NOT NULL
+);
+
 -- Create node_subscriptions table
 CREATE TABLE IF NOT EXISTS node_subscriptions (
     task_small_id          BIGINT  NOT NULL,

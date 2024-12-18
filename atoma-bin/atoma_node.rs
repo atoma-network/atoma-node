@@ -3,11 +3,8 @@ use std::{path::Path, str::FromStr, sync::Arc};
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
-use atoma_service::{
-    config::AtomaServiceConfig,
-    proxy::{config::ProxyConfig, register_on_proxy},
-    server::AppState,
-};
+use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
+use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -64,25 +61,27 @@ struct Config {
     /// Configuration for the Sui component.
     sui: AtomaSuiConfig,
 
+    /// Configuration for the p2p component.
+    p2p: AtomaP2pNodeConfig,
+
     /// Configuration for the service component.
     service: AtomaServiceConfig,
 
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
 
+    /// Configuration for the daemon component.
     daemon: AtomaDaemonConfig,
-
-    proxy: ProxyConfig,
 }
 
 impl Config {
     async fn load(path: &str) -> Self {
         Self {
             sui: AtomaSuiConfig::from_file_path(path),
+            p2p: AtomaP2pNodeConfig::from_file_path(path),
             service: AtomaServiceConfig::from_file_path(path),
             state: AtomaStateManagerConfig::from_file_path(path),
             daemon: AtomaDaemonConfig::from_file_path(path),
-            proxy: ProxyConfig::from_file_path(path),
         }
     }
 }
@@ -172,7 +171,7 @@ async fn main() -> Result<()> {
     let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
-
+    let (p2p_event_sender, p2p_event_receiver) = flume::unbounded();
     info!(
         target = "atoma-node-service",
         event = "keystore_path",
@@ -182,6 +181,21 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
+
+    info!(
+        target = "atoma-node-service",
+        event = "p2p_node_spawn",
+        "Spawning Atoma's p2p node service"
+    );
+    let p2p_node_service_shutdown_receiver = shutdown_receiver.clone();
+    let p2p_node_service_handle = spawn_with_shutdown(
+        async move {
+            let p2p_node =
+                AtomaP2pNode::start(config.p2p, Arc::new(keystore), p2p_event_sender, false)?;
+            p2p_node.run(p2p_node_service_shutdown_receiver).await
+        },
+        shutdown_sender.clone(),
+    );
 
     info!(
         target = "atoma-node-service",
@@ -197,6 +211,7 @@ async fn main() -> Result<()> {
                 &database_url,
                 event_subscriber_receiver,
                 state_manager_receiver,
+                p2p_event_receiver,
             )
             .await?;
             state_manager.run(state_manager_shutdown_receiver).await
@@ -220,10 +235,6 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
-
-    for (_, node_small_id) in config.daemon.node_badges.iter() {
-        register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
-    }
 
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
@@ -250,7 +261,7 @@ async fn main() -> Result<()> {
     );
 
     let subscriber = SuiEventSubscriber::new(
-        config.sui,
+        config.sui.clone(),
         event_subscriber_sender,
         stack_retrieve_receiver,
         subscriber_confidential_compute_sender,
@@ -287,6 +298,9 @@ async fn main() -> Result<()> {
         .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
+
+    let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
+        .context("Failed to initialize keystore")?;
 
     let app_state = AppState {
         state_manager_sender,
@@ -377,11 +391,19 @@ async fn main() -> Result<()> {
     });
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result, daemon_result, _) = try_join!(
+    let (
+        subscriber_result,
+        state_manager_result,
+        server_result,
+        daemon_result,
+        p2p_node_service_result,
+        _,
+    ) = try_join!(
         subscriber_handle,
         state_manager_handle,
         service_handle,
         daemon_handle,
+        p2p_node_service_handle,
         ctrl_c
     )?;
     handle_tasks_results(
@@ -389,6 +411,7 @@ async fn main() -> Result<()> {
         state_manager_result,
         server_result,
         daemon_result,
+        p2p_node_service_result,
     )?;
 
     info!(
@@ -486,6 +509,7 @@ fn handle_tasks_results(
     state_manager_result: Result<()>,
     server_result: Result<()>,
     daemon_result: Result<()>,
+    p2p_node_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -503,5 +527,9 @@ fn handle_tasks_results(
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
     result_handler(daemon_result, "Daemon terminated abruptly")?;
+    result_handler(
+        p2p_node_service_result,
+        "P2P node service terminated abruptly",
+    )?;
     Ok(())
 }
