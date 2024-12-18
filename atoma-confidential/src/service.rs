@@ -82,6 +82,54 @@ impl AtomaConfidentialComputeService {
         })
     }
 
+    /// Initializes and starts the confidential compute service.
+    ///
+    /// This method performs the following steps:
+    /// 1. Creates a new service instance
+    /// 2. Submits an initial node key rotation attestation
+    /// 3. Starts the main service event loop
+    ///
+    /// # Arguments
+    /// * `sui_client` - Arc-wrapped RwLock containing the Sui blockchain client
+    /// * `event_receiver` - Channel receiver for Atoma events
+    /// * `service_decryption_receiver` - Channel receiver for decryption requests
+    /// * `service_encryption_receiver` - Channel receiver for encryption requests
+    /// * `service_shared_secret_receiver` - Channel receiver for shared secret computation requests
+    /// * `shutdown_signal` - Watch channel receiver for coordinating service shutdown
+    ///
+    /// # Returns
+    /// * `Ok(())` if the service starts and runs successfully
+    /// * `Err(AtomaConfidentialComputeError)` if initialization, attestation, or running fails
+    ///
+    /// # Errors
+    /// This function can return:
+    /// * `AtomaConfidentialComputeError::KeyManagementError` if key initialization fails
+    /// * `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
+    #[instrument(level = "info", skip_all)]
+    pub async fn start_confidential_compute_service(
+        sui_client: Arc<RwLock<AtomaSuiClient>>,
+        event_receiver: UnboundedReceiver<AtomaEvent>,
+        service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
+        service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
+        service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
+        shutdown_signal: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<()> {
+        let mut service = Self::new(
+            sui_client,
+            event_receiver,
+            service_decryption_receiver,
+            service_encryption_receiver,
+            service_shared_secret_receiver,
+            shutdown_signal,
+        )?;
+
+        // NOTE: Submit the first node key rotation attestation, because the node is starting up afresh
+        service.submit_node_key_rotation_tdx_attestation().await?;
+        service.run().await?;
+
+        Ok(())
+    }
+
     /// Returns the current public key used by the confidential compute service
     ///
     /// This method provides access to the X25519 public key that is currently being used
@@ -136,6 +184,7 @@ impl AtomaConfidentialComputeService {
             "Running confidential compute service, with dh public key: {:?}",
             self.key_manager.get_public_key().as_bytes()
         );
+
         loop {
             tokio::select! {
                 Some((decryption_request, sender)) = self.service_decryption_receiver.recv() => {
@@ -195,7 +244,7 @@ impl AtomaConfidentialComputeService {
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
-        self.key_manager.rotate_keys()?;
+        self.key_manager.rotate_keys();
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
         #[cfg(feature = "tdx")]
