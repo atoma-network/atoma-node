@@ -1113,8 +1113,9 @@ impl AtomaSuiClient {
         let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
         let digest = response.digest.to_string();
         let events = response.events;
-        if let Some(events) = events {
-            for event in events.data {
+        if let Some(tx_block_events) = events {
+            let event_data = tx_block_events.data;
+            if let Some(event) = event_data.into_iter().next() {
                 let node_key_rotation_event: NodePublicKeyCommittmentEvent =
                     serde_json::from_value(event.parsed_json)?;
                 let key_rotation_counter = node_key_rotation_event.key_rotation_counter;

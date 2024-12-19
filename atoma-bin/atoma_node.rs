@@ -1,6 +1,7 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
+#[cfg(feature = "tdx")]
 use atoma_confidential::AtomaConfidentialComputeService;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
 use atoma_service::{
@@ -204,11 +205,11 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
+    let (subscriber_confidential_compute_sender, _subscriber_confidential_compute_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_decryption_sender, app_state_decryption_receiver) =
+    let (app_state_decryption_sender, _app_state_decryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_encryption_sender, app_state_encryption_receiver) =
+    let (app_state_encryption_sender, _app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     info!(
@@ -225,16 +226,17 @@ async fn main() -> Result<()> {
         register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
     }
 
-    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
+    let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
+    #[cfg(feature = "tdx")]
     spawn_with_shutdown(
         AtomaConfidentialComputeService::start_confidential_compute_service(
             client.clone(),
-            subscriber_confidential_compute_receiver,
-            app_state_decryption_receiver,
-            app_state_encryption_receiver,
-            compute_shared_secret_receiver,
+            _subscriber_confidential_compute_receiver,
+            _app_state_decryption_receiver,
+            _app_state_encryption_receiver,
+            _compute_shared_secret_receiver,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
