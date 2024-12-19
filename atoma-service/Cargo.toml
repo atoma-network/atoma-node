@@ -55,3 +55,6 @@ rand = { workspace = true }
 serial_test = { workspace = true }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 tempfile = { workspace = true }
+
+[features]
+tdx = ["atoma-confidential/tdx"]

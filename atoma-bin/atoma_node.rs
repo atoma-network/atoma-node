@@ -70,8 +70,10 @@ struct Config {
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
 
+    /// Configuration for the daemon component.
     daemon: AtomaDaemonConfig,
 
+    /// Configuration for the proxy component.
     proxy: ProxyConfig,
 }
 
@@ -204,11 +206,11 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
+    let (subscriber_confidential_compute_sender, _subscriber_confidential_compute_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_decryption_sender, app_state_decryption_receiver) =
+    let (app_state_decryption_sender, _app_state_decryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_encryption_sender, app_state_encryption_receiver) =
+    let (app_state_encryption_sender, _app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     info!(
@@ -225,16 +227,16 @@ async fn main() -> Result<()> {
         register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
     }
 
-    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
+    let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    spawn_with_shutdown(
+    let confidential_compute_service_handle = spawn_with_shutdown(
         AtomaConfidentialComputeService::start_confidential_compute_service(
             client.clone(),
-            subscriber_confidential_compute_receiver,
-            app_state_decryption_receiver,
-            app_state_encryption_receiver,
-            compute_shared_secret_receiver,
+            _subscriber_confidential_compute_receiver,
+            _app_state_decryption_receiver,
+            _app_state_encryption_receiver,
+            _compute_shared_secret_receiver,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
@@ -377,11 +379,19 @@ async fn main() -> Result<()> {
     });
 
     // Wait for shutdown signal and handle cleanup
-    let (subscriber_result, state_manager_result, server_result, daemon_result, _) = try_join!(
+    let (
+        subscriber_result,
+        state_manager_result,
+        server_result,
+        daemon_result,
+        confidential_compute_service_result,
+        _,
+    ) = try_join!(
         subscriber_handle,
         state_manager_handle,
         service_handle,
         daemon_handle,
+        confidential_compute_service_handle,
         ctrl_c
     )?;
     handle_tasks_results(
@@ -389,6 +399,7 @@ async fn main() -> Result<()> {
         state_manager_result,
         server_result,
         daemon_result,
+        confidential_compute_service_result,
     )?;
 
     info!(
@@ -486,6 +497,7 @@ fn handle_tasks_results(
     state_manager_result: Result<()>,
     server_result: Result<()>,
     daemon_result: Result<()>,
+    confidential_compute_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -503,5 +515,9 @@ fn handle_tasks_results(
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
     result_handler(daemon_result, "Daemon terminated abruptly")?;
+    result_handler(
+        confidential_compute_service_result,
+        "Confidential compute service terminated abruptly",
+    )?;
     Ok(())
 }

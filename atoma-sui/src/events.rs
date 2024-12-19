@@ -826,6 +826,10 @@ pub struct NodePublicKeyCommittmentEvent {
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
 
+    /// The counter for the number of times the contract has requested nodes rotating their public keys.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub key_rotation_counter: u64,
+
     /// The small ID of the node that requested the key rotation.
     pub node_id: NodeSmallId,
 
@@ -843,6 +847,10 @@ pub struct NewKeyRotationEvent {
     /// The epoch number when the node key rotation was requested.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
+
+    /// The counter for the number of times the contract has requested nodes rotating their public keys.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub key_rotation_counter: u64,
 }
 
 /// Represents an identifier for an echelon (performance tier) in the Atoma network.

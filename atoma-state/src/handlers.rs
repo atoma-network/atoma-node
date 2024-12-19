@@ -744,6 +744,7 @@ async fn handle_node_key_rotation_event(
     );
     let NodePublicKeyCommittmentEvent {
         epoch,
+        key_rotation_counter,
         node_id,
         new_public_key,
         tee_remote_attestation_bytes,
@@ -752,6 +753,7 @@ async fn handle_node_key_rotation_event(
         .state
         .insert_node_public_key_rotation(
             epoch,
+            key_rotation_counter,
             node_id.inner,
             new_public_key,
             tee_remote_attestation_bytes,

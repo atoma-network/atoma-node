@@ -45,7 +45,9 @@ type ServiceSharedSecretRequest = (
 /// - Graceful shutdown handling
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
-    sui_client: Arc<RwLock<AtomaSuiClient>>,
+    _sui_client: Arc<RwLock<AtomaSuiClient>>,
+    /// Current key rotation counter
+    key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
     key_manager: X25519KeyPairManager,
     /// Channel receiver for incoming Atoma events that need to be processed
@@ -63,7 +65,7 @@ pub struct AtomaConfidentialComputeService {
 impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
-        sui_client: Arc<RwLock<AtomaSuiClient>>,
+        _sui_client: Arc<RwLock<AtomaSuiClient>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -72,7 +74,8 @@ impl AtomaConfidentialComputeService {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
-            sui_client,
+            _sui_client,
+            key_rotation_counter: None,
             key_manager,
             event_receiver,
             service_decryption_receiver,
@@ -245,47 +248,48 @@ impl AtomaConfidentialComputeService {
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
         self.key_manager.rotate_keys();
-        let public_key = self.key_manager.get_public_key();
-        let public_key_bytes = public_key.to_bytes();
         #[cfg(feature = "tdx")]
-        let tdx_quote_bytes = {
-            let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
-            tdx_quote.to_bytes()
-        };
-        #[cfg(not(feature = "tdx"))]
-        let tdx_quote_bytes = {
-            const TDX_QUOTE_V4_SIZE: usize = 512;
-            vec![0u8; TDX_QUOTE_V4_SIZE]
-        };
-        match self
-            .sui_client
-            .write()
-            .await
-            .submit_key_rotation_remote_attestation(
-                public_key_bytes,
-                tdx_quote_bytes,
-                None,
-                None,
-                None,
-            )
-            .await
         {
-            Ok(digest) => {
-                tracing::info!(
-                    target = "atoma-tdx-service",
-                    digest = digest,
-                    "Submitted node key rotation attestation successfully"
-                );
-                Ok(())
+            let public_key = self.key_manager.get_public_key();
+            let public_key_bytes = public_key.to_bytes();
+            let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
+            let tdx_quote_bytes = tdx_quote.to_bytes();
+            match self
+                .sui_client
+                .write()
+                .await
+                .submit_key_rotation_remote_attestation(
+                    public_key_bytes,
+                    tdx_quote_bytes,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+            {
+                Ok((digest, key_rotation_counter)) => {
+                    tracing::info!(
+                        target = "atoma-tdx-service",
+                        digest = digest,
+                        key_rotation_counter = key_rotation_counter,
+                        "Submitted node key rotation attestation successfully"
+                    );
+                    self.key_rotation_counter = Some(key_rotation_counter);
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::error!(
+                        target = "atoma-tdx-service",
+                        error = %e,
+                        "Failed to submit node key rotation attestation"
+                    );
+                    Err(AtomaConfidentialComputeError::SuiClientError(e))
+                }
             }
-            Err(e) => {
-                tracing::error!(
-                    target = "atoma-tdx-service",
-                    error = %e,
-                    "Failed to submit node key rotation attestation"
-                );
-                Err(AtomaConfidentialComputeError::SuiClientError(e))
-            }
+        }
+        #[cfg(not(feature = "tdx"))]
+        {
+            Ok(())
         }
     }
 
@@ -495,13 +499,25 @@ impl AtomaConfidentialComputeService {
     )]
     async fn handle_atoma_event(&mut self, event: AtomaEvent) -> Result<()> {
         match event {
-            AtomaEvent::NewKeyRotationEvent(_event) => {
+            AtomaEvent::NewKeyRotationEvent(event) => {
                 tracing::trace!(
                     target = "atoma-tdx-service",
                     event = "new_key_rotation_event",
                     "New key rotation event received from event receiver"
                 );
-                self.submit_node_key_rotation_tdx_attestation().await?
+                // NOTE: Make sure to submit a node key rotation to the Atoma contract
+                // if and only if the current key rotation counter is `None` (in which
+                // case your node has not submitted a valid public key for encryption yet)
+                // or if the current key rotation counter is less than the received key rotation
+                // counter (in which case your node has submitted a public key for encryption
+                // for a previous key rotation counter and not for the current one).
+                if self
+                    .key_rotation_counter
+                    .map(|counter| counter < event.key_rotation_counter)
+                    .unwrap_or(true)
+                {
+                    self.submit_node_key_rotation_tdx_attestation().await?;
+                }
             }
             _ => {
                 tracing::warn!(

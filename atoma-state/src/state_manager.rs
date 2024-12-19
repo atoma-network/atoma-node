@@ -756,19 +756,22 @@ impl AtomaState {
     pub async fn insert_node_public_key_rotation(
         &self,
         epoch: u64,
+        key_rotation_counter: u64,
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_key_rotations (epoch, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4)
+            "INSERT INTO node_public_key_rotations (epoch, key_rotation_counter, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (node_small_id) 
                     DO UPDATE SET 
-                        epoch = $1, 
-                        public_key_bytes = $3, 
-                        tdx_quote_bytes = $4",
+                        epoch = $1,
+                        key_rotation_counter = $2,
+                        public_key_bytes = $4, 
+                        tdx_quote_bytes = $5",
         )
         .bind(epoch as i64)
+        .bind(key_rotation_counter as i64)
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
         .bind(tee_remote_attestation_bytes)
