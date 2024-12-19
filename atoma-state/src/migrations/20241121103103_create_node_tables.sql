@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS node_subscriptions (
     task_small_id          BIGINT  NOT NULL,
     node_small_id          BIGINT  NOT NULL,
-    price_per_compute_unit BIGINT  NOT NULL,
+    price_per_one_million_compute_units BIGINT  NOT NULL,
     max_num_compute_units  BIGINT  NOT NULL, 
     valid                  BOOLEAN NOT NULL,
     PRIMARY KEY (task_small_id, node_small_id),

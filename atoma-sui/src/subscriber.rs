@@ -815,7 +815,7 @@ mod tests {
         let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 1 },
             task_small_id: TaskSmallId { inner: 10 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
@@ -828,7 +828,7 @@ mod tests {
         let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 4 },
             task_small_id: TaskSmallId { inner: 40 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
@@ -856,14 +856,14 @@ mod tests {
         let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 1 },
             task_small_id: TaskSmallId { inner: 10 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
         let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 4 },
             task_small_id: TaskSmallId { inner: 40 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
@@ -882,14 +882,14 @@ mod tests {
         let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 4 },
             task_small_id: TaskSmallId { inner: 10 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
         let event_not_matched = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 5 },
             task_small_id: TaskSmallId { inner: 50 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 
@@ -906,7 +906,7 @@ mod tests {
         let event_subscribed = AtomaEvent::NodeSubscribedToTaskEvent(NodeSubscribedToTaskEvent {
             node_small_id: NodeSmallId { inner: 1 },
             task_small_id: TaskSmallId { inner: 10 },
-            price_per_compute_unit: 0,
+            price_per_one_million_compute_units: 0,
             max_num_compute_units: 0,
         });
 

@@ -197,8 +197,7 @@ pub async fn nodes_task_subscribe(
     let NodeTaskSubscriptionRequest {
         task_small_id,
         node_badge_id,
-        price_per_compute_unit,
-        max_num_compute_units,
+        price_per_one_million_compute_units,
         gas,
         gas_budget,
         gas_price,
@@ -210,8 +209,7 @@ pub async fn nodes_task_subscribe(
         .submit_node_task_subscription_tx(
             task_small_id as u64,
             node_badge_id,
-            price_per_compute_unit,
-            max_num_compute_units,
+            price_per_one_million_compute_units,
             gas,
             gas_budget,
             gas_price,
@@ -245,8 +243,7 @@ pub async fn nodes_task_update_subscription(
     let NodeTaskUpdateSubscriptionRequest {
         task_small_id,
         node_badge_id,
-        price_per_compute_unit,
-        max_num_compute_units,
+        price_per_one_million_compute_units,
         gas,
         gas_budget,
         gas_price,
@@ -258,8 +255,7 @@ pub async fn nodes_task_update_subscription(
         .submit_update_node_task_subscription_tx(
             task_small_id as u64,
             node_badge_id,
-            price_per_compute_unit,
-            max_num_compute_units,
+            price_per_one_million_compute_units,
             gas,
             gas_budget,
             gas_price,

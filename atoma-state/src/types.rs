@@ -207,7 +207,7 @@ pub struct NodeSubscription {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
     /// Price per compute unit for the subscription
-    pub price_per_compute_unit: i64,
+    pub price_per_one_million_compute_units: i64,
     /// Maximum number of compute units for the subscription
     pub max_num_compute_units: i64,
     /// Indicates whether the subscription is valid

@@ -317,8 +317,7 @@ impl AtomaSuiClient {
     ///
     /// * `task_small_id` - The small ID of the task to subscribe to
     /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
-    /// * `price_per_compute_unit` - The price per compute unit the node is willing to charge
-    /// * `max_num_compute_units` - Maximum number of compute units the node is willing to provide
+    /// * `price_per_one_million_compute_units` - The price per compute unit the node is willing to charge
     /// * `gas` - Optional ObjectID to use as gas for the transaction
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
     /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
@@ -340,7 +339,6 @@ impl AtomaSuiClient {
     ///     123,                    // task_small_id
     ///     None,                   // use stored node_small_id
     ///     1000,                   // price per compute unit
-    ///     5000,                   // max compute units
     ///     None,                   // default gas
     ///     None,                   // default gas budget
     ///     None                    // default gas price
@@ -352,7 +350,6 @@ impl AtomaSuiClient {
     ///     123,                    // task_small_id
     ///     Some(456),              // specific node_small_id
     ///     1000,                   // price per compute unit
-    ///     5000,                   // max compute units
     ///     Some(gas_object),       // specific gas object
     ///     Some(10_000_000),       // 0.01 SUI gas budget
     ///     Some(1000)              // specific gas price
@@ -362,16 +359,14 @@ impl AtomaSuiClient {
     /// ```
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
-        price_per_compute_unit = %price_per_compute_unit,
-        max_num_compute_units = %max_num_compute_units,
+        price_per_one_million_compute_units = %price_per_one_million_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_node_task_subscription_tx(
         &mut self,
         task_small_id: u64,
         node_badge_id: Option<ObjectID>,
-        price_per_compute_unit: u64,
-        max_num_compute_units: u64,
+        price_per_one_million_compute_units: u64,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -396,8 +391,7 @@ impl AtomaSuiClient {
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
-                    SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
-                    SuiJsonValue::new(max_num_compute_units.to_string().into())?,
+                    SuiJsonValue::new(price_per_one_million_compute_units.to_string().into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -425,15 +419,18 @@ impl AtomaSuiClient {
     ///
     /// * `task_small_id` - The small ID of the task to update the subscription for
     /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
-    /// * `price_per_compute_unit` - The new price per compute unit for the task subscription
-    /// * `max_num_compute_units` - The new maximum number of compute units for the task subscription
+    /// * `price_per_one_million_compute_units` - The new price per compute unit for the task subscription
     /// * `gas` - Optional ObjectID to use as gas for the transaction
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
     /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` if the update is successful, or an error if:
+    /// Returns `Result<String>` where the String is the transaction digest if successful.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
     /// - The wallet context operations fail
     /// - The transaction submission fails
     /// - No node badge is found when one is not explicitly provided
@@ -443,11 +440,35 @@ impl AtomaSuiClient {
     /// ```rust,ignore
     /// # use sui_sdk::types::base_types::ObjectID;
     /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
+    ///     // Update task subscription with default gas settings
+    ///     let tx_digest = client.submit_update_node_task_subscription_tx(
+    ///         123,                    // task_small_id
+    ///         None,                   // use stored node_badge_id
+    ///         1000,                   // new price per compute unit
+    ///         None,                   // default gas
+    ///         None,                   // default gas budget
+    ///         None                    // default gas price
+    ///     ).await?;
+    ///     
+    ///     // Or with custom gas settings and specific node badge ID
+    ///     let gas_object = ObjectID::new([1; 32]);
+    ///     let node_badge = ObjectID::new([2; 32]);
+    ///     let tx_digest = client.submit_update_node_task_subscription_tx(
+    ///         123,                    // task_small_id
+    ///         Some(node_badge),       // specific node_badge_id
+    ///         1000,                   // new price per compute unit
+    ///         Some(gas_object),       // specific gas object
+    ///         Some(10_000_000),       // 0.01 SUI gas budget
+    ///         Some(1000)              // specific gas price
+    ///     ).await?;
+    ///     
+    ///     println!("Task subscription updated: {}", tx_digest);
+    ///     Ok(())
+    /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
-        price_per_compute_unit = %price_per_compute_unit,
-        max_num_compute_units = %max_num_compute_units,
+        price_per_one_million_compute_units = %price_per_one_million_compute_units,
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -455,8 +476,7 @@ impl AtomaSuiClient {
         &mut self,
         task_small_id: u64,
         node_badge_id: Option<ObjectID>,
-        price_per_compute_unit: u64,
-        max_num_compute_units: u64,
+        price_per_one_million_compute_units: u64,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -481,8 +501,7 @@ impl AtomaSuiClient {
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
-                    SuiJsonValue::new(price_per_compute_unit.to_string().into())?,
-                    SuiJsonValue::new(max_num_compute_units.to_string().into())?,
+                    SuiJsonValue::new(price_per_one_million_compute_units.to_string().into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
