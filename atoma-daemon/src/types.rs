@@ -98,10 +98,7 @@ pub struct NodeTaskSubscriptionRequest {
     pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
-    pub price_per_compute_unit: u64,
-
-    /// The maximum number of compute units.
-    pub max_num_compute_units: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.
@@ -143,10 +140,7 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     pub node_badge_id: Option<ObjectID>,
 
     /// The price per compute unit.
-    pub price_per_compute_unit: u64,
-
-    /// The maximum number of compute units.
-    pub max_num_compute_units: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// Optional gas object ID.
     /// If not provided, the default is `None`.

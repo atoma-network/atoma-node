@@ -598,7 +598,7 @@ components:
       required:
       - node_small_id
       - task_small_id
-      - price_per_compute_unit
+      - price_per_one_million_compute_units
       - max_num_compute_units
       - valid
       properties:
@@ -610,7 +610,7 @@ components:
           type: integer
           format: int64
           description: Unique small integer identifier for the node subscription
-        price_per_compute_unit:
+        price_per_one_million_compute_units:
           type: integer
           format: int64
           description: Price per compute unit for the subscription
@@ -630,7 +630,7 @@ components:
         to a node task, including optional gas-related fields.
       required:
       - task_small_id
-      - price_per_compute_unit
+      - price_per_one_million_compute_units
       - max_num_compute_units
       properties:
         gas:
@@ -666,7 +666,7 @@ components:
           description: |-
             Optional node badge ID.
             If not provided, the default is `None`.
-        price_per_compute_unit:
+        price_per_one_million_compute_units:
           type: integer
           format: int64
           description: The price per compute unit.
@@ -751,7 +751,7 @@ components:
       type: object
       required:
       - task_small_id
-      - price_per_compute_unit
+      - price_per_one_million_compute_units
       - max_num_compute_units
       properties:
         gas:
@@ -787,7 +787,7 @@ components:
           description: |-
             Optional node badge ID.
             If not provided, the default is `None`.
-        price_per_compute_unit:
+        price_per_one_million_compute_units:
           type: integer
           format: int64
           description: The price per compute unit.

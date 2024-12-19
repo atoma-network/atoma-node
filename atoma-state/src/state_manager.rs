@@ -512,7 +512,7 @@ impl AtomaState {
     ///
     /// * `node_small_id` - The unique identifier of the node to be subscribed.
     /// * `task_small_id` - The unique identifier of the task to which the node is subscribing.
-    /// * `price_per_compute_unit` - The price per compute unit for the subscription.
+    /// * `price_per_one_million_compute_units` - The price per compute unit for the subscription.
     ///
     /// # Returns
     ///
@@ -529,8 +529,8 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn subscribe_node_to_task(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), AtomaStateManagerError> {
-    ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
+    /// async fn subscribe_node_to_task(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64, price_per_one_million_compute_units: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_one_million_compute_units).await
     /// }
     /// ```
     #[tracing::instrument(
@@ -539,7 +539,7 @@ impl AtomaState {
         fields(
             node_small_id = %node_small_id,
             task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
+            price_per_one_million_compute_units = %price_per_one_million_compute_units,
             max_num_compute_units = %max_num_compute_units
         )
     )]
@@ -547,18 +547,18 @@ impl AtomaState {
         &self,
         node_small_id: i64,
         task_small_id: i64,
-        price_per_compute_unit: i64,
+        price_per_one_million_compute_units: i64,
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_subscriptions 
-                (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
+                (node_small_id, task_small_id, price_per_one_million_compute_units, max_num_compute_units, valid) 
                 VALUES ($1, $2, $3, $4, TRUE)
                 ON CONFLICT (task_small_id, node_small_id) DO NOTHING",
         )
             .bind(node_small_id)
             .bind(task_small_id)
-            .bind(price_per_compute_unit)
+            .bind(price_per_one_million_compute_units)
             .bind(max_num_compute_units)
             .execute(&self.db)
             .await?;
@@ -622,7 +622,7 @@ impl AtomaState {
     ///
     /// * `node_small_id` - The unique identifier of the subscribed node.
     /// * `task_small_id` - The unique identifier of the task to which the node is subscribed.
-    /// * `price_per_compute_unit` - The new price per compute unit for the subscription.
+    /// * `price_per_one_million_compute_units` - The new price per compute unit for the subscription.
     /// * `max_num_compute_units` - The new maximum number of compute units for the subscription.
     ///
     /// # Returns
@@ -650,7 +650,7 @@ impl AtomaState {
         fields(
             node_small_id = %node_small_id,
             task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
+            price_per_one_million_compute_units = %price_per_one_million_compute_units,
             max_num_compute_units = %max_num_compute_units
         )
     )]
@@ -658,13 +658,13 @@ impl AtomaState {
         &self,
         node_small_id: i64,
         task_small_id: i64,
-        price_per_compute_unit: i64,
+        price_per_one_million_compute_units: i64,
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE node_subscriptions SET price_per_compute_unit = $1, max_num_compute_units = $2 WHERE node_small_id = $3 AND task_small_id = $4",
+            "UPDATE node_subscriptions SET price_per_one_million_compute_units = $1, max_num_compute_units = $2 WHERE node_small_id = $3 AND task_small_id = $4",
         )
-            .bind(price_per_compute_unit)
+            .bind(price_per_one_million_compute_units)
             .bind(max_num_compute_units)
             .bind(node_small_id)
             .bind(task_small_id)
@@ -2325,7 +2325,7 @@ mod tests {
             .get_node_subscription_by_task_small_id(1)
             .await
             .unwrap();
-        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.price_per_one_million_compute_units, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
 
         // Update the subscription
@@ -2340,7 +2340,7 @@ mod tests {
             .get_node_subscription_by_task_small_id(1)
             .await
             .unwrap();
-        assert_eq!(subscription.price_per_compute_unit, 200);
+        assert_eq!(subscription.price_per_one_million_compute_units, 200);
         assert_eq!(subscription.max_num_compute_units, 2000);
 
         truncate_tables(&state_manager.db).await;
@@ -3091,13 +3091,13 @@ mod tests {
         assert_eq!(result.len(), 3);
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+            .any(|s| s.node_small_id == 1 && s.price_per_one_million_compute_units == 100));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 2 && s.price_per_compute_unit == 200));
+            .any(|s| s.node_small_id == 2 && s.price_per_one_million_compute_units == 200));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+            .any(|s| s.node_small_id == 3 && s.price_per_one_million_compute_units == 300));
 
         // Test 2: Get subscriptions for subset of nodes
         let subset_node_ids = vec![1, 3];
@@ -3108,10 +3108,10 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+            .any(|s| s.node_small_id == 1 && s.price_per_one_million_compute_units == 100));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+            .any(|s| s.node_small_id == 3 && s.price_per_one_million_compute_units == 300));
         assert!(!result.iter().any(|s| s.node_small_id == 2));
 
         // Test 3: Get subscriptions for non-existent nodes
@@ -3140,7 +3140,7 @@ mod tests {
         let subscription = &result[0];
         assert_eq!(subscription.node_small_id, 1);
         assert_eq!(subscription.task_small_id, 1);
-        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.price_per_one_million_compute_units, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
         assert!(subscription.valid);
 

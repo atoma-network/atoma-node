@@ -266,7 +266,7 @@ pub struct NodeSubscribedToTaskEvent {
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price_per_compute_unit: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
@@ -292,7 +292,7 @@ pub struct NodeSubscriptionUpdatedEvent {
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price_per_compute_unit: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
@@ -1013,13 +1013,13 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": "3"},
             "node_small_id": {"inner": "4"},
-            "price_per_compute_unit": "100",
+            "price_per_one_million_compute_units": "100",
             "max_num_compute_units": "1000"
         });
         let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
-        assert_eq!(event.price_per_compute_unit, 100);
+        assert_eq!(event.price_per_one_million_compute_units, 100);
         assert_eq!(event.max_num_compute_units, 1000);
     }
 
@@ -1028,13 +1028,13 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": "3"},
             "node_small_id": {"inner": "4"},
-            "price_per_compute_unit": "150",
+            "price_per_one_million_compute_units": "150",
             "max_num_compute_units": "1500"
         });
         let event: NodeSubscriptionUpdatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
-        assert_eq!(event.price_per_compute_unit, 150);
+        assert_eq!(event.price_per_one_million_compute_units, 150);
         assert_eq!(event.max_num_compute_units, 1500);
     }
 
