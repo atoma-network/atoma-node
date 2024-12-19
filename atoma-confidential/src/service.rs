@@ -255,6 +255,7 @@ impl AtomaConfidentialComputeService {
             let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
             tdx_quote.to_bytes()
         };
+        // NOTE: This is to make it easier to compile the code without TDX support and debug
         #[cfg(not(feature = "tdx"))]
         let tdx_quote_bytes = {
             const TDX_QUOTE_V4_SIZE: usize = 512;
