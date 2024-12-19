@@ -46,6 +46,8 @@ type ServiceSharedSecretRequest = (
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
     sui_client: Arc<RwLock<AtomaSuiClient>>,
+    /// Current key rotation counter
+    key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
     key_manager: X25519KeyPairManager,
     /// Channel receiver for incoming Atoma events that need to be processed
@@ -73,6 +75,7 @@ impl AtomaConfidentialComputeService {
         let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
             sui_client,
+            key_rotation_counter: None,
             key_manager,
             event_receiver,
             service_decryption_receiver,
@@ -270,12 +273,14 @@ impl AtomaConfidentialComputeService {
             )
             .await
         {
-            Ok(digest) => {
+            Ok((digest, key_rotation_counter)) => {
                 tracing::info!(
                     target = "atoma-tdx-service",
                     digest = digest,
+                    key_rotation_counter = key_rotation_counter,
                     "Submitted node key rotation attestation successfully"
                 );
+                self.key_rotation_counter = Some(key_rotation_counter);
                 Ok(())
             }
             Err(e) => {
@@ -495,13 +500,25 @@ impl AtomaConfidentialComputeService {
     )]
     async fn handle_atoma_event(&mut self, event: AtomaEvent) -> Result<()> {
         match event {
-            AtomaEvent::NewKeyRotationEvent(_event) => {
+            AtomaEvent::NewKeyRotationEvent(event) => {
                 tracing::trace!(
                     target = "atoma-tdx-service",
                     event = "new_key_rotation_event",
                     "New key rotation event received from event receiver"
                 );
-                self.submit_node_key_rotation_tdx_attestation().await?
+                // NOTE: Make sure to submit a node key rotation to the Atoma contract
+                // if and only if the current key rotation counter is `None` (in which
+                // case your node has not submitted a valid public key for encryption yet)
+                // or if the current key rotation counter is less than the received key rotation
+                // counter (in which case your node has submitted a public key for encryption
+                // for a previous key rotation counter and not for the current one).
+                if self
+                    .key_rotation_counter
+                    .map(|counter| counter < event.key_rotation_counter)
+                    .unwrap_or(true)
+                {
+                    self.submit_node_key_rotation_tdx_attestation().await?;
+                }
             }
             _ => {
                 tracing::warn!(

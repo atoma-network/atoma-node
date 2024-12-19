@@ -1,4 +1,3 @@
-use serde_json::json;
 use std::path::Path;
 use sui_sdk::{
     json::SuiJsonValue, rpc_types::SuiData, types::base_types::ObjectID,
@@ -7,7 +6,7 @@ use sui_sdk::{
 use thiserror::Error;
 use tracing::{error, info, instrument};
 
-use crate::config::AtomaSuiConfig;
+use crate::{config::AtomaSuiConfig, events::NodePublicKeyCommittmentEvent};
 
 type Result<T> = std::result::Result<T, AtomaSuiClientError>;
 
@@ -179,8 +178,6 @@ impl AtomaSuiClient {
                 vec![
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(toma_wallet_address),
-                    SuiJsonValue::new(json!([])).unwrap(),
-                    SuiJsonValue::new(json!([])).unwrap(),
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -1081,7 +1078,7 @@ impl AtomaSuiClient {
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
-    ) -> Result<String> {
+    ) -> Result<(String, u64)> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = self
@@ -1114,8 +1111,17 @@ impl AtomaSuiClient {
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
         let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
-
-        Ok(response.digest.to_string())
+        let digest = response.digest.to_string();
+        let events = response.events;
+        if let Some(events) = events {
+            for event in events.data {
+                let node_key_rotation_event: NodePublicKeyCommittmentEvent =
+                    serde_json::from_value(event.parsed_json)?;
+                let key_rotation_counter = node_key_rotation_event.key_rotation_counter;
+                return Ok((digest, key_rotation_counter));
+            }
+        }
+        Err(AtomaSuiClientError::FailedToFindNewKeyRotationEvent)
     }
 
     /// Get or load the TOMA wallet object ID
@@ -1179,6 +1185,10 @@ pub enum AtomaSuiClientError {
     NoTomaWalletFound,
     #[error("No TOMA tokens found")]
     NoTomaTokensFound,
+    #[error("Failed to find new key rotation event")]
+    FailedToFindNewKeyRotationEvent,
+    #[error("Failed to parse event")]
+    FailedToParseEvent(#[from] serde_json::Error),
 }
 
 pub(crate) mod utils {
