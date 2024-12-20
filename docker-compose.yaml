@@ -131,7 +131,7 @@ services:
     ports:
       - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
     ipc: host
-    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+    command: ${VLLM_ENGINE_ARGS}
 
   vllm-cpu:
     <<: *inference-service-cpu
