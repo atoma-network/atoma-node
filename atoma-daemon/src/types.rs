@@ -97,7 +97,7 @@ pub struct NodeTaskSubscriptionRequest {
     #[schema(value_type = String)]
     pub node_badge_id: Option<ObjectID>,
 
-    /// The price per compute unit.
+    /// The price per one million compute units.
     pub price_per_one_million_compute_units: u64,
 
     /// Optional gas object ID.
@@ -139,7 +139,7 @@ pub struct NodeTaskUpdateSubscriptionRequest {
     #[schema(value_type = String)]
     pub node_badge_id: Option<ObjectID>,
 
-    /// The price per compute unit.
+    /// The price per one million compute units.
     pub price_per_one_million_compute_units: u64,
 
     /// Optional gas object ID.

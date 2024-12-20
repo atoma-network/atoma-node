@@ -213,6 +213,17 @@ async fn main() -> Result<()> {
     let (app_state_encryption_sender, _app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
+    for (_, node_small_id) in config.daemon.node_badges.iter() {
+        if let Err(e) = register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await {
+            error!(
+                target = "atoma-node-service",
+                event = "register_on_proxy_error",
+                error = ?e,
+                "Failed to register on proxy server"
+            );
+        }
+    }
+
     info!(
         target = "atoma-node-service",
         event = "confidential_compute_service_spawn",
@@ -222,10 +233,6 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
-
-    for (_, node_small_id) in config.daemon.node_badges.iter() {
-        register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
-    }
 
     let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
