@@ -1,4 +1,8 @@
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
@@ -16,7 +20,7 @@ use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
-use sui_sdk::types::base_types::ObjectID;
+use sui_sdk::{types::base_types::ObjectID, wallet_context::WalletContext};
 use tokenizers::Tokenizer;
 use tokio::{
     net::TcpListener,
@@ -47,8 +51,8 @@ const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 #[derive(Parser)]
 struct Args {
     /// Index of the address to use from the keystore
-    #[arg(short, long, default_value_t = 0)]
-    address_index: usize,
+    #[arg(short, long)]
+    address_index: Option<usize>,
 
     /// Path to the configuration file
     #[arg(short, long)]
@@ -184,6 +188,19 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
+    let mut wallet_ctx = WalletContext::new(
+        &PathBuf::from(config.sui.sui_config_path()),
+        config.sui.request_timeout(),
+        config.sui.max_concurrent_requests(),
+    )?;
+    let address = wallet_ctx.active_address()?;
+    let address_index = args.address_index.unwrap_or(
+        wallet_ctx
+            .get_addresses()
+            .iter()
+            .position(|a| a == &address)
+            .unwrap(),
+    );
 
     info!(
         target = "atoma-node-service",
@@ -213,6 +230,19 @@ async fn main() -> Result<()> {
     let (app_state_encryption_sender, _app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
+    for (_, node_small_id) in config.daemon.node_badges.iter() {
+        if let Err(e) =
+            register_on_proxy(&config.proxy, *node_small_id, &keystore, address_index).await
+        {
+            error!(
+                target = "atoma-node-service",
+                event = "register_on_proxy_error",
+                error = ?e,
+                "Failed to register on proxy server"
+            );
+        }
+    }
+
     info!(
         target = "atoma-node-service",
         event = "confidential_compute_service_spawn",
@@ -222,10 +252,6 @@ async fn main() -> Result<()> {
     let client = Arc::new(RwLock::new(
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
-
-    for (_, node_small_id) in config.daemon.node_badges.iter() {
-        register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await?;
-    }
 
     let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
@@ -311,7 +337,7 @@ async fn main() -> Result<()> {
             .image_generations_service_url
             .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
-        address_index: args.address_index,
+        address_index: address_index,
     };
 
     let daemon_app_state = DaemonState {

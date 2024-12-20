@@ -35,9 +35,9 @@ node_badges = [
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
 
 [proxy_server]
-# replace this with the address of the proxy server
+# replace this with the public url address of the proxy server
 proxy_address = ""
-# replace this with the public address of this node
+# replace this with the public url address of this node
 node_public_address = ""
 # replace this with the country of the node
 country = ""

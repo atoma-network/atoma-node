@@ -631,7 +631,6 @@ components:
       required:
       - task_small_id
       - price_per_one_million_compute_units
-      - max_num_compute_units
       properties:
         gas:
           type: string
@@ -656,11 +655,6 @@ components:
             Optional gas price.
             If not provided, the default is `None`.
           minimum: 0
-        max_num_compute_units:
-          type: integer
-          format: int64
-          description: The maximum number of compute units.
-          minimum: 0
         node_badge_id:
           type: string
           description: |-
@@ -669,7 +663,7 @@ components:
         price_per_one_million_compute_units:
           type: integer
           format: int64
-          description: The price per compute unit.
+          description: The price per one million compute units.
           minimum: 0
         task_small_id:
           type: integer
@@ -752,7 +746,6 @@ components:
       required:
       - task_small_id
       - price_per_one_million_compute_units
-      - max_num_compute_units
       properties:
         gas:
           type: string
@@ -777,11 +770,6 @@ components:
             Optional gas price.
             If not provided, the default is `None`.
           minimum: 0
-        max_num_compute_units:
-          type: integer
-          format: int64
-          description: The maximum number of compute units.
-          minimum: 0
         node_badge_id:
           type: string
           description: |-
@@ -790,7 +778,7 @@ components:
         price_per_one_million_compute_units:
           type: integer
           format: int64
-          description: The price per compute unit.
+          description: The price per one million compute units.
           minimum: 0
         task_small_id:
           type: integer
