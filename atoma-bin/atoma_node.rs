@@ -214,7 +214,9 @@ async fn main() -> Result<()> {
         tokio::sync::mpsc::unbounded_channel();
 
     for (_, node_small_id) in config.daemon.node_badges.iter() {
-        if let Err(e) = register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await {
+        if let Err(e) =
+            register_on_proxy(&config.proxy, *node_small_id, &keystore, args.address_index).await
+        {
             error!(
                 target = "atoma-node-service",
                 event = "register_on_proxy_error",
