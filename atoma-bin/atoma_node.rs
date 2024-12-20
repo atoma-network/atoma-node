@@ -188,7 +188,7 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
-    let wallet_ctx = WalletContext::new(
+    let mut wallet_ctx = WalletContext::new(
         &PathBuf::from(config.sui.sui_config_path()),
         config.sui.request_timeout(),
         config.sui.max_concurrent_requests(),
