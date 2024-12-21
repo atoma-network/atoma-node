@@ -156,7 +156,7 @@ mod middleware {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 600,
-            price: 1,
+            price_per_one_million_compute_units: 1,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],

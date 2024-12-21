@@ -418,7 +418,7 @@ pub struct StackCreatedEvent {
     /// The price associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price: u64,
+    pub price_per_one_million_compute_units: u64,
 }
 
 impl From<(StackCreatedEvent, i64)> for StackCreateAndUpdateEvent {
@@ -430,7 +430,7 @@ impl From<(StackCreatedEvent, i64)> for StackCreateAndUpdateEvent {
             task_small_id: event.task_small_id,
             selected_node_id: event.selected_node_id,
             num_compute_units: event.num_compute_units,
-            price: event.price,
+            price_per_one_million_compute_units: event.price_per_one_million_compute_units,
             already_computed_units,
         }
     }
@@ -462,9 +462,9 @@ pub struct StackCreateAndUpdateEvent {
     /// This represents the computational resources reserved for processing the stack's tasks.
     pub num_compute_units: u64,
 
-    /// The price associated with this stack.
+    /// The price per one million compute units associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
-    pub price: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The number of compute units already computed for this stack.
     pub already_computed_units: i64,
@@ -1103,7 +1103,7 @@ mod tests {
             "task_small_id": {"inner": "3"},
             "selected_node_id": {"inner": "11"},
             "num_compute_units": "5",
-            "price": "1000"
+            "price_per_one_million_compute_units": "1000"
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.owner, "0x123");
@@ -1112,7 +1112,7 @@ mod tests {
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.selected_node_id.inner, 11);
         assert_eq!(event.num_compute_units, 5);
-        assert_eq!(event.price, 1000);
+        assert_eq!(event.price_per_one_million_compute_units, 1000);
     }
 
     #[test]
