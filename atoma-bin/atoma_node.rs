@@ -337,7 +337,7 @@ async fn main() -> Result<()> {
             .image_generations_service_url
             .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
-        address_index: address_index,
+        address_index,
     };
 
     let daemon_app_state = DaemonState {

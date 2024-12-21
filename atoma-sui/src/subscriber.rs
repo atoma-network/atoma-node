@@ -926,7 +926,7 @@ mod tests {
                 stack_id: "test".to_string(),
                 stack_small_id: StackSmallId { inner: 1 },
                 num_compute_units: 0,
-                price: 0,
+                price_per_one_million_compute_units: 0,
             },
             None,
         ));

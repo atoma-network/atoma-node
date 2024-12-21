@@ -1165,12 +1165,12 @@ impl AtomaState {
             task_small_id = %stack.task_small_id,
             selected_node_id = %stack.selected_node_id,
             num_compute_units = %stack.num_compute_units,
-            price = %stack.price)
+            price = %stack.price_per_one_million_compute_units)
     )]
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price_per_one_million_compute_units, already_computed_units, in_settle_period, total_hash, num_total_messages) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (stack_small_id) DO UPDATE
             SET already_computed_units = stacks.already_computed_units + $8
@@ -1182,7 +1182,7 @@ impl AtomaState {
             .bind(stack.task_small_id)
             .bind(stack.selected_node_id)
             .bind(stack.num_compute_units)
-            .bind(stack.price)
+            .bind(stack.price_per_one_million_compute_units)
             .bind(stack.already_computed_units)
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
@@ -2377,7 +2377,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2423,7 +2423,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 30,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -2508,7 +2508,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2562,7 +2562,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 15,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2613,7 +2613,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2676,7 +2676,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2773,7 +2773,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2890,7 +2890,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3006,7 +3006,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3190,7 +3190,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
                 total_hash: vec![1, 2, 3],
@@ -3203,7 +3203,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![4, 5, 6],
@@ -3216,7 +3216,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
                 total_hash: vec![7, 8, 9],
@@ -3242,13 +3242,13 @@ mod tests {
         assert!(
             result
                 .iter()
-                .any(|s| s.stack_small_id == 1 && s.price == 1000),
+                .any(|s| s.stack_small_id == 1 && s.price_per_one_million_compute_units == 1000),
             "Should find stack 1"
         );
         assert!(
             result
                 .iter()
-                .any(|s| s.stack_small_id == 2 && s.price == 2000),
+                .any(|s| s.stack_small_id == 2 && s.price_per_one_million_compute_units == 2000),
             "Should find stack 2"
         );
 
@@ -3321,7 +3321,7 @@ mod tests {
         assert_eq!(stack.task_small_id, 1);
         assert_eq!(stack.selected_node_id, 2);
         assert_eq!(stack.num_compute_units, 300);
-        assert_eq!(stack.price, 3000);
+        assert_eq!(stack.price_per_one_million_compute_units, 3000);
         assert_eq!(stack.already_computed_units, 100);
         assert!(!stack.in_settle_period);
         assert_eq!(stack.total_hash, vec![7, 8, 9]);
@@ -3377,7 +3377,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3391,7 +3391,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3458,7 +3458,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3472,7 +3472,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 2,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3544,7 +3544,7 @@ mod tests {
                 selected_node_id: 1,
                 num_compute_units: 100,
                 already_computed_units: 90,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3558,7 +3558,7 @@ mod tests {
                 selected_node_id: 1,
                 num_compute_units: 100,
                 already_computed_units: 50,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3572,7 +3572,7 @@ mod tests {
                 selected_node_id: 2,
                 num_compute_units: 100,
                 already_computed_units: 95,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3586,7 +3586,7 @@ mod tests {
                 selected_node_id: 3,
                 num_compute_units: 100,
                 already_computed_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3693,7 +3693,7 @@ mod tests {
             selected_node_id: 1,
             num_compute_units: 0,
             already_computed_units: 0,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
@@ -3709,7 +3709,7 @@ mod tests {
             selected_node_id: 1,
             num_compute_units: i64::MAX,
             already_computed_units: i64::MAX / 2 + i64::MAX / 4,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
@@ -3772,7 +3772,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3854,7 +3854,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3969,7 +3969,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
@@ -3982,7 +3982,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![0; 32],
@@ -3995,7 +3995,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
@@ -4118,7 +4118,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash1.clone(),
@@ -4141,7 +4141,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash2.clone(),
@@ -4155,7 +4155,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 300,
-            price: 3000,
+            price_per_one_million_compute_units: 3000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash3.clone(),
@@ -4244,7 +4244,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![],
@@ -4257,7 +4257,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 150,
                 in_settle_period: true,
                 total_hash: vec![],
@@ -4270,7 +4270,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 3,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 250,
                 in_settle_period: true,
                 total_hash: vec![],

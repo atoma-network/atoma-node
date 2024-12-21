@@ -28,17 +28,17 @@ CREATE TABLE IF NOT EXISTS node_subscriptions (
 
 -- Create stacks table
 CREATE TABLE IF NOT EXISTS stacks (
-    stack_small_id         BIGINT  PRIMARY KEY,
-    owner_address          TEXT    NOT NULL,
-    stack_id               TEXT    UNIQUE NOT NULL,
-    task_small_id          BIGINT  NOT NULL,
-    selected_node_id       BIGINT  NOT NULL,
-    num_compute_units      BIGINT  NOT NULL,
-    price                  BIGINT  NOT NULL,
-    already_computed_units BIGINT  NOT NULL,
-    in_settle_period       BOOLEAN NOT NULL,
-    total_hash             BYTEA   NOT NULL,
-    num_total_messages     BIGINT  NOT NULL,
+    stack_small_id                      BIGINT  PRIMARY KEY,
+    owner_address                       TEXT    NOT NULL,
+    stack_id                            TEXT    UNIQUE NOT NULL,
+    task_small_id                       BIGINT  NOT NULL,
+    selected_node_id                    BIGINT  NOT NULL,
+    num_compute_units                   BIGINT  NOT NULL,
+    price_per_one_million_compute_units BIGINT  NOT NULL,
+    already_computed_units              BIGINT  NOT NULL,
+    in_settle_period                    BOOLEAN NOT NULL,
+    total_hash                          BYTEA   NOT NULL,
+    num_total_messages                  BIGINT  NOT NULL,
     CONSTRAINT check_compute_units CHECK (already_computed_units <= num_compute_units),
     FOREIGN KEY (selected_node_id, task_small_id) 
         REFERENCES node_subscriptions (node_small_id, task_small_id)
