@@ -1103,7 +1103,7 @@ mod tests {
             "task_small_id": {"inner": "3"},
             "selected_node_id": {"inner": "11"},
             "num_compute_units": "5",
-            "price": "1000"
+            "price_per_one_million_compute_units": "1000"
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.owner, "0x123");
