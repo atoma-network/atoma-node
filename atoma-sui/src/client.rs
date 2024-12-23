@@ -166,7 +166,7 @@ impl AtomaSuiClient {
     ) -> Result<String> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
-        let usdc_wallet_address = self.get_or_load_usdc_wallet_object_id().await?;
+
         let tx = client
             .transaction_builder()
             .move_call(
@@ -175,10 +175,7 @@ impl AtomaSuiClient {
                 MODULE_ID,
                 NODE_REGISTRATION_METHOD,
                 vec![],
-                vec![
-                    SuiJsonValue::from_object_id(self.config.atoma_db()),
-                    SuiJsonValue::from_object_id(usdc_wallet_address),
-                ],
+                vec![SuiJsonValue::from_object_id(self.config.atoma_db())],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
                 gas_price,
