@@ -4,7 +4,8 @@ x-atoma-node: &atoma-node
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
-    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+    - sui-config-volume:/root/.sui/sui_config
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
   env_file: .env
   networks:
@@ -191,3 +192,4 @@ networks:
 volumes:
   postgres-data:
   grafana_data:
+  sui-config-volume:
