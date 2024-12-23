@@ -22,10 +22,10 @@ pub struct AtomaSuiConfig {
     /// This identifies the specific package (smart contract) to interact with
     atoma_package_id: ObjectID,
 
-    /// The Atoma's TOMA token package ID on the Sui network
+    /// The USDC token package ID on the Sui network
     /// This identifies the specific package (smart contract) to interact with
-    /// for TOMA token payments
-    toma_package_id: ObjectID,
+    /// for USDC token payments
+    usdc_package_id: ObjectID,
 
     /// The timeout duration for requests
     /// This sets the maximum time to wait for a response from the Sui network
@@ -65,7 +65,7 @@ impl AtomaSuiConfig {
         http_rpc_node_addr: String,
         atoma_db: ObjectID,
         atoma_package_id: ObjectID,
-        toma_package_id: ObjectID,
+        usdc_package_id: ObjectID,
         request_timeout: Option<Duration>,
         limit: Option<usize>,
         node_small_ids: Option<Vec<u64>>,
@@ -79,7 +79,7 @@ impl AtomaSuiConfig {
             http_rpc_node_addr,
             atoma_db,
             atoma_package_id,
-            toma_package_id,
+            usdc_package_id,
             request_timeout,
             limit,
             node_small_ids,
@@ -106,9 +106,9 @@ impl AtomaSuiConfig {
         self.atoma_package_id
     }
 
-    /// Getter for `toma_package_id`
-    pub fn toma_package_id(&self) -> ObjectID {
-        self.toma_package_id
+    /// Getter for `usdc_package_id`
+    pub fn usdc_package_id(&self) -> ObjectID {
+        self.usdc_package_id
     }
 
     /// Getter for `atoma_db`
