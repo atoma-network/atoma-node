@@ -22,10 +22,10 @@ pub struct AtomaSuiConfig {
     /// This identifies the specific package (smart contract) to interact with
     atoma_package_id: ObjectID,
 
-    /// The Atoma's TOMA token package ID on the Sui network
+    /// The USDC token package ID on the Sui network
     /// This identifies the specific package (smart contract) to interact with
-    /// for TOMA token payments
-    toma_package_id: ObjectID,
+    /// for USDC token payments
+    usdc_package_id: ObjectID,
 
     /// The timeout duration for requests
     /// This sets the maximum time to wait for a response from the Sui network
@@ -65,7 +65,7 @@ impl AtomaSuiConfig {
         http_rpc_node_addr: String,
         atoma_db: ObjectID,
         atoma_package_id: ObjectID,
-        toma_package_id: ObjectID,
+        usdc_package_id: ObjectID,
         request_timeout: Option<Duration>,
         limit: Option<usize>,
         node_small_ids: Option<Vec<u64>>,
@@ -79,7 +79,7 @@ impl AtomaSuiConfig {
             http_rpc_node_addr,
             atoma_db,
             atoma_package_id,
-            toma_package_id,
+            usdc_package_id,
             request_timeout,
             limit,
             node_small_ids,
@@ -106,9 +106,9 @@ impl AtomaSuiConfig {
         self.atoma_package_id
     }
 
-    /// Getter for `toma_package_id`
-    pub fn toma_package_id(&self) -> ObjectID {
-        self.toma_package_id
+    /// Getter for `usdc_package_id`
+    pub fn usdc_package_id(&self) -> ObjectID {
+        self.usdc_package_id
     }
 
     /// Getter for `atoma_db`
@@ -224,7 +224,7 @@ pub mod tests {
         );
 
         let toml_str = toml::to_string(&config).unwrap();
-        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\ntoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\ncursor_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
+        let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nusdc_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\ncursor_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";
         assert_eq!(toml_str, should_be_toml_str);
     }
 }

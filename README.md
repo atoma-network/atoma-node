@@ -94,7 +94,7 @@ service_bind_address = "0.0.0.0:3000"         # Bind to all interfaces
 http_rpc_node_addr = ""
 atoma_db = ""
 atoma_package_id = ""
-toma_package_id = ""
+usdc_package_id = ""
 request_timeout = { secs = 300, nanos = 0 }
 max_concurrent_requests = 10
 limit = 100
@@ -316,7 +316,7 @@ The application uses a TOML configuration file with the following sections:
 - `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
 - `atoma_db`: ObjectID for Atoma's DB on the Sui network
 - `atoma_package_id`: ObjectID for Atoma's package on the Sui network
-- `toma_package_id`: ObjectID for Atoma's TOMA token package
+- `usdc_package_id`: ObjectID for USDC token package
 - `request_timeout` (optional): Duration for request timeouts
 - `max_concurrent_requests` (optional): Maximum number of concurrent Sui client requests
 - `limit` (optional): Limit for dynamic fields retrieval per event subscriber loop
