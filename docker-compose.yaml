@@ -1,6 +1,11 @@
 # Base configuration for Atoma services
 x-atoma-node: &atoma-node
-  image: ghcr.io/atoma-network/atoma-node:latest
+  # image: ghcr.io/atoma-network/atoma-node:latest
+  build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+       TRACE_LEVEL: ${TRACE_LEVEL:-info}
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
