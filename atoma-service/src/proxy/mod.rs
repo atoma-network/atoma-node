@@ -24,6 +24,12 @@ pub async fn register_on_proxy(
 ) -> anyhow::Result<()> {
     let client = Client::new();
     let url = format!("{}/node/registration", config.proxy_address);
+    tracing::info!(
+        target = "atoma-service",
+        event = "register_on_proxy",
+        url = url,
+        "Registering on proxy server"
+    );
 
     let body = json!({
       "node_small_id": node_small_id,
@@ -38,9 +44,24 @@ pub async fn register_on_proxy(
         .header(SIGNATURE, signature)
         .json(&body)
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                target = "atoma-service",
+                event = "register_on_proxy_error",
+                error = ?e,
+                "Failed to register on proxy server"
+            );
+            anyhow::anyhow!("Failed to register on proxy server: {}", e)
+        })?;
 
     if !res.status().is_success() {
+        tracing::error!(
+            target = "atoma-service",
+            event = "register_on_proxy_error",
+            error = ?res.status(),
+            "Failed to register on proxy server"
+        );
         anyhow::bail!("Failed to register on proxy server: {}", res.status());
     }
     Ok(())

@@ -327,8 +327,8 @@ impl Stream for Streamer {
                     return Poll::Ready(None);
                 }
                 let mut chunk = serde_json::from_str::<Value>(chunk_str).map_err(|e| {
-                    error!("Error parsing chunk: {}", e);
-                    Error::new(format!("Error parsing chunk: {}", e))
+                    error!("Error parsing chunk {chunk_str}: {}", e);
+                    Error::new(format!("Error parsing chunk {chunk_str}: {}", e))
                 })?;
 
                 // Observe the first token generation timer

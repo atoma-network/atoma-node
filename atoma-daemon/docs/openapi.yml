@@ -876,7 +876,7 @@ components:
       - task_small_id
       - selected_node_id
       - num_compute_units
-      - price
+      - price_per_one_million_compute_units
       - already_computed_units
       - in_settle_period
       - total_hash
@@ -900,7 +900,7 @@ components:
         owner_address:
           type: string
           description: Address of the owner of the stack
-        price:
+        price_per_one_million_compute_units:
           type: integer
           format: int64
           description: Price of the stack (likely in smallest currency unit)

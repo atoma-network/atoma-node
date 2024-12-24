@@ -228,7 +228,7 @@ pub async fn signature_verification_middleware(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, req_body) = req.into_parts();
-    tracing::info!("Request parts: {:?}", req_parts);
+
     let base64_signature = req_parts
         .headers
         .get(atoma_utils::constants::SIGNATURE)
@@ -243,12 +243,12 @@ pub async fn signature_verification_middleware(
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
-        .map_err(|_| {
-            error!("Failed to convert body to bytes");
+        .map_err(|e| {
+            error!("Failed to convert body to bytes, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
-    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|_| {
-        error!("Failed to parse body as JSON");
+    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
+        error!("Failed to parse body as JSON, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let body_blake2b_hash = blake2b_hash(body_json.to_string().as_bytes());
@@ -256,9 +256,7 @@ pub async fn signature_verification_middleware(
         .as_slice()
         .try_into()
         .expect("Invalid Blake2b hash length");
-
     verify_signature(base64_signature, &body_blake2b_hash_bytes)?;
-
     let request_metadata = req_parts
         .extensions
         .get::<RequestMetadata>()
@@ -343,12 +341,12 @@ pub async fn verify_stack_permissions(
             StatusCode::BAD_REQUEST
         })?
         .to_str()
-        .map_err(|_| {
-            error!("Failed to convert signature to string");
+        .map_err(|e| {
+            error!("Failed to convert signature to string, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
-    let signature = Signature::from_str(base64_signature).map_err(|_| {
-        error!("Failed to parse signature");
+    let signature = Signature::from_str(base64_signature).map_err(|e| {
+        error!("Failed to parse signature, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let public_key_bytes = signature.public_key_bytes();
@@ -367,23 +365,23 @@ pub async fn verify_stack_permissions(
         })?;
     let stack_small_id = stack_small_id
         .to_str()
-        .map_err(|_| {
-            error!("Stack small ID cannot be converted to a string");
+        .map_err(|e| {
+            error!("Stack small ID cannot be converted to a string, with error: {e}");
             StatusCode::BAD_REQUEST
         })?
         .parse::<i64>()
-        .map_err(|_| {
-            error!("Stack small ID is not a valid integer");
+        .map_err(|e| {
+            error!("Stack small ID is not a valid integer, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
-        .map_err(|_| {
-            error!("Failed to convert body to bytes");
+        .map_err(|e| {
+            error!("Failed to convert body to bytes, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
-    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|_| {
-        error!("Failed to parse body as JSON");
+    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
+        error!("Failed to parse body as JSON, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let model = body_json
@@ -422,15 +420,12 @@ pub async fn verify_stack_permissions(
         })?;
     let available_stack = result_receiver
         .await
-        .map_err(|_| {
-            error!("Failed to get available stack with enough compute units");
+        .map_err(|e| {
+            error!("Failed to get available stack with enough compute units, with error: {e}");
             StatusCode::UNAUTHORIZED
         })?
         .map_err(|err| {
-            error!(
-                "Failed to get available stack with enough compute units: {}",
-                err
-            );
+            error!("Failed to get available stack with enough compute units, with error: {err}");
             StatusCode::UNAUTHORIZED
         })?;
     if available_stack.is_none() {
@@ -442,8 +437,8 @@ pub async fn verify_stack_permissions(
                 StatusCode::BAD_REQUEST
             })?
             .to_str()
-            .map_err(|_| {
-                error!("Tx digest cannot be converted to a string");
+            .map_err(|e| {
+                error!("Tx digest cannot be converted to a string, with error: {e}");
                 StatusCode::BAD_REQUEST
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
@@ -532,12 +527,12 @@ pub async fn confidential_compute_middleware(
             error!("Salt header not found");
             StatusCode::BAD_REQUEST
         })?;
-    let salt_str = salt.to_str().map_err(|_| {
-        error!("Salt cannot be converted to a string");
+    let salt_str = salt.to_str().map_err(|e| {
+        error!("Salt cannot be converted to a string, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
-    let salt_bytes = STANDARD.decode(salt_str).map_err(|_| {
-        error!("Failed to decode salt from base64 encoding");
+    let salt_bytes = STANDARD.decode(salt_str).map_err(|e| {
+        error!("Failed to decode salt from base64 encoding, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
@@ -554,12 +549,12 @@ pub async fn confidential_compute_middleware(
             error!("Nonce header not found");
             StatusCode::BAD_REQUEST
         })?;
-    let nonce_str = nonce.to_str().map_err(|_| {
-        error!("Nonce cannot be converted to a string");
+    let nonce_str = nonce.to_str().map_err(|e| {
+        error!("Nonce cannot be converted to a string, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
-    let nonce_bytes = STANDARD.decode(nonce_str).map_err(|_| {
-        error!("Failed to decode nonce from base64 encoding");
+    let nonce_bytes = STANDARD.decode(nonce_str).map_err(|e| {
+        error!("Failed to decode nonce from base64 encoding, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
@@ -576,8 +571,10 @@ pub async fn confidential_compute_middleware(
             error!("Diffie-Hellman public key header not found");
             StatusCode::BAD_REQUEST
         })?;
-    let proxy_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(proxy_x25519_public_key).map_err(|_| {
-        error!("Failed to decode Proxy X25519 public key from base64 encoding");
+    let proxy_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        .decode(proxy_x25519_public_key)
+        .map_err(|e| {
+            error!("Failed to decode Proxy X25519 public key from base64 encoding, with error: {e}");
             StatusCode::BAD_REQUEST
         })?
         .try_into()
@@ -592,8 +589,10 @@ pub async fn confidential_compute_middleware(
             error!("Node X25519 public key header not found");
             StatusCode::BAD_REQUEST
         })?;
-    let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD.decode(node_x25519_public_key).map_err(|_| {
-        error!("Failed to decode Node X25519 public key from base64 encoding");
+    let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        .decode(node_x25519_public_key)
+        .map_err(|e| {
+            error!("Failed to decode Node X25519 public key from base64 encoding, with error: {e}");
             StatusCode::BAD_REQUEST
         })?
         .try_into()
@@ -603,8 +602,8 @@ pub async fn confidential_compute_middleware(
         })?;
     let body_bytes = axum::body::to_bytes(req_body, 1024 * MAX_BODY_SIZE)
         .await
-        .map_err(|_| {
-            error!("Failed to convert body to bytes");
+        .map_err(|e| {
+            error!("Failed to convert body to bytes, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;
     // Convert body bytes to string since it was created with .to_string() on the client
@@ -613,8 +612,8 @@ pub async fn confidential_compute_middleware(
         StatusCode::BAD_REQUEST
     })?;
 
-    let body_json: Value = serde_json::from_str(&body_str).map_err(|_| {
-        error!("Failed to parse body as JSON");
+    let body_json: Value = serde_json::from_str(&body_str).map_err(|e| {
+        error!("Failed to parse body as JSON, with error: {e}");
         StatusCode::BAD_REQUEST
     })?;
     let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
@@ -634,8 +633,8 @@ pub async fn confidential_compute_middleware(
             error!("Failed to send confidential compute request");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    let result = result_receiver.await.map_err(|_| {
-        error!("Failed to receive confidential compute response");
+    let result = result_receiver.await.map_err(|e| {
+        error!("Failed to receive confidential compute response, with error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     match result {
