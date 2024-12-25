@@ -544,7 +544,7 @@ impl AtomaState {
     ///
     /// * `node_small_id` - The unique identifier of the node to be subscribed.
     /// * `task_small_id` - The unique identifier of the task to which the node is subscribing.
-    /// * `price_per_compute_unit` - The price per compute unit for the subscription.
+    /// * `price_per_one_million_compute_units` - The price per compute unit for the subscription.
     ///
     /// # Returns
     ///
@@ -561,8 +561,8 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn subscribe_node_to_task(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64, price_per_compute_unit: i64) -> Result<(), AtomaStateManagerError> {
-    ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
+    /// async fn subscribe_node_to_task(state_manager: &AtomaStateManager, node_small_id: i64, task_small_id: i64, price_per_one_million_compute_units: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_one_million_compute_units).await
     /// }
     /// ```
     #[tracing::instrument(
@@ -571,7 +571,7 @@ impl AtomaState {
         fields(
             node_small_id = %node_small_id,
             task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
+            price_per_one_million_compute_units = %price_per_one_million_compute_units,
             max_num_compute_units = %max_num_compute_units
         )
     )]
@@ -579,18 +579,18 @@ impl AtomaState {
         &self,
         node_small_id: i64,
         task_small_id: i64,
-        price_per_compute_unit: i64,
+        price_per_one_million_compute_units: i64,
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_subscriptions 
-                (node_small_id, task_small_id, price_per_compute_unit, max_num_compute_units, valid) 
+                (node_small_id, task_small_id, price_per_one_million_compute_units, max_num_compute_units, valid) 
                 VALUES ($1, $2, $3, $4, TRUE)
                 ON CONFLICT (task_small_id, node_small_id) DO NOTHING",
         )
             .bind(node_small_id)
             .bind(task_small_id)
-            .bind(price_per_compute_unit)
+            .bind(price_per_one_million_compute_units)
             .bind(max_num_compute_units)
             .execute(&self.db)
             .await?;
@@ -654,7 +654,7 @@ impl AtomaState {
     ///
     /// * `node_small_id` - The unique identifier of the subscribed node.
     /// * `task_small_id` - The unique identifier of the task to which the node is subscribed.
-    /// * `price_per_compute_unit` - The new price per compute unit for the subscription.
+    /// * `price_per_one_million_compute_units` - The new price per compute unit for the subscription.
     /// * `max_num_compute_units` - The new maximum number of compute units for the subscription.
     ///
     /// # Returns
@@ -682,7 +682,7 @@ impl AtomaState {
         fields(
             node_small_id = %node_small_id,
             task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
+            price_per_one_million_compute_units = %price_per_one_million_compute_units,
             max_num_compute_units = %max_num_compute_units
         )
     )]
@@ -690,13 +690,13 @@ impl AtomaState {
         &self,
         node_small_id: i64,
         task_small_id: i64,
-        price_per_compute_unit: i64,
+        price_per_one_million_compute_units: i64,
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE node_subscriptions SET price_per_compute_unit = $1, max_num_compute_units = $2 WHERE node_small_id = $3 AND task_small_id = $4",
+            "UPDATE node_subscriptions SET price_per_one_million_compute_units = $1, max_num_compute_units = $2 WHERE node_small_id = $3 AND task_small_id = $4",
         )
-            .bind(price_per_compute_unit)
+            .bind(price_per_one_million_compute_units)
             .bind(max_num_compute_units)
             .bind(node_small_id)
             .bind(task_small_id)
@@ -931,19 +931,22 @@ impl AtomaState {
     pub async fn insert_node_public_key_rotation(
         &self,
         epoch: u64,
+        key_rotation_counter: u64,
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_key_rotations (epoch, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4)
+            "INSERT INTO node_public_key_rotations (epoch, key_rotation_counter, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (node_small_id) 
                     DO UPDATE SET 
-                        epoch = $1, 
-                        public_key_bytes = $3, 
-                        tdx_quote_bytes = $4",
+                        epoch = $1,
+                        key_rotation_counter = $2,
+                        public_key_bytes = $4, 
+                        tdx_quote_bytes = $5",
         )
         .bind(epoch as i64)
+        .bind(key_rotation_counter as i64)
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
         .bind(tee_remote_attestation_bytes)
@@ -1337,12 +1340,12 @@ impl AtomaState {
             task_small_id = %stack.task_small_id,
             selected_node_id = %stack.selected_node_id,
             num_compute_units = %stack.num_compute_units,
-            price = %stack.price)
+            price = %stack.price_per_one_million_compute_units)
     )]
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price_per_one_million_compute_units, already_computed_units, in_settle_period, total_hash, num_total_messages) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (stack_small_id) DO UPDATE
             SET already_computed_units = stacks.already_computed_units + $8
@@ -1354,7 +1357,7 @@ impl AtomaState {
             .bind(stack.task_small_id)
             .bind(stack.selected_node_id)
             .bind(stack.num_compute_units)
-            .bind(stack.price)
+            .bind(stack.price_per_one_million_compute_units)
             .bind(stack.already_computed_units)
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
@@ -2683,7 +2686,7 @@ mod tests {
             .get_node_subscription_by_task_small_id(1)
             .await
             .unwrap();
-        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.price_per_one_million_compute_units, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
 
         // Update the subscription
@@ -2698,7 +2701,7 @@ mod tests {
             .get_node_subscription_by_task_small_id(1)
             .await
             .unwrap();
-        assert_eq!(subscription.price_per_compute_unit, 200);
+        assert_eq!(subscription.price_per_one_million_compute_units, 200);
         assert_eq!(subscription.max_num_compute_units, 2000);
 
         truncate_tables(&state_manager.db).await;
@@ -2735,7 +2738,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2781,7 +2784,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 30,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -2866,7 +2869,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2920,7 +2923,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 15,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -2971,7 +2974,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3034,7 +3037,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3131,7 +3134,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3248,7 +3251,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3364,7 +3367,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -3449,13 +3452,13 @@ mod tests {
         assert_eq!(result.len(), 3);
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+            .any(|s| s.node_small_id == 1 && s.price_per_one_million_compute_units == 100));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 2 && s.price_per_compute_unit == 200));
+            .any(|s| s.node_small_id == 2 && s.price_per_one_million_compute_units == 200));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+            .any(|s| s.node_small_id == 3 && s.price_per_one_million_compute_units == 300));
 
         // Test 2: Get subscriptions for subset of nodes
         let subset_node_ids = vec![1, 3];
@@ -3466,10 +3469,10 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 1 && s.price_per_compute_unit == 100));
+            .any(|s| s.node_small_id == 1 && s.price_per_one_million_compute_units == 100));
         assert!(result
             .iter()
-            .any(|s| s.node_small_id == 3 && s.price_per_compute_unit == 300));
+            .any(|s| s.node_small_id == 3 && s.price_per_one_million_compute_units == 300));
         assert!(!result.iter().any(|s| s.node_small_id == 2));
 
         // Test 3: Get subscriptions for non-existent nodes
@@ -3498,7 +3501,7 @@ mod tests {
         let subscription = &result[0];
         assert_eq!(subscription.node_small_id, 1);
         assert_eq!(subscription.task_small_id, 1);
-        assert_eq!(subscription.price_per_compute_unit, 100);
+        assert_eq!(subscription.price_per_one_million_compute_units, 100);
         assert_eq!(subscription.max_num_compute_units, 1000);
         assert!(subscription.valid);
 
@@ -3548,7 +3551,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
                 total_hash: vec![1, 2, 3],
@@ -3561,7 +3564,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![4, 5, 6],
@@ -3574,7 +3577,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
                 total_hash: vec![7, 8, 9],
@@ -3600,13 +3603,13 @@ mod tests {
         assert!(
             result
                 .iter()
-                .any(|s| s.stack_small_id == 1 && s.price == 1000),
+                .any(|s| s.stack_small_id == 1 && s.price_per_one_million_compute_units == 1000),
             "Should find stack 1"
         );
         assert!(
             result
                 .iter()
-                .any(|s| s.stack_small_id == 2 && s.price == 2000),
+                .any(|s| s.stack_small_id == 2 && s.price_per_one_million_compute_units == 2000),
             "Should find stack 2"
         );
 
@@ -3679,7 +3682,7 @@ mod tests {
         assert_eq!(stack.task_small_id, 1);
         assert_eq!(stack.selected_node_id, 2);
         assert_eq!(stack.num_compute_units, 300);
-        assert_eq!(stack.price, 3000);
+        assert_eq!(stack.price_per_one_million_compute_units, 3000);
         assert_eq!(stack.already_computed_units, 100);
         assert!(!stack.in_settle_period);
         assert_eq!(stack.total_hash, vec![7, 8, 9]);
@@ -3735,7 +3738,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3749,7 +3752,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3816,7 +3819,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3830,7 +3833,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 2,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![0; 32],
@@ -3902,7 +3905,7 @@ mod tests {
                 selected_node_id: 1,
                 num_compute_units: 100,
                 already_computed_units: 90,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3916,7 +3919,7 @@ mod tests {
                 selected_node_id: 1,
                 num_compute_units: 100,
                 already_computed_units: 50,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3930,7 +3933,7 @@ mod tests {
                 selected_node_id: 2,
                 num_compute_units: 100,
                 already_computed_units: 95,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -3944,7 +3947,7 @@ mod tests {
                 selected_node_id: 3,
                 num_compute_units: 100,
                 already_computed_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
@@ -4051,7 +4054,7 @@ mod tests {
             selected_node_id: 1,
             num_compute_units: 0,
             already_computed_units: 0,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
@@ -4067,7 +4070,7 @@ mod tests {
             selected_node_id: 1,
             num_compute_units: i64::MAX,
             already_computed_units: i64::MAX / 2 + i64::MAX / 4,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
@@ -4130,7 +4133,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -4212,7 +4215,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 10,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -4327,7 +4330,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
@@ -4340,7 +4343,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![0; 32],
@@ -4353,7 +4356,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
                 total_hash: vec![0; 32],
@@ -4476,7 +4479,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 100,
-            price: 1000,
+            price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash1.clone(),
@@ -4499,7 +4502,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 200,
-            price: 2000,
+            price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash2.clone(),
@@ -4513,7 +4516,7 @@ mod tests {
             task_small_id: 1,
             selected_node_id: 1,
             num_compute_units: 300,
-            price: 3000,
+            price_per_one_million_compute_units: 3000,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: hash3.clone(),
@@ -4602,7 +4605,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 1,
                 num_compute_units: 100,
-                price: 1000,
+                price_per_one_million_compute_units: 1000,
                 already_computed_units: 50,
                 in_settle_period: true,
                 total_hash: vec![],
@@ -4615,7 +4618,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 2,
                 num_compute_units: 200,
-                price: 2000,
+                price_per_one_million_compute_units: 2000,
                 already_computed_units: 150,
                 in_settle_period: true,
                 total_hash: vec![],
@@ -4628,7 +4631,7 @@ mod tests {
                 task_small_id: 1,
                 selected_node_id: 3,
                 num_compute_units: 300,
-                price: 3000,
+                price_per_one_million_compute_units: 3000,
                 already_computed_units: 250,
                 in_settle_period: true,
                 total_hash: vec![],

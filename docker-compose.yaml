@@ -4,7 +4,8 @@ x-atoma-node: &atoma-node
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
-    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+    - sui-config-volume:/root/.sui/sui_config
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
   env_file: .env
   networks:
@@ -131,7 +132,7 @@ services:
     ports:
       - "${CHAT_COMPLETIONS_SERVER_PORT}:8000"
     ipc: host
-    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+    command: ${VLLM_ENGINE_ARGS}
 
   vllm-cpu:
     <<: *inference-service-cpu
@@ -191,3 +192,4 @@ networks:
 volumes:
   postgres-data:
   grafana_data:
+  sui-config-volume:

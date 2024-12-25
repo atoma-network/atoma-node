@@ -306,7 +306,7 @@ pub struct NodeSubscribedToTaskEvent {
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price_per_compute_unit: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
@@ -332,7 +332,7 @@ pub struct NodeSubscriptionUpdatedEvent {
     /// This represents the cost in Atoma's native currency for each unit of computation
     /// that the node will perform for this task.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price_per_compute_unit: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The maximum number of compute units that the node is willing to process for this task.
     /// This limits the amount of resources the node will commit to processing the task.
@@ -458,7 +458,7 @@ pub struct StackCreatedEvent {
     /// The price associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub price: u64,
+    pub price_per_one_million_compute_units: u64,
 }
 
 impl From<(StackCreatedEvent, i64)> for StackCreateAndUpdateEvent {
@@ -470,7 +470,7 @@ impl From<(StackCreatedEvent, i64)> for StackCreateAndUpdateEvent {
             task_small_id: event.task_small_id,
             selected_node_id: event.selected_node_id,
             num_compute_units: event.num_compute_units,
-            price: event.price,
+            price_per_one_million_compute_units: event.price_per_one_million_compute_units,
             already_computed_units,
         }
     }
@@ -502,9 +502,9 @@ pub struct StackCreateAndUpdateEvent {
     /// This represents the computational resources reserved for processing the stack's tasks.
     pub num_compute_units: u64,
 
-    /// The price associated with this stack.
+    /// The price per one million compute units associated with this stack.
     /// This value represents the cost in the network's native currency for processing this stack.
-    pub price: u64,
+    pub price_per_one_million_compute_units: u64,
 
     /// The number of compute units already computed for this stack.
     pub already_computed_units: i64,
@@ -866,6 +866,10 @@ pub struct NodePublicKeyCommittmentEvent {
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
 
+    /// The counter for the number of times the contract has requested nodes rotating their public keys.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub key_rotation_counter: u64,
+
     /// The small ID of the node that requested the key rotation.
     pub node_id: NodeSmallId,
 
@@ -883,6 +887,10 @@ pub struct NewKeyRotationEvent {
     /// The epoch number when the node key rotation was requested.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub epoch: u64,
+
+    /// The counter for the number of times the contract has requested nodes rotating their public keys.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub key_rotation_counter: u64,
 }
 
 /// Represents an identifier for an echelon (performance tier) in the Atoma network.
@@ -1051,13 +1059,13 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": "3"},
             "node_small_id": {"inner": "4"},
-            "price_per_compute_unit": "100",
+            "price_per_one_million_compute_units": "100",
             "max_num_compute_units": "1000"
         });
         let event: NodeSubscribedToTaskEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
-        assert_eq!(event.price_per_compute_unit, 100);
+        assert_eq!(event.price_per_one_million_compute_units, 100);
         assert_eq!(event.max_num_compute_units, 1000);
     }
 
@@ -1066,13 +1074,13 @@ mod tests {
         let json = json!({
             "task_small_id": {"inner": "3"},
             "node_small_id": {"inner": "4"},
-            "price_per_compute_unit": "150",
+            "price_per_one_million_compute_units": "150",
             "max_num_compute_units": "1500"
         });
         let event: NodeSubscriptionUpdatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.node_small_id.inner, 4);
-        assert_eq!(event.price_per_compute_unit, 150);
+        assert_eq!(event.price_per_one_million_compute_units, 150);
         assert_eq!(event.max_num_compute_units, 1500);
     }
 
@@ -1141,7 +1149,7 @@ mod tests {
             "task_small_id": {"inner": "3"},
             "selected_node_id": {"inner": "11"},
             "num_compute_units": "5",
-            "price": "1000"
+            "price_per_one_million_compute_units": "1000"
         });
         let event: StackCreatedEvent = serde_json::from_value(json).unwrap();
         assert_eq!(event.owner, "0x123");
@@ -1150,7 +1158,7 @@ mod tests {
         assert_eq!(event.task_small_id.inner, 3);
         assert_eq!(event.selected_node_id.inner, 11);
         assert_eq!(event.num_compute_units, 5);
-        assert_eq!(event.price, 1000);
+        assert_eq!(event.price_per_one_million_compute_units, 1000);
     }
 
     #[test]

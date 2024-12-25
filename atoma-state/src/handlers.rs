@@ -209,7 +209,7 @@ pub(crate) async fn handle_task_deprecation_event(
 /// # Behavior
 ///
 /// The function performs the following steps:
-/// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_compute_unit`, and `max_num_compute_units` from the event.
+/// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_one_million_compute_units`, and `max_num_compute_units` from the event.
 /// 2. Calls the `subscribe_node_to_task` method on the `AtomaStateManager` to update the node's subscription in the database.
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_node_task_subscription_event(
@@ -223,14 +223,14 @@ pub(crate) async fn handle_node_task_subscription_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .subscribe_node_to_task(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
@@ -260,7 +260,7 @@ pub(crate) async fn handle_node_task_subscription_event(
 /// # Behavior
 ///
 /// The function performs the following steps:
-/// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_compute_unit`, and `max_num_compute_units` from the event.
+/// 1. Extracts the `node_small_id`, `task_small_id`, `price_per_one_million_compute_units`, and `max_num_compute_units` from the event.
 /// 2. Calls the `update_node_subscription` method on the `AtomaStateManager` to update the node's subscription in the database.
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_node_task_subscription_updated_event(
@@ -274,14 +274,14 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .update_node_subscription(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
@@ -781,6 +781,7 @@ async fn handle_node_key_rotation_event(
     );
     let NodePublicKeyCommittmentEvent {
         epoch,
+        key_rotation_counter,
         node_id,
         new_public_key,
         tee_remote_attestation_bytes,
@@ -789,6 +790,7 @@ async fn handle_node_key_rotation_event(
         .state
         .insert_node_public_key_rotation(
             epoch,
+            key_rotation_counter,
             node_id.inner,
             new_public_key,
             tee_remote_attestation_bytes,

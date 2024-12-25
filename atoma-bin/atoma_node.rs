@@ -1,4 +1,8 @@
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialComputeService;
@@ -13,7 +17,7 @@ use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
-use sui_sdk::types::base_types::ObjectID;
+use sui_sdk::{types::base_types::ObjectID, wallet_context::WalletContext};
 use tokenizers::Tokenizer;
 use tokio::{
     net::TcpListener,
@@ -44,8 +48,8 @@ const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 #[derive(Parser)]
 struct Args {
     /// Index of the address to use from the keystore
-    #[arg(short, long, default_value_t = 0)]
-    address_index: usize,
+    #[arg(short, long)]
+    address_index: Option<usize>,
 
     /// Path to the configuration file
     #[arg(short, long)]
@@ -181,6 +185,19 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
+    let mut wallet_ctx = WalletContext::new(
+        &PathBuf::from(config.sui.sui_config_path()),
+        config.sui.request_timeout(),
+        config.sui.max_concurrent_requests(),
+    )?;
+    let address = wallet_ctx.active_address()?;
+    let address_index = args.address_index.unwrap_or(
+        wallet_ctx
+            .get_addresses()
+            .iter()
+            .position(|a| a == &address)
+            .unwrap(),
+    );
 
     info!(
         target = "atoma-node-service",
@@ -219,11 +236,11 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
+    let (subscriber_confidential_compute_sender, _subscriber_confidential_compute_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_decryption_sender, app_state_decryption_receiver) =
+    let (app_state_decryption_sender, _app_state_decryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_encryption_sender, app_state_encryption_receiver) =
+    let (app_state_encryption_sender, _app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     info!(
@@ -236,16 +253,16 @@ async fn main() -> Result<()> {
         AtomaSuiClient::new_from_config(args.config_path).await?,
     ));
 
-    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
+    let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    spawn_with_shutdown(
+    let confidential_compute_service_handle = spawn_with_shutdown(
         AtomaConfidentialComputeService::start_confidential_compute_service(
             client.clone(),
-            subscriber_confidential_compute_receiver,
-            app_state_decryption_receiver,
-            app_state_encryption_receiver,
-            compute_shared_secret_receiver,
+            _subscriber_confidential_compute_receiver,
+            _app_state_decryption_receiver,
+            _app_state_encryption_receiver,
+            _compute_shared_secret_receiver,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
@@ -323,7 +340,7 @@ async fn main() -> Result<()> {
             .image_generations_service_url
             .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
-        address_index: args.address_index,
+        address_index,
     };
 
     let daemon_app_state = DaemonState {
@@ -397,6 +414,7 @@ async fn main() -> Result<()> {
         server_result,
         daemon_result,
         p2p_node_service_result,
+        confidential_compute_service_result,
         _,
     ) = try_join!(
         subscriber_handle,
@@ -404,6 +422,7 @@ async fn main() -> Result<()> {
         service_handle,
         daemon_handle,
         p2p_node_service_handle,
+        confidential_compute_service_handle,
         ctrl_c
     )?;
     handle_tasks_results(
@@ -412,6 +431,7 @@ async fn main() -> Result<()> {
         server_result,
         daemon_result,
         p2p_node_service_result,
+        confidential_compute_service_result,
     )?;
 
     info!(
@@ -510,6 +530,7 @@ fn handle_tasks_results(
     server_result: Result<()>,
     daemon_result: Result<()>,
     p2p_node_service_result: Result<()>,
+    confidential_compute_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -530,6 +551,10 @@ fn handle_tasks_results(
     result_handler(
         p2p_node_service_result,
         "P2P node service terminated abruptly",
+    )?;
+    result_handler(
+        confidential_compute_service_result,
+        "Confidential compute service terminated abruptly",
     )?;
     Ok(())
 }
