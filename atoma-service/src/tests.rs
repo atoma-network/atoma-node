@@ -124,10 +124,12 @@ mod middleware {
     ) {
         let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+        let (_p2p_event_sender, p2p_event_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
             POSTGRES_TEST_DB_URL,
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_event_receiver,
         )
         .await
         .expect("Failed to create state manager");
@@ -243,7 +245,7 @@ mod middleware {
         std::fs::write(keystore_path.clone(), sui_keystore_contents)
             .expect("Failed to write to keystore");
         let client_config = AtomaSuiConfig::new(
-            "http://localhost:9000".to_string(),
+            "https://fullnode.testnet.sui.io:443".to_string(),
             ObjectID::from_str("0x1").unwrap(),
             ObjectID::from_str("0x2").unwrap(),
             ObjectID::from_str("0x3").unwrap(),
@@ -256,15 +258,16 @@ mod middleware {
             "./keystore".to_string(),
             "./".to_string(),
         );
+        let sui_client = Arc::new(RwLock::new(
+            AtomaSuiClient::new(client_config)
+                .await
+                .expect("Failed to create Sui client"),
+        ));
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
             let confidential_compute_service = AtomaConfidentialComputeService::new(
-                Arc::new(RwLock::new(
-                    AtomaSuiClient::new(client_config)
-                        .await
-                        .expect("Failed to create Sui client"),
-                )),
+                sui_client,
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,
