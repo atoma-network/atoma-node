@@ -93,7 +93,7 @@ services:
         TRACE_LEVEL: ${TRACE_LEVEL:-info}
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
-      - "${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
     profiles:
       - chat_completions_vllm
       - chat_completions_vllm_cpu
