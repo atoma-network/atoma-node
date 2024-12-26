@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS node_subscriptions (
     price_per_one_million_compute_units BIGINT  NOT NULL,
     max_num_compute_units  BIGINT  NOT NULL, 
     valid                  BOOLEAN NOT NULL,
-    PRIMARY KEY (task_small_id, node_small_id)
+    PRIMARY KEY (task_small_id, node_small_id),
+    FOREIGN KEY (task_small_id) 
+        REFERENCES tasks (task_small_id)
 );
 
     CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id 
@@ -37,7 +39,9 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period                    BOOLEAN NOT NULL,
     total_hash                          BYTEA   NOT NULL,
     num_total_messages                  BIGINT  NOT NULL,
-    CONSTRAINT check_compute_units CHECK (already_computed_units <= num_compute_units)
+    CONSTRAINT check_compute_units CHECK (already_computed_units <= num_compute_units),
+    FOREIGN KEY (selected_node_id, task_small_id) 
+        REFERENCES node_subscriptions (node_small_id, task_small_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_stacks_owner_address 
@@ -53,7 +57,9 @@ CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
     attestation_node_id     BIGINT NOT NULL,
     original_node_id        BIGINT NOT NULL,
     original_commitment     BYTEA  NOT NULL,
-    PRIMARY KEY (stack_small_id, attestation_node_id)
+    PRIMARY KEY (stack_small_id, attestation_node_id),
+    FOREIGN KEY (stack_small_id) 
+        REFERENCES stacks (stack_small_id)
 );
 
 -- Create stack_settlement_tickets table
