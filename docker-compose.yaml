@@ -126,6 +126,8 @@ services:
     container_name: chat-completions
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.6.5
+    environment:
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN # Use Flash Attention for better performance, possible values are: [TORCH_SDPA, FLASH_ATTN, FLASHINFER, ROCM_FLASH, XFORMERS] use FLASHINFER for fp8 quantized models
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
 
