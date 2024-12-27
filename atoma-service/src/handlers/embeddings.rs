@@ -1,4 +1,5 @@
 use crate::{
+    error::AtomaServiceError,
     handlers::{
         handle_confidential_compute_encryption_response,
         prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
@@ -7,10 +8,10 @@ use crate::{
     middleware::RequestMetadata,
     server::AppState,
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use reqwest::Client;
 use serde_json::Value;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 /// The path for confidential embeddings requests
@@ -44,7 +45,7 @@ pub(crate) struct EmbeddingsOpenApi;
 ///
 /// # Errors
 ///
-/// Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// Returns a `AtomaServiceError::InternalError` if:
 /// - The embeddings service request fails
 /// - Response parsing fails
 #[utoipa::path(
@@ -66,12 +67,13 @@ pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
     let model = payload
         .get("model")
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
+    let endpoint = request_metadata.endpoint_path.clone();
 
     TEXT_EMBEDDINGS_NUM_REQUESTS
         .with_label_values(&[model])
@@ -98,14 +100,20 @@ pub async fn embeddings_handler(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| {
-            error!("Error sending request to embeddings service: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error sending request to embeddings service: {}", e),
+            num_processed_tokens: 0,
+            endpoint: endpoint.clone(),
         })?;
-    let mut response_body = response.json::<Value>().await.map_err(|e| {
-        error!("Error reading response body: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let mut response_body =
+        response
+            .json::<Value>()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error reading response body: {}", e),
+                num_processed_tokens: 0,
+                endpoint: endpoint.clone(),
+            })?;
 
     // Sign the response and update the stack hash
     if let Err(e) = sign_response_and_update_stack_hash(
@@ -113,16 +121,15 @@ pub async fn embeddings_handler(
         payload_hash,
         &state,
         stack_small_id,
+        endpoint.clone(),
     )
     .await
     {
-        error!(
-            target = "atoma-service",
-            event = "embeddings-handler",
-            "Error signing response and updating stack hash: {}",
-            e
-        );
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        return Err(AtomaServiceError::InternalError {
+            message: format!("Error signing response and updating stack hash: {}", e),
+            num_processed_tokens: 0,
+            endpoint: endpoint.clone(),
+        });
     }
 
     // Handle confidential compute encryption response
@@ -130,6 +137,7 @@ pub async fn embeddings_handler(
         &state,
         response_body,
         client_encryption_metadata,
+        endpoint.clone(),
     )
     .await
     {
@@ -138,14 +146,13 @@ pub async fn embeddings_handler(
             timer.observe_duration();
             Ok(Json(response_body))
         }
-        Err(e) => {
-            error!(
-                target = "atoma-service",
-                event = "embeddings-handler",
+        Err(e) => Err(AtomaServiceError::InternalError {
+            message: format!(
                 "Error handling confidential compute encryption response: {}",
                 e
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+            ),
+            num_processed_tokens: 0,
+            endpoint,
+        }),
     }
 }
