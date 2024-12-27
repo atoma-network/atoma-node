@@ -209,6 +209,17 @@ impl Streamer {
             return Err(Error::new("Error getting completion tokens from usage"));
         }
 
+        tracing::info!(
+            target = "atoma-service",
+            level = "info",
+            endpoint = "handle_final_chunk",
+            stack_small_id = self.stack_small_id,
+            estimated_total_compute_units = self.estimated_total_compute_units,
+            payload_hash = hex::encode(self.payload_hash),
+            "Total compute units: {}",
+            total_compute_units,
+        );
+
         // Update stack num tokens
         if let Err(e) = self.state_manager_sender.send(
             AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
