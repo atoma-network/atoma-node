@@ -317,6 +317,17 @@ async fn handle_non_streaming_response(
         }
     }
 
+    info!(
+        target = "atoma-service",
+        level = "info",
+        endpoint = "handle_non_streaming_response",
+        stack_small_id = stack_small_id,
+        estimated_total_compute_units = estimated_total_compute_units,
+        payload_hash = hex::encode(payload_hash),
+        "Total compute units: {}",
+        total_compute_units,
+    );
+
     // Update stack num tokens
     state
         .state_manager_sender
