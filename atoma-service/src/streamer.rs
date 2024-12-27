@@ -191,7 +191,7 @@ impl Streamer {
         if let Some(prompt_tokens) = usage.get("prompt_tokens") {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                .with_label_values(&[&self.model, &self.stack_small_id.to_string()])
+                .with_label_values(&[&self.model])
                 .inc_by(prompt_tokens as f64);
             total_compute_units += prompt_tokens;
         } else {
@@ -201,7 +201,7 @@ impl Streamer {
         if let Some(completion_tokens) = usage.get("completion_tokens") {
             let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
-                .with_label_values(&[&self.model, &self.stack_small_id.to_string()])
+                .with_label_values(&[&self.model])
                 .inc_by(completion_tokens as f64);
             total_compute_units += completion_tokens;
         } else {
