@@ -127,7 +127,14 @@ services:
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.6.5
     environment:
-      - VLLM_ATTENTION_BACKEND=FLASH_ATTN # Use Flash Attention for better performance, possible values are: [TORCH_SDPA, FLASH_ATTN, FLASHINFER, ROCM_FLASH, XFORMERS] use FLASHINFER for fp8 quantized models
+    # Backend for attention computation
+    # Available options:
+    # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+    # - "FLASH_ATTN": use FlashAttention
+    # - "XFORMERS": use XFormers
+    # - "ROCM_FLASH": use ROCmFlashAttention
+    # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
 
