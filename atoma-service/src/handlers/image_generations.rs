@@ -98,7 +98,6 @@ pub async fn image_generations_handler(
         .await
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending request to image generations service: {}", e),
-            num_processed_tokens: 0,
             endpoint: endpoint.clone(),
         })?;
     let mut response_body =
@@ -107,7 +106,6 @@ pub async fn image_generations_handler(
             .await
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error reading response body: {}", e),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             })?;
 
@@ -123,7 +121,6 @@ pub async fn image_generations_handler(
     {
         return Err(AtomaServiceError::InternalError {
             message: format!("Error signing response and updating stack hash: {}", e),
-            num_processed_tokens: 0,
             endpoint: endpoint.clone(),
         });
     }
@@ -150,7 +147,6 @@ pub async fn image_generations_handler(
                     stack_small_id,
                     e
                 ),
-                num_processed_tokens: 0,
                 endpoint,
             })
         }

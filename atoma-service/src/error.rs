@@ -27,11 +27,6 @@ pub struct ErrorDetails {
     pub code: String,
     /// A human-readable error message describing what went wrong
     pub message: String,
-    /// The number of tokens that were processed before the error occurred
-    pub num_processed_tokens: i64,
-    /// An optional request identifier that can be used for tracking and debugging
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
 }
 
 /// Represents all possible errors that can occur within the Atoma service
@@ -46,8 +41,6 @@ pub enum AtomaServiceError {
     MissingHeader {
         /// The name of the missing header
         header: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -57,8 +50,6 @@ pub enum AtomaServiceError {
     InvalidHeader {
         /// Description of why the header value is invalid
         message: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -68,8 +59,6 @@ pub enum AtomaServiceError {
     InvalidBody {
         /// Description of why the request body is invalid
         message: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -79,8 +68,6 @@ pub enum AtomaServiceError {
     ModelError {
         /// Description of the model error
         model_error: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -90,8 +77,6 @@ pub enum AtomaServiceError {
     AuthError {
         /// Description of the authentication error
         auth_error: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -101,8 +86,6 @@ pub enum AtomaServiceError {
     InternalError {
         /// Description of the internal error
         message: String,
-        /// Number of tokens processed before error occurred
-        num_processed_tokens: i64,
         /// The endpoint that the error occurred on
         endpoint: String,
     },
@@ -182,44 +165,6 @@ impl AtomaServiceError {
         }
     }
 
-    /// Returns the number of tokens that were processed before the error occurred
-    ///
-    /// This method provides access to the token count across all error variants,
-    /// which can be useful for monitoring, billing, and debugging purposes.
-    ///
-    /// # Returns
-    ///
-    /// An `i64` representing the number of tokens that were processed before
-    /// the error condition was encountered.
-    fn num_processed_tokens(&self) -> i64 {
-        match self {
-            Self::MissingHeader {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InvalidHeader {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InvalidBody {
-                num_processed_tokens,
-                ..
-            }
-            | Self::ModelError {
-                num_processed_tokens,
-                ..
-            }
-            | Self::AuthError {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InternalError {
-                num_processed_tokens,
-                ..
-            } => *num_processed_tokens,
-        }
-    }
-
     /// Returns the endpoint where the error occurred
     ///
     /// This method provides access to the endpoint path across all error variants,
@@ -273,39 +218,11 @@ impl IntoResponse for AtomaServiceError {
             event = "error_occurred",
             endpoint = self.endpoint(),
             error = %self.message(),
-            num_processed_tokens = self.num_processed_tokens(),
         );
-        let error_response = match self {
-            Self::MissingHeader {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InvalidHeader {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InvalidBody {
-                num_processed_tokens,
-                ..
-            }
-            | Self::ModelError {
-                num_processed_tokens,
-                ..
-            }
-            | Self::AuthError {
-                num_processed_tokens,
-                ..
-            }
-            | Self::InternalError {
-                num_processed_tokens,
-                ..
-            } => ErrorResponse {
-                error: ErrorDetails {
-                    code: self.error_code().to_string(),
-                    message: self.client_message(),
-                    num_processed_tokens,
-                    request_id: None,
-                },
+        let error_response = ErrorResponse {
+            error: ErrorDetails {
+                code: self.error_code().to_string(),
+                message: self.client_message(),
             },
         };
         (self.status_code(), Json(error_response)).into_response()

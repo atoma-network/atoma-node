@@ -102,7 +102,6 @@ pub async fn embeddings_handler(
         .await
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending request to embeddings service: {}", e),
-            num_processed_tokens: 0,
             endpoint: endpoint.clone(),
         })?;
     let mut response_body =
@@ -111,7 +110,6 @@ pub async fn embeddings_handler(
             .await
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error reading response body: {}", e),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             })?;
 
@@ -127,7 +125,6 @@ pub async fn embeddings_handler(
     {
         return Err(AtomaServiceError::InternalError {
             message: format!("Error signing response and updating stack hash: {}", e),
-            num_processed_tokens: 0,
             endpoint: endpoint.clone(),
         });
     }
@@ -151,7 +148,6 @@ pub async fn embeddings_handler(
                 "Error handling confidential compute encryption response: {}",
                 e
             ),
-            num_processed_tokens: 0,
             endpoint,
         }),
     }

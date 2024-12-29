@@ -46,7 +46,6 @@ async fn sign_response_and_update_stack_hash(
         utils::sign_response_body(response_body, &state.keystore, state.address_index).map_err(
             |e| AtomaServiceError::InternalError {
                 message: format!("Error signing response body: {}", e),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             },
         )?;
@@ -68,8 +67,7 @@ async fn sign_response_and_update_stack_hash(
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error updating stack total hash: {}", e),
-            num_processed_tokens: 0,
-            endpoint,
+            endpoint: endpoint.clone(),
         })?;
 
     Ok(())
@@ -143,14 +141,12 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             ))
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error sending encryption request: {}", e),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             })?;
         let result = receiver
             .await
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error receiving encryption response: {}", e),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             })?;
         match result {
@@ -161,8 +157,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             Err(e) => {
                 return Err(AtomaServiceError::InternalError {
                     message: format!("Failed to encrypt confidential compute response: {:?}", e),
-                    num_processed_tokens: 0,
-                    endpoint,
+                    endpoint: endpoint.clone(),
                 })
             }
         }

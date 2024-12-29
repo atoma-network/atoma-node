@@ -184,7 +184,6 @@ pub async fn chat_completions_handler(
                             stack_small_id,
                             e
                         ),
-                        num_processed_tokens: 0,
                         endpoint: request_metadata.endpoint_path.clone(),
                     }
                 })?;
@@ -199,7 +198,6 @@ pub async fn chat_completions_handler(
                         stack_small_id,
                         e
                     ),
-                    num_processed_tokens: 0,
                     endpoint: request_metadata.endpoint_path.clone(),
                 }
             })?;
@@ -313,7 +311,6 @@ async fn handle_non_streaming_response(
                     stack_small_id,
                     e
                 ),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             }
         })?;
@@ -327,7 +324,6 @@ async fn handle_non_streaming_response(
             ),
             // NOTE: We don't know the number of tokens processed for this request,
             // as the returned output is invalid JSON. For this reason, we set it to 0.
-            num_processed_tokens: 0,
             endpoint: endpoint.clone(),
         }
     })?;
@@ -377,7 +373,6 @@ async fn handle_non_streaming_response(
                     stack_small_id,
                     e
                 ),
-                num_processed_tokens: total_compute_units as i64,
                 endpoint: endpoint.clone(),
             }
         })?;
@@ -400,7 +395,6 @@ async fn handle_non_streaming_response(
                 stack_small_id,
                 e
             ),
-            num_processed_tokens: total_compute_units as i64,
             endpoint: endpoint.clone(),
         });
     }
@@ -427,7 +421,6 @@ async fn handle_non_streaming_response(
                     stack_small_id,
                     e
                 ),
-                num_processed_tokens: total_compute_units as i64,
                 endpoint,
             })
         }
@@ -525,7 +518,6 @@ async fn handle_streaming_response(
                     stack_small_id,
                     e
                 ),
-                num_processed_tokens: 0,
                 endpoint: endpoint.clone(),
             }
         })?;
@@ -533,7 +525,6 @@ async fn handle_streaming_response(
     if !response.status().is_success() {
         return Err(AtomaServiceError::InternalError {
             message: "Inference service returned error".to_string(),
-            num_processed_tokens: 0,
             endpoint,
         });
     }
