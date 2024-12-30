@@ -1,10 +1,14 @@
 use crate::{
     error::AtomaServiceError,
-    handlers::prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
-    middleware::RequestMetadata,
+    handlers::{
+        prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
+        update_stack_num_compute_units,
+    },
+    middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
 };
 use axum::{extract::State, Extension, Json};
+use prometheus::HistogramTimer;
 use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, instrument};
@@ -77,16 +81,92 @@ pub async fn image_generations_handler(
         .with_label_values(&[model])
         .start_timer();
 
-    let endpoint = request_metadata.endpoint_path.clone();
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units: _,
+        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
+        endpoint_path: endpoint,
         request_type: _,
-        endpoint_path: _,
     } = request_metadata;
 
+    match handle_image_generations_response(
+        &state,
+        payload,
+        payload_hash,
+        stack_small_id,
+        estimated_total_compute_units,
+        client_encryption_metadata,
+        &endpoint,
+        timer,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            Err(AtomaServiceError::InternalError {
+                message: format!("Error handling image generations response: {}", e),
+                endpoint: endpoint.to_string(),
+            })
+        }
+    }
+}
+
+/// Handles the core logic for processing image generation requests and responses
+///
+/// This function performs several key operations:
+/// 1. Forwards the image generation request to the image generations service
+/// 2. Signs the response and updates the stack hash
+/// 3. Handles confidential compute encryption if needed
+/// 4. Records timing metrics for the operation
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service URLs and other shared resources
+/// * `payload` - The JSON payload containing the image generation request parameters
+/// * `payload_hash` - A 32-byte hash of the original request payload
+/// * `stack_small_id` - Identifier for the current stack
+/// * `estimated_total_compute_units` - Expected computational cost of the operation
+/// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
+/// * `endpoint` - The API endpoint path being accessed
+/// * `timer` - Prometheus histogram timer for measuring request duration
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Ok(Json<Value>)` - The processed and possibly encrypted response from the image service
+/// * `Err(AtomaServiceError)` - An error if any step in the process fails
+///
+/// # Errors
+///
+/// This function can return `AtomaServiceError::InternalError` in several cases:
+/// * Failed to send request to the image generations service
+/// * Failed to parse the service response
+/// * Failed to sign the response or update the stack hash
+/// * Failed to handle confidential compute encryption
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = endpoint)
+)]
+#[allow(clippy::too_many_arguments)]
+async fn handle_image_generations_response(
+    state: &AppState,
+    payload: Value,
+    payload_hash: [u8; 32],
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    client_encryption_metadata: Option<EncryptionMetadata>,
+    endpoint: &str,
+    timer: HistogramTimer,
+) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
     let response = client
         .post(format!(
@@ -98,7 +178,7 @@ pub async fn image_generations_handler(
         .await
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending request to image generations service: {}", e),
-            endpoint: endpoint.clone(),
+            endpoint: endpoint.to_string(),
         })?;
     let mut response_body =
         response
@@ -106,31 +186,31 @@ pub async fn image_generations_handler(
             .await
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error reading response body: {}", e),
-                endpoint: endpoint.clone(),
+                endpoint: endpoint.to_string(),
             })?;
 
     // Sign the response and update the stack hash
     if let Err(e) = sign_response_and_update_stack_hash(
         &mut response_body,
         payload_hash,
-        &state,
+        state,
         stack_small_id,
-        endpoint.clone(),
+        endpoint.to_string(),
     )
     .await
     {
         return Err(AtomaServiceError::InternalError {
             message: format!("Error signing response and updating stack hash: {}", e),
-            endpoint: endpoint.clone(),
+            endpoint: endpoint.to_string(),
         });
     }
 
     // Handle confidential compute encryption response
     match handle_confidential_compute_encryption_response(
-        &state,
+        state,
         response_body,
         client_encryption_metadata,
-        endpoint.clone(),
+        endpoint.to_string(),
     )
     .await
     {
@@ -147,7 +227,7 @@ pub async fn image_generations_handler(
                     stack_small_id,
                     e
                 ),
-                endpoint,
+                endpoint: endpoint.to_string(),
             })
         }
     }

@@ -1,5 +1,5 @@
 use crate::{
-    handlers::sign_response_and_update_stack_hash,
+    handlers::{sign_response_and_update_stack_hash, update_stack_num_compute_units},
     middleware::EncryptionMetadata,
     server::AppState,
     streamer::{Streamer, StreamingEncryptionMetadata},
@@ -7,7 +7,7 @@ use crate::{
 use atoma_confidential::types::{
     ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
 };
-use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_utils::constants::PAYLOAD_HASH_SIZE;
 use axum::{
     body::Body,
     extract::State,
@@ -151,7 +151,105 @@ pub async fn chat_completions_handler(
         .get("stream")
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
+    let endpoint = request_metadata.endpoint_path.clone();
 
+    match handle_response(
+        &state,
+        endpoint.clone(),
+        payload_hash,
+        stack_small_id,
+        is_stream,
+        payload,
+        estimated_total_compute_units,
+        client_encryption_metadata,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            // NOTE: We need to update the stack number of tokens as the service failed to generate
+            // a proper response. For this reason, we set the total number of tokens to 0.
+            // This will ensure that the stack number of tokens is not updated, and the stack
+            // will not be penalized for the request.
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            return Err(AtomaServiceError::InternalError {
+                message: format!("Error handling chat completions response: {}", e),
+                endpoint: request_metadata.endpoint_path.clone(),
+            });
+        }
+    }
+}
+
+/// Handles both streaming and non-streaming chat completion requests by routing them to appropriate handlers.
+///
+/// This function serves as a router that determines whether to process the request as a streaming
+/// or non-streaming chat completion based on the `is_stream` parameter. For streaming requests,
+/// it also handles the setup of encryption metadata when confidential compute is enabled.
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service configuration and connections
+/// * `endpoint` - The API endpoint path where the request was received
+/// * `payload_hash` - BLAKE2b hash of the original request payload
+/// * `stack_small_id` - Unique identifier for the stack making the request
+/// * `is_stream` - Boolean flag indicating whether this is a streaming request
+/// * `payload` - The JSON payload containing the chat completion request
+/// * `estimated_total_compute_units` - Estimated compute units for the request
+/// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// - For non-streaming: A JSON response with the complete chat completion
+/// - For streaming: An SSE stream that will emit completion chunks
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// - Encryption metadata setup fails for streaming requests
+/// - Either the streaming or non-streaming handler encounters an error
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let response = handle_response(
+///     state,
+///     "/v1/chat/completions".to_string(),
+///     payload_hash,
+///     stack_id,
+///     false, // non-streaming
+///     payload,
+///     estimated_units,
+///     None,
+/// ).await?;
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = CHAT_COMPLETIONS_PATH,
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+async fn handle_response(
+    state: &AppState,
+    endpoint: String,
+    payload_hash: [u8; PAYLOAD_HASH_SIZE],
+    stack_small_id: i64,
+    is_stream: bool,
+    payload: Value,
+    estimated_total_compute_units: i64,
+    client_encryption_metadata: Option<EncryptionMetadata>,
+) -> Result<Response<Body>, AtomaServiceError> {
     if !is_stream {
         handle_non_streaming_response(
             state,
@@ -160,55 +258,18 @@ pub async fn chat_completions_handler(
             estimated_total_compute_units,
             payload_hash,
             client_encryption_metadata,
-            request_metadata.endpoint_path.clone(),
+            endpoint,
         )
         .await
     } else {
-        let streaming_encryption_metadata = if let Some(client_encryption_metadata) =
-            client_encryption_metadata
-        {
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            state
-                .compute_shared_secret_sender
-                .send((
-                    ConfidentialComputeSharedSecretRequest {
-                        proxy_x25519_public_key: client_encryption_metadata.proxy_x25519_public_key,
-                    },
-                    sender,
-                ))
-                .map_err(|e| {
-                    AtomaServiceError::InternalError {
-                        message: format!(
-                            "Error sending encryption request, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                            payload_hash,
-                            stack_small_id,
-                            e
-                        ),
-                        endpoint: request_metadata.endpoint_path.clone(),
-                    }
-                })?;
-            let ConfidentialComputeSharedSecretResponse {
-                shared_secret,
-                nonce,
-            } = receiver.await.map_err(|e| {
-                AtomaServiceError::InternalError {
-                    message: format!(
-                        "Error receiving encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                        payload_hash,
-                        stack_small_id,
-                        e
-                    ),
-                    endpoint: request_metadata.endpoint_path.clone(),
-                }
-            })?;
-            Some(StreamingEncryptionMetadata {
-                shared_secret,
-                nonce,
-                salt: client_encryption_metadata.salt,
-            })
-        } else {
-            None
-        };
+        let streaming_encryption_metadata = utils::get_streaming_encryption_metadata(
+            state,
+            client_encryption_metadata,
+            payload_hash,
+            stack_small_id,
+            &endpoint,
+        )
+        .await?;
 
         handle_streaming_response(
             state,
@@ -217,7 +278,7 @@ pub async fn chat_completions_handler(
             estimated_total_compute_units,
             payload_hash,
             streaming_encryption_metadata,
-            request_metadata.endpoint_path,
+            endpoint,
         )
         .await
     }
@@ -225,11 +286,16 @@ pub async fn chat_completions_handler(
 
 /// Handles non-streaming chat completion requests by processing them through the inference service.
 ///
-/// This function performs several key operations:
+/// This function performs several key operations in the following order:
 /// 1. Forwards the request to the inference service
 /// 2. Processes and signs the response
 /// 3. Updates token usage tracking
-/// 4. Updates the stack's total hash
+/// 4. Handles confidential compute encryption (if enabled)
+/// 5. Updates the stack's compute units count (final step)
+///
+/// The update of compute units is intentionally performed as the last operation to ensure
+/// database consistency. If any earlier steps fail (e.g., encryption errors), we avoid
+/// updating the compute units count prematurely.
 ///
 /// # Arguments
 ///
@@ -251,6 +317,7 @@ pub async fn chat_completions_handler(
 /// - The inference service request fails
 /// - Response parsing fails
 /// - Response signing fails
+/// - Confidential compute encryption fails
 /// - State manager updates fail
 ///
 /// # Example Response Structure
@@ -278,11 +345,11 @@ pub async fn chat_completions_handler(
     )
 )]
 async fn handle_non_streaming_response(
-    state: AppState,
+    state: &AppState,
     payload: Value,
     stack_small_id: i64,
     estimated_total_compute_units: i64,
-    payload_hash: [u8; 32],
+    payload_hash: [u8; PAYLOAD_HASH_SIZE],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: String,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -294,137 +361,30 @@ async fn handle_non_streaming_response(
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
         .with_label_values(&[model])
         .start_timer();
-    let client = Client::new();
-    let response = client
-        .post(format!(
-            "{}{}",
-            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
-            AtomaServiceError::InternalError {
-                message: format!(
-                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                    payload_hash,
-                    stack_small_id,
-                    e
-                ),
-                endpoint: endpoint.clone(),
-            }
-        })?;
-    let mut response_body = response.json::<Value>().await.map_err(|e| {
-        AtomaServiceError::InternalError {
-            message: format!(
-                "Error reading response body, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                payload_hash,
-                stack_small_id,
-                e
-            ),
-            // NOTE: We don't know the number of tokens processed for this request,
-            // as the returned output is invalid JSON. For this reason, we set it to 0.
-            endpoint: endpoint.clone(),
-        }
-    })?;
 
-    let mut total_compute_units = 0;
-    if let Some(usage) = response_body.get("usage") {
-        if let Some(prompt_tokens) = usage.get("prompt_tokens") {
-            let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
-            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                .with_label_values(&[model])
-                .inc_by(prompt_tokens as f64);
-            total_compute_units += prompt_tokens;
-        }
-        if let Some(completion_tokens) = usage.get("completion_tokens") {
-            let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
-            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
-                .with_label_values(&[model])
-                .inc_by(completion_tokens as f64);
-            total_compute_units += completion_tokens;
-        }
-    }
-
-    info!(
-        target = "atoma-service",
-        level = "info",
-        endpoint = "handle_non_streaming_response",
-        stack_small_id = stack_small_id,
-        estimated_total_compute_units = estimated_total_compute_units,
-        payload_hash = hex::encode(payload_hash),
-        "Total compute units: {}",
-        total_compute_units,
-    );
-
-    // Update stack num tokens
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
-            stack_small_id,
-            estimated_total_compute_units,
-            total_compute_units: total_compute_units as i64,
-        })
-        .map_err(|e| {
-            AtomaServiceError::InternalError {
-                message: format!(
-                    "Error updating stack num tokens, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                    payload_hash,
-                    stack_small_id,
-                    e
-                ),
-                endpoint: endpoint.clone(),
-            }
-        })?;
-
-    // NOTE: We need to update the stack num tokens, because the inference response might have produced
-    // less tokens than estimated what we initially estimated, from the middleware.
-    if let Err(e) = sign_response_and_update_stack_hash(
-        &mut response_body,
-        payload_hash,
-        &state,
+    let response_body = utils::send_request_to_inference_service(
+        state,
+        &payload,
         stack_small_id,
-        endpoint.clone(),
+        payload_hash,
+        &endpoint,
     )
-    .await
-    {
-        return Err(AtomaServiceError::InternalError {
-            message: format!(
-                "Error updating state manager, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                payload_hash,
-                stack_small_id,
-                e
-            ),
-            endpoint: endpoint.clone(),
-        });
-    }
+    .await?;
 
-    // Handle confidential compute encryption response
-    match handle_confidential_compute_encryption_response(
-        &state,
+    let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
+
+    utils::serve_non_streaming_response(
+        state,
         response_body,
+        stack_small_id,
+        estimated_total_compute_units,
+        total_compute_units,
+        payload_hash,
         client_encryption_metadata,
-        endpoint.clone(),
+        endpoint,
+        timer,
     )
     .await
-    {
-        Ok(response_body) => {
-            // Stop the timer before returning the valid response
-            timer.observe_duration();
-            Ok(Json(response_body).into_response())
-        }
-        Err(e) => {
-            Err(AtomaServiceError::InternalError {
-                message: format!(
-                    "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                    payload_hash,
-                    stack_small_id,
-                    e
-                ),
-                endpoint,
-            })
-        }
-    }
 }
 
 /// Handles streaming chat completion requests by establishing a Server-Sent Events (SSE) connection.
@@ -475,7 +435,7 @@ async fn handle_non_streaming_response(
     )
 )]
 async fn handle_streaming_response(
-    state: AppState,
+    state: &AppState,
     mut payload: Value,
     stack_small_id: i64,
     estimated_total_compute_units: i64,
@@ -542,6 +502,7 @@ async fn handle_streaming_response(
         state.address_index,
         model.to_string(),
         streaming_encryption_metadata,
+        endpoint,
         timer,
     ))
     .keep_alive(
@@ -892,4 +853,420 @@ pub struct Usage {
     pub completion_tokens: u32,
     /// The total number of tokens used (prompt_tokens + completion_tokens).
     pub total_tokens: u32,
+}
+
+pub(crate) mod utils {
+    use atoma_utils::constants::PAYLOAD_HASH_SIZE;
+    use prometheus::HistogramTimer;
+
+    use super::*;
+
+    /// Retrieves encryption metadata for streaming chat completions when confidential compute is enabled.
+    ///
+    /// This function handles the setup of encryption parameters for secure streaming communications by:
+    /// 1. Checking if client encryption metadata is present
+    /// 2. If present, computing a shared secret with the proxy using X25519
+    /// 3. Combining the shared secret with a nonce and salt for secure streaming
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Application state containing service configuration and channels
+    /// * `client_encryption_metadata` - Optional encryption metadata from the client containing the proxy's public key and salt
+    /// * `payload_hash` - BLAKE2b hash of the original request payload
+    /// * `stack_small_id` - Unique identifier for the stack making the request
+    /// * `request_metadata` - Metadata about the incoming request including endpoint path
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Some(StreamingEncryptionMetadata)` if client encryption metadata was provided
+    /// - `None` if no client encryption metadata was provided
+    /// - `AtomaServiceError` if encryption setup fails
+    ///
+    /// # Errors
+    ///
+    /// Returns `AtomaServiceError::InternalError` if:
+    /// - Failed to send encryption request through channel
+    /// - Failed to receive shared secret response
+    ///
+    /// # Instrumentation
+    ///
+    /// This function is instrumented with debug-level tracing that includes:
+    /// - payload_hash
+    /// - stack_small_id
+    /// - endpoint_path
+    #[instrument(
+        level = "debug", 
+        skip_all,
+        fields(
+            payload_hash,
+            stack_small_id,
+            endpoint_path = endpoint
+        )
+    )]
+    pub(crate) async fn get_streaming_encryption_metadata(
+        state: &AppState,
+        client_encryption_metadata: Option<EncryptionMetadata>,
+        payload_hash: [u8; PAYLOAD_HASH_SIZE],
+        stack_small_id: i64,
+        endpoint: &str,
+    ) -> Result<Option<StreamingEncryptionMetadata>, AtomaServiceError> {
+        let streaming_encryption_metadata = if let Some(client_encryption_metadata) =
+            client_encryption_metadata
+        {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            state
+                .compute_shared_secret_sender
+                .send((
+                    ConfidentialComputeSharedSecretRequest {
+                        proxy_x25519_public_key: client_encryption_metadata.proxy_x25519_public_key,
+                    },
+                    sender,
+                ))
+                .map_err(|e| {
+                    AtomaServiceError::InternalError {
+                        message: format!(
+                            "Error sending encryption request, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                            payload_hash,
+                            stack_small_id,
+                            e
+                        ),
+                        endpoint: endpoint.to_string(),
+                    }
+                })?;
+            let ConfidentialComputeSharedSecretResponse {
+                shared_secret,
+                nonce,
+            } = receiver.await.map_err(|e| {
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error receiving encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?;
+            Some(StreamingEncryptionMetadata {
+                shared_secret,
+                nonce,
+                salt: client_encryption_metadata.salt,
+            })
+        } else {
+            None
+        };
+        Ok(streaming_encryption_metadata)
+    }
+
+    /// Sends a chat completion request to the inference service and parses the response.
+    ///
+    /// This function handles the HTTP communication with the inference service by:
+    /// 1. Creating a new HTTP client
+    /// 2. Sending the request with the provided payload
+    /// 3. Parsing the JSON response
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Application state containing service configuration including the inference service URL
+    /// * `payload` - The JSON payload containing the chat completion request parameters
+    /// * `stack_small_id` - Unique identifier for the stack making the request
+    /// * `payload_hash` - BLAKE2b hash of the original request payload
+    /// * `endpoint` - The API endpoint path where the request was received
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Value, AtomaServiceError>` where:
+    /// - `Value` is the parsed JSON response from the inference service
+    /// - `AtomaServiceError` is returned if the request fails or response parsing fails
+    ///
+    /// # Errors
+    ///
+    /// Returns `AtomaServiceError::InternalError` if:
+    /// - The HTTP request to the inference service fails
+    /// - The response body cannot be parsed as valid JSON
+    ///
+    /// # Instrumentation
+    ///
+    /// This function is instrumented with info-level tracing that includes:
+    /// - stack_small_id
+    /// - payload_hash
+    /// - endpoint
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let response = send_request_to_inference_service(
+    ///     &state,
+    ///     serde_json::json!({
+    ///         "model": "gpt-4",
+    ///         "messages": [{"role": "user", "content": "Hello"}]
+    ///     }),
+    ///     123,
+    ///     [0u8; 32],
+    ///     "/v1/chat/completions"
+    /// ).await?;
+    /// ```
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(stack_small_id, payload_hash, endpoint)
+    )]
+    pub(crate) async fn send_request_to_inference_service(
+        state: &AppState,
+        payload: &Value,
+        stack_small_id: i64,
+        payload_hash: [u8; PAYLOAD_HASH_SIZE],
+        endpoint: &str,
+    ) -> Result<Value, AtomaServiceError> {
+        let client = Client::new();
+        let response = client
+        .post(format!(
+            "{}{}",
+            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+        ))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+        response.json::<Value>().await.map_err(|e| {
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Error reading response body, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                // NOTE: We don't know the number of tokens processed for this request,
+                // as the returned output is invalid JSON. For this reason, we set it to 0.
+                endpoint: endpoint.to_string(),
+            }
+        })
+    }
+
+    /// Extracts and tracks token usage metrics from a chat completion response.
+    ///
+    /// This function processes the "usage" field of a chat completion response to:
+    /// 1. Extract prompt and completion token counts
+    /// 2. Record token usage metrics for monitoring
+    /// 3. Calculate total compute units used
+    ///
+    /// # Arguments
+    ///
+    /// * `response_body` - The JSON response body from the chat completion API containing usage statistics
+    /// * `model` - The name of the model used for the completion (e.g., "gpt-4", "gpt-3.5-turbo")
+    ///
+    /// # Returns
+    ///
+    /// Returns the total number of compute units used (sum of prompt and completion tokens) as an i64
+    ///
+    /// # Metrics
+    ///
+    /// Records two Prometheus metrics:
+    /// * `CHAT_COMPLETIONS_INPUT_TOKENS_METRICS`: Number of tokens in the prompt
+    /// * `CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS`: Number of tokens in the completion
+    ///
+    /// # Example Response Structure
+    ///
+    /// The function expects a response body with this structure:
+    /// ```json
+    /// {
+    ///     "usage": {
+    ///         "prompt_tokens": 56,
+    ///         "completion_tokens": 31,
+    ///         "total_tokens": 87
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let response_body = serde_json::json!({
+    ///     "usage": {
+    ///         "prompt_tokens": 10,
+    ///         "completion_tokens": 20
+    ///     }
+    /// });
+    /// let total = extract_total_num_tokens(&response_body, "gpt-4");
+    /// assert_eq!(total, 30);
+    /// ```
+    pub(crate) fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
+        let mut total_compute_units = 0;
+        if let Some(usage) = response_body.get("usage") {
+            if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+                let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
+                CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
+                    .with_label_values(&[model])
+                    .inc_by(prompt_tokens as f64);
+                total_compute_units += prompt_tokens;
+            }
+            if let Some(completion_tokens) = usage.get("completion_tokens") {
+                let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
+                CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
+                    .with_label_values(&[model])
+                    .inc_by(completion_tokens as f64);
+                total_compute_units += completion_tokens;
+            }
+        }
+        total_compute_units as i64
+    }
+
+    /// Processes and serves a non-streaming chat completion response by handling signature verification,
+    /// encryption, and compute unit tracking.
+    ///
+    /// This function performs several key operations in sequence:
+    /// 1. Signs the response and updates the stack hash
+    /// 2. Handles confidential compute encryption if enabled
+    /// 3. Updates compute unit tracking in the state manager
+    ///
+    /// The function intentionally updates compute units as the final step to maintain database consistency
+    /// in case of earlier failures.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Application state containing service configuration and connections
+    /// * `response_body` - The JSON response body from the inference service
+    /// * `stack_small_id` - Unique identifier for the stack making the request
+    /// * `estimated_total_compute_units` - Initially estimated compute units for the request
+    /// * `total_compute_units` - Actual compute units used by the request
+    /// * `payload_hash` - BLAKE2b hash of the original request payload
+    /// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
+    /// * `endpoint` - The API endpoint path where the request was received
+    /// * `timer` - Prometheus histogram timer for tracking response latency
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the HTTP response with the processed chat completion,
+    /// or an error if any step fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AtomaServiceError::InternalError` if:
+    /// - Response signing or stack hash update fails
+    /// - Confidential compute encryption fails
+    /// - State manager update for compute units fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let response = serve_non_streaming_response(
+    ///     &state,
+    ///     response_body,
+    ///     stack_id,
+    ///     estimated_units,
+    ///     actual_units,
+    ///     payload_hash,
+    ///     encryption_metadata,
+    ///     "/v1/chat/completions".to_string(),
+    ///     timer
+    /// ).await?;
+    /// ```
+    ///
+    /// # Instrumentation
+    ///
+    /// This function is instrumented with:
+    /// - Info-level tracing with fields: stack_small_id, estimated_total_compute_units, payload_hash, endpoint
+    /// - Prometheus metrics for response timing
+    /// - Detailed logging of compute unit usage
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint)
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn serve_non_streaming_response(
+        state: &AppState,
+        mut response_body: Value,
+        stack_small_id: i64,
+        estimated_total_compute_units: i64,
+        total_compute_units: i64,
+        payload_hash: [u8; PAYLOAD_HASH_SIZE],
+        client_encryption_metadata: Option<EncryptionMetadata>,
+        endpoint: String,
+        timer: HistogramTimer,
+    ) -> Result<Response<Body>, AtomaServiceError> {
+        info!(
+            target = "atoma-service",
+            level = "info",
+            endpoint = "handle_non_streaming_response",
+            stack_small_id = stack_small_id,
+            estimated_total_compute_units = estimated_total_compute_units,
+            payload_hash = hex::encode(payload_hash),
+            "Total compute units: {}",
+            total_compute_units,
+        );
+
+        if let Err(e) = sign_response_and_update_stack_hash(
+            &mut response_body,
+            payload_hash,
+            state,
+            stack_small_id,
+            endpoint.clone(),
+        )
+        .await
+        {
+            return Err(AtomaServiceError::InternalError {
+                message: format!(
+                    "Error updating state manager, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                endpoint: endpoint.clone(),
+            });
+        }
+
+        // Handle confidential compute encryption response
+        let response_body = match handle_confidential_compute_encryption_response(
+            state,
+            response_body,
+            client_encryption_metadata,
+            endpoint.clone(),
+        )
+        .await
+        {
+            Ok(response_body) => {
+                // Stop the timer before returning the valid response
+                timer.observe_duration();
+                Json(response_body).into_response()
+            }
+            Err(e) => {
+                return Err(AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.clone(),
+                })
+            }
+        };
+
+        // NOTE: We need to update the stack num tokens, because the inference response might have produced
+        // less tokens than estimated what we initially estimated, from the middleware.
+        //
+        // NOTE: We update the total number of tokens as a final step, as if some error occurs, we don't want
+        // to update the stack num tokens beforehand.
+        update_stack_num_compute_units(
+            &state.state_manager_sender,
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+            &endpoint,
+        )?;
+
+        Ok(response_body)
+    }
 }

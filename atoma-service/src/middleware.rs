@@ -13,7 +13,7 @@ use atoma_confidential::types::{
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
-    constants::{NONCE_SIZE, SALT_SIZE},
+    constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     hashing::blake2b_hash,
     parse_json_byte_array, verify_signature,
 };
@@ -26,7 +26,7 @@ use sui_sdk::types::{
     digests::TransactionDigest,
 };
 use tokio::sync::oneshot;
-use tracing::{error, instrument};
+use tracing::instrument;
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
@@ -100,7 +100,7 @@ impl RequestMetadata {
     }
 
     /// Create a new `RequestMetadata` with the given payload hash
-    pub fn with_payload_hash(mut self, payload_hash: [u8; 32]) -> Self {
+    pub fn with_payload_hash(mut self, payload_hash: [u8; PAYLOAD_HASH_SIZE]) -> Self {
         self.payload_hash = payload_hash;
         self
     }
@@ -403,7 +403,6 @@ pub async fn verify_stack_permissions(
             endpoint: endpoint.clone(),
         })?;
     if !state.models.contains(&model.to_string()) {
-        error!("Model not supported, supported models: {:?}", state.models);
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
             endpoint: endpoint.clone(),
@@ -435,23 +434,17 @@ pub async fn verify_stack_permissions(
         })?;
     let available_stack = result_receiver
         .await
-        .map_err(|e| {
-            error!("Failed to get available stack with enough compute units, with error: {e}");
-            AtomaServiceError::AuthError {
-                auth_error: format!(
-                    "Failed to get available stack with enough compute units, with error: {e}"
-                ),
-                endpoint: endpoint.clone(),
-            }
+        .map_err(|e| AtomaServiceError::AuthError {
+            auth_error: format!(
+                "Failed to get available stack with enough compute units, with error: {e}"
+            ),
+            endpoint: endpoint.clone(),
         })?
-        .map_err(|err| {
-            error!("Failed to get available stack with enough compute units, with error: {err}");
-            AtomaServiceError::AuthError {
-                auth_error: format!(
-                    "Failed to get available stack with enough compute units, with error: {err}"
-                ),
-                endpoint: endpoint.clone(),
-            }
+        .map_err(|err| AtomaServiceError::AuthError {
+            auth_error: format!(
+                "Failed to get available stack with enough compute units, with error: {err}"
+            ),
+            endpoint: endpoint.clone(),
         })?;
     if available_stack.is_none() {
         let tx_digest_str = req_parts
@@ -478,10 +471,11 @@ pub async fn verify_stack_permissions(
         // NOTE: We need to check that the stack small id matches the one in the request
         // otherwise, the user is requesting for a different stack, which is invalid. We
         // must also check that the compute units are enough for processing the request.
+        // We do not update the [`AtomaStateManager`] with the new stack small id and compute units
+        // as the Sui subscriber service should catch the event for `Stack` creation.
         if stack_small_id != tx_stack_small_id as i64
             || compute_units > total_num_compute_units as u64
         {
-            error!("No available stack with enough compute units");
             return Err(AtomaServiceError::AuthError {
                 auth_error: "No available stack with enough compute units".to_string(),
                 endpoint,
@@ -680,8 +674,8 @@ pub async fn confidential_compute_middleware(
             endpoint: endpoint.clone(),
         })?;
     let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
-        .map_err(|_| AtomaServiceError::InvalidBody {
-            message: "Failed to parse ciphertext from body".to_string(),
+        .map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to parse ciphertext from body, with error: {e}"),
             endpoint: endpoint.clone(),
         })?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
@@ -695,8 +689,8 @@ pub async fn confidential_compute_middleware(
     state
         .decryption_sender
         .send((confidential_compute_decryption_request, result_sender))
-        .map_err(|_| AtomaServiceError::InternalError {
-            message: "Failed to send confidential compute request".to_string(),
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Failed to send confidential compute request, with error: {e}"),
             endpoint: endpoint.clone(),
         })?;
     let result = result_receiver
@@ -715,13 +709,10 @@ pub async fn confidential_compute_middleware(
             let req = Request::from_parts(req_parts, body);
             Ok(next.run(req).await)
         }
-        Err(e) => {
-            error!("Failed to decrypt confidential compute response: {:?}", e);
-            Err(AtomaServiceError::InternalError {
-                message: "Failed to decrypt confidential compute response".to_string(),
-                endpoint: endpoint.clone(),
-            })
-        }
+        Err(e) => Err(AtomaServiceError::InternalError {
+            message: format!("Failed to decrypt confidential compute response, with error: {e}"),
+            endpoint: endpoint.clone(),
+        }),
     }
 }
 

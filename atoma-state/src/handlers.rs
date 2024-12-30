@@ -693,7 +693,7 @@ pub(crate) async fn handle_state_manager_event(
                     estimated_total_compute_units,
                     total_compute_units,
                 )
-                .await?;
+                .await?
         }
         AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
             stack_small_id,
@@ -702,7 +702,7 @@ pub(crate) async fn handle_state_manager_event(
             state_manager
                 .state
                 .update_stack_total_hash(stack_small_id, total_hash)
-                .await?;
+                .await?
         }
     }
     Ok(())

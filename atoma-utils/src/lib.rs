@@ -55,6 +55,9 @@ pub mod constants {
 
     /// Size of a Diffie-Hellman public key in bytes
     pub const X25519_PUBLIC_KEY_BYTES_SIZE: usize = 32;
+
+    /// Size of a payload hash in bytes
+    pub const PAYLOAD_HASH_SIZE: usize = 32;
 }
 
 /// Spawns a task that will automatically trigger shutdown if it encounters an error
