@@ -1,12 +1,13 @@
 use crate::{
+    error::AtomaServiceError,
     handlers::prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
     middleware::RequestMetadata,
     server::AppState,
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use reqwest::Client;
 use serde_json::Value;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 use super::{handle_confidential_compute_encryption_response, sign_response_and_update_stack_hash};
@@ -42,7 +43,7 @@ pub(crate) struct ImageGenerationsOpenApi;
 ///
 /// # Errors
 ///
-/// Returns a `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// Returns a `AtomaServiceError::InternalError` if:
 /// - The image generations service request fails
 /// - Response parsing fails
 #[utoipa::path(
@@ -64,7 +65,7 @@ pub async fn image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
     Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
     let model = payload
         .get("model")
@@ -76,6 +77,7 @@ pub async fn image_generations_handler(
         .with_label_values(&[model])
         .start_timer();
 
+    let endpoint = request_metadata.endpoint_path.clone();
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units: _,
@@ -94,14 +96,18 @@ pub async fn image_generations_handler(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| {
-            error!("Error sending request to image generations service: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error sending request to image generations service: {}", e),
+            endpoint: endpoint.clone(),
         })?;
-    let mut response_body = response.json::<Value>().await.map_err(|e| {
-        error!("Error reading response body: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let mut response_body =
+        response
+            .json::<Value>()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error reading response body: {}", e),
+                endpoint: endpoint.clone(),
+            })?;
 
     // Sign the response and update the stack hash
     if let Err(e) = sign_response_and_update_stack_hash(
@@ -109,16 +115,14 @@ pub async fn image_generations_handler(
         payload_hash,
         &state,
         stack_small_id,
+        endpoint.clone(),
     )
     .await
     {
-        error!(
-            target = "atoma-service",
-            event = "image-generations-handler",
-            "Error signing response and updating stack hash: {}",
-            e
-        );
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        return Err(AtomaServiceError::InternalError {
+            message: format!("Error signing response and updating stack hash: {}", e),
+            endpoint: endpoint.clone(),
+        });
     }
 
     // Handle confidential compute encryption response
@@ -126,6 +130,7 @@ pub async fn image_generations_handler(
         &state,
         response_body,
         client_encryption_metadata,
+        endpoint.clone(),
     )
     .await
     {
@@ -135,13 +140,15 @@ pub async fn image_generations_handler(
             Ok(Json(response_body))
         }
         Err(e) => {
-            error!(
-                target = "atoma-service",
-                event = "image-generations-handler",
-                "Error handling confidential compute encryption response: {}",
-                e
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AtomaServiceError::InternalError {
+                message: format!(
+                    "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                endpoint,
+            })
         }
     }
 }

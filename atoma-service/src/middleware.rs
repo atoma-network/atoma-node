@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
+    error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
         image_generations::IMAGE_GENERATIONS_PATH,
@@ -16,13 +17,7 @@ use atoma_utils::{
     hashing::blake2b_hash,
     parse_json_byte_array, verify_signature,
 };
-use axum::{
-    body::Body,
-    extract::State,
-    http::{Request, StatusCode},
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sui_sdk::types::{
@@ -226,37 +221,44 @@ impl RequestMetadata {
 pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, AtomaServiceError> {
     let (mut req_parts, req_body) = req.into_parts();
+    let endpoint = req_parts.uri.path().to_string();
 
     let base64_signature = req_parts
         .headers
         .get(atoma_utils::constants::SIGNATURE)
-        .ok_or_else(|| {
-            error!("Signature header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::SIGNATURE.to_string(),
+            endpoint: endpoint.clone(),
         })?
         .to_str()
-        .map_err(|e| {
-            error!("Failed to extract base64 signature encoding, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to convert signature to string, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
-        .map_err(|e| {
-            error!("Failed to convert body to bytes, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to convert body to bytes, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
-    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
-        error!("Failed to parse body as JSON, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let body_json: Value =
+        serde_json::from_slice(&body_bytes).map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to parse body as JSON, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let body_blake2b_hash = blake2b_hash(body_json.to_string().as_bytes());
     let body_blake2b_hash_bytes: [u8; 32] = body_blake2b_hash
         .as_slice()
         .try_into()
         .expect("Invalid Blake2b hash length");
-    verify_signature(base64_signature, &body_blake2b_hash_bytes)?;
+    verify_signature(base64_signature, &body_blake2b_hash_bytes).map_err(|e| {
+        AtomaServiceError::AuthError {
+            auth_error: format!("Failed to verify signature, with error: {e}"),
+            endpoint,
+        }
+    })?;
     let request_metadata = req_parts
         .extensions
         .get::<RequestMetadata>()
@@ -322,8 +324,9 @@ pub async fn verify_stack_permissions(
     state: State<AppState>,
     req: Request<Body>,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, AtomaServiceError> {
     let (mut req_parts, req_body) = req.into_parts();
+    let endpoint = req_parts.uri.path().to_string();
 
     // Get request path to determine type
     let request_type = match req_parts.uri.path() {
@@ -336,72 +339,84 @@ pub async fn verify_stack_permissions(
     let base64_signature = req_parts
         .headers
         .get(atoma_utils::constants::SIGNATURE)
-        .ok_or_else(|| {
-            error!("Signature header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::SIGNATURE.to_string(),
+            endpoint: endpoint.clone(),
         })?
         .to_str()
-        .map_err(|e| {
-            error!("Failed to convert signature to string, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to convert signature to string, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
-    let signature = Signature::from_str(base64_signature).map_err(|e| {
-        error!("Failed to parse signature, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let signature =
+        Signature::from_str(base64_signature).map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to parse signature, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let public_key_bytes = signature.public_key_bytes();
     let public_key =
         PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
-            error!("Failed to extract public key from bytes, with error: {e}");
-            StatusCode::BAD_REQUEST
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to extract public key from bytes, with error: {e}"),
+                endpoint: endpoint.clone(),
+            }
         })?;
     let sui_address = SuiAddress::from(&public_key);
     let stack_small_id = req_parts
         .headers
         .get(atoma_utils::constants::STACK_SMALL_ID)
-        .ok_or_else(|| {
-            error!("Stack ID header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::STACK_SMALL_ID.to_string(),
+            endpoint: endpoint.clone(),
         })?;
     let stack_small_id = stack_small_id
         .to_str()
-        .map_err(|e| {
-            error!("Stack small ID cannot be converted to a string, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Stack small ID cannot be converted to a string, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?
         .parse::<i64>()
-        .map_err(|e| {
-            error!("Stack small ID is not a valid integer, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Stack small ID is not a valid integer, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
     let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
-        .map_err(|e| {
-            error!("Failed to convert body to bytes, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to convert body to bytes, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
-    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
-        error!("Failed to parse body as JSON, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let body_json: Value =
+        serde_json::from_slice(&body_bytes).map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to parse body as JSON, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let model = body_json
         .get(MODEL)
-        .ok_or_else(|| {
-            error!("Model not found in body");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidBody {
+            message: "Model not found in body".to_string(),
+            endpoint: endpoint.clone(),
         })?
         .as_str()
-        .ok_or_else(|| {
-            error!("Model is not a string");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidBody {
+            message: "Model is not a string".to_string(),
+            endpoint: endpoint.clone(),
         })?;
     if !state.models.contains(&model.to_string()) {
         error!("Model not supported, supported models: {:?}", state.models);
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(AtomaServiceError::InvalidBody {
+            message: format!("Model not supported, supported models: {:?}", state.models),
+            endpoint: endpoint.clone(),
+        });
     }
 
-    let total_num_compute_units =
-        utils::calculate_compute_units(&body_json, request_type.clone(), &state, model)?;
+    let total_num_compute_units = utils::calculate_compute_units(
+        &body_json,
+        request_type.clone(),
+        &state,
+        model,
+        endpoint.clone(),
+    )?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -414,36 +429,51 @@ pub async fn verify_stack_permissions(
                 result_sender,
             },
         )
-        .map_err(|err| {
-            error!("Failed to get available stacks: {}", err);
-            StatusCode::UNAUTHORIZED
+        .map_err(|err| AtomaServiceError::InternalError {
+            message: format!("Failed to get available stacks: {}", err),
+            endpoint: endpoint.clone(),
         })?;
     let available_stack = result_receiver
         .await
         .map_err(|e| {
             error!("Failed to get available stack with enough compute units, with error: {e}");
-            StatusCode::UNAUTHORIZED
+            AtomaServiceError::AuthError {
+                auth_error: format!(
+                    "Failed to get available stack with enough compute units, with error: {e}"
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?
         .map_err(|err| {
             error!("Failed to get available stack with enough compute units, with error: {err}");
-            StatusCode::UNAUTHORIZED
+            AtomaServiceError::AuthError {
+                auth_error: format!(
+                    "Failed to get available stack with enough compute units, with error: {err}"
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?;
     if available_stack.is_none() {
         let tx_digest_str = req_parts
             .headers
             .get(atoma_utils::constants::TX_DIGEST)
-            .ok_or_else(|| {
-                error!("Stack not found, tx digest header expected but not found");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidHeader {
+                message: "Stack not found, tx digest header expected but not found".to_string(),
+                endpoint: endpoint.clone(),
             })?
             .to_str()
-            .map_err(|e| {
-                error!("Tx digest cannot be converted to a string, with error: {e}");
-                StatusCode::BAD_REQUEST
+            .map_err(|e| AtomaServiceError::InvalidHeader {
+                message: format!("Tx digest cannot be converted to a string, with error: {e}"),
+                endpoint: endpoint.clone(),
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
-        let (tx_stack_small_id, compute_units) =
-            utils::request_blockchain_for_stack(&state, tx_digest, total_num_compute_units).await?;
+        let (tx_stack_small_id, compute_units) = utils::request_blockchain_for_stack(
+            &state,
+            tx_digest,
+            total_num_compute_units,
+            endpoint.clone(),
+        )
+        .await?;
 
         // NOTE: We need to check that the stack small id matches the one in the request
         // otherwise, the user is requesting for a different stack, which is invalid. We
@@ -452,7 +482,10 @@ pub async fn verify_stack_permissions(
             || compute_units > total_num_compute_units as u64
         {
             error!("No available stack with enough compute units");
-            return Err(StatusCode::UNAUTHORIZED);
+            return Err(AtomaServiceError::AuthError {
+                auth_error: "No available stack with enough compute units".to_string(),
+                endpoint,
+            });
         }
     }
     let request_metadata = req_parts
@@ -493,9 +526,9 @@ pub async fn verify_stack_permissions(
 ///
 /// # Returns
 /// * `Ok(Response)` - The response from the next handler after successful decryption
-/// * `Err(StatusCode)` - One of:
-///   - `BAD_REQUEST` if headers are missing or invalid
-///   - `INTERNAL_SERVER_ERROR` if decryption service communication fails
+/// * `Err(AtomaServiceError)` - One of:
+///   - `AtomaServiceError::InvalidHeader` if headers are missing or invalid
+///   - `AtomaServiceError::InternalError` if decryption service communication fails
 ///
 /// # Example Headers
 /// ```text
@@ -518,106 +551,139 @@ pub async fn confidential_compute_middleware(
     state: State<AppState>,
     req: Request<Body>,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, AtomaServiceError> {
     let (mut req_parts, req_body) = req.into_parts();
+
+    let endpoint = req_parts.uri.path().to_string();
     let salt = req_parts
         .headers
         .get(atoma_utils::constants::SALT)
-        .ok_or_else(|| {
-            error!("Salt header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidHeader {
+            message: "Salt header not found".to_string(),
+            endpoint: endpoint.clone(),
         })?;
-    let salt_str = salt.to_str().map_err(|e| {
-        error!("Salt cannot be converted to a string, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
-    let salt_bytes = STANDARD.decode(salt_str).map_err(|e| {
-        error!("Failed to decode salt from base64 encoding, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let salt_str = salt
+        .to_str()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Salt cannot be converted to a string, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let salt_bytes = STANDARD
+        .decode(salt_str)
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to decode salt from base64 encoding, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
-        error!(
-            "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
-            e
-        );
-        StatusCode::BAD_REQUEST
+        AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
+                e
+            ),
+            endpoint: endpoint.clone(),
+        }
     })?;
     let nonce = req_parts
         .headers
         .get(atoma_utils::constants::NONCE)
-        .ok_or_else(|| {
-            error!("Nonce header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidHeader {
+            message: "Nonce header not found".to_string(),
+            endpoint: endpoint.clone(),
         })?;
-    let nonce_str = nonce.to_str().map_err(|e| {
-        error!("Nonce cannot be converted to a string, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
-    let nonce_bytes = STANDARD.decode(nonce_str).map_err(|e| {
-        error!("Failed to decode nonce from base64 encoding, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let nonce_str = nonce
+        .to_str()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Nonce cannot be converted to a string, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let nonce_bytes = STANDARD
+        .decode(nonce_str)
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to decode nonce from base64 encoding, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
-        error!(
-            "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
-            e
-        );
-        StatusCode::BAD_REQUEST
+        AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
+                e
+            ),
+            endpoint: endpoint.clone(),
+        }
     })?;
     let proxy_x25519_public_key = req_parts
         .headers
         .get(atoma_utils::constants::PROXY_X25519_PUBLIC_KEY)
-        .ok_or_else(|| {
-            error!("Diffie-Hellman public key header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidHeader {
+            message: "Diffie-Hellman public key header not found".to_string(),
+            endpoint: endpoint.clone(),
         })?;
     let proxy_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
         .decode(proxy_x25519_public_key)
         .map_err(|e| {
-            error!("Failed to decode Proxy X25519 public key from base64 encoding, with error: {e}");
-            StatusCode::BAD_REQUEST
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to decode Proxy X25519 public key from base64 encoding, with error: {e}"),
+                endpoint: endpoint.clone(),
+            }
         })?
         .try_into()
         .map_err(|e| {
-            error!("Failed to convert Proxy X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}", e);
-            StatusCode::BAD_REQUEST
+            AtomaServiceError::InvalidHeader {
+                message: format!(
+                    "Failed to convert Proxy X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
+                    e
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?;
     let node_x25519_public_key = req_parts
         .headers
         .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
-        .ok_or_else(|| {
-            error!("Node X25519 public key header not found");
-            StatusCode::BAD_REQUEST
+        .ok_or_else(|| AtomaServiceError::InvalidHeader {
+            message: "Node X25519 public key header not found".to_string(),
+            endpoint: endpoint.clone(),
         })?;
     let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
         .decode(node_x25519_public_key)
         .map_err(|e| {
-            error!("Failed to decode Node X25519 public key from base64 encoding, with error: {e}");
-            StatusCode::BAD_REQUEST
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to decode Node X25519 public key from base64 encoding, with error: {e}"),
+                endpoint: endpoint.clone(),
+            }
         })?
         .try_into()
         .map_err(|e| {
-            error!("Failed to convert Node X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}", e);
-            StatusCode::BAD_REQUEST
+            AtomaServiceError::InvalidHeader {
+                message: format!(
+                    "Failed to convert Node X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
+                    e
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?;
     let body_bytes = axum::body::to_bytes(req_body, 1024 * MAX_BODY_SIZE)
         .await
-        .map_err(|e| {
-            error!("Failed to convert body to bytes, with error: {e}");
-            StatusCode::BAD_REQUEST
+        .map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to convert body to bytes, with error: {e}"),
+            endpoint: endpoint.clone(),
         })?;
     // Convert body bytes to string since it was created with .to_string() on the client
-    let body_str = String::from_utf8(body_bytes.to_vec()).map_err(|e| {
-        error!("Failed to convert body bytes to string: {}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+    let body_str =
+        String::from_utf8(body_bytes.to_vec()).map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to convert body bytes to string: {}", e),
+            endpoint: endpoint.clone(),
+        })?;
 
-    let body_json: Value = serde_json::from_str(&body_str).map_err(|e| {
-        error!("Failed to parse body as JSON, with error: {e}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let body_json: Value =
+        serde_json::from_str(&body_str).map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to parse body as JSON, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(|_| AtomaServiceError::InvalidBody {
+            message: "Failed to parse ciphertext from body".to_string(),
+            endpoint: endpoint.clone(),
+        })?;
     let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
         ciphertext: ciphertext_bytes,
         nonce: nonce_bytes,
@@ -629,14 +695,16 @@ pub async fn confidential_compute_middleware(
     state
         .decryption_sender
         .send((confidential_compute_decryption_request, result_sender))
-        .map_err(|_| {
-            error!("Failed to send confidential compute request");
-            StatusCode::INTERNAL_SERVER_ERROR
+        .map_err(|_| AtomaServiceError::InternalError {
+            message: "Failed to send confidential compute request".to_string(),
+            endpoint: endpoint.clone(),
         })?;
-    let result = result_receiver.await.map_err(|e| {
-        error!("Failed to receive confidential compute response, with error: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let result = result_receiver
+        .await
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Failed to receive confidential compute response, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     match result {
         Ok(ConfidentialComputeDecryptionResponse { plaintext }) => {
             let body = Body::from(plaintext);
@@ -649,7 +717,10 @@ pub async fn confidential_compute_middleware(
         }
         Err(e) => {
             error!("Failed to decrypt confidential compute response: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AtomaServiceError::InternalError {
+                message: "Failed to decrypt confidential compute response".to_string(),
+                endpoint: endpoint.clone(),
+            })
         }
     }
 }
@@ -666,12 +737,13 @@ pub(crate) mod utils {
     /// # Arguments
     /// * `state` - Reference to the application state containing the compute units mpsc sender
     /// * `tx_digest` - The transaction digest to query compute units for
+    /// * `endpoint` - The endpoint that the request was made to
     ///
     /// # Returns
     /// * `Ok(u64)` - The number of compute units if found
-    /// * `Err(StatusCode)` - If the request fails, returns one of:
-    ///   - `INTERNAL_SERVER_ERROR` if channel communication fails
-    ///   - `UNAUTHORIZED` if no compute units are found for the transaction
+    /// * `Err(AtomaServiceError)` - If the request fails, returns one of:
+    ///   - `AtomaServiceError::InternalError` if channel communication fails
+    ///   - `AtomaServiceError::AuthError` if no compute units are found for the transaction
     ///
     /// # Channel Communication Flow
     /// 1. Creates a oneshot channel for receiving the response
@@ -687,24 +759,29 @@ pub(crate) mod utils {
         state: &AppState,
         tx_digest: TransactionDigest,
         estimated_compute_units: i64,
-    ) -> Result<(u64, u64), StatusCode> {
+        endpoint: String,
+    ) -> Result<(u64, u64), AtomaServiceError> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
             .send((tx_digest, estimated_compute_units, result_sender))
-            .map_err(|_| {
-                error!("Failed to send compute units request");
-                StatusCode::INTERNAL_SERVER_ERROR
+            .map_err(|_| AtomaServiceError::InternalError {
+                message: "Failed to send compute units request".to_string(),
+                endpoint: endpoint.clone(),
             })?;
-        let result = result_receiver.await.map_err(|_| {
-            error!("Failed to receive compute units");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        let result = result_receiver
+            .await
+            .map_err(|_| AtomaServiceError::InternalError {
+                message: "Failed to receive compute units".to_string(),
+                endpoint: endpoint.clone(),
+            })?;
         if let (Some(stack_small_id), Some(compute_units)) = result {
             Ok((stack_small_id, compute_units))
         } else {
-            error!("No compute units found for transaction");
-            Err(StatusCode::UNAUTHORIZED)
+            Err(AtomaServiceError::AuthError {
+                auth_error: "No compute units found for transaction".to_string(),
+                endpoint,
+            })
         }
     }
 
@@ -715,10 +792,11 @@ pub(crate) mod utils {
     /// * `request_type` - The type of request (ChatCompletions, Embeddings, ImageGenerations, or NonInference)
     /// * `state` - Application state containing model configurations and tokenizers
     /// * `model` - The name of the AI model being used
+    /// * `endpoint` - The endpoint that the request was made to
     ///
     /// # Returns
     /// * `Ok(i64)` - The total number of compute units required
-    /// * `Err(StatusCode)` - If there's an error calculating the units, returns an appropriate HTTP status code
+    /// * `Err(AtomaServiceError)` - If there's an error calculating the units, returns an appropriate HTTP status code
     ///
     /// # Compute Unit Calculation
     /// The calculation varies by request type:
@@ -736,13 +814,18 @@ pub(crate) mod utils {
         request_type: RequestType,
         state: &AppState,
         model: &str,
-    ) -> Result<i64, StatusCode> {
+        endpoint: String,
+    ) -> Result<i64, AtomaServiceError> {
         match request_type {
             RequestType::ChatCompletions => {
-                calculate_chat_completion_compute_units(body_json, state, model)
+                calculate_chat_completion_compute_units(body_json, state, model, endpoint)
             }
-            RequestType::Embeddings => calculate_embedding_compute_units(body_json, state, model),
-            RequestType::ImageGenerations => calculate_image_generation_compute_units(body_json),
+            RequestType::Embeddings => {
+                calculate_embedding_compute_units(body_json, state, model, endpoint)
+            }
+            RequestType::ImageGenerations => {
+                calculate_image_generation_compute_units(body_json, endpoint)
+            }
             RequestType::NonInference => Ok(0),
         }
     }
@@ -760,10 +843,10 @@ pub(crate) mod utils {
     ///   - `max_tokens`: Maximum number of tokens for the model's response
     /// * `state` - Application state containing model configurations and tokenizers
     /// * `model` - The name of the AI model being used
-    ///
+    /// * `endpoint` - The endpoint that the request was made to
     /// # Returns
     /// * `Ok(i64)` - The total number of compute units required
-    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    /// * `Err(AtomaServiceError)` - AtomaServiceError::InvalidBody if:
     ///   - The model is not supported
     ///   - Required fields are missing
     ///   - Message content is invalid
@@ -791,43 +874,48 @@ pub(crate) mod utils {
         body_json: &Value,
         state: &AppState,
         model: &str,
-    ) -> Result<i64, StatusCode> {
+        endpoint: String,
+    ) -> Result<i64, AtomaServiceError> {
         let tokenizer_index = state
             .models
             .iter()
             .position(|m| m == model)
-            .ok_or_else(|| {
-                error!("Model not supported");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Model not supported".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
         let messages = body_json
             .get(MESSAGES)
-            .ok_or_else(|| {
-                error!("Messages not found in body");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Messages not found in body".to_string(),
+                endpoint: endpoint.clone(),
             })?
             .as_array()
-            .ok_or_else(|| {
-                error!("Messages is not an array");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Messages is not an array".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
         let mut total_num_compute_units = 0;
         for message in messages {
-            let content = message.get("content").ok_or_else(|| {
-                error!("Message content not found");
-                StatusCode::BAD_REQUEST
-            })?;
-            let content_str = content.as_str().ok_or_else(|| {
-                error!("Message content is not a string");
-                StatusCode::BAD_REQUEST
-            })?;
+            let content = message
+                .get("content")
+                .ok_or_else(|| AtomaServiceError::InvalidBody {
+                    message: "Message content not found".to_string(),
+                    endpoint: endpoint.clone(),
+                })?;
+            let content_str = content
+                .as_str()
+                .ok_or_else(|| AtomaServiceError::InvalidBody {
+                    message: "Message content is not a string".to_string(),
+                    endpoint: endpoint.clone(),
+                })?;
             let num_tokens = state.tokenizers[tokenizer_index]
                 .encode(content_str, true)
-                .map_err(|_| {
-                    error!("Failed to encode message content");
-                    StatusCode::BAD_REQUEST
+                .map_err(|_| AtomaServiceError::InvalidBody {
+                    message: "Failed to encode message content".to_string(),
+                    endpoint: endpoint.clone(),
                 })?
                 .get_ids()
                 .len() as i64;
@@ -841,9 +929,9 @@ pub(crate) mod utils {
         total_num_compute_units += body_json
             .get(MAX_TOKENS)
             .and_then(|value| value.as_i64())
-            .ok_or_else(|| {
-                error!("Max tokens not found in body");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Max tokens not found in body".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
         Ok(total_num_compute_units)
@@ -862,7 +950,7 @@ pub(crate) mod utils {
     ///
     /// # Returns
     /// * `Ok(i64)` - The total number of compute units required
-    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    /// * `Err(AtomaServiceError)` - AtomaServiceError::InvalidBody if:
     ///   - The model is not supported
     ///   - The input field is missing
     ///   - The input format is invalid
@@ -892,28 +980,31 @@ pub(crate) mod utils {
         body_json: &Value,
         state: &AppState,
         model: &str,
-    ) -> Result<i64, StatusCode> {
+        endpoint: String,
+    ) -> Result<i64, AtomaServiceError> {
         let tokenizer_index = state
             .models
             .iter()
             .position(|m| m == model)
-            .ok_or_else(|| {
-                error!("Model not supported");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Model not supported".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
-        let input = body_json.get(INPUT).ok_or_else(|| {
-            error!("Input not found in body");
-            StatusCode::BAD_REQUEST
-        })?;
+        let input = body_json
+            .get(INPUT)
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Input not found in body".to_string(),
+                endpoint: endpoint.clone(),
+            })?;
 
         // input can be a string or an array of strings
         let total_units = match input {
             Value::String(text) => state.tokenizers[tokenizer_index]
                 .encode(text.as_str(), true)
-                .map_err(|_| {
-                    error!("Failed to encode input text");
-                    StatusCode::BAD_REQUEST
+                .map_err(|_| AtomaServiceError::InvalidBody {
+                    message: "Failed to encode input text".to_string(),
+                    endpoint: endpoint.clone(),
                 })?
                 .get_ids()
                 .len() as i64,
@@ -931,8 +1022,10 @@ pub(crate) mod utils {
                 })
                 .sum(),
             _ => {
-                error!("Invalid input format");
-                return Err(StatusCode::BAD_REQUEST);
+                return Err(AtomaServiceError::InvalidBody {
+                    message: "Invalid input format".to_string(),
+                    endpoint: endpoint.clone(),
+                });
             }
         };
 
@@ -952,7 +1045,7 @@ pub(crate) mod utils {
     ///
     /// # Returns
     /// * `Ok(i64)` - The total number of compute units required (width * height * n)
-    /// * `Err(StatusCode)` - BAD_REQUEST if:
+    /// * `Err(AtomaServiceError)` - AtomaServiceError::InvalidBody if:
     ///   - The size field is missing or invalid
     ///   - The dimensions cannot be parsed
     ///   - The number of images is missing or invalid
@@ -965,17 +1058,20 @@ pub(crate) mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    fn calculate_image_generation_compute_units(body_json: &Value) -> Result<i64, StatusCode> {
+    fn calculate_image_generation_compute_units(
+        body_json: &Value,
+        endpoint: String,
+    ) -> Result<i64, AtomaServiceError> {
         let size = body_json
             .get(IMAGE_SIZE)
-            .ok_or_else(|| {
-                error!("Image size not found in body");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Image size not found in body".to_string(),
+                endpoint: endpoint.clone(),
             })?
             .as_str()
-            .ok_or_else(|| {
-                error!("Image size is not a string");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Image size is not a string".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
         // width and height are the dimensions of the image to generate
@@ -986,18 +1082,18 @@ pub(crate) mod utils {
                 let height = h.parse::<i64>().ok()?;
                 Some((width, height))
             })
-            .ok_or_else(|| {
-                error!("Invalid image size format");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Invalid image size format".to_string(),
+                endpoint: endpoint.clone(),
             })?;
 
         // n is the number of images to generate
         let n = body_json
             .get(IMAGE_N)
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| {
-                error!("Invalid or missing image count (n)");
-                StatusCode::BAD_REQUEST
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Invalid or missing image count (n)".to_string(),
+                endpoint: endpoint.clone(),
             })? as i64;
 
         // Calculate total pixels

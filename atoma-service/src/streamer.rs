@@ -228,7 +228,12 @@ impl Streamer {
                 total_compute_units: total_compute_units as i64,
             },
         ) {
-            error!("Error updating stack num tokens: {}", e);
+            error!(
+                target = "atoma-service",
+                level = "error",
+                "Error updating stack num tokens: {}",
+                e
+            );
         }
 
         // Calculate and update total hash
@@ -246,7 +251,12 @@ impl Streamer {
                     total_hash: total_hash_bytes,
                 })
         {
-            error!("Error updating stack total hash: {}", e);
+            error!(
+                target = "atoma-service",
+                level = "error",
+                "Error updating stack total hash: {}",
+                e
+            );
         }
 
         Ok(signature)
@@ -292,7 +302,12 @@ impl Streamer {
             Some(*nonce),
         )
         .map_err(|e| {
-            error!("Error encrypting chunk: {}", e);
+            error!(
+                target = "atoma-service",
+                level = "error",
+                "Error encrypting chunk: {}",
+                e
+            );
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
         Ok(json!({
@@ -323,7 +338,12 @@ impl Stream for Streamer {
                 let chunk_str = match std::str::from_utf8(&chunk) {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Invalid UTF-8 sequence: {}", e);
+                        error!(
+                            target = "atoma-service",
+                            level = "error",
+                            "Invalid UTF-8 sequence: {}",
+                            e
+                        );
                         return Poll::Ready(Some(Err(Error::new(format!(
                             "Invalid UTF-8 sequence: {}",
                             e
@@ -338,7 +358,12 @@ impl Stream for Streamer {
                     return Poll::Ready(None);
                 }
                 let mut chunk = serde_json::from_str::<Value>(chunk_str).map_err(|e| {
-                    error!("Error parsing chunk {chunk_str}: {}", e);
+                    error!(
+                        target = "atoma-service",
+                        level = "error",
+                        "Error parsing chunk {chunk_str}: {}",
+                        e
+                    );
                     Error::new(format!("Error parsing chunk {chunk_str}: {}", e))
                 })?;
 
@@ -354,7 +379,11 @@ impl Stream for Streamer {
                 let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,
                     None => {
-                        error!("Error getting choices from chunk");
+                        error!(
+                            target = "atoma-service",
+                            level = "error",
+                            "Error getting choices from chunk"
+                        );
                         return Poll::Ready(Some(Err(Error::new(
                             "Error getting choices from chunk",
                         ))));
@@ -377,7 +406,11 @@ impl Stream for Streamer {
                         };
                         Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
                     } else {
-                        error!("Error getting usage from chunk");
+                        error!(
+                            target = "atoma-service",
+                            level = "error",
+                            "Error getting usage from chunk"
+                        );
                         Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
                     }
                 } else {

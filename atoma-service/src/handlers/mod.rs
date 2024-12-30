@@ -7,11 +7,11 @@ use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
 use atoma_utils::hashing::blake2b_hash;
-use axum::http::StatusCode;
 use serde_json::{json, Value};
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 use crate::{
+    error::AtomaServiceError,
     middleware::EncryptionMetadata,
     server::{utils, AppState},
 };
@@ -28,7 +28,7 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 ///
 /// # Returns
 ///
-/// Returns Result<(), StatusCode> indicating success or failure
+/// Returns Result<(), AtomaServiceError> indicating success or failure
 #[instrument(
     level = "info",
     skip(response_body, state),
@@ -39,13 +39,14 @@ async fn sign_response_and_update_stack_hash(
     payload_hash: [u8; 32],
     state: &AppState,
     stack_small_id: i64,
-) -> Result<(), StatusCode> {
+    endpoint: String,
+) -> Result<(), AtomaServiceError> {
     // Sign the response body byte content and add the base64 encoded signature to the response body
     let (response_hash, signature) =
         utils::sign_response_body(response_body, &state.keystore, state.address_index).map_err(
-            |e| {
-                error!("Error signing response body: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
+            |e| AtomaServiceError::InternalError {
+                message: format!("Error signing response body: {}", e),
+                endpoint: endpoint.clone(),
             },
         )?;
     response_body["signature"] = json!(signature);
@@ -64,9 +65,9 @@ async fn sign_response_and_update_stack_hash(
             stack_small_id,
             total_hash: total_hash_bytes,
         })
-        .map_err(|e| {
-            error!("Error updating stack total hash: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error updating stack total hash: {}", e),
+            endpoint: endpoint.clone(),
         })?;
 
     Ok(())
@@ -92,7 +93,7 @@ async fn sign_response_and_update_stack_hash(
 ///
 /// # Errors
 ///
-/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// Returns `AtomaServiceError::InternalError` if:
 /// * Failed to send encryption request through the channel
 /// * Failed to receive encryption response
 ///
@@ -114,7 +115,8 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     state: &AppState,
     response_body: Value,
     client_encryption_metadata: Option<EncryptionMetadata>,
-) -> Result<Value, StatusCode> {
+    endpoint: String,
+) -> Result<Value, AtomaServiceError> {
     if let Some(EncryptionMetadata {
         proxy_x25519_public_key,
         salt,
@@ -137,30 +139,26 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 },
                 sender,
             ))
-            .map_err(|_| {
-                error!(
-                    target = "atoma-service",
-                    event = "confidential-compute-encryption-response",
-                    "Error sending encryption request"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error sending encryption request: {}", e),
+                endpoint: endpoint.clone(),
             })?;
-        let result = receiver.await.map_err(|_| {
-            error!(
-                target = "atoma-service",
-                event = "confidential-compute-encryption-response",
-                "Error receiving encryption response"
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        let result = receiver
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error receiving encryption response: {}", e),
+                endpoint: endpoint.clone(),
+            })?;
         match result {
             Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => Ok(json!({
                 "nonce": nonce,
                 "ciphertext": ciphertext,
             })),
             Err(e) => {
-                error!("Failed to encrypt confidential compute response: {:?}", e);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                return Err(AtomaServiceError::InternalError {
+                    message: format!("Failed to encrypt confidential compute response: {:?}", e),
+                    endpoint: endpoint.clone(),
+                })
             }
         }
     } else {
