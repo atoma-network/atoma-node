@@ -21,9 +21,12 @@ use tracing::{error, instrument};
 use x25519_dalek::SharedSecret;
 
 use crate::{
-    handlers::prometheus::{
-        CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+    handlers::{
+        prometheus::{
+            CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+        },
+        update_stack_num_compute_units,
     },
     server::utils,
 };
@@ -82,6 +85,8 @@ pub struct Streamer {
     decoding_phase_timer: Option<HistogramTimer>,
     /// The client encryption metadata for the request
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
+    /// The endpoint for the request
+    endpoint: String,
 }
 
 /// Represents the various states of a streaming process
@@ -110,6 +115,7 @@ impl Streamer {
         address_index: usize,
         model: String,
         streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
+        endpoint: String,
         first_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
@@ -126,6 +132,7 @@ impl Streamer {
             first_token_generation_timer: Some(first_token_generation_timer),
             decoding_phase_timer: None,
             streaming_encryption_metadata,
+            endpoint,
         }
     }
 
@@ -212,29 +219,13 @@ impl Streamer {
         tracing::info!(
             target = "atoma-service",
             level = "info",
-            endpoint = "handle_final_chunk",
+            endpoint = self.endpoint,
             stack_small_id = self.stack_small_id,
             estimated_total_compute_units = self.estimated_total_compute_units,
             payload_hash = hex::encode(self.payload_hash),
-            "Total compute units: {}",
+            "Handle final chunk: Total compute units: {}",
             total_compute_units,
         );
-
-        // Update stack num tokens
-        if let Err(e) = self.state_manager_sender.send(
-            AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
-                stack_small_id: self.stack_small_id,
-                estimated_total_compute_units: self.estimated_total_compute_units,
-                total_compute_units: total_compute_units as i64,
-            },
-        ) {
-            error!(
-                target = "atoma-service",
-                level = "error",
-                "Error updating stack num tokens: {}",
-                e
-            );
-        }
 
         // Calculate and update total hash
         let total_hash = blake2b_hash(&[self.payload_hash, response_hash].concat());
@@ -254,9 +245,21 @@ impl Streamer {
             error!(
                 target = "atoma-service",
                 level = "error",
+                endpoint = self.endpoint,
                 "Error updating stack total hash: {}",
                 e
             );
+        }
+
+        // Update stack num tokens
+        if let Err(e) = update_stack_num_compute_units(
+            &self.state_manager_sender,
+            self.stack_small_id,
+            self.estimated_total_compute_units,
+            total_compute_units as i64,
+            &self.endpoint,
+        ) {
+            error!("Error updating stack num tokens: {}", e);
         }
 
         Ok(signature)
@@ -361,6 +364,7 @@ impl Stream for Streamer {
                     error!(
                         target = "atoma-service",
                         level = "error",
+                        endpoint = self.endpoint,
                         "Error parsing chunk {chunk_str}: {}",
                         e
                     );
@@ -382,6 +386,7 @@ impl Stream for Streamer {
                         error!(
                             target = "atoma-service",
                             level = "error",
+                            endpoint = self.endpoint,
                             "Error getting choices from chunk"
                         );
                         return Poll::Ready(Some(Err(Error::new(
@@ -409,6 +414,7 @@ impl Stream for Streamer {
                         error!(
                             target = "atoma-service",
                             level = "error",
+                            endpoint = self.endpoint,
                             "Error getting usage from chunk"
                         );
                         Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))

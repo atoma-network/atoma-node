@@ -7,6 +7,7 @@ use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
 use atoma_utils::hashing::blake2b_hash;
+use flume::Sender;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
 
@@ -164,4 +165,83 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     } else {
         Ok(response_body)
     }
+}
+
+/// Updates the compute units used by a stack in the state manager.
+///
+/// This function sends an update event to the state manager to record compute unit usage for a stack.
+/// It's typically used when handling errors to ensure the estimated compute units are still tracked,
+/// even if the actual computation failed.
+///
+/// # Arguments
+///
+/// * `state` - Application state containing the state manager channel
+/// * `stack_small_id` - Unique identifier for the stack being updated
+/// * `estimated_total_compute_units` - The estimated number of compute units that would have been used
+/// * `endpoint` - The API endpoint path where the request was received
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the update was successful, or an `AtomaServiceError` if the update failed.
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// - Failed to send the update event to the state manager
+/// - Failed to receive confirmation from the state manager
+/// - The state manager returned an error during the update
+///
+/// # Instrumentation
+///
+/// This function is instrumented with info-level tracing that includes:
+/// - stack_small_id
+/// - estimated_total_compute_units
+/// - total_compute_units (always 0 for error cases)
+/// - payload_hash
+/// - endpoint
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crate::AppState;
+///
+/// async fn handle_error(state: &AppState, stack_id: i64) -> Result<(), AtomaServiceError> {
+///     // When an error occurs, update the stack with estimated units
+///     update_stack_num_compute_units(
+///         state,
+///         stack_id,
+///         100, // estimated units
+///         "/v1/chat/completions"
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        stack_small_id,
+        estimated_total_compute_units,
+        total_compute_units,
+        payload_hash,
+        endpoint
+    )
+)]
+pub(crate) fn update_stack_num_compute_units(
+    state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    total_compute_units: i64,
+    endpoint: &str,
+) -> Result<(), AtomaServiceError> {
+    state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+            stack_small_id,
+            total_compute_units,
+            estimated_total_compute_units,
+        })
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error sending update stack num compute units event: {}", e,),
+            endpoint: endpoint.to_string(),
+        })
 }

@@ -3,12 +3,13 @@ use crate::{
     handlers::{
         handle_confidential_compute_encryption_response,
         prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
-        sign_response_and_update_stack_hash,
+        sign_response_and_update_stack_hash, update_stack_num_compute_units,
     },
-    middleware::RequestMetadata,
+    middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
 };
 use axum::{extract::State, Extension, Json};
+use prometheus::HistogramTimer;
 use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, instrument};
@@ -73,7 +74,14 @@ pub async fn embeddings_handler(
         .get("model")
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
-    let endpoint = request_metadata.endpoint_path.clone();
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        client_encryption_metadata,
+        endpoint_path: endpoint,
+        request_type: _,
+    } = request_metadata;
 
     TEXT_EMBEDDINGS_NUM_REQUESTS
         .with_label_values(&[model])
@@ -82,27 +90,109 @@ pub async fn embeddings_handler(
         .with_label_values(&[model])
         .start_timer();
 
-    let RequestMetadata {
+    match handle_embeddings_response(
+        &state,
+        &payload,
         stack_small_id,
-        estimated_total_compute_units: _,
+        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
-        request_type: _,
-        endpoint_path: _,
-    } = request_metadata;
+        &endpoint,
+        timer,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            Err(e)
+        }
+    }
+}
 
+/// Handles the processing and transformation of embeddings requests and responses
+///
+/// This function serves as the core processing pipeline for embeddings requests, performing
+/// several key operations in sequence:
+///
+/// 1. Forwards the original request to the embeddings service
+/// 2. Processes the response through signature verification and stack hash updates
+/// 3. Applies confidential compute encryption if required
+/// 4. Tracks request timing metrics
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service URLs and shared resources
+/// * `payload` - The original embedding request payload to be forwarded
+/// * `stack_small_id` - Unique identifier for the stack making the request
+/// * `estimated_total_compute_units` - Expected computational cost of the request
+/// * `payload_hash` - 32-byte hash of the original request payload
+/// * `client_encryption_metadata` - Optional encryption details for confidential compute
+/// * `endpoint` - The API endpoint path being called
+/// * `timer` - Prometheus histogram timer for tracking request duration
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Json<Value>` - The processed response, potentially encrypted for confidential compute
+/// * `AtomaServiceError` - Error details if any step in the pipeline fails
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// * Network request to the embeddings service fails
+/// * Response parsing encounters an error
+/// * Response signing or stack hash updates fail
+/// * Confidential compute encryption processing fails
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let response = handle_embeddings_response(
+///     &app_state,
+///     &request_payload,
+///     stack_id,
+///     compute_units,
+///     payload_hash,
+///     encryption_metadata,
+///     "/v1/embeddings",
+///     metrics_timer
+/// ).await?;
+/// ```
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = endpoint)
+)]
+#[allow(clippy::too_many_arguments)]
+async fn handle_embeddings_response(
+    state: &AppState,
+    payload: &Value,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    payload_hash: [u8; 32],
+    client_encryption_metadata: Option<EncryptionMetadata>,
+    endpoint: &str,
+    timer: HistogramTimer,
+) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
     let response = client
         .post(format!(
             "{}{}",
-            state.chat_completions_service_url, EMBEDDINGS_PATH
+            state.embeddings_service_url, EMBEDDINGS_PATH
         ))
         .json(&payload)
         .send()
         .await
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending request to embeddings service: {}", e),
-            endpoint: endpoint.clone(),
+            endpoint: endpoint.to_string(),
         })?;
     let mut response_body =
         response
@@ -110,31 +200,31 @@ pub async fn embeddings_handler(
             .await
             .map_err(|e| AtomaServiceError::InternalError {
                 message: format!("Error reading response body: {}", e),
-                endpoint: endpoint.clone(),
+                endpoint: endpoint.to_string(),
             })?;
 
     // Sign the response and update the stack hash
     if let Err(e) = sign_response_and_update_stack_hash(
         &mut response_body,
         payload_hash,
-        &state,
+        state,
         stack_small_id,
-        endpoint.clone(),
+        endpoint.to_string(),
     )
     .await
     {
         return Err(AtomaServiceError::InternalError {
             message: format!("Error signing response and updating stack hash: {}", e),
-            endpoint: endpoint.clone(),
+            endpoint: endpoint.to_string(),
         });
     }
 
     // Handle confidential compute encryption response
     match handle_confidential_compute_encryption_response(
-        &state,
+        state,
         response_body,
         client_encryption_metadata,
-        endpoint.clone(),
+        endpoint.to_string(),
     )
     .await
     {
@@ -148,7 +238,7 @@ pub async fn embeddings_handler(
                 "Error handling confidential compute encryption response: {}",
                 e
             ),
-            endpoint,
+            endpoint: endpoint.to_string(),
         }),
     }
 }
