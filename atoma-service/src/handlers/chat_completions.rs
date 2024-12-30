@@ -7,7 +7,6 @@ use crate::{
 use atoma_confidential::types::{
     ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
 };
-use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::constants::PAYLOAD_HASH_SIZE;
 use axum::{
     body::Body,
@@ -168,6 +167,10 @@ pub async fn chat_completions_handler(
     {
         Ok(response) => Ok(response),
         Err(e) => {
+            // NOTE: We need to update the stack number of tokens as the service failed to generate
+            // a proper response. For this reason, we set the total number of tokens to 0.
+            // This will ensure that the stack number of tokens is not updated, and the stack
+            // will not be penalized for the request.
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -1256,24 +1259,13 @@ pub(crate) mod utils {
         //
         // NOTE: We update the total number of tokens as a final step, as if some error occurs, we don't want
         // to update the stack num tokens beforehand.
-        state
-            .state_manager_sender
-            .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
-                stack_small_id,
-                estimated_total_compute_units,
-                total_compute_units,
-            })
-            .map_err(|e| {
-                AtomaServiceError::InternalError {
-                    message: format!(
-                        "Error updating stack num tokens, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
-                        payload_hash,
-                        stack_small_id,
-                        e
-                    ),
-                    endpoint: endpoint.clone(),
-                }
-            })?;
+        update_stack_num_compute_units(
+            &state.state_manager_sender,
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+            &endpoint,
+        )?;
 
         Ok(response_body)
     }
