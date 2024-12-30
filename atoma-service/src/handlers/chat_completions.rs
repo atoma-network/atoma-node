@@ -217,7 +217,7 @@ pub async fn chat_completions_handler(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust,ignore
 /// let response = handle_response(
 ///     state,
 ///     "/v1/chat/completions".to_string(),
