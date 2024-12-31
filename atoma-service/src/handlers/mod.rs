@@ -9,6 +9,7 @@ use atoma_confidential::types::{
 use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender;
+use image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
 
@@ -131,6 +132,14 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             proxy_x25519_public_key
         );
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        let usage = if endpoint != CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
+            Some(response_body.get("usage").ok_or(AtomaServiceError::InvalidBody {
+                message: "Usage not found in response body".to_string(),
+                endpoint: endpoint.clone(),
+            })?)
+        } else {
+            None
+        };
         state
             .encryption_sender
             .send((
@@ -155,10 +164,14 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => {
                 let nonce = STANDARD.encode(nonce);
                 let ciphertext = STANDARD.encode(ciphertext);
-                Ok(json!({
+                let mut response_body = json!({
                     "nonce": nonce,
                     "ciphertext": ciphertext,
-                }))
+                });
+                if let Some(usage) = usage {
+                    response_body["usage"] = usage.clone();
+                }
+                Ok(response_body)
             }
             Err(e) => {
                 return Err(AtomaServiceError::InternalError {
