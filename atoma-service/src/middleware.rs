@@ -7,15 +7,16 @@ use crate::{
         image_generations::IMAGE_GENERATIONS_PATH,
     },
     server::AppState,
+    types::ConfidentialComputeRequest,
 };
 use atoma_confidential::types::{
-    ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse, DH_PUBLIC_KEY_SIZE,
+    ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE,
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     hashing::blake2b_hash,
-    parse_json_byte_array, verify_signature,
+    verify_signature,
 };
 use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -549,162 +550,55 @@ pub async fn confidential_compute_middleware(
     let (mut req_parts, req_body) = req.into_parts();
 
     let endpoint = req_parts.uri.path().to_string();
-    let salt = req_parts
-        .headers
-        .get(atoma_utils::constants::SALT)
-        .ok_or_else(|| AtomaServiceError::InvalidHeader {
-            message: "Salt header not found".to_string(),
-            endpoint: endpoint.clone(),
-        })?;
-    let salt_str = salt
-        .to_str()
-        .map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Salt cannot be converted to a string, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let salt_bytes = STANDARD
-        .decode(salt_str)
-        .map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Failed to decode salt from base64 encoding, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
-        AtomaServiceError::InvalidHeader {
-            message: format!(
-                "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
-                e
-            ),
-            endpoint: endpoint.clone(),
-        }
-    })?;
-    let nonce = req_parts
-        .headers
-        .get(atoma_utils::constants::NONCE)
-        .ok_or_else(|| AtomaServiceError::InvalidHeader {
-            message: "Nonce header not found".to_string(),
-            endpoint: endpoint.clone(),
-        })?;
-    let nonce_str = nonce
-        .to_str()
-        .map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Nonce cannot be converted to a string, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let nonce_bytes = STANDARD
-        .decode(nonce_str)
-        .map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Failed to decode nonce from base64 encoding, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
-        AtomaServiceError::InvalidHeader {
-            message: format!(
-                "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
-                e
-            ),
-            endpoint: endpoint.clone(),
-        }
-    })?;
-    let proxy_x25519_public_key = req_parts
-        .headers
-        .get(atoma_utils::constants::PROXY_X25519_PUBLIC_KEY)
-        .ok_or_else(|| AtomaServiceError::InvalidHeader {
-            message: "Diffie-Hellman public key header not found".to_string(),
-            endpoint: endpoint.clone(),
-        })?;
-    let proxy_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
-        .decode(proxy_x25519_public_key)
-        .map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!("Failed to decode Proxy X25519 public key from base64 encoding, with error: {e}"),
-                endpoint: endpoint.clone(),
-            }
-        })?
-        .try_into()
-        .map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!(
-                    "Failed to convert Proxy X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
-                    e
-                ),
-                endpoint: endpoint.clone(),
-            }
-        })?;
-    let node_x25519_public_key = req_parts
-        .headers
-        .get(atoma_utils::constants::NODE_X25519_PUBLIC_KEY)
-        .ok_or_else(|| AtomaServiceError::InvalidHeader {
-            message: "Node X25519 public key header not found".to_string(),
-            endpoint: endpoint.clone(),
-        })?;
-    let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
-        .decode(node_x25519_public_key)
-        .map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!("Failed to decode Node X25519 public key from base64 encoding, with error: {e}"),
-                endpoint: endpoint.clone(),
-            }
-        })?
-        .try_into()
-        .map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!(
-                    "Failed to convert Node X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
-                    e
-                ),
-                endpoint: endpoint.clone(),
-            }
-        })?;
-    let body_bytes = axum::body::to_bytes(req_body, 1024 * MAX_BODY_SIZE)
+    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
         .await
         .map_err(|e| AtomaServiceError::InvalidBody {
             message: format!("Failed to convert body to bytes, with error: {e}"),
             endpoint: endpoint.clone(),
         })?;
-    // Convert body bytes to string since it was created with .to_string() on the client
-    let body_str =
-        String::from_utf8(body_bytes.to_vec()).map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to convert body bytes to string: {}", e),
-            endpoint: endpoint.clone(),
+    let confidential_compute_request =
+        serde_json::from_slice::<ConfidentialComputeRequest>(&body_bytes).map_err(|e| {
+            AtomaServiceError::InvalidBody {
+                message: format!(
+                    "Failed to parse body as ConfidentialComputeRequest, with error: {e}"
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?;
 
-    let body_json: Value =
-        serde_json::from_str(&body_str).map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to parse body as JSON, with error: {e}"),
+    let plaintext_body_hash_bytes = STANDARD
+        .decode(&confidential_compute_request.plaintext_body_hash)
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Plaintext body hash cannot be converted to a string, with error: {e}"
+            ),
             endpoint: endpoint.clone(),
         })?;
-    let ciphertext_bytes = parse_json_byte_array(&body_json, atoma_utils::constants::CIPHERTEXT)
-        .map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to parse ciphertext from body, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
-        ciphertext: ciphertext_bytes,
-        nonce: nonce_bytes,
-        salt: salt_bytes,
-        proxy_x25519_public_key: proxy_x25519_public_key_bytes,
-        node_x25519_public_key: node_x25519_public_key_bytes,
-    };
-    let (result_sender, result_receiver) = oneshot::channel();
-    state
-        .decryption_sender
-        .send((confidential_compute_decryption_request, result_sender))
-        .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Failed to send confidential compute request, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let result = result_receiver
-        .await
-        .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Failed to receive confidential compute response, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    match result {
-        Ok(ConfidentialComputeDecryptionResponse { plaintext }) => {
+    let plaintext_body_hash_bytes: [u8; PAYLOAD_HASH_SIZE] = plaintext_body_hash_bytes.try_into().map_err(|e| {
+        AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Failed to convert plaintext body hash bytes to {PAYLOAD_HASH_SIZE}-byte array, incorrect length, with error: {:?}",
+                e
+            ),
+            endpoint: endpoint.to_string(),
+        }
+    })?;
+
+    utils::verify_plaintext_body_hash(&plaintext_body_hash_bytes, &req_parts.headers, &endpoint)?;
+
+    match utils::decrypt_confidential_compute_request(
+        &state,
+        &confidential_compute_request,
+        &endpoint,
+    )
+    .await
+    {
+        Ok((plaintext, client_x25519_public_key_bytes, salt_bytes)) => {
+            utils::check_plaintext_body_hash(plaintext_body_hash_bytes, &plaintext, &endpoint)?;
             let body = Body::from(plaintext);
             req_parts.extensions.insert(
                 RequestMetadata::default()
-                    .with_client_encryption_metadata(proxy_x25519_public_key_bytes, salt_bytes),
+                    .with_client_encryption_metadata(client_x25519_public_key_bytes, salt_bytes),
             );
             let req = Request::from_parts(req_parts, body);
             Ok(next.run(req).await)
@@ -717,6 +611,8 @@ pub async fn confidential_compute_middleware(
 }
 
 pub(crate) mod utils {
+    use hyper::HeaderMap;
+
     use super::*;
 
     /// Queries the blockchain to retrieve compute units associated with a specific transaction.
@@ -1089,5 +985,267 @@ pub(crate) mod utils {
 
         // Calculate total pixels
         Ok(width * height * n)
+    }
+
+    /// Verifies a plaintext body hash against a provided signature.
+    ///
+    /// This function performs signature verification for confidential compute requests by:
+    /// 1. Retrieving and validating the signature from request headers
+    /// 2. Verifying the signature against the provided plaintext body hash
+    ///
+    /// # Arguments
+    /// * `plaintext_body_hash` - The 32-byte plaintext body hash to verify
+    /// * `headers` - HTTP headers containing the signature for verification
+    /// * `endpoint` - The API endpoint path being accessed (used for error context)
+    ///
+    /// # Returns
+    /// * `Ok(())` - If signature verification succeeds
+    /// * `Err(AtomaServiceError)` - If any step fails, with variants:
+    ///   - `InvalidHeader` - If the signature is malformed
+    ///   - `MissingHeader` - If the signature header is missing
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - The signature header is missing
+    /// - The signature cannot be parsed as a string
+    /// - The signature verification fails
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use axum::http::HeaderMap;
+    ///
+    /// let plaintext_body_hash = [0u8; 32]; // Your 32-byte hash
+    /// let headers = HeaderMap::new(); // Headers with signature
+    /// let endpoint = "/v1/chat/completions";
+    ///
+    /// match verify_plaintext_body_hash(&plaintext_body_hash, &headers, endpoint) {
+    ///     Ok(()) => println!("Signature verification successful"),
+    ///     Err(e) => eprintln!("Verification failed: {}", e),
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) fn verify_plaintext_body_hash(
+        plaintext_body_hash: &[u8; PAYLOAD_HASH_SIZE],
+        headers: &HeaderMap,
+        endpoint: &str,
+    ) -> Result<(), AtomaServiceError> {
+        let base64_signature = headers
+            .get(atoma_utils::constants::SIGNATURE)
+            .ok_or_else(|| AtomaServiceError::MissingHeader {
+                header: atoma_utils::constants::SIGNATURE.to_string(),
+                endpoint: endpoint.to_string(),
+            })?;
+        let base64_signature =
+            base64_signature
+                .to_str()
+                .map_err(|e| AtomaServiceError::InvalidHeader {
+                    message: format!("Signature cannot be converted to a string, with error: {e}"),
+                    endpoint: endpoint.to_string(),
+                })?;
+        verify_signature(base64_signature, plaintext_body_hash).map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to verify signature, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            }
+        })
+    }
+
+    /// Decrypts a confidential compute request.
+    ///
+    /// This function decrypts a confidential compute request using the provided state and request data.
+    ///
+    /// # Arguments
+    /// * `state` - The application state containing decryption capabilities
+    /// * `confidential_compute_request` - The confidential compute request to decrypt
+    /// * `endpoint` - The API endpoint path being accessed (used for error context)
+    ///
+    /// # Returns
+    /// * `Ok(ConfidentialComputeDecryptionResponse)` - The decrypted confidential compute response
+    /// * `Err(AtomaServiceError)` - If any step fails, with variants:
+    ///   - `InvalidHeader` - If the signature is malformed
+    ///   - `MissingHeader` - If the signature header is missing
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - The signature header is missing
+    /// - The signature cannot be parsed as a string
+    /// - The signature verification fails
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use atoma_service::middleware::utils;
+    ///
+    /// let state = AppState::new();
+    /// let confidential_compute_request = ConfidentialComputeRequest::new();
+    /// let endpoint = "/v1/chat/completions";
+    ///
+    /// match utils::decrypt_confidential_compute_request(&state, &confidential_compute_request, endpoint) {
+    ///     Ok(decrypted_response) => println!("Decrypted response: {:?}", decrypted_response),
+    ///     Err(e) => eprintln!("Decryption failed: {}", e),
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) async fn decrypt_confidential_compute_request(
+        state: &AppState,
+        confidential_compute_request: &ConfidentialComputeRequest,
+        endpoint: &str,
+    ) -> Result<(Vec<u8>, [u8; 32], [u8; 16]), AtomaServiceError> {
+        let salt_bytes = STANDARD
+            .decode(&confidential_compute_request.salt)
+            .map_err(|e| AtomaServiceError::InvalidHeader {
+                message: format!("Salt cannot be converted to a string, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
+        AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
+                e
+            ),
+            endpoint: endpoint.to_string(),
+        }
+    })?;
+        let nonce_bytes = STANDARD
+            .decode(&confidential_compute_request.nonce)
+            .map_err(|e| AtomaServiceError::InvalidHeader {
+                message: format!("Nonce cannot be converted to a string, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        let nonce_bytes: [u8; NONCE_SIZE] = nonce_bytes.try_into().map_err(|e| {
+        AtomaServiceError::InvalidHeader {
+            message: format!(
+                "Failed to convert nonce bytes to {NONCE_SIZE}-byte array, incorrect length, with error: {:?}",
+                e
+            ),
+            endpoint: endpoint.to_string(),
+        }
+    })?;
+        let client_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        .decode(&confidential_compute_request.client_dh_public_key)
+        .map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to decode Proxy X25519 public key from base64 encoding, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            }
+        })?
+        .try_into()
+        .map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!(
+                    "Failed to convert Proxy X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+        let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        .decode(&confidential_compute_request.node_dh_public_key)
+        .map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to decode Node X25519 public key from base64 encoding, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            }
+        })?
+        .try_into()
+        .map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!(
+                    "Failed to convert Node X25519 public key bytes to 32-byte array, incorrect length, with error: {:?}",
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+        let ciphertext_bytes = STANDARD
+            .decode(&confidential_compute_request.ciphertext)
+            .map_err(|e| AtomaServiceError::InvalidBody {
+                message: format!(
+                    "Failed to decode ciphertext from base64 encoding, with error: {e}"
+                ),
+                endpoint: endpoint.to_string(),
+            })?;
+        let confidential_compute_decryption_request = ConfidentialComputeDecryptionRequest {
+            ciphertext: ciphertext_bytes,
+            nonce: nonce_bytes,
+            salt: salt_bytes,
+            client_x25519_public_key: client_x25519_public_key_bytes,
+            node_x25519_public_key: node_x25519_public_key_bytes,
+        };
+        let (result_sender, result_receiver) = oneshot::channel();
+        state
+            .decryption_sender
+            .send((confidential_compute_decryption_request, result_sender))
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to send confidential compute request, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        let result = result_receiver
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!(
+                    "Failed to receive confidential compute response, with error: {e}"
+                ),
+                endpoint: endpoint.to_string(),
+            })?;
+        let plaintext = result.map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to decrypt confidential compute request, with error: {e}"),
+            endpoint: endpoint.to_string(),
+        })?.plaintext;
+        Ok((plaintext, client_x25519_public_key_bytes, salt_bytes))
+    }
+
+    /// Checks if the computed plaintext body hash matches the expected plaintext body hash.
+    ///
+    /// This function performs a hash comparison between the computed plaintext body hash and the expected plaintext body hash.
+    ///
+    /// # Arguments
+    /// * `plaintext_body_hash_bytes` - The expected plaintext body hash as a 32-byte array
+    /// * `plaintext` - The plaintext to hash and compare
+    /// * `endpoint` - The API endpoint path being accessed (used for error context)
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the hashes match
+    /// * `Err(AtomaServiceError)` - If the hashes do not match
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - The computed plaintext body hash cannot be converted to a 32-byte array
+    /// - The computed plaintext body hash does not match the expected plaintext body hash
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use atoma_service::middleware::utils;
+    ///
+    /// let plaintext_body_hash_bytes = [0u8; 32]; // Your 32-byte hash
+    /// let plaintext = "Hello, world!".as_bytes();
+    /// let endpoint = "/v1/chat/completions";
+    ///
+    /// match utils::check_plaintext_body_hash(&plaintext_body_hash_bytes, plaintext, endpoint) {
+    ///     Ok(()) => println!("Plaintext body hash matches"),
+    ///     Err(e) => eprintln!("Plaintext body hash does not match: {}", e),
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) fn check_plaintext_body_hash(
+        plaintext_body_hash_bytes: [u8; PAYLOAD_HASH_SIZE],
+        plaintext: &[u8],
+        endpoint: &str,
+    ) -> Result<(), AtomaServiceError> {
+        let computed_plaintext_body_hash: [u8; PAYLOAD_HASH_SIZE] = blake2b_hash(&plaintext).try_into().map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to convert plaintext body hash to {PAYLOAD_HASH_SIZE}-byte array, incorrect length, with error: {:?}", e),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+        if computed_plaintext_body_hash != plaintext_body_hash_bytes {
+            return Err(AtomaServiceError::InvalidBody {
+                message: format!(
+                    "Plaintext body hash does not match, computed hash: {:?}, expected hash: {:?}",
+                    computed_plaintext_body_hash, plaintext_body_hash_bytes
+                ),
+                endpoint: endpoint.to_string(),
+            });
+        }
+        Ok(())
     }
 }

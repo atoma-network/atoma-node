@@ -128,7 +128,10 @@ where
 /// 1. The request was signed by the owner of the public key
 /// 2. The request body hasn't been tampered with since signing
 #[instrument(level = "trace", skip_all)]
-pub fn verify_signature(base64_signature: &str, body_hash: &[u8; 32]) -> Result<(), StatusCode> {
+pub fn verify_signature(
+    base64_signature: &str,
+    body_hash: &[u8; constants::PAYLOAD_HASH_SIZE],
+) -> Result<(), StatusCode> {
     let signature = Signature::from_str(base64_signature).map_err(|_| {
         error!("Failed to parse signature");
         StatusCode::BAD_REQUEST

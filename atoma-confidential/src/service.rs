@@ -184,8 +184,7 @@ impl AtomaConfidentialComputeService {
         tracing::info!(
             target = "atoma-confidential-compute-service",
             event = "confidential_compute_service_run",
-            "Running confidential compute service, with dh public key: {:?}",
-            self.key_manager.get_public_key().as_bytes()
+            "Running confidential compute service"
         );
 
         loop {
@@ -316,7 +315,7 @@ impl AtomaConfidentialComputeService {
         name = "handle_decryption_request",
         skip_all,
         fields(
-            proxy_public_key = ?decryption_request.proxy_x25519_public_key,
+            client_public_key = ?decryption_request.client_x25519_public_key,
             node_public_key = ?self.key_manager.get_public_key().as_bytes()
         )
     )]
@@ -329,7 +328,7 @@ impl AtomaConfidentialComputeService {
             ciphertext,
             nonce,
             salt,
-            proxy_x25519_public_key,
+            client_x25519_public_key,
             node_x25519_public_key,
         } = decryption_request;
         let result = if PublicKey::from(node_x25519_public_key) != self.key_manager.get_public_key()
@@ -346,7 +345,7 @@ impl AtomaConfidentialComputeService {
             ))
         } else {
             self.key_manager
-                .decrypt_ciphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce)
+                .decrypt_ciphertext(client_x25519_public_key, &ciphertext, &salt, &nonce)
                 .map_err(|e| {
                     tracing::error!(
                         target = "atoma-confidential-compute-service",
