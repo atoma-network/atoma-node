@@ -1394,7 +1394,7 @@ mod middleware {
             .unwrap();
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();

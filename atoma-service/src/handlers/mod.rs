@@ -20,6 +20,21 @@ use crate::{
 };
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 
+/// Key for the ciphertext in the response body
+const CIPHERTEXT_KEY: &str = "ciphertext";
+
+/// Key for the nonce in the response body
+const NONCE_KEY: &str = "nonce";
+
+/// Key for the response hash in the response body
+const RESPONSE_HASH_KEY: &str = "response_hash";
+
+/// Key for the signature in the response body
+const SIGNATURE_KEY: &str = "signature";
+
+/// Key for the usage in the response body
+const USAGE_KEY: &str = "usage";
+
 /// Updates response signature and stack hash state
 ///
 /// # Arguments
@@ -52,7 +67,8 @@ async fn sign_response_and_update_stack_hash(
                 endpoint: endpoint.clone(),
             },
         )?;
-    response_body["signature"] = json!(signature);
+    response_body[SIGNATURE_KEY] = json!(signature);
+    response_body[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
 
     // Update the stack total hash
     let total_hash = blake2b_hash(&[payload_hash, response_hash].concat());
@@ -116,7 +132,7 @@ async fn sign_response_and_update_stack_hash(
 )]
 pub(crate) async fn handle_confidential_compute_encryption_response(
     state: &AppState,
-    response_body: Value,
+    mut response_body: Value,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: String,
 ) -> Result<Value, AtomaServiceError> {
@@ -131,6 +147,23 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
             "Confidential AI inference response, with proxy x25519 public key: {:#?}",
             proxy_x25519_public_key
         );
+
+        // Extract signature and response_hash before encryption
+        let signature = response_body.get(SIGNATURE_KEY).cloned();
+        let response_hash = response_body.get(RESPONSE_HASH_KEY).cloned();
+
+        // Remove signature and response_hash from the body that will be encrypted
+        if signature.is_some() {
+            response_body
+                .as_object_mut()
+                .map(|obj| obj.remove(SIGNATURE_KEY));
+        }
+        if response_hash.is_some() {
+            response_body
+                .as_object_mut()
+                .map(|obj| obj.remove(RESPONSE_HASH_KEY));
+        }
+
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let usage = if endpoint != CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
             Some(
@@ -169,11 +202,17 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 let nonce = STANDARD.encode(nonce);
                 let ciphertext = STANDARD.encode(ciphertext);
                 let mut response_body = json!({
-                    "nonce": nonce,
-                    "ciphertext": ciphertext,
+                    NONCE_KEY: nonce,
+                    CIPHERTEXT_KEY: ciphertext,
                 });
                 if let Some(usage) = usage {
-                    response_body["usage"] = usage.clone();
+                    response_body[USAGE_KEY] = usage.clone();
+                }
+                if let Some(signature) = signature {
+                    response_body[SIGNATURE_KEY] = signature.clone();
+                }
+                if let Some(response_hash) = response_hash {
+                    response_body[RESPONSE_HASH_KEY] = response_hash.clone();
                 }
                 Ok(response_body)
             }
