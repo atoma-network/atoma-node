@@ -54,6 +54,18 @@ const IMAGE_SIZE: &str = "size";
 /// The key for the number of images in the request body
 const IMAGE_N: &str = "n";
 
+/// Metadata for confidential compute decryption requests
+pub struct DecryptionMetadata {
+    /// The plaintext body
+    pub plaintext: Vec<u8>,
+
+    /// The client's Diffie-Hellman public key
+    pub client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+
+    /// The salt
+    pub salt: [u8; SALT_SIZE],
+}
+
 /// Metadata for confidential compute encryption requests
 #[derive(Clone, Debug)]
 pub struct EncryptionMetadata {
@@ -597,7 +609,11 @@ pub async fn confidential_compute_middleware(
     )
     .await
     {
-        Ok((plaintext, client_x25519_public_key_bytes, salt_bytes)) => {
+        Ok(DecryptionMetadata {
+            plaintext,
+            client_dh_public_key: client_x25519_public_key_bytes,
+            salt: salt_bytes,
+        }) => {
             utils::check_plaintext_body_hash(plaintext_body_hash_bytes, &plaintext, &endpoint)?;
             let body = Body::from(plaintext);
             req_parts.extensions.insert(
@@ -1106,7 +1122,7 @@ pub(crate) mod utils {
         state: &AppState,
         confidential_compute_request: &ConfidentialComputeRequest,
         endpoint: &str,
-    ) -> Result<(Vec<u8>, [u8; 32], [u8; 16]), AtomaServiceError> {
+    ) -> Result<DecryptionMetadata, AtomaServiceError> {
         let salt_bytes = STANDARD
             .decode(&confidential_compute_request.salt)
             .map_err(|e| AtomaServiceError::InvalidHeader {
@@ -1210,7 +1226,11 @@ pub(crate) mod utils {
                 endpoint: endpoint.to_string(),
             })?
             .plaintext;
-        Ok((plaintext, client_x25519_public_key_bytes, salt_bytes))
+        Ok(DecryptionMetadata {
+            plaintext,
+            client_dh_public_key: client_x25519_public_key_bytes,
+            salt: salt_bytes,
+        })
     }
 
     /// Checks if the computed plaintext body hash matches the expected plaintext body hash.
@@ -1250,12 +1270,7 @@ pub(crate) mod utils {
         plaintext: &[u8],
         endpoint: &str,
     ) -> Result<(), AtomaServiceError> {
-        let computed_plaintext_body_hash: [u8; PAYLOAD_HASH_SIZE] = blake2b_hash(&plaintext).try_into().map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!("Failed to convert plaintext body hash to {PAYLOAD_HASH_SIZE}-byte array, incorrect length, with error: {:?}", e),
-                endpoint: endpoint.to_string(),
-            }
-        })?;
+        let computed_plaintext_body_hash: [u8; PAYLOAD_HASH_SIZE] = blake2b_hash(plaintext).into();
         if computed_plaintext_body_hash != plaintext_body_hash_bytes {
             return Err(AtomaServiceError::InvalidBody {
                 message: format!(

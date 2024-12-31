@@ -1223,45 +1223,42 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_encryption_decryption() {
-        const MESSAGE_CONTENT: &str = "plaintext data";
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, server_dh_public_key) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            server_dh_public_key,
+        ) = setup_app_state().await;
 
-        // Create encrypted test data
-        let plaintext_data = json!({
-            "message": MESSAGE_CONTENT
-        })
-        .to_string();
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let client_dh_public_key_b64 = STANDARD.encode(client_dh_public_key.as_ref());
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
-            encrypt_plaintext(plaintext_data.as_bytes(), &shared_secret, &salt, None)
+            encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
                 .expect("Failed to encrypt plaintext data");
-        let server_dh_public_key_b64 = STANDARD.encode(server_dh_public_key.as_ref());
         let encrypted_body_json = json!({
-            constants::CIPHERTEXT: encrypted_data,
+            "ciphertext": STANDARD.encode(encrypted_data),
+            "salt": STANDARD.encode(salt),
+            "nonce": STANDARD.encode(nonce.as_slice()),
+            "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
+            "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+            "plaintext_body_hash": STANDARD.encode(blake2b_hash.as_slice()),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
         });
         // Build request
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(atoma_utils::constants::SALT, STANDARD.encode(salt))
-            .header(
-                atoma_utils::constants::NONCE,
-                STANDARD.encode(nonce.as_slice()),
-            )
-            .header(
-                atoma_utils::constants::NODE_X25519_PUBLIC_KEY,
-                server_dh_public_key_b64,
-            )
-            .header(
-                atoma_utils::constants::PROXY_X25519_PUBLIC_KEY,
-                client_dh_public_key_b64,
-            )
+            .header(constants::SIGNATURE, signature.encode_base64())
             .body(Body::from(encrypted_body_json.to_string()))
             .expect("Failed to build request");
 
@@ -1269,12 +1266,8 @@ mod middleware {
             let body = axum::body::to_bytes(req.into_body(), 1024)
                 .await
                 .expect("Failed to read body");
-            let message = json!({
-                "message": MESSAGE_CONTENT
-            })
-            .to_string();
 
-            assert_eq!(body, message.as_bytes());
+            assert_eq!(body, TEST_MESSAGE.as_bytes());
             Ok(Response::new(Body::empty()))
         }
 
@@ -1293,23 +1286,36 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_missing_headers() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, server_dh_public_key) =
             setup_app_state().await;
 
-        // Test missing salt
+        let salt = rand::random::<[u8; SALT_SIZE]>();
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
+        let (encrypted_data, nonce) =
+            encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
+                .expect("Failed to encrypt plaintext data");
+        let encrypted_body_json = json!({
+                "ciphertext": STANDARD.encode(encrypted_data),
+                "salt": STANDARD.encode(salt),
+                "nonce": STANDARD.encode(nonce.as_slice()),
+                "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
+                "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+                "plaintext_body_hash": STANDARD.encode(blake2b_hash.as_slice()),
+                "model_name": "test_model",
+                "num_compute_units": 100,
+                "stream": false,
+            "stack_small_id": 1
+        });
+
+        // Test missing signature
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(constants::NONCE, "test_nonce")
-            .header(
-                constants::NODE_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .header(
-                constants::PROXY_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .body(Body::from("test"))
+            .body(Body::from(encrypted_body_json.to_string()))
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
@@ -1318,37 +1324,6 @@ mod middleware {
                 confidential_compute_middleware,
             ),
         );
-
-        let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        // Test missing nonce
-        let req = Request::builder()
-            .method("POST")
-            .uri("/")
-            .header(constants::SALT, "test_salt")
-            .header(
-                constants::NODE_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .header(
-                constants::PROXY_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .body(Body::from("test"))
-            .unwrap();
-
-        let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        // Test missing DH public key
-        let req = Request::builder()
-            .method("POST")
-            .uri("/")
-            .header(constants::SALT, "test_salt")
-            .header(constants::NONCE, "test_nonce")
-            .body(Body::from("test"))
-            .unwrap();
 
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -1361,21 +1336,32 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_invalid_dh_key() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+        let (app_state, _, signature, shutdown_sender, state_manager_handle, _, _) =
             setup_app_state().await;
 
+        let salt = rand::random::<[u8; SALT_SIZE]>();
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let encrypted_body_json = json!({
+            "ciphertext": STANDARD.encode([0u8; 32]),
+            "salt": STANDARD.encode(salt),
+            "nonce": STANDARD.encode([0u8; 12]),
+            "node_dh_public_key": "invalid-base64!",
+            "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+            "plaintext_body_hash": STANDARD.encode(blake2b_hash.as_slice()),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
+        });
         // Test invalid base64
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(constants::SALT, "test_salt")
-            .header(constants::NONCE, "test_nonce")
-            .header(constants::NODE_X25519_PUBLIC_KEY, "invalid-base64!")
-            .header(
-                constants::PROXY_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .body(Body::from("test"))
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .body(Body::from(encrypted_body_json.to_string()))
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
@@ -1388,21 +1374,23 @@ mod middleware {
         let response = app.call(req).await.expect("Failed to get response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
+        let encrypted_body_json = json!({
+            "ciphertext": STANDARD.encode([0u8; 32]),
+            "salt": STANDARD.encode([0u8; 16]),
+            "nonce": STANDARD.encode([0u8; 12]),
+            "node_dh_public_key": STANDARD.encode([0u8; 16]),
+            "client_dh_public_key": STANDARD.encode([0u8; 32]),
+            "plaintext_body_hash": STANDARD.encode([0u8; 32]),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
+        });
         // Test wrong key length
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(constants::SALT, "test_salt")
-            .header(constants::NONCE, "test_nonce")
-            .header(
-                constants::NODE_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 16]),
-            ) // Wrong length
-            .header(
-                constants::PROXY_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .body(Body::from("test"))
+            .body(Body::from(encrypted_body_json.to_string()))
             .unwrap();
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1416,26 +1404,211 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_large_body() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            server_dh_public_key,
+        ) = setup_app_state().await;
 
-        // Create body larger than MAX_BODY_SIZE
-        let large_body = "x".repeat(2 * 1024 * 1024); // 2MB
+        let salt = rand::random::<[u8; SALT_SIZE]>();
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+
+        let encrypted_body_json = json!({
+            "ciphertext": "x".repeat(2 * 1024 * 1024),
+            "salt": STANDARD.encode(salt),
+            "nonce": STANDARD.encode([0u8; 12]),
+            "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
+            "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+            "plaintext_body_hash": STANDARD.encode(blake2b_hash.as_slice()),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
+        });
 
         let req = Request::builder()
             .method("POST")
             .uri("/")
-            .header(constants::SALT, "test_salt")
-            .header(constants::NONCE, "test_nonce")
-            .header(
-                constants::NODE_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .header(
-                constants::PROXY_X25519_PUBLIC_KEY,
-                STANDARD.encode([1u8; 32]),
-            )
-            .body(Body::from(large_body))
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .body(Body::from(encrypted_body_json.to_string()))
+            .unwrap();
+
+        let mut app = Router::new().route("/", post(test_handler)).layer(
+            axum::middleware::from_fn_with_state(app_state, confidential_compute_middleware),
+        );
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_invalid_plaintext_hash() {
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            server_dh_public_key,
+        ) = setup_app_state().await;
+
+        let salt = rand::random::<[u8; SALT_SIZE]>();
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        // Create incorrect hash (hash of different data)
+        let incorrect_plaintext = "different data".as_bytes();
+        let incorrect_hash: [u8; 32] = blake2b_hash(incorrect_plaintext).try_into().unwrap();
+
+        let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
+        let (encrypted_data, nonce) =
+            encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
+                .expect("Failed to encrypt plaintext data");
+
+        let encrypted_body_json = json!({
+            "ciphertext": STANDARD.encode(encrypted_data),
+            "salt": STANDARD.encode(salt),
+            "nonce": STANDARD.encode(nonce.as_slice()),
+            "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
+            "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+            "plaintext_body_hash": STANDARD.encode(incorrect_hash.as_slice()),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .body(Body::from(encrypted_body_json.to_string()))
+            .unwrap();
+
+        let mut app = Router::new().route("/", post(test_handler)).layer(
+            axum::middleware::from_fn_with_state(app_state, confidential_compute_middleware),
+        );
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_preserves_metadata() {
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            server_dh_public_key,
+        ) = setup_app_state().await;
+
+        let salt = rand::random::<[u8; SALT_SIZE]>();
+        let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
+        let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
+
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
+        let (encrypted_data, nonce) =
+            encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
+                .expect("Failed to encrypt plaintext data");
+
+        let encrypted_body_json = json!({
+            "ciphertext": STANDARD.encode(encrypted_data),
+            "salt": STANDARD.encode(salt),
+            "nonce": STANDARD.encode(nonce.as_slice()),
+            "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
+            "client_dh_public_key": STANDARD.encode(client_dh_public_key.as_ref()),
+            "plaintext_body_hash": STANDARD.encode(blake2b_hash.as_slice()),
+            "model_name": "test_model",
+            "num_compute_units": 100,
+            "stream": false,
+            "stack_small_id": 1
+        });
+
+        // Create initial RequestMetadata
+        let initial_metadata = RequestMetadata {
+            stack_small_id: 42,
+            estimated_total_compute_units: 100,
+            payload_hash: [0u8; 32],
+            request_type: RequestType::ChatCompletions,
+            endpoint_path: "/".to_string(),
+            client_encryption_metadata: None,
+        };
+
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .body(Body::from(encrypted_body_json.to_string()))
+            .unwrap();
+
+        // Insert initial metadata
+        req.extensions_mut().insert(initial_metadata);
+
+        async fn verify_metadata_handler(req: Request<Body>) -> Result<Response<Body>, StatusCode> {
+            let metadata = req
+                .extensions()
+                .get::<RequestMetadata>()
+                .expect("Metadata should be set");
+
+            // Verify that the metadata was updated correctly
+            assert_eq!(metadata.stack_small_id, 42); // Original value preserved
+            assert_eq!(metadata.estimated_total_compute_units, 100); // Original value preserved
+            assert_ne!(metadata.payload_hash, [0u8; 32]); // Updated with new hash
+            assert!(metadata.client_encryption_metadata.is_some()); // Updated with encryption metadata
+
+            Ok(Response::new(Body::empty()))
+        }
+
+        let mut app = Router::new()
+            .route("/", post(verify_metadata_handler))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                confidential_compute_middleware,
+            ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_confidential_compute_middleware_invalid_json() {
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+            setup_app_state().await;
+
+        // Create invalid JSON request
+        let invalid_json = "{ invalid json }";
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .body(Body::from(invalid_json))
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(

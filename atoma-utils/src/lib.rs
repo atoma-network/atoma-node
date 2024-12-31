@@ -23,25 +23,9 @@ pub mod constants {
     /// Contains the signature used for request authentication.
     pub const SIGNATURE: &str = "X-Signature";
 
-    /// HTTP header name for the nonce value.
-    /// A unique random number used once to prevent replay attacks.
-    pub const NONCE: &str = "X-Nonce";
-
-    /// HTTP header name for the salt value.
-    /// Random data used as additional input to a one-way function that hashes data.
-    pub const SALT: &str = "X-Salt";
-
     /// HTTP header name for the transaction digest.
     /// Contains a unique identifier for a blockchain transaction.
     pub const TX_DIGEST: &str = "X-Tx-Digest";
-
-    /// HTTP header name for the Node's X25519 public key.
-    /// Used for establishing secure communication channels with nodes.
-    pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
-
-    /// HTTP header name for the Proxy's X25519 public key.
-    /// Used for establishing secure communication channels with proxies.
-    pub const PROXY_X25519_PUBLIC_KEY: &str = "X-Proxy-X25519-PublicKey";
 
     /// Field name for encrypted data in the request/response body.
     /// Contains the encrypted payload of the message.
