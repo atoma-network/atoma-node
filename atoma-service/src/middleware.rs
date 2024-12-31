@@ -616,8 +616,13 @@ pub async fn confidential_compute_middleware(
         }) => {
             utils::check_plaintext_body_hash(plaintext_body_hash_bytes, &plaintext, &endpoint)?;
             let body = Body::from(plaintext);
+            let request_metadata = req_parts
+                .extensions
+                .get::<RequestMetadata>()
+                .cloned()
+                .unwrap_or_default();
             req_parts.extensions.insert(
-                RequestMetadata::default()
+                request_metadata
                     .with_client_encryption_metadata(client_x25519_public_key_bytes, salt_bytes)
                     .with_payload_hash(plaintext_body_hash_bytes),
             );

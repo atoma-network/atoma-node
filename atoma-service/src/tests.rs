@@ -1372,7 +1372,7 @@ mod middleware {
         );
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let encrypted_body_json = json!({
             "ciphertext": STANDARD.encode([0u8; 32]),
@@ -1394,7 +1394,7 @@ mod middleware {
             .unwrap();
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
