@@ -9,16 +9,20 @@ use crate::{
     server::AppState,
     types::ConfidentialComputeRequest,
 };
-use atoma_confidential::types::{
-    ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE,
-};
+use atoma_confidential::types::{ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     hashing::blake2b_hash,
     verify_signature,
 };
-use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
+use axum::{
+    body::Body,
+    extract::State,
+    http::{HeaderValue, Request},
+    middleware::Next,
+    response::Response,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sui_sdk::types::{
@@ -598,7 +602,20 @@ pub async fn confidential_compute_middleware(
             let body = Body::from(plaintext);
             req_parts.extensions.insert(
                 RequestMetadata::default()
-                    .with_client_encryption_metadata(client_x25519_public_key_bytes, salt_bytes),
+                    .with_client_encryption_metadata(client_x25519_public_key_bytes, salt_bytes)
+                    .with_payload_hash(plaintext_body_hash_bytes),
+            );
+            let stack_small_id = confidential_compute_request.stack_small_id;
+            req_parts.headers.insert(
+                atoma_utils::constants::STACK_SMALL_ID,
+                HeaderValue::from_str(&stack_small_id.to_string()).map_err(|e| {
+                    AtomaServiceError::InvalidHeader {
+                        message: format!(
+                            "Failed to convert stack small ID to a string, with error: {e}"
+                        ),
+                        endpoint: endpoint.clone(),
+                    }
+                })?,
             );
             let req = Request::from_parts(req_parts, body);
             Ok(next.run(req).await)
@@ -1187,10 +1204,12 @@ pub(crate) mod utils {
                 ),
                 endpoint: endpoint.to_string(),
             })?;
-        let plaintext = result.map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to decrypt confidential compute request, with error: {e}"),
-            endpoint: endpoint.to_string(),
-        })?.plaintext;
+        let plaintext = result
+            .map_err(|e| AtomaServiceError::InvalidBody {
+                message: format!("Failed to decrypt confidential compute request, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?
+            .plaintext;
         Ok((plaintext, client_x25519_public_key_bytes, salt_bytes))
     }
 

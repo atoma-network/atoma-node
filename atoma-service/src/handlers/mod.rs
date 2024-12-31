@@ -7,6 +7,7 @@ use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
 use atoma_utils::hashing::blake2b_hash;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
@@ -151,10 +152,14 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 endpoint: endpoint.clone(),
             })?;
         match result {
-            Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => Ok(json!({
-                "nonce": nonce,
-                "ciphertext": ciphertext,
-            })),
+            Ok(ConfidentialComputeEncryptionResponse { ciphertext, nonce }) => {
+                let nonce = STANDARD.encode(nonce);
+                let ciphertext = STANDARD.encode(ciphertext);
+                Ok(json!({
+                    "nonce": nonce,
+                    "ciphertext": ciphertext,
+                }))
+            }
             Err(e) => {
                 return Err(AtomaServiceError::InternalError {
                     message: format!("Failed to encrypt confidential compute response: {:?}", e),
