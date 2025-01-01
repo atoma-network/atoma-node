@@ -255,7 +255,7 @@ impl AtomaConfidentialComputeService {
             let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
             let tdx_quote_bytes = tdx_quote.to_bytes();
             match self
-                .sui_client
+                ._sui_client
                 .write()
                 .await
                 .submit_key_rotation_remote_attestation(
