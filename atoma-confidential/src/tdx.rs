@@ -45,7 +45,7 @@ pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<QuoteV4> {
     }
     let mut report_data = [0u8; TDX_REPORT_DATA_SIZE];
     report_data[..attested_data.len()].copy_from_slice(attested_data);
-    let device = Device::new(DeviceOptions {
+    let mut device = Device::new(DeviceOptions {
         report_data: Some(report_data),
     })?;
     Ok(device.get_attestation_report()?)
