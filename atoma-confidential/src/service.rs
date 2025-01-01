@@ -1,5 +1,7 @@
 #[cfg(feature = "tdx")]
 use crate::tdx::get_compute_data_attestation;
+#[cfg(feature = "tdx")]
+use crate::tdx::{TdxError, ToBytes};
 use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     types::{
@@ -539,4 +541,7 @@ pub enum AtomaConfidentialComputeError {
     KeyManagementError(#[from] KeyManagementError),
     #[error("Sender error")]
     SenderError,
+    #[cfg(feature = "tdx")]
+    #[error("TDX device error: {0}")]
+    TdxDeviceError(#[from] TdxError),
 }
