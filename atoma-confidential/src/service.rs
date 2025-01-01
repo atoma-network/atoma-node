@@ -1,5 +1,3 @@
-#[cfg(feature = "tdx")]
-use crate::tdx::{get_compute_data_attestation, TdxError, ToBytes};
 use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     types::{
@@ -7,6 +5,11 @@ use crate::{
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
         ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
+};
+#[cfg(feature = "tdx")]
+use crate::{
+    tdx::{get_compute_data_attestation, TdxError},
+    ToBytes,
 };
 use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
