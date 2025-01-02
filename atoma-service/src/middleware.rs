@@ -611,7 +611,7 @@ pub async fn confidential_compute_middleware(
     {
         Ok(DecryptionMetadata {
             plaintext,
-            client_dh_public_key: client_x25519_public_key_bytes,
+            client_dh_public_key: client_dh_public_key_bytes,
             salt: salt_bytes,
         }) => {
             utils::check_plaintext_body_hash(plaintext_body_hash_bytes, &plaintext, &endpoint)?;
@@ -623,7 +623,7 @@ pub async fn confidential_compute_middleware(
                 .unwrap_or_default();
             req_parts.extensions.insert(
                 request_metadata
-                    .with_client_encryption_metadata(client_x25519_public_key_bytes, salt_bytes)
+                    .with_client_encryption_metadata(client_dh_public_key_bytes, salt_bytes)
                     .with_payload_hash(plaintext_body_hash_bytes),
             );
             let stack_small_id = confidential_compute_request.stack_small_id;
@@ -1158,7 +1158,7 @@ pub(crate) mod utils {
             endpoint: endpoint.to_string(),
         }
     })?;
-        let client_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        let client_dh_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
         .decode(&confidential_compute_request.client_dh_public_key)
         .map_err(|e| {
             AtomaServiceError::InvalidHeader {
@@ -1176,7 +1176,7 @@ pub(crate) mod utils {
                 endpoint: endpoint.to_string(),
             }
         })?;
-        let node_x25519_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
+        let node_dh_public_key_bytes: [u8; DH_PUBLIC_KEY_SIZE] = STANDARD
         .decode(&confidential_compute_request.node_dh_public_key)
         .map_err(|e| {
             AtomaServiceError::InvalidHeader {
@@ -1206,8 +1206,8 @@ pub(crate) mod utils {
             ciphertext: ciphertext_bytes,
             nonce: nonce_bytes,
             salt: salt_bytes,
-            client_x25519_public_key: client_x25519_public_key_bytes,
-            node_x25519_public_key: node_x25519_public_key_bytes,
+            client_dh_public_key: client_dh_public_key_bytes,
+            node_dh_public_key: node_dh_public_key_bytes,
         };
         let (result_sender, result_receiver) = oneshot::channel();
         state
@@ -1233,7 +1233,7 @@ pub(crate) mod utils {
             .plaintext;
         Ok(DecryptionMetadata {
             plaintext,
-            client_dh_public_key: client_x25519_public_key_bytes,
+            client_dh_public_key: client_dh_public_key_bytes,
             salt: salt_bytes,
         })
     }

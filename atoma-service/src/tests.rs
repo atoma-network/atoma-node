@@ -1237,7 +1237,7 @@ mod middleware {
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
             encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
@@ -1293,7 +1293,7 @@ mod middleware {
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
             encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)
@@ -1343,7 +1343,7 @@ mod middleware {
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
         let encrypted_body_json = json!({
             "ciphertext": STANDARD.encode([0u8; 32]),
             "salt": STANDARD.encode(salt),
@@ -1418,7 +1418,7 @@ mod middleware {
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
 
         let encrypted_body_json = json!({
             "ciphertext": "x".repeat(2 * 1024 * 1024),
@@ -1471,7 +1471,7 @@ mod middleware {
 
         // Create incorrect hash (hash of different data)
         let incorrect_plaintext = "different data".as_bytes();
-        let incorrect_hash: [u8; 32] = blake2b_hash(incorrect_plaintext).try_into().unwrap();
+        let incorrect_hash: [u8; 32] = blake2b_hash(incorrect_plaintext).into();
 
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
@@ -1527,7 +1527,7 @@ mod middleware {
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
-        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).try_into().unwrap();
+        let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
         let (encrypted_data, nonce) =
             encrypt_plaintext(TEST_MESSAGE.as_bytes(), &shared_secret, &salt, None)

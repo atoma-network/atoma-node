@@ -21,10 +21,10 @@ pub struct ConfidentialComputeDecryptionRequest {
     pub salt: [u8; SALT_SIZE],
 
     /// Public key component for Diffie-Hellman key exchange from the client
-    pub client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    pub client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 
     /// Public key component for Diffie-Hellman key exchange from the node
-    pub node_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    pub node_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the decrypted data from a confidential computation request
