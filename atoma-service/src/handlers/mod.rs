@@ -33,7 +33,7 @@ const RESPONSE_HASH_KEY: &str = "response_hash";
 const SIGNATURE_KEY: &str = "signature";
 
 /// Key for the usage in the response body
-const USAGE_KEY: &str = "usage";
+pub const USAGE_KEY: &str = "usage";
 
 /// Updates response signature and stack hash state
 ///

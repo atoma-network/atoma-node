@@ -1135,14 +1135,14 @@ pub(crate) mod utils {
                 endpoint: endpoint.to_string(),
             })?;
         let salt_bytes: [u8; SALT_SIZE] = salt_bytes.try_into().map_err(|e| {
-        AtomaServiceError::InvalidHeader {
-            message: format!(
-                "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
-                e
-            ),
-            endpoint: endpoint.to_string(),
-        }
-    })?;
+            AtomaServiceError::InvalidHeader {
+                message: format!(
+                    "Failed to convert salt bytes to {SALT_SIZE}-byte array, incorrect length, with error: {:?}",
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
         let nonce_bytes = STANDARD
             .decode(&confidential_compute_request.nonce)
             .map_err(|e| AtomaServiceError::InvalidHeader {

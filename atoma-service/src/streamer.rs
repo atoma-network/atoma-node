@@ -27,7 +27,7 @@ use crate::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
-        update_stack_num_compute_units,
+        update_stack_num_compute_units, USAGE_KEY,
     },
     server::utils,
 };
@@ -44,9 +44,6 @@ const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
 /// The choices key
 const CHOICES: &str = "choices";
 
-/// The usage key
-const USAGE: &str = "usage";
-
 /// The ciphertext key
 const CIPHERTEXT_KEY: &str = "ciphertext";
 
@@ -58,9 +55,6 @@ const RESPONSE_HASH_KEY: &str = "response_hash";
 
 /// The signature key
 const SIGNATURE_KEY: &str = "signature";
-
-/// The usage key
-const USAGE_KEY: &str = "usage";
 
 /// Metadata required for encrypting streaming responses to clients.
 ///
@@ -88,7 +82,7 @@ pub struct Streamer {
     /// The estimated total compute units for the request
     estimated_total_compute_units: i64,
     /// The request payload hash
-    payload_hash: [u8; 32],
+    payload_hash: [u8; PAYLOAD_HASH_SIZE],
     /// The sender for the state manager
     state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
     /// The keystore
@@ -130,7 +124,7 @@ impl Streamer {
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         stack_small_id: i64,
         estimated_total_compute_units: i64,
-        payload_hash: [u8; 32],
+        payload_hash: [u8; PAYLOAD_HASH_SIZE],
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
         model: String,
@@ -196,7 +190,11 @@ impl Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
-    fn handle_final_chunk(&mut self, usage: &Value, response_hash: [u8; 32]) -> Result<(), Error> {
+    fn handle_final_chunk(
+        &mut self,
+        usage: &Value,
+        response_hash: [u8; PAYLOAD_HASH_SIZE],
+    ) -> Result<(), Error> {
         // Record the decoding phase timer
         if let Some(timer) = self.decoding_phase_timer.take() {
             timer.observe_duration();
@@ -453,7 +451,7 @@ impl Stream for Streamer {
 
                 if choices.is_empty() {
                     // Check if this is a final chunk with usage info
-                    if let Some(usage) = chunk.get(USAGE) {
+                    if let Some(usage) = chunk.get(USAGE_KEY) {
                         self.status = StreamStatus::Completed;
                         let mut chunk = if let Some(streaming_encryption_metadata) =
                             self.streaming_encryption_metadata.as_ref()

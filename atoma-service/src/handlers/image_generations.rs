@@ -23,6 +23,9 @@ pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/g
 /// The path for image generations requests
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
+/// The key for the model parameter in the request body
+pub const MODEL_KEY: &str = "model";
+
 /// OpenAPI documentation structure for the image generations endpoint.
 ///
 /// This struct defines the OpenAPI (Swagger) documentation for the image generations API,
@@ -73,7 +76,7 @@ pub async fn image_generations_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
@@ -182,7 +185,7 @@ pub async fn confidential_image_generations_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 

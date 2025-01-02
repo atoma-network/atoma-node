@@ -22,6 +22,9 @@ pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
 /// The path for embeddings requests
 pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
+/// The key for the model parameter in the request body
+pub const MODEL_KEY: &str = "model";
+
 /// OpenAPI documentation structure for the embeddings endpoint.
 ///
 /// This struct defines the OpenAPI (Swagger) documentation for the embeddings API,
@@ -72,7 +75,7 @@ pub async fn embeddings_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     let RequestMetadata {
@@ -181,7 +184,7 @@ pub async fn confidential_embeddings_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     let RequestMetadata {

@@ -37,6 +37,9 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
+/// The key for the model parameter in the request body
+const MODEL_KEY: &str = "model";
+
 /// The key for the stream parameter in the request body
 const STREAM_KEY: &str = "stream";
 
@@ -512,7 +515,7 @@ async fn handle_non_streaming_response(
 ) -> Result<Response<Body>, AtomaServiceError> {
     // Record token metrics and extract the response total number of tokens
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
@@ -608,7 +611,7 @@ async fn handle_streaming_response(
     });
 
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     CHAT_COMPLETIONS_NUM_REQUESTS
