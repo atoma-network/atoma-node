@@ -48,7 +48,10 @@ type ServiceSharedSecretRequest = (
 /// - Graceful shutdown handling
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
-    _sui_client: Arc<RwLock<AtomaSuiClient>>,
+    /// NOTE: We disable clippy's `dead_code` lint warning here, as the `sui_client` is used
+    /// in the `submit_node_key_rotation_tdx_attestation` method, when the tdx feature is enabled.
+    #[allow(dead_code)]
+    sui_client: Arc<RwLock<AtomaSuiClient>>,
     /// Current key rotation counter
     key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
@@ -68,7 +71,7 @@ pub struct AtomaConfidentialComputeService {
 impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
-        _sui_client: Arc<RwLock<AtomaSuiClient>>,
+        sui_client: Arc<RwLock<AtomaSuiClient>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -77,7 +80,7 @@ impl AtomaConfidentialComputeService {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
-            _sui_client,
+            sui_client,
             key_rotation_counter: None,
             key_manager,
             event_receiver,
@@ -258,7 +261,7 @@ impl AtomaConfidentialComputeService {
             let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
             let tdx_quote_bytes = tdx_quote.to_bytes();
             match self
-                ._sui_client
+                .sui_client
                 .write()
                 .await
                 .submit_key_rotation_remote_attestation(
