@@ -3,7 +3,7 @@ use crate::{
     middleware::EncryptionMetadata,
     server::AppState,
     streamer::{Streamer, StreamingEncryptionMetadata},
-    types::ConfidentialComputeResponse,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use atoma_confidential::types::{
     ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
@@ -273,7 +273,7 @@ pub(crate) struct ConfidentialChatCompletionsOpenApi;
     post,
     path = "",
     tag = "confidential-chat",
-    request_body = ChatCompletionsRequest,
+    request_body = ConfidentialComputeRequest,
     responses(
         (status = OK, description = "Confidential chat completion successful", body = ConfidentialComputeResponse),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")

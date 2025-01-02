@@ -6,7 +6,7 @@ use crate::{
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
-    types::ConfidentialComputeResponse,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
 use prometheus::HistogramTimer;
@@ -164,7 +164,7 @@ pub(crate) struct ConfidentialImageGenerationsOpenApi;
     post,
     path = "",
     tag = "confidential-images",
-    request_body = Value,
+    request_body = ConfidentialComputeRequest,
     responses(
         (status = OK, description = "Confidential images generated successfully", body = ConfidentialComputeResponse),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")

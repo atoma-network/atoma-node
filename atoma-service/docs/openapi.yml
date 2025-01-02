@@ -185,7 +185,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ConfidentialComputeRequest'
         required: true
       responses:
         '200':
@@ -234,7 +235,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ConfidentialComputeRequest'
         required: true
       responses:
         '200':
@@ -500,6 +502,59 @@ components:
         message:
           $ref: '#/components/schemas/Message'
           description: The message output by the model for this choice.
+    ConfidentialComputeRequest:
+      type: object
+      description: A request for confidential computation that includes encrypted data and associated cryptographic parameters
+      required:
+      - ciphertext
+      - stack_small_id
+      - nonce
+      - salt
+      - client_dh_public_key
+      - node_dh_public_key
+      - plaintext_body_hash
+      - model_name
+      properties:
+        ciphertext:
+          type: string
+          description: The encrypted payload that needs to be processed (base64 encoded)
+        client_dh_public_key:
+          type: string
+          description: Client's public key for Diffie-Hellman key exchange (base64 encoded)
+        model_name:
+          type: string
+          description: Model name
+        node_dh_public_key:
+          type: string
+          description: Node's public key for Diffie-Hellman key exchange (base64 encoded)
+        nonce:
+          type: string
+          description: Cryptographic nonce used for encryption (base64 encoded)
+        num_compute_units:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            Number of compute units to be used for the request, for image generations,
+            as this value is known in advance (the number of pixels to generate)
+          minimum: 0
+        plaintext_body_hash:
+          type: string
+          description: Hash of the original plaintext body for integrity verification (base64 encoded)
+        salt:
+          type: string
+          description: Salt value used in key derivation (base64 encoded)
+        stack_small_id:
+          type: integer
+          format: int64
+          description: Unique identifier for the small stack being used
+          minimum: 0
+        stream:
+          type:
+          - boolean
+          - 'null'
+          description: Indicates whether this is a streaming request
     ConfidentialComputeResponse:
       type: object
       description: Represents a response from a confidential compute request

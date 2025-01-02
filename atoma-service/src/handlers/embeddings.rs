@@ -7,7 +7,7 @@ use crate::{
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
-    types::ConfidentialComputeResponse,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
 use prometheus::HistogramTimer;
@@ -163,7 +163,7 @@ pub(crate) struct ConfidentialEmbeddingsOpenApi;
     post,
     path = "",
     tag = "confidential-embeddings",
-    request_body = Value,
+    request_body = ConfidentialComputeRequest,
     responses(
         (status = OK, description = "Confidential embeddings generated successfully", body = ConfidentialComputeResponse),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
