@@ -98,6 +98,153 @@ paths:
                 $ref: '#/components/schemas/ChatCompletionsResponse'
         '500':
           description: Internal server error
+  /v1/confidential/chat/completions:
+    post:
+      tags:
+      - chat
+      summary: Create chat completion
+      description: |-
+        This handler performs several key operations:
+        1. Forwards the chat completion request to the inference service
+        2. Signs the response using the node's keystore
+        3. Tracks token usage for the stack
+
+        # Arguments
+
+        * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+        * `state` - Application state containing the inference client and keystore
+        * `payload` - The chat completion request body
+
+        # Returns
+
+        Returns a JSON response containing:
+        - The inference service's response
+        - A cryptographic signature of the response
+
+        # Errors
+
+        Returns a `AtomaServiceError::InternalError` if:
+        - The inference service request fails
+        - Response parsing fails
+        - Response signing fails
+        - Token usage update fails
+      operationId: chat_completions_handler
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionsRequest'
+        required: true
+      responses:
+        '200':
+          description: Chat completion successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionsResponse'
+        '500':
+          description: Internal server error
+  /v1/confidential/embeddings:
+    post:
+      tags:
+      - confidential-embeddings
+      summary: Handler for confidential embeddings requests
+      description: |-
+        This endpoint processes embedding requests with additional confidential computing guarantees.
+        It forwards the request to the embeddings service and returns an encrypted response that can
+        only be decrypted by the client.
+
+        # Arguments
+
+        * `request_metadata` - Extension containing request context like stack ID and encryption details
+        * `state` - Application state containing service URLs and shared resources
+        * `payload` - The embedding request body as JSON
+
+        # Returns
+
+        Returns a `Result` containing either:
+        * `Json<Value>` - The encrypted embeddings response
+        * `AtomaServiceError` - Error details if the request processing fails
+
+        # Errors
+
+        Returns `AtomaServiceError::InternalError` if:
+        * The embeddings service request fails
+        * Response processing or encryption fails
+        * Stack compute unit updates fail
+
+        # Example Request
+
+        ```json
+        {
+            "model": "text-embedding-ada-002",
+            "input": "The quick brown fox jumps over the lazy dog"
+        }
+        ```
+      operationId: confidential_embeddings_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Confidential embeddings generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfidentialComputeResponse'
+        '500':
+          description: Internal server error
+  /v1/confidential/images/generations:
+    post:
+      tags:
+      - confidential-images
+      summary: Handles confidential image generation requests
+      description: |-
+        This handler processes image generation requests with confidential computing requirements,
+        tracking metrics and managing the encryption of responses. It follows the same core flow
+        as the standard image generations handler but ensures the response is encrypted according
+        to the client's confidential computing requirements.
+
+        # Arguments
+
+        * `request_metadata` - Extension containing request context including encryption metadata
+        * `state` - Application state containing service URLs and shared resources
+        * `payload` - The image generation request body as JSON
+
+        # Returns
+
+        Returns a `Result` containing either:
+        * `Ok(Json<Value>)` - The encrypted response from the image service
+        * `Err(AtomaServiceError)` - An error if the request processing fails
+
+        # Metrics
+
+        * Increments `IMAGE_GEN_NUM_REQUESTS` counter with model label
+        * Records request duration in `IMAGE_GEN_LATENCY_METRICS` histogram
+
+        # Errors
+
+        Returns `AtomaServiceError::InternalError` if:
+        * Image generation request fails
+        * Response encryption fails
+        * Stack compute units update fails
+      operationId: confidential_image_generations_handler
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Confidential images generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfidentialComputeResponse'
+        '500':
+          description: Internal server error
   /v1/embeddings:
     post:
       tags:
@@ -353,6 +500,34 @@ components:
         message:
           $ref: '#/components/schemas/Message'
           description: The message output by the model for this choice.
+    ConfidentialComputeResponse:
+      type: object
+      description: Represents a response from a confidential compute request
+      required:
+      - ciphertext
+      - nonce
+      properties:
+        ciphertext:
+          type: string
+          description: Encrypted response body (base64 encoded)
+        nonce:
+          type: string
+          description: Nonce used for encryption (base64 encoded)
+        response_hash:
+          type:
+          - string
+          - 'null'
+          description: Hash of the response body (base64 encoded)
+        signature:
+          type:
+          - string
+          - 'null'
+          description: Signature of the response body (base64 encoded)
+        usage:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/Usage'
+            description: Usage statistics for the request
     FinishReason:
       type: string
       description: Indicates why the model stopped generating tokens in a chat completion response.
@@ -579,6 +754,8 @@ components:
           format: int32
           description: The number of tokens used in the completion/output.
           minimum: 0
+        completion_tokens_details:
+          description: Additional details about completion tokens, if available.
         prompt_tokens:
           type: integer
           format: int32
@@ -600,3 +777,9 @@ tags:
   description: Embeddings
 - name: images
   description: Image generations
+- name: confidential-images
+  description: Confidential image generations
+- name: confidential-embeddings
+  description: Confidential embeddings
+- name: confidential-chat
+  description: Confidential chat completions
