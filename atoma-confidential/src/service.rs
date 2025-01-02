@@ -1,5 +1,3 @@
-#[cfg(feature = "tdx")]
-use crate::tdx::get_compute_data_attestation;
 use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     types::{
@@ -7,6 +5,11 @@ use crate::{
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
         ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
+};
+#[cfg(feature = "tdx")]
+use crate::{
+    tdx::{get_compute_data_attestation, TdxError},
+    ToBytes,
 };
 use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
@@ -45,7 +48,10 @@ type ServiceSharedSecretRequest = (
 /// - Graceful shutdown handling
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
-    _sui_client: Arc<RwLock<AtomaSuiClient>>,
+    /// NOTE: We disable clippy's `dead_code` lint warning here, as the `sui_client` is used
+    /// in the `submit_node_key_rotation_tdx_attestation` method, when the tdx feature is enabled.
+    #[allow(dead_code)]
+    sui_client: Arc<RwLock<AtomaSuiClient>>,
     /// Current key rotation counter
     key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
@@ -65,7 +71,7 @@ pub struct AtomaConfidentialComputeService {
 impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
-        _sui_client: Arc<RwLock<AtomaSuiClient>>,
+        sui_client: Arc<RwLock<AtomaSuiClient>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -74,7 +80,7 @@ impl AtomaConfidentialComputeService {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
-            _sui_client,
+            sui_client,
             key_rotation_counter: None,
             key_manager,
             event_receiver,
@@ -539,4 +545,7 @@ pub enum AtomaConfidentialComputeError {
     KeyManagementError(#[from] KeyManagementError),
     #[error("Sender error")]
     SenderError,
+    #[cfg(feature = "tdx")]
+    #[error("TDX device error: {0}")]
+    TdxDeviceError(#[from] TdxError),
 }

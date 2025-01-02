@@ -1,10 +1,15 @@
 use crate::ToBytes;
-use dcap_rs::types::quotes::body::QuoteBody;
-use tdx::device::{Device, DeviceOptions, QuoteV4};
+use dcap_rs::types::quotes::{body::QuoteBody, version_4::QuoteV4};
+use tdx::{
+    device::{Device, DeviceOptions},
+    error::TdxError as DeviceError,
+};
 use thiserror::Error;
 
 /// The size of the data to be attested, for a intel TDX quote.
 pub const TDX_REPORT_DATA_SIZE: usize = 64;
+
+type Result<T> = std::result::Result<T, TdxError>;
 
 /// Generates a TDX attestation report for the given compute data.
 ///
@@ -40,10 +45,10 @@ pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<QuoteV4> {
     }
     let mut report_data = [0u8; TDX_REPORT_DATA_SIZE];
     report_data[..attested_data.len()].copy_from_slice(attested_data);
-    let device = Device::new(DeviceOptions {
+    let mut device = Device::new(DeviceOptions {
         report_data: Some(report_data),
-    });
-    device.get_attestation_report()
+    })?;
+    Ok(device.get_attestation_report()?)
 }
 
 impl ToBytes for QuoteV4 {
@@ -73,4 +78,6 @@ impl ToBytes for QuoteV4 {
 pub enum TdxError {
     #[error("Invalid attested data size: {0}")]
     InvalidAttestedDataSize(usize),
+    #[error("TDX device error: {0}")]
+    TdxDeviceError(#[from] DeviceError),
 }
