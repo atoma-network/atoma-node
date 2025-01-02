@@ -30,8 +30,8 @@ use tokio::{
 use tracing::{error, info, instrument, warn};
 use tracing_appender::{
     non_blocking,
-    rolling::{RollingFileAppender, Rotation},
     non_blocking::WorkerGuard,
+    rolling::{RollingFileAppender, Rotation},
 };
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan, time::UtcTime},
@@ -169,7 +169,7 @@ async fn initialize_tokenizers(
 #[tokio::main]
 async fn main() -> Result<()> {
     let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
-    
+
     dotenv().ok();
 
     let args = Args::parse();
@@ -444,16 +444,9 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard
     std::fs::create_dir_all(&log_dir).context("Failed to create logs directory")?;
 
     // Set up file appenders with rotation for both services
-    let node_appender = RollingFileAppender::new(
-        Rotation::DAILY,
-        log_dir.as_ref(),
-        NODE_LOG_FILE,
-    );
-    let daemon_appender = RollingFileAppender::new(
-        Rotation::DAILY,
-        log_dir.as_ref(),
-        DAEMON_LOG_FILE,
-    );
+    let node_appender = RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), NODE_LOG_FILE);
+    let daemon_appender =
+        RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), DAEMON_LOG_FILE);
 
     // Create non-blocking writers and keep the guards
     let (node_non_blocking, node_guard) = non_blocking(node_appender);
