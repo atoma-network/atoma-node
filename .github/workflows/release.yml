@@ -53,7 +53,7 @@ jobs:
           push: true
           platforms: linux/amd64, linux/arm64
           build-args:
-            ENABLE_TDX: "false"
+            ENABLE_TDX=false
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:default
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}-default
