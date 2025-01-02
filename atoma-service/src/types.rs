@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::handlers::chat_completions::Usage;
+
 /// A request for confidential computation that includes encrypted data and associated cryptographic parameters
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct ConfidentialComputeRequest {
@@ -34,4 +36,26 @@ pub struct ConfidentialComputeRequest {
     /// Number of compute units to be used for the request, for image generations,
     /// as this value is known in advance (the number of pixels to generate)
     pub num_compute_units: Option<u64>,
+}
+
+/// Represents a response from a confidential compute request
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct ConfidentialComputeResponse {
+    /// Encrypted response body (base64 encoded)
+    pub ciphertext: String,
+
+    /// Nonce used for encryption (base64 encoded)
+    pub nonce: String,
+
+    /// Signature of the response body (base64 encoded)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+
+    /// Hash of the response body (base64 encoded)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_hash: Option<String>,
+
+    /// Usage statistics for the request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }

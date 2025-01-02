@@ -168,7 +168,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
         let usage = if endpoint != CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
             Some(
                 response_body
-                    .get("usage")
+                    .get(USAGE_KEY)
                     .ok_or(AtomaServiceError::InvalidBody {
                         message: "Usage not found in response body".to_string(),
                         endpoint: endpoint.clone(),
@@ -203,16 +203,16 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 let ciphertext = STANDARD.encode(ciphertext);
                 let mut response_body = json!({
                     NONCE_KEY: nonce,
-                    CIPHERTEXT_KEY: ciphertext,
+                    CIPHERTEXT_KEY: ciphertext
                 });
-                if let Some(usage) = usage {
-                    response_body[USAGE_KEY] = usage.clone();
+                if let Some(response_hash) = response_hash {
+                    response_body[RESPONSE_HASH_KEY] = response_hash;
                 }
                 if let Some(signature) = signature {
-                    response_body[SIGNATURE_KEY] = signature.clone();
+                    response_body[SIGNATURE_KEY] = signature;
                 }
-                if let Some(response_hash) = response_hash {
-                    response_body[RESPONSE_HASH_KEY] = response_hash.clone();
+                if let Some(usage) = usage {
+                    response_body[USAGE_KEY] = usage.clone();
                 }
                 Ok(response_body)
             }
