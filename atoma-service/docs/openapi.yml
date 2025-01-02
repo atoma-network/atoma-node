@@ -801,13 +801,16 @@ components:
       description: Represents the token usage statistics for a chat completion request.
       required:
       - prompt_tokens
-      - completion_tokens
       - total_tokens
       properties:
         completion_tokens:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
-          description: The number of tokens used in the completion/output.
+          description: |-
+            The number of tokens used in the completion/output.
+            NOTE: We allow for optional completions tokens, to be also compatible with the embeddings endpoint.
           minimum: 0
         completion_tokens_details:
           description: Additional details about completion tokens, if available.

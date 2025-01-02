@@ -1008,7 +1008,9 @@ pub struct Usage {
     pub prompt_tokens: u32,
 
     /// The number of tokens used in the completion/output.
-    pub completion_tokens: u32,
+    /// NOTE: We allow for optional completions tokens, to be also compatible with the embeddings endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<u32>,
 
     /// The total number of tokens used (prompt_tokens + completion_tokens).
     pub total_tokens: u32,
