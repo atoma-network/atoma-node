@@ -30,6 +30,7 @@ use tokio::{
 use tracing::{error, info, instrument, warn};
 use tracing_appender::{
     non_blocking,
+    non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
 };
 use tracing_subscriber::{
@@ -167,7 +168,8 @@ async fn initialize_tokenizers(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    setup_logging(LOGS).context("Failed to setup logging")?;
+    let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
+
     dotenv().ok();
 
     let args = Args::parse();
@@ -437,15 +439,18 @@ async fn main() -> Result<()> {
 }
 
 /// Configure logging with JSON formatting, file output, and console output
-fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
+fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard)> {
+    // Create logs directory if it doesn't exist
+    std::fs::create_dir_all(&log_dir).context("Failed to create logs directory")?;
+
     // Set up file appenders with rotation for both services
     let node_appender = RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), NODE_LOG_FILE);
     let daemon_appender =
         RollingFileAppender::new(Rotation::DAILY, log_dir.as_ref(), DAEMON_LOG_FILE);
 
-    // Create non-blocking writers
-    let (node_non_blocking, _node_guard) = non_blocking(node_appender);
-    let (daemon_non_blocking, _daemon_guard) = non_blocking(daemon_appender);
+    // Create non-blocking writers and keep the guards
+    let (node_non_blocking, node_guard) = non_blocking(node_appender);
+    let (daemon_non_blocking, daemon_guard) = non_blocking(daemon_appender);
 
     // Create JSON formatter for node service
     let node_layer = fmt::layer()
@@ -495,7 +500,8 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with(daemon_layer)
         .init();
 
-    Ok(())
+    // Return the guards so they can be stored in main
+    Ok((node_guard, daemon_guard))
 }
 
 /// Handles the results of various tasks (subscriber, state manager, and server).
