@@ -464,7 +464,7 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard
         .with_current_span(true)
         .with_span_list(true)
         .with_writer(node_non_blocking)
-        .with_filter(EnvFilter::new("atoma_node=debug"));
+        .with_filter(EnvFilter::new("atoma_node=info"));
 
     // Create JSON formatter for daemon service
     let daemon_layer = fmt::layer()
@@ -478,7 +478,7 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard
         .with_current_span(true)
         .with_span_list(true)
         .with_writer(daemon_non_blocking)
-        .with_filter(EnvFilter::new("atoma_daemon=debug"));
+        .with_filter(EnvFilter::new("atoma_daemon=info"));
 
     // Create console formatter for development
     let console_layer = fmt::layer()
