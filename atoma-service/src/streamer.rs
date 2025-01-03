@@ -41,6 +41,9 @@ const DATA_PREFIX: &str = "data: ";
 /// The keep-alive chunk
 const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
 
+/// The keep-alive-text chunk (used by mistralrs)
+const KEEP_ALIVE_TEXT_CHUNK: &[u8] = b"keep-alive-text\n";
+
 /// The choices key
 const CHOICES: &str = "choices";
 
@@ -388,7 +391,7 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Started;
                 }
 
-                if chunk.as_ref() == KEEP_ALIVE_CHUNK {
+                if chunk.as_ref() == KEEP_ALIVE_CHUNK || chunk.as_ref() == KEEP_ALIVE_TEXT_CHUNK {
                     return Poll::Pending;
                 }
 
