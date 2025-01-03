@@ -6,12 +6,13 @@ use std::{
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
-    constants::{NONCE_SIZE, SALT_SIZE},
+    constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     encryption::encrypt_plaintext,
     hashing::blake2b_hash,
 };
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender as FlumeSender;
 use futures::Stream;
 use prometheus::HistogramTimer;
@@ -26,21 +27,34 @@ use crate::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
-        update_stack_num_compute_units,
+        update_stack_num_compute_units, USAGE_KEY,
     },
     server::utils,
 };
 
 /// The chunk that indicates the end of a streaming response
 const DONE_CHUNK: &str = "[DONE]";
+
 /// The prefix for the data chunk
 const DATA_PREFIX: &str = "data: ";
+
 /// The keep-alive chunk
 const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
+
 /// The choices key
 const CHOICES: &str = "choices";
-/// The usage key
-const USAGE: &str = "usage";
+
+/// The ciphertext key
+const CIPHERTEXT_KEY: &str = "ciphertext";
+
+/// The nonce key
+const NONCE_KEY: &str = "nonce";
+
+/// The response hash key
+const RESPONSE_HASH_KEY: &str = "response_hash";
+
+/// The signature key
+const SIGNATURE_KEY: &str = "signature";
 
 /// Metadata required for encrypting streaming responses to clients.
 ///
@@ -68,7 +82,7 @@ pub struct Streamer {
     /// The estimated total compute units for the request
     estimated_total_compute_units: i64,
     /// The request payload hash
-    payload_hash: [u8; 32],
+    payload_hash: [u8; PAYLOAD_HASH_SIZE],
     /// The sender for the state manager
     state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
     /// The keystore
@@ -110,7 +124,7 @@ impl Streamer {
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         stack_small_id: i64,
         estimated_total_compute_units: i64,
-        payload_hash: [u8; 32],
+        payload_hash: [u8; PAYLOAD_HASH_SIZE],
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
         model: String,
@@ -176,22 +190,15 @@ impl Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
-    fn handle_final_chunk(&mut self, usage: &Value) -> Result<String, Error> {
+    fn handle_final_chunk(
+        &mut self,
+        usage: &Value,
+        response_hash: [u8; PAYLOAD_HASH_SIZE],
+    ) -> Result<(), Error> {
         // Record the decoding phase timer
         if let Some(timer) = self.decoding_phase_timer.take() {
             timer.observe_duration();
         }
-
-        // Sign the accumulated response
-        let (response_hash, signature) = utils::sign_response_body(
-            &json!(self.accumulated_response),
-            &self.keystore,
-            self.address_index,
-        )
-        .map_err(|e| {
-            error!("Error signing response: {}", e);
-            Error::new(format!("Error signing response: {}", e))
-        })?;
 
         // Get total tokens
         let mut total_compute_units = 0;
@@ -262,7 +269,32 @@ impl Streamer {
             error!("Error updating stack num tokens: {}", e);
         }
 
-        Ok(signature)
+        Ok(())
+    }
+
+    /// Signs the accumulated response  
+    /// This is used when the streaming is complete and we need to send the final chunk back to the client
+    /// with the signature and response hash
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing:
+    /// * A base64-encoded string of the signature
+    /// * A base64-encoded string of the response hash
+    #[instrument(level = "debug", skip_all)]
+    pub fn sign_final_chunk(&mut self) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
+        // Sign the accumulated response
+        let (response_hash, signature) = utils::sign_response_body(
+            &json!(self.accumulated_response),
+            &self.keystore,
+            self.address_index,
+        )
+        .map_err(|e| {
+            error!("Error signing response: {}", e);
+            Error::new(format!("Error signing response: {}", e))
+        })?;
+
+        Ok((signature, response_hash))
     }
 
     /// Handles the encryption request for a chunk of streaming data.
@@ -291,6 +323,7 @@ impl Streamer {
     #[instrument(level = "debug", skip_all)]
     fn handle_encryption_request(
         chunk: &Value,
+        usage: Option<&Value>,
         streaming_encryption_metadata: &StreamingEncryptionMetadata,
     ) -> Result<Value, Error> {
         let StreamingEncryptionMetadata {
@@ -298,12 +331,25 @@ impl Streamer {
             nonce,
             salt,
         } = streaming_encryption_metadata;
-        let (encrypted_chunk, nonce) = encrypt_plaintext(
-            chunk.to_string().as_bytes(),
-            shared_secret,
-            salt,
-            Some(*nonce),
-        )
+        // NOTE: We remove the usage key from the chunk before encryption
+        // because we need to send the usage key back to the client in the final chunk
+        let (encrypted_chunk, nonce) = if usage.is_some() {
+            let mut chunk = chunk.clone();
+            chunk.as_object_mut().map(|obj| obj.remove(USAGE_KEY));
+            encrypt_plaintext(
+                chunk.to_string().as_bytes(),
+                shared_secret,
+                salt,
+                Some(*nonce),
+            )
+        } else {
+            encrypt_plaintext(
+                chunk.to_string().as_bytes(),
+                shared_secret,
+                salt,
+                Some(*nonce),
+            )
+        }
         .map_err(|e| {
             error!(
                 target = "atoma-service",
@@ -313,10 +359,18 @@ impl Streamer {
             );
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
-        Ok(json!({
-            "ciphertext": encrypted_chunk,
-            "nonce": nonce,
-        }))
+        if let Some(usage) = usage {
+            Ok(json!({
+                CIPHERTEXT_KEY: encrypted_chunk,
+                NONCE_KEY: nonce,
+                USAGE_KEY: usage.clone(),
+            }))
+        } else {
+            Ok(json!({
+                CIPHERTEXT_KEY: encrypted_chunk,
+                NONCE_KEY: nonce,
+            }))
+        }
     }
 }
 
@@ -360,7 +414,7 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Completed;
                     return Poll::Ready(None);
                 }
-                let mut chunk = serde_json::from_str::<Value>(chunk_str).map_err(|e| {
+                let chunk = serde_json::from_str::<Value>(chunk_str).map_err(|e| {
                     error!(
                         target = "atoma-service",
                         level = "error",
@@ -397,18 +451,24 @@ impl Stream for Streamer {
 
                 if choices.is_empty() {
                     // Check if this is a final chunk with usage info
-                    if let Some(usage) = chunk.get(USAGE) {
+                    if let Some(usage) = chunk.get(USAGE_KEY) {
                         self.status = StreamStatus::Completed;
-                        let signature = self.handle_final_chunk(usage)?;
-                        chunk["signature"] = json!(signature);
-                        let chunk = if let Some(streaming_encryption_metadata) =
+                        let mut chunk = if let Some(streaming_encryption_metadata) =
                             self.streaming_encryption_metadata.as_ref()
                         {
                             // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                            Self::handle_encryption_request(&chunk, streaming_encryption_metadata)?
+                            Self::handle_encryption_request(
+                                &chunk,
+                                Some(usage),
+                                streaming_encryption_metadata,
+                            )?
                         } else {
-                            chunk
+                            chunk.clone()
                         };
+                        let (signature, response_hash) = self.sign_final_chunk()?;
+                        chunk[SIGNATURE_KEY] = json!(signature);
+                        chunk[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
+                        self.handle_final_chunk(usage, response_hash)?;
                         Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
                     } else {
                         error!(
@@ -426,7 +486,11 @@ impl Stream for Streamer {
                         self.streaming_encryption_metadata.as_ref()
                     {
                         // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                        Self::handle_encryption_request(&chunk, streaming_encryption_metadata)?
+                        Self::handle_encryption_request(
+                            &chunk,
+                            None,
+                            streaming_encryption_metadata,
+                        )?
                     } else {
                         chunk
                     };

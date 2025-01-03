@@ -36,11 +36,16 @@ use crate::{
     components::openapi::openapi_routes,
     handlers::{
         chat_completions::{
-            chat_completions_handler, CHAT_COMPLETIONS_PATH, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+            chat_completions_handler, confidential_chat_completions_handler, CHAT_COMPLETIONS_PATH,
+            CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
         },
-        embeddings::{embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH, EMBEDDINGS_PATH},
+        embeddings::{
+            confidential_embeddings_handler, embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH,
+            EMBEDDINGS_PATH,
+        },
         image_generations::{
-            image_generations_handler, CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
+            confidential_image_generations_handler, image_generations_handler,
+            CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
         },
     },
     middleware::{
@@ -194,12 +199,15 @@ pub fn create_router(app_state: AppState) -> Router {
     let confidential_routes = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
-            post(chat_completions_handler),
+            post(confidential_chat_completions_handler),
         )
-        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(
+            CONFIDENTIAL_EMBEDDINGS_PATH,
+            post(confidential_embeddings_handler),
+        )
         .route(
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
-            post(image_generations_handler),
+            post(confidential_image_generations_handler),
         )
         .layer(
             ServiceBuilder::new()
@@ -207,7 +215,6 @@ pub fn create_router(app_state: AppState) -> Router {
                     app_state.clone(),
                     confidential_compute_middleware,
                 ))
-                .layer(from_fn(signature_verification_middleware))
                 .layer(from_fn_with_state(
                     app_state.clone(),
                     verify_stack_permissions,

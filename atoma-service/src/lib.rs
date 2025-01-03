@@ -12,3 +12,4 @@ pub mod server;
 pub mod streamer;
 #[cfg(test)]
 mod tests;
+pub mod types;

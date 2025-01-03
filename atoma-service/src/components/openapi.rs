@@ -2,9 +2,17 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
-use crate::handlers::embeddings::{EmbeddingsOpenApi, EMBEDDINGS_PATH};
-use crate::handlers::image_generations::{ImageGenerationsOpenApi, IMAGE_GENERATIONS_PATH};
+use crate::handlers::chat_completions::{
+    ChatCompletionsOpenApi, ConfidentialChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH,
+    CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+};
+use crate::handlers::embeddings::{
+    ConfidentialEmbeddingsOpenApi, EmbeddingsOpenApi, CONFIDENTIAL_EMBEDDINGS_PATH, EMBEDDINGS_PATH,
+};
+use crate::handlers::image_generations::{
+    ConfidentialImageGenerationsOpenApi, ImageGenerationsOpenApi,
+    CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
+};
 use crate::server::{HealthOpenApi, MetricsOpenApi, HEALTH_PATH, METRICS_PATH};
 
 pub fn openapi_routes() -> Router {
@@ -16,6 +24,9 @@ pub fn openapi_routes() -> Router {
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi),
             (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi),
             (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi),
+            (path = CONFIDENTIAL_IMAGE_GENERATIONS_PATH, api = ConfidentialImageGenerationsOpenApi),
+            (path = CONFIDENTIAL_EMBEDDINGS_PATH, api = ConfidentialEmbeddingsOpenApi),
+            (path = CONFIDENTIAL_CHAT_COMPLETIONS_PATH, api = ConfidentialChatCompletionsOpenApi),
         ),
         tags(
             (name = "health", description = "Health check"),
@@ -23,6 +34,9 @@ pub fn openapi_routes() -> Router {
             (name = "chat", description = "Chat completions"),
             (name = "embeddings", description = "Embeddings"),
             (name = "images", description = "Image generations"),
+            (name = "confidential-images", description = "Confidential image generations"),
+            (name = "confidential-embeddings", description = "Confidential embeddings"),
+            (name = "confidential-chat", description = "Confidential chat completions"),
         ),
         servers(
             (url = "http://localhost:8080"),
