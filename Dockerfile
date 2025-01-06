@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libssl1.1 \
     && if [ "$ENABLE_TDX" = "true" ]; then \
-       sudo apt install -y libtss2-dev; \
+       apt-get install -y libtss2-dev; \
     fi \
     && rm -rf /var/lib/apt/lists/*
 
