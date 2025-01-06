@@ -13,8 +13,10 @@ Atoma is a decentralized cloud compute network for AI that enables:
 
 - **Verifiable Compute**: Transparent and trustworthy AI model execution, for both inference, text embeddings, multi-modality, etc, through Atoma's novel Sampling Consensus algorithm (see Atoma's [whitepaper](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf))
 - **Private Inference**: Secure processing with strong privacy guarantees, through the use of secure hardware enclaves (see [Atoma's confidential compute paper](https://arxiv.org/abs/2410.13752))
-- **Decentralized Infrastructure**: A permissionless network of compute nodes, orchestrated by Atoma's smart contract on the Sui blockchain (see [repo](https://github.com/atoma-network/atoma-contracts))
-- **LLM Focus**: Specialized in serving Large Language Models compute.
+- **Decentralized Infrastructure**: A permissionless network of compute nodes, orchestrated by Atoma's smart contract on the Sui blockchain (see [repo](https://github.com/atoma-network/atoma-contracts)). It includes payments, request authentication, load balancing, and more
+- **Governance**: Atoma's governance is fully decentralized, with all the network participants being able to vote on the future of the network.
+- **LLM Focus**: Specialized in serving Large Language Models compute, through a fully compatible OpenAI API.
+- **Application Layer**: Atoma's node software is designed to be modular and easy to integrate with other AI services. In particular, you can build any AI application at scale, through the Atoma's API. This includes AI agents, chatbots, image generation applications, personal assistants, etc. All of these applications can leverage the best in class open source LLM models, offering full data privacy and security to the end user.
 
 This repository contains the node software that enables node operators to participate in the Atoma Network. By running an Atoma node, you can:
 
@@ -81,30 +83,51 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 3. Configure `config.toml`, using `config.example.toml` as template:
 
 ```toml
-[atoma-service]
-chat_completions_service_url = "http://chat-completions:80"    # Internal Docker network URL
+[atoma_service]
+chat_completions_service_url = "http://chat-completions:8000" # Internal Docker network URL
 embeddings_service_url = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
-image_generations_service_url = ""
-models = ["meta-llama/Llama-3.1-70B-Instruct"]
-revisions = [""]
-service_bind_address = "0.0.0.0:3000"         # Bind to all interfaces
+# List of models to be used by the service, the current value here is just a placeholder, please change it to the models you want to deploy
+models = ["meta-llama/Llama-3.2-3B-Instruct"]
+revisions = ["main"]
+service_bind_address = "0.0.0.0:3000"
 
-[atoma-sui]
-http_rpc_node_addr = ""
-atoma_db = ""
-atoma_package_id = ""
-usdc_package_id = ""
-request_timeout = { secs = 300, nanos = 0 }
-max_concurrent_requests = 10
-limit = 100
-node_small_ids = [0, 1, 2]  # List of node IDs under control
-task_small_ids = []         # List of task IDs under control
-sui_config_path = "/root/.sui/sui_config/client.yaml"
-sui_keystore_path = "/root/.sui/sui_config/sui.keystore"
+[atoma_sui]
+http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet
+atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be"         # Current ATOMA DB object ID for testnet
+atoma_package_id = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
+usdc_package_id = "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29"  # Current USDC package ID for testnet
+request_timeout = { secs = 300, nanos = 0 }                                             # Some reference value
+max_concurrent_requests = 10                                                            # Some reference value
+limit = 100                                                                             # Some reference value
+node_small_ids = [1]                                                                    # List of node IDs under control of the node wallet
+sui_config_path = "/root/.sui/sui_config/client.yaml"                                   # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
+sui_keystore_path = "/root/.sui/sui_config/sui.keystore"                                # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
+cursor_path = "./cursor.toml"                                                           # Path to the Sui events cursor file
 
-[atoma-state]
-database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>"
+[atoma_state]
+# Path inside the container
+# Replace the placeholder values with the ones for your local environment (in the .env file)
+database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@postgres-db:5432/<POSTGRES_DB>"
+
+[atoma_daemon]
+# WARN: Do not expose this port to the public internet, as it is used only for internal communication between the Atoma Node and the Atoma Network
+service_bind_address = "0.0.0.0:3001"
+# Replace the placeholder values with the actual node badge and small ID assigned by the Atoma's smart contract, upon node registration
+node_badges = [
+    [
+        "0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600",
+        1,
+    ],
+] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
+
+[proxy_server]
+# replace this with the public url address of the Atoma proxy server (currently https://api.atomacloud.com)
+proxy_address = "https://api.atomacloud.com"
+# replace this with the public url address of this node
+node_public_address = ""
+# replace this with the country of the node
+country = ""
 ```
 
 4. Create required directories
@@ -138,28 +161,47 @@ We currenlty support the following inference services:
 | -------------------------------------------------------- | --------------------- | ----------------------------- |
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | CUDA                  | `image_generations_mistralrs` |
 
+Additionally, we offer the flexibility to run Atoma's node in two different modes:
+
+- **Confidential**: This mode allows to run the Atoma node infrastructure in a confidential mode, meaning that the node will only be able to process requests that have been authenticated by the Atoma's smart contract, through secure hardware enclaves, allowing for full data privacy and security. This mode is the most secure one, and it is the recommended mode for most applications, but it requires operating on the latest hardware (e.g. NVIDIA Hopper and Blackwell GPUs).
+- **Non-Confidential**: This mode is the default one, and it runs the Atoma's node in a non-confidential mode, meaning that the node will be able to process requests without any further privacy guarantees, even though Atoma still offers strong compute integrity guarantees through our novel [Sampling Consensus algorithm](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf).
+
+To run the Atoma node in a confidential mode, you need to pass the `confidential` profile to the `docker compose up` command:
+
 ```bash
 # Build and start all services
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,confidential docker compose up --build
 
 # Only start one service
-COMPOSE_PROFILES=chat_completions_vllm docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,confidential docker compose up --build
 
 # Run in detached mode
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up -d --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,confidential docker compose up -d --build
+```
+
+Similarly, to run the Atoma node in a non-confidential mode, you need to pass the `non-confidential` profile to the `docker compose up` command:
+
+```bash
+# Build and start all services
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,non-confidential docker compose up --build
+
+# Only start one service
+COMPOSE_PROFILES=chat_completions_vllm,non-confidential docker compose up --build
+
+# Run in detached mode
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,non-confidential docker compose up -d --build
 ```
 
 #### Container Architecture
 
 The deployment consists of two main services:
 
-- **vLLM Service**: Handles the AI model inference
+- **LLM Inference Service**: Handles the AI model inference
 - **Atoma Node**: Manages the node operations and connects to the Atoma Network
 
 #### Service URLs
+- Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT). You are free to change the port to any other available port, as long as it is not already in use by another service. Moreover, in order for your node to be accessible by the Atoma Network, you need to make sure that the port is open to the public internet, through your router's firewall and NAT configuration. Moreover, it is recommended to use a static IP address for your node, in order to avoid having to reconfigure your router's NAT table every time you restart your node. The Atoma Node service handles all the required authentication and authorization for the LLM Inference Service, ensuring that only authenticated (and already paid for) requests are processed.
 
-- vLLM Service: `http://localhost:50000` (configured via INFERENCE_SERVER_PORT)
-- Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT)
 
 #### Volume Mounts
 
