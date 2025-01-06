@@ -1,6 +1,6 @@
-# Atoma Node infrastructure
+# Atoma Node Infrastructure
 
-<img src="https://github.com/atoma-network/atoma-node/blob/update-read-me/atoma-assets/atoma-pfp.jpg" alt="Logo" height="500"/>
+<img src="https://github.com/atoma-network/atoma-node/blob/ja-improve-readme/atoma-assets/atoma-banner.png" alt="Logo"/>
 
 [![Discord](https://img.shields.io/discord/1172593757586214964?label=Discord&logo=discord&logoColor=white)]
 [![Twitter](https://img.shields.io/twitter/follow/Atoma_Network?style=social)](https://x.com/Atoma_Network)
@@ -225,8 +225,9 @@ View logs:
 docker compose logs
 
 # Specific service
-docker compose logs atoma-node
-docker compose logs vllm
+docker compose logs atoma-node-confidential # Confidential mode
+docker compose logs atoma-node-non-confidential # Non-confidential mode
+docker compose logs vllm # vLLM service
 
 # Follow logs
 docker compose logs -f
