@@ -7,6 +7,7 @@ use crate::{
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
 use prometheus::HistogramTimer;
@@ -20,6 +21,9 @@ pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
 
 /// The path for embeddings requests
 pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
+
+/// The key for the model parameter in the request body
+pub const MODEL_KEY: &str = "model";
 
 /// OpenAPI documentation structure for the embeddings endpoint.
 ///
@@ -71,7 +75,116 @@ pub async fn embeddings_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        client_encryption_metadata,
+        endpoint_path: endpoint,
+        request_type: _,
+    } = request_metadata;
+
+    TEXT_EMBEDDINGS_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
+    let timer = TEXT_EMBEDDINGS_LATENCY_METRICS
+        .with_label_values(&[model])
+        .start_timer();
+
+    match handle_embeddings_response(
+        &state,
+        &payload,
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        client_encryption_metadata,
+        &endpoint,
+        timer,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            Err(e)
+        }
+    }
+}
+
+/// OpenAPI documentation structure for the embeddings endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the embeddings API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation.
+#[derive(OpenApi)]
+#[openapi(paths(confidential_embeddings_handler))]
+pub(crate) struct ConfidentialEmbeddingsOpenApi;
+
+/// Handler for confidential embeddings requests
+///
+/// This endpoint processes embedding requests with additional confidential computing guarantees.
+/// It forwards the request to the embeddings service and returns an encrypted response that can
+/// only be decrypted by the client.
+///
+/// # Arguments
+///
+/// * `request_metadata` - Extension containing request context like stack ID and encryption details
+/// * `state` - Application state containing service URLs and shared resources
+/// * `payload` - The embedding request body as JSON
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Json<Value>` - The encrypted embeddings response
+/// * `AtomaServiceError` - Error details if the request processing fails
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// * The embeddings service request fails
+/// * Response processing or encryption fails
+/// * Stack compute unit updates fail
+///
+/// # Example Request
+///
+/// ```json
+/// {
+///     "model": "text-embedding-ada-002",
+///     "input": "The quick brown fox jumps over the lazy dog"
+/// }
+/// ```
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "confidential-embeddings",
+    request_body = ConfidentialComputeRequest,
+    responses(
+        (status = OK, description = "Confidential embeddings generated successfully", body = ConfidentialComputeResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = request_metadata.endpoint_path)
+)]
+pub async fn confidential_embeddings_handler(
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AtomaServiceError> {
+    info!("Received embeddings request, with payload: {payload}");
+    let model = payload
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     let RequestMetadata {

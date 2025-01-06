@@ -1,5 +1,5 @@
 # Base configuration for Atoma services
-x-atoma-node: &atoma-node
+x-atoma-node-confidential: &atoma-node-confidential
   image: ghcr.io/atoma-network/atoma-node:latest
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
@@ -10,6 +10,19 @@ x-atoma-node: &atoma-node
   env_file: .env
   networks:
     - atoma-network
+
+x-atoma-node-non-confidential: &atoma-node-non-confidential
+  image: ghcr.io/atoma-network/atoma-node:default
+  volumes:
+    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
+    - ./logs:/app/logs
+    - sui-config-volume:/root/.sui/sui_config
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
+    - ./data:/app/data
+  env_file: .env
+  networks:
+    - atoma-network
+
 
 # Base configuration for cuda inference services
 x-inference-service-cuda: &inference-service-cuda
@@ -86,18 +99,43 @@ services:
     networks:
       - atoma-network
 
-  atoma-node:
-    <<: *atoma-node
+  atoma-node-confidential:
+    <<: *atoma-node-confidential
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
     profiles:
-      - chat_completions_vllm
-      - chat_completions_vllm_cpu
-      - chat_completions_vllm_rocm
-      - chat_completions_mistralrs_cpu
-      - embeddings_tei
-      - image_generations_mistralrs
+      - confidential
+    depends_on:
+      postgres-db:
+        condition: service_started
+        required: true
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
+
+  atoma-node-non-confidential:
+    <<: *atoma-node-non-confidential
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+    profiles:
+      - non-confidential
     depends_on:
       postgres-db:
         condition: service_started

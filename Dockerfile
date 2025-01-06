@@ -5,6 +5,7 @@ FROM --platform=$BUILDPLATFORM rust:1.83-slim-bullseye AS builder
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETARCH
+ARG ENABLE_TDX
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     libssl-dev \
     libssl1.1 \
+    && if [ "$ENABLE_TDX" = "true" ]; then \
+       apt-get install -y libtss2-dev; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/atoma-node
@@ -20,7 +24,11 @@ WORKDIR /usr/src/atoma-node
 COPY . .
 
 # Compile
-RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node
+RUN if [ "$ENABLE_TDX" = "true" ]; then \
+        RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
+    else \
+        RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
+    fi
 
 # Final stage
 FROM --platform=$TARGETPLATFORM debian:bullseye-slim

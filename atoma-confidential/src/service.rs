@@ -1,5 +1,3 @@
-#[cfg(feature = "tdx")]
-use crate::tdx::get_compute_data_attestation;
 use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     types::{
@@ -7,6 +5,11 @@ use crate::{
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
         ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
+};
+#[cfg(feature = "tdx")]
+use crate::{
+    tdx::{get_compute_data_attestation, TdxError},
+    ToBytes,
 };
 use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
@@ -45,7 +48,10 @@ type ServiceSharedSecretRequest = (
 /// - Graceful shutdown handling
 pub struct AtomaConfidentialComputeService {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
-    _sui_client: Arc<RwLock<AtomaSuiClient>>,
+    /// NOTE: We disable clippy's `dead_code` lint warning here, as the `sui_client` is used
+    /// in the `submit_node_key_rotation_tdx_attestation` method, when the tdx feature is enabled.
+    #[allow(dead_code)]
+    sui_client: Arc<RwLock<AtomaSuiClient>>,
     /// Current key rotation counter
     key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
@@ -65,7 +71,7 @@ pub struct AtomaConfidentialComputeService {
 impl AtomaConfidentialComputeService {
     /// Constructor
     pub fn new(
-        _sui_client: Arc<RwLock<AtomaSuiClient>>,
+        sui_client: Arc<RwLock<AtomaSuiClient>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -74,7 +80,7 @@ impl AtomaConfidentialComputeService {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
         Ok(Self {
-            _sui_client,
+            sui_client,
             key_rotation_counter: None,
             key_manager,
             event_receiver,
@@ -184,8 +190,7 @@ impl AtomaConfidentialComputeService {
         tracing::info!(
             target = "atoma-confidential-compute-service",
             event = "confidential_compute_service_run",
-            "Running confidential compute service, with dh public key: {:?}",
-            self.key_manager.get_public_key().as_bytes()
+            "Running confidential compute service"
         );
 
         loop {
@@ -316,7 +321,7 @@ impl AtomaConfidentialComputeService {
         name = "handle_decryption_request",
         skip_all,
         fields(
-            proxy_public_key = ?decryption_request.proxy_x25519_public_key,
+            client_public_key = ?decryption_request.client_dh_public_key,
             node_public_key = ?self.key_manager.get_public_key().as_bytes()
         )
     )]
@@ -329,16 +334,15 @@ impl AtomaConfidentialComputeService {
             ciphertext,
             nonce,
             salt,
-            proxy_x25519_public_key,
-            node_x25519_public_key,
+            client_dh_public_key,
+            node_dh_public_key,
         } = decryption_request;
-        let result = if PublicKey::from(node_x25519_public_key) != self.key_manager.get_public_key()
-        {
+        let result = if PublicKey::from(node_dh_public_key) != self.key_manager.get_public_key() {
             tracing::error!(
                 target = "atoma-confidential-compute-service",
                 event = "confidential_compute_service_decryption_error",
                 "Node X25519 public key does not match the expected key: {:?} != {:?}",
-                node_x25519_public_key,
+                node_dh_public_key,
                 self.key_manager.get_public_key().as_bytes()
             );
             Err(anyhow::anyhow!(
@@ -346,7 +350,7 @@ impl AtomaConfidentialComputeService {
             ))
         } else {
             self.key_manager
-                .decrypt_ciphertext(proxy_x25519_public_key, &ciphertext, &salt, &nonce)
+                .decrypt_ciphertext(client_dh_public_key, &ciphertext, &salt, &nonce)
                 .map_err(|e| {
                     tracing::error!(
                         target = "atoma-confidential-compute-service",
@@ -539,4 +543,7 @@ pub enum AtomaConfidentialComputeError {
     KeyManagementError(#[from] KeyManagementError),
     #[error("Sender error")]
     SenderError,
+    #[cfg(feature = "tdx")]
+    #[error("TDX device error: {0}")]
+    TdxDeviceError(#[from] TdxError),
 }

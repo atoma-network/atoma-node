@@ -26,7 +26,9 @@ cursor_path = "./cursor.toml"                                                   
 database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@postgres-db:5432/<POSTGRES_DB>"
 
 [atoma_daemon]
+# WARN: Do not expose this port to the public internet, as it is used only for internal communication between the Atoma Node and the Atoma Network
 service_bind_address = "0.0.0.0:3001"
+# Replace the placeholder values with the actual node badge and small ID assigned by the Atoma's smart contract, upon node registration
 node_badges = [
     [
         "0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600",
@@ -35,7 +37,7 @@ node_badges = [
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
 
 [proxy_server]
-# replace this with the public url address of the proxy server
+# replace this with the public url address of the Atoma proxy server (currently https://api.atomacloud.com)
 proxy_address = ""
 # replace this with the public url address of this node
 node_public_address = ""

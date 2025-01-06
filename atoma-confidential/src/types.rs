@@ -13,14 +13,18 @@ pub const DH_PUBLIC_KEY_SIZE: usize = 32;
 pub struct ConfidentialComputeDecryptionRequest {
     /// The encrypted data to be processed
     pub ciphertext: Vec<u8>,
+
     /// Cryptographic nonce used in the encryption process
     pub nonce: [u8; NONCE_SIZE],
+
     /// Salt value used in key derivation
     pub salt: [u8; SALT_SIZE],
-    /// Public key component for Diffie-Hellman key exchange
-    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
-    /// Public key component for Diffie-Hellman key exchange
-    pub node_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+
+    /// Public key component for Diffie-Hellman key exchange from the client
+    pub client_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+
+    /// Public key component for Diffie-Hellman key exchange from the node
+    pub node_dh_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the decrypted data from a confidential computation request

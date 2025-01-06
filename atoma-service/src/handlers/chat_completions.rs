@@ -3,6 +3,7 @@ use crate::{
     middleware::EncryptionMetadata,
     server::AppState,
     streamer::{Streamer, StreamingEncryptionMetadata},
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use atoma_confidential::types::{
     ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
@@ -35,6 +36,12 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
+
+/// The key for the model parameter in the request body
+const MODEL_KEY: &str = "model";
+
+/// The key for the stream parameter in the request body
+const STREAM_KEY: &str = "stream";
 
 /// OpenAPI documentation structure for the chat completions endpoint.
 ///
@@ -148,7 +155,160 @@ pub async fn chat_completions_handler(
 
     // Check if streaming is requested
     let is_stream = payload
-        .get("stream")
+        .get(STREAM_KEY)
+        .and_then(|s| s.as_bool())
+        .unwrap_or_default();
+    let endpoint = request_metadata.endpoint_path.clone();
+
+    match handle_response(
+        &state,
+        endpoint.clone(),
+        payload_hash,
+        stack_small_id,
+        is_stream,
+        payload,
+        estimated_total_compute_units,
+        client_encryption_metadata,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            // NOTE: We need to update the stack number of tokens as the service failed to generate
+            // a proper response. For this reason, we set the total number of tokens to 0.
+            // This will ensure that the stack number of tokens is not updated, and the stack
+            // will not be penalized for the request.
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            return Err(AtomaServiceError::InternalError {
+                message: format!("Error handling chat completions response: {}", e),
+                endpoint: request_metadata.endpoint_path.clone(),
+            });
+        }
+    }
+}
+
+/// OpenAPI documentation structure for the confidential chat completions endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the confidential chat completions API,
+/// which provides an encrypted variant of the standard chat completions endpoint. It uses the
+/// `utoipa` framework to generate the API documentation.
+///
+/// # Components
+///
+/// The documentation includes the following schema components:
+/// - `ChatCompletionsRequest`: The request body for chat completion requests
+/// - `ConfidentialComputeResponse`: The encrypted response structure for confidential compute
+///
+/// # Paths
+///
+/// Documents the following endpoint:
+/// - `chat_completions_handler`: POST endpoint for confidential chat completions
+///
+/// # Security
+///
+/// The confidential variant ensures end-to-end encryption of the chat completion responses,
+/// making it suitable for sensitive or private conversations.
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(chat_completions_handler),
+    components(schemas(ChatCompletionsRequest, ConfidentialComputeResponse))
+)]
+pub(crate) struct ConfidentialChatCompletionsOpenApi;
+
+/// Handles confidential chat completion requests by providing end-to-end encrypted responses.
+///
+/// This handler processes chat completion requests in a confidential computing context, where
+/// responses are encrypted to ensure privacy. It supports both streaming and non-streaming
+/// responses, with encryption handled appropriately for each mode.
+///
+/// # Flow
+/// 1. Extracts metadata from the request (stack ID, compute units, encryption data)
+/// 2. Checks if streaming mode is requested
+/// 3. Forwards request to the inference service with appropriate encryption
+/// 4. Handles response encryption and error cases
+/// 5. Updates stack compute unit tracking
+///
+/// # Arguments
+/// * `request_metadata` - Extension containing request context including:
+///   - `stack_small_id` - Unique identifier for the requesting stack
+///   - `estimated_total_compute_units` - Predicted compute cost
+///   - `payload_hash` - Hash of the request payload
+///   - `client_encryption_metadata` - Encryption parameters for confidential compute
+/// * `state` - Application state containing service connections and configuration
+/// * `payload` - The chat completion request body as JSON
+///
+/// # Returns
+/// Returns a `Result` containing either:
+/// - `Ok(Response)` - The encrypted chat completion response
+/// - `Err(AtomaServiceError)` - Error details if the request failed
+///
+/// # Errors
+/// Returns `AtomaServiceError::InternalError` if:
+/// - The inference service request fails
+/// - Response encryption fails
+/// - State manager updates fail
+///
+/// # Example Request
+/// ```json
+/// POST /v1/confidential/chat/completions
+/// {
+///   "model": "gpt-4",
+///   "messages": [
+///     {"role": "user", "content": "Hello"}
+///   ],
+///   "stream": false
+/// }
+/// ```
+///
+/// # Notes
+/// - On error, updates stack compute units to 0 to avoid penalizing failed requests
+/// - Supports both streaming and non-streaming responses
+/// - Automatically handles encryption/decryption of messages
+/// - Integrates with monitoring via structured logging
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "confidential-chat",
+    request_body = ConfidentialComputeRequest,
+    responses(
+        (status = OK, description = "Confidential chat completion successful", body = ConfidentialComputeResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = request_metadata.endpoint_path)
+)]
+pub async fn confidential_chat_completions_handler(
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Response<Body>, AtomaServiceError> {
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        client_encryption_metadata,
+        ..
+    } = request_metadata;
+    info!(
+        target = "atoma-service",
+        level = "info",
+        event = "chat-completions-handler",
+        "Received chat completions request, with payload hash: {payload_hash:?}"
+    );
+
+    // Check if streaming is requested
+    let is_stream = payload
+        .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
     let endpoint = request_metadata.endpoint_path.clone();
@@ -355,7 +515,7 @@ async fn handle_non_streaming_response(
 ) -> Result<Response<Body>, AtomaServiceError> {
     // Record token metrics and extract the response total number of tokens
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
@@ -451,7 +611,7 @@ async fn handle_streaming_response(
     });
 
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
     CHAT_COMPLETIONS_NUM_REQUESTS
@@ -849,10 +1009,18 @@ impl TryFrom<Option<&str>> for FinishReason {
 pub struct Usage {
     /// The number of tokens used in the prompt/input.
     pub prompt_tokens: u32,
+
     /// The number of tokens used in the completion/output.
-    pub completion_tokens: u32,
+    /// NOTE: We allow for optional completions tokens, to be also compatible with the embeddings endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<u32>,
+
     /// The total number of tokens used (prompt_tokens + completion_tokens).
     pub total_tokens: u32,
+
+    /// Additional details about completion tokens, if available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens_details: Option<Value>,
 }
 
 pub(crate) mod utils {

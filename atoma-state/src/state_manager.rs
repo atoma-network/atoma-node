@@ -2194,7 +2194,8 @@ mod tests {
                 node_subscriptions,
                 stacks,
                 stack_settlement_tickets,
-                stack_attestation_disputes
+                stack_attestation_disputes,
+                node_public_key_rotations
             CASCADE",
         )
         .execute(db)
@@ -4418,5 +4419,182 @@ mod tests {
         );
 
         truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_node_public_key_rotation() -> Result<()> {
+        let state_manager = setup_test_db().await;
+
+        // Test data
+        let epoch = 123u64;
+        let key_rotation_counter = 456u64;
+        let node_small_id = 789u64;
+        let public_key_bytes = vec![1, 2, 3, 4];
+        let tee_remote_attestation_bytes = vec![5, 6, 7, 8];
+
+        // Insert initial rotation
+        state_manager
+            .insert_node_public_key_rotation(
+                epoch,
+                key_rotation_counter,
+                node_small_id,
+                public_key_bytes.clone(),
+                tee_remote_attestation_bytes.clone(),
+            )
+            .await?;
+
+        // Verify the insertion
+        let row = sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
+            .bind(node_small_id as i64)
+            .fetch_one(&state_manager.db)
+            .await?;
+
+        assert_eq!(row.get::<i64, _>("epoch"), epoch as i64);
+        assert_eq!(
+            row.get::<i64, _>("key_rotation_counter"),
+            key_rotation_counter as i64
+        );
+        assert_eq!(row.get::<i64, _>("node_small_id"), node_small_id as i64);
+        assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), public_key_bytes);
+        assert_eq!(
+            row.get::<Vec<u8>, _>("tdx_quote_bytes"),
+            tee_remote_attestation_bytes
+        );
+
+        // Test update with new values
+        let new_epoch = 999u64;
+        let new_key_rotation_counter = 888u64;
+        let new_public_key_bytes = vec![9, 10, 11, 12];
+        let new_tee_remote_attestation_bytes = vec![13, 14, 15, 16];
+
+        state_manager
+            .insert_node_public_key_rotation(
+                new_epoch,
+                new_key_rotation_counter,
+                node_small_id,
+                new_public_key_bytes.clone(),
+                new_tee_remote_attestation_bytes.clone(),
+            )
+            .await?;
+
+        // Verify the update
+        let updated_row =
+            sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
+                .bind(node_small_id as i64)
+                .fetch_one(&state_manager.db)
+                .await?;
+
+        assert_eq!(updated_row.get::<i64, _>("epoch"), new_epoch as i64);
+        assert_eq!(
+            updated_row.get::<i64, _>("key_rotation_counter"),
+            new_key_rotation_counter as i64
+        );
+        assert_eq!(
+            updated_row.get::<i64, _>("node_small_id"),
+            node_small_id as i64
+        );
+        assert_eq!(
+            updated_row.get::<Vec<u8>, _>("public_key_bytes"),
+            new_public_key_bytes
+        );
+        assert_eq!(
+            updated_row.get::<Vec<u8>, _>("tdx_quote_bytes"),
+            new_tee_remote_attestation_bytes
+        );
+
+        // Verify only one row exists
+        let count = sqlx::query(
+            "SELECT COUNT(*) as count FROM node_public_key_rotations WHERE node_small_id = $1",
+        )
+        .bind(node_small_id as i64)
+        .fetch_one(&state_manager.db)
+        .await?;
+
+        assert_eq!(count.get::<i64, _>("count"), 1);
+
+        truncate_tables(&state_manager.db).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_node_public_key_rotation_multiple_nodes() -> Result<()> {
+        let state_manager = setup_test_db().await;
+        truncate_tables(&state_manager.db).await;
+
+        // Test data for multiple nodes
+        let nodes = [
+            (1u64, vec![1, 2, 3], vec![4, 5, 6]),
+            (2u64, vec![7, 8, 9], vec![10, 11, 12]),
+            (3u64, vec![13, 14, 15], vec![16, 17, 18]),
+        ];
+
+        // Insert rotations for multiple nodes
+        for (node_id, pub_key, tee_bytes) in nodes.iter() {
+            state_manager
+                .insert_node_public_key_rotation(
+                    100u64,
+                    1u64,
+                    *node_id,
+                    pub_key.clone(),
+                    tee_bytes.clone(),
+                )
+                .await?;
+        }
+
+        // Verify all insertions
+        for (node_id, pub_key, tee_bytes) in nodes.iter() {
+            let row =
+                sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
+                    .bind(*node_id as i64)
+                    .fetch_one(&state_manager.db)
+                    .await?;
+
+            assert_eq!(row.get::<i64, _>("node_small_id"), *node_id as i64);
+            assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), *pub_key);
+            assert_eq!(row.get::<Vec<u8>, _>("tdx_quote_bytes"), *tee_bytes);
+        }
+
+        // Verify total count
+        let count = sqlx::query("SELECT COUNT(*) as count FROM node_public_key_rotations")
+            .fetch_one(&state_manager.db)
+            .await?;
+
+        assert_eq!(count.get::<i64, _>("count"), 3);
+
+        truncate_tables(&state_manager.db).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_node_public_key_rotation_empty_bytes() -> Result<()> {
+        let state_manager = setup_test_db().await;
+
+        // Test with empty byte vectors
+        let node_small_id = 1u64;
+        let empty_bytes = vec![];
+
+        state_manager
+            .insert_node_public_key_rotation(
+                100u64,
+                1u64,
+                node_small_id,
+                empty_bytes.clone(),
+                empty_bytes.clone(),
+            )
+            .await?;
+
+        let row = sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
+            .bind(node_small_id as i64)
+            .fetch_one(&state_manager.db)
+            .await?;
+
+        assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
+        assert_eq!(row.get::<Vec<u8>, _>("tdx_quote_bytes"), empty_bytes);
+
+        truncate_tables(&state_manager.db).await;
+        Ok(())
     }
 }

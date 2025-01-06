@@ -6,6 +6,7 @@ use crate::{
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
 use prometheus::HistogramTimer;
@@ -21,6 +22,9 @@ pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/g
 
 /// The path for image generations requests
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
+
+/// The key for the model parameter in the request body
+pub const MODEL_KEY: &str = "model";
 
 /// OpenAPI documentation structure for the image generations endpoint.
 ///
@@ -72,7 +76,116 @@ pub async fn image_generations_handler(
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
     let model = payload
-        .get("model")
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    IMAGE_GEN_NUM_REQUESTS.with_label_values(&[model]).inc();
+    let timer = IMAGE_GEN_LATENCY_METRICS
+        .with_label_values(&[model])
+        .start_timer();
+
+    let RequestMetadata {
+        stack_small_id,
+        estimated_total_compute_units,
+        payload_hash,
+        client_encryption_metadata,
+        endpoint_path: endpoint,
+        request_type: _,
+    } = request_metadata;
+
+    match handle_image_generations_response(
+        &state,
+        payload,
+        payload_hash,
+        stack_small_id,
+        estimated_total_compute_units,
+        client_encryption_metadata,
+        &endpoint,
+        timer,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                0,
+                &endpoint,
+            )?;
+            Err(AtomaServiceError::InternalError {
+                message: format!("Error handling image generations response: {}", e),
+                endpoint: endpoint.to_string(),
+            })
+        }
+    }
+}
+
+/// OpenAPI documentation structure for the confidential image generations endpoint.
+///
+/// This struct defines the OpenAPI (Swagger) documentation for the confidential image generations API,
+/// including all request and response schemas. It uses the `utoipa` framework to generate
+/// the API documentation for endpoints that handle image generation requests with confidential
+/// computing requirements.
+#[derive(OpenApi)]
+#[openapi(paths(confidential_image_generations_handler))]
+pub(crate) struct ConfidentialImageGenerationsOpenApi;
+
+/// Handles confidential image generation requests
+///
+/// This handler processes image generation requests with confidential computing requirements,
+/// tracking metrics and managing the encryption of responses. It follows the same core flow
+/// as the standard image generations handler but ensures the response is encrypted according
+/// to the client's confidential computing requirements.
+///
+/// # Arguments
+///
+/// * `request_metadata` - Extension containing request context including encryption metadata
+/// * `state` - Application state containing service URLs and shared resources
+/// * `payload` - The image generation request body as JSON
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * `Ok(Json<Value>)` - The encrypted response from the image service
+/// * `Err(AtomaServiceError)` - An error if the request processing fails
+///
+/// # Metrics
+///
+/// * Increments `IMAGE_GEN_NUM_REQUESTS` counter with model label
+/// * Records request duration in `IMAGE_GEN_LATENCY_METRICS` histogram
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// * Image generation request fails
+/// * Response encryption fails
+/// * Stack compute units update fails
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "confidential-images",
+    request_body = ConfidentialComputeRequest,
+    responses(
+        (status = OK, description = "Confidential images generated successfully", body = ConfidentialComputeResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip(state, payload),
+    fields(path = request_metadata.endpoint_path)
+)]
+pub async fn confidential_image_generations_handler(
+    Extension(request_metadata): Extension<RequestMetadata>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AtomaServiceError> {
+    info!("Received image generations request, with payload: {payload}");
+    let model = payload
+        .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
