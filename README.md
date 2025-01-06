@@ -225,8 +225,9 @@ View logs:
 docker compose logs
 
 # Specific service
-docker compose logs atoma-node
-docker compose logs vllm
+docker compose logs atoma-node-confidential # Confidential mode
+docker compose logs atoma-node-non-confidential # Non-confidential mode
+docker compose logs vllm # vLLM service
 
 # Follow logs
 docker compose logs -f
