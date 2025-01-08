@@ -587,6 +587,14 @@ impl Stream for Streamer {
                 Poll::Ready(None)
             }
             Poll::Ready(None) => {
+                if !self.chunk_buffer.is_empty() {
+                    error!(
+                        target = "atoma-service-streamer",
+                        level = "error",
+                        "Stream ended, but the chunk buffer is not empty, this should not happen: {}",
+                        self.chunk_buffer
+                    );
+                }
                 self.status = StreamStatus::Completed;
                 Poll::Ready(None)
             }
