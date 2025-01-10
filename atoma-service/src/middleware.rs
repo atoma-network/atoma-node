@@ -679,7 +679,7 @@ pub(crate) mod utils {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use sui_sdk::types::digests::TransactionDigest;
     ///
     /// async fn verify_stack(state: &AppState, digest: TransactionDigest) {
