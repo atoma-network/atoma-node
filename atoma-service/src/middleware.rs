@@ -482,7 +482,7 @@ pub async fn verify_stack_permissions(
                 endpoint: endpoint.clone(),
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
-        let (tx_stack_small_id, compute_units) = utils::request_blockchain_for_stack(
+        utils::request_blockchain_for_stack(
             &state,
             tx_digest,
             total_num_compute_units,
@@ -682,7 +682,7 @@ pub(crate) mod utils {
         estimated_compute_units: i64,
         stack_small_id: i64,
         endpoint: String,
-    ) -> Result<(u64, u64), AtomaServiceError> {
+    ) -> Result<(), AtomaServiceError> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
@@ -702,8 +702,8 @@ pub(crate) mod utils {
                 message: "Failed to receive compute units".to_string(),
                 endpoint: endpoint.clone(),
             })?;
-        if let (Some(stack_small_id), Some(compute_units)) = result {
-            Ok((stack_small_id, compute_units))
+        if let (Some(_), Some(_)) = result {
+            Ok(())
         } else {
             Err(AtomaServiceError::AuthError {
                 auth_error: format!(
