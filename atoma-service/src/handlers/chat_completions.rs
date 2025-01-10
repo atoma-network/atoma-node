@@ -1217,7 +1217,7 @@ pub(crate) mod utils {
                 endpoint: endpoint.to_string(),
             });
         }
-        
+
         response.json::<Value>().await.map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(

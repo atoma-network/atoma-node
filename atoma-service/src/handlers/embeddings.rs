@@ -307,7 +307,7 @@ async fn handle_embeddings_response(
             message: format!("Error sending request to embeddings service: {}", e),
             endpoint: endpoint.to_string(),
         })?;
-        
+
     if !response.status().is_success() {
         return Err(AtomaServiceError::InternalError {
             message: format!(
