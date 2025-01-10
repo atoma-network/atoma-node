@@ -32,6 +32,7 @@ pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
     TransactionDigest,
     i64,
+    i64,
     oneshot::Sender<(Option<u64>, Option<u64>)>,
 )>;
 
@@ -201,7 +202,7 @@ impl SuiEventSubscriber {
         let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
         loop {
             tokio::select! {
-                    Some((tx_digest, estimated_compute_units, result_sender)) = self.stack_retrieve_receiver.recv() => {
+                    Some((tx_digest, estimated_compute_units, selected_stack_small_id, result_sender)) = self.stack_retrieve_receiver.recv() => {
                         let tx_events = client
                             .read_api()
                             .get_transaction_with_options(
@@ -223,6 +224,11 @@ impl SuiEventSubscriber {
                                     // to buy new compute units.
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
+                                    if event.stack_small_id.inner as i64 != selected_stack_small_id {
+                                        // NOTE: This is a safety check to ensure that the stack small id
+                                        // is the same as the one defined in the original transaction
+                                        continue;
+                                    }
                                     if estimated_compute_units > event.num_compute_units as i64 {
                                         // NOTE: If the estimated compute units are greater than the event compute units,
                                         // this means that whoever made a request to the service has requested more compute units

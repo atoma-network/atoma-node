@@ -467,6 +467,8 @@ pub async fn verify_stack_permissions(
             endpoint: endpoint.clone(),
         })?;
     if available_stack.is_none() {
+        // NOTE: If we are within this branch logic, it means that no available stack was found,
+        // which implies that no compute units were locked, so far.
         let tx_digest_str = req_parts
             .headers
             .get(atoma_utils::constants::TX_DIGEST)
@@ -484,23 +486,14 @@ pub async fn verify_stack_permissions(
             &state,
             tx_digest,
             total_num_compute_units,
+            stack_small_id,
             endpoint.clone(),
         )
         .await?;
 
-        // NOTE: We need to check that the stack small id matches the one in the request
-        // otherwise, the user is requesting for a different stack, which is invalid. We
-        // must also check that the compute units are enough for processing the request.
-        // We do not update the [`AtomaStateManager`] with the new stack small id and compute units
-        // as the Sui subscriber service should catch the event for `Stack` creation.
-        if stack_small_id != tx_stack_small_id as i64
-            || compute_units > total_num_compute_units as u64
-        {
-            return Err(AtomaServiceError::AuthError {
-                auth_error: "No available stack with enough compute units".to_string(),
-                endpoint,
-            });
-        }
+        // NOTE: We do not need to check that the stack small id matches the one in the request,
+        // or that the number of compute units within the stack is enough for processing the request,
+        // as the Sui subscriber service should handle this verification.
     }
     let request_metadata = req_parts
         .extensions
@@ -687,12 +680,18 @@ pub(crate) mod utils {
         state: &AppState,
         tx_digest: TransactionDigest,
         estimated_compute_units: i64,
+        stack_small_id: i64,
         endpoint: String,
     ) -> Result<(u64, u64), AtomaServiceError> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
-            .send((tx_digest, estimated_compute_units, result_sender))
+            .send((
+                tx_digest,
+                estimated_compute_units,
+                stack_small_id,
+                result_sender,
+            ))
             .map_err(|_| AtomaServiceError::InternalError {
                 message: "Failed to send compute units request".to_string(),
                 endpoint: endpoint.clone(),

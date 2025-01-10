@@ -122,8 +122,12 @@ pub struct AppState {
     pub compute_shared_secret_sender: UnboundedSender<SharedSecretRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
-    pub stack_retrieve_sender:
-        mpsc::UnboundedSender<(TransactionDigest, i64, oneshot::Sender<StackQueryResult>)>,
+    pub stack_retrieve_sender: mpsc::UnboundedSender<(
+        TransactionDigest,
+        i64,
+        i64,
+        oneshot::Sender<StackQueryResult>,
+    )>,
 
     /// Tokenizer used for processing text input.
     ///
