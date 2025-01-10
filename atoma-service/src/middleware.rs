@@ -649,32 +649,62 @@ pub(crate) mod utils {
 
     use super::*;
 
-    /// Queries the blockchain to retrieve compute units associated with a specific transaction.
+    /// Requests and verifies stack information from the blockchain for a given transaction.
     ///
-    /// This asynchronous function uses a combination of channels to communicate with the blockchain:
-    /// - An mpsc channel to send the query request to the compute units handler
-    /// - A oneshot channel to receive the response back in the current scope
+    /// This function communicates with a blockchain service to verify the existence and validity
+    /// of a stack associated with a transaction. It checks if the stack has sufficient compute
+    /// units available for the requested operation.
     ///
     /// # Arguments
-    /// * `state` - Reference to the application state containing the compute units mpsc sender
-    /// * `tx_digest` - The transaction digest to query compute units for
-    /// * `endpoint` - The endpoint that the request was made to
+    ///
+    /// * `state` - Reference to the application state containing the stack retrieval channel
+    /// * `tx_digest` - Transaction digest to query on the blockchain
+    /// * `estimated_compute_units` - Number of compute units required for the operation
+    /// * `stack_small_id` - Identifier for the stack being verified
+    /// * `endpoint` - API endpoint path (used for error context)
     ///
     /// # Returns
-    /// * `Ok(u64)` - The number of compute units if found
-    /// * `Err(AtomaServiceError)` - If the request fails, returns one of:
-    ///   - `AtomaServiceError::InternalError` if channel communication fails
-    ///   - `AtomaServiceError::AuthError` if no compute units are found for the transaction
     ///
-    /// # Channel Communication Flow
-    /// 1. Creates a oneshot channel for receiving the response
-    /// 2. Sends the transaction digest and oneshot sender through the mpsc channel
-    /// 3. Awaits the response on the oneshot receiver
+    /// * `Ok(())` - If the stack exists and has sufficient compute units
+    /// * `Err(AtomaServiceError)` - If verification fails, with variants:
+    ///   - `InternalError` - Channel communication failures
+    ///   - `AuthError` - Insufficient compute units or invalid stack
     ///
-    /// # Example
-    /// ```rust,ignore
-    /// let compute_units = request_blockchain_for_stack(&app_state, transaction_digest).await?;
+    /// # Channel Communication
+    ///
+    /// Uses a oneshot channel pattern for async communication:
+    /// 1. Creates a oneshot channel for receiving the verification result
+    /// 2. Sends request data through the state's stack retrieval channel
+    /// 3. Awaits response containing stack and compute unit information
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use sui_sdk::types::digests::TransactionDigest;
+    ///
+    /// async fn verify_stack(state: &AppState, digest: TransactionDigest) {
+    ///     let result = request_blockchain_for_stack(
+    ///         state,
+    ///         digest,
+    ///         1000, // estimated compute units
+    ///         42,   // stack_small_id
+    ///         "/v1/completions".to_string()
+    ///     ).await;
+    ///     
+    ///     match result {
+    ///         Ok(()) => println!("Stack verified successfully"),
+    ///         Err(e) => eprintln!("Stack verification failed: {}", e),
+    ///     }
+    /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if:
+    /// - Channel communication fails when sending/receiving verification request
+    /// - No stack is found for the given transaction
+    /// - Stack exists but has insufficient compute units
+    /// - Stack small ID doesn't match the expected value
     #[instrument(level = "trace", skip_all)]
     pub(crate) async fn request_blockchain_for_stack(
         state: &AppState,

@@ -29,11 +29,21 @@ const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
-type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
+/// Represents the number of compute units available, stored as a 64-bit unsigned integer.
+type ComputeUnits = i64;
+
+/// Represents the small identifier for a stack, stored as a 64-bit unsigned integer.
+type StackSmallId = i64;
+
+/// Represents the result of a blockchain query for stack information.
+type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
+
+/// Represents a receiver for stack retrieval requests.
+pub(crate) type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
     TransactionDigest,
-    i64,
-    i64,
-    oneshot::Sender<(Option<u64>, Option<u64>)>,
+    ComputeUnits,
+    StackSmallId,
+    oneshot::Sender<StackQueryResult>,
 )>;
 
 /// A subscriber for Sui blockchain events.
@@ -248,8 +258,8 @@ impl SuiEventSubscriber {
                                     let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
-                                    compute_units = Some(event.num_compute_units);
-                                    stack_small_id = Some(event.stack_small_id.inner);
+                                    compute_units = Some(event.num_compute_units as i64);
+                                    stack_small_id = Some(event.stack_small_id.inner as i64);
                                     self.state_manager_sender
                                         .send(AtomaEvent::StackCreateAndUpdateEvent(event))
                                         .map_err(Box::new)?;
