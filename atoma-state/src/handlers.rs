@@ -372,11 +372,12 @@ pub(crate) async fn handle_stack_created_event(
         event = "handle-stack-created-event",
         "Processing stack created event"
     );
-    let node_small_id = event.selected_node_id.inner;
     info!(
         target = "atoma-state-handlers",
         event = "handle-stack-created-event",
-        "Stack selected current node, with id {node_small_id}, inserting new stack"
+        "Stack selected current node, with id {}, inserting new stack with id {}",
+        event.selected_node_id.inner,
+        event.stack_small_id.inner
     );
     let stack = event.into();
     state_manager.state.insert_new_stack(stack).await?;
@@ -391,7 +392,8 @@ pub(crate) async fn handle_stack_create_and_update_event(
     info!(
         target = "atoma-state-handlers",
         event = "handle-stack-create-and-update-event",
-        "Processing stack create and update event"
+        "Processing stack create and update event for stack with id {}",
+        event.stack_small_id.inner
     );
     let stack = event.into();
     state_manager.state.insert_new_stack(stack).await?;

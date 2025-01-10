@@ -116,7 +116,17 @@ impl AtomaStateManager {
                 state_manager_event = self.state_manager_receiver.recv_async() => {
                     match state_manager_event {
                         Ok(state_manager_event) => {
-                            handle_state_manager_event(&self, state_manager_event).await?;
+                            match handle_state_manager_event(&self, state_manager_event).await {
+                                Ok(()) => continue,
+                                Err(e) => {
+                                    tracing::error!(
+                                        target = "atoma-state-manager",
+                                        event = "state_manager_event_error",
+                                        error = %e,
+                                        "Error handling state manager event"
+                                    );
+                                }
+                            }
                         }
                         Err(e) => {
                             tracing::error!(
