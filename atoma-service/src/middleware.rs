@@ -42,6 +42,9 @@ const MODEL: &str = "model";
 /// The key for the max tokens in the request body
 const MAX_TOKENS: &str = "max_tokens";
 
+/// The default value for the max tokens for chat completions
+const DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS: i64 = 8192;
+
 /// The key for the messages in the request body
 const MESSAGES: &str = "messages";
 
@@ -704,7 +707,9 @@ pub(crate) mod utils {
             Ok((stack_small_id, compute_units))
         } else {
             Err(AtomaServiceError::AuthError {
-                auth_error: "No compute units found for transaction".to_string(),
+                auth_error: format!(
+                    "Not enough compute units found for transaction with digest {tx_digest}"
+                ),
                 endpoint,
             })
         }
@@ -854,10 +859,7 @@ pub(crate) mod utils {
         total_num_compute_units += body_json
             .get(MAX_TOKENS)
             .and_then(|value| value.as_i64())
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Max tokens not found in body".to_string(),
-                endpoint: endpoint.clone(),
-            })?;
+            .unwrap_or(DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS);
 
         Ok(total_num_compute_units)
     }

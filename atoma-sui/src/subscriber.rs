@@ -223,6 +223,22 @@ impl SuiEventSubscriber {
                                     // to buy new compute units.
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
+                                    if estimated_compute_units > event.num_compute_units as i64 {
+                                        // NOTE: If the estimated compute units are greater than the event compute units,
+                                        // this means that whoever made a request to the service has requested more compute units
+                                        // than those that it paid for. In this case, we should not process the event, and break
+                                        // out of the loop. This will send `None` values to the Atoma service, which will
+                                        // trigger an error back to the client.
+                                        // SAFETY: It is fine if we do not process the [`StackCreatedEvent`] right away, as it will
+                                        // be catched later by the Sui's event subscriber.
+                                        error!(
+                                            target = "atoma-sui-subscriber",
+                                            event = "subscriber-stack-create-event-error",
+                                            "Stack create event with id {} has more compute units than the transaction used, this is not possible",
+                                            event.stack_small_id.inner
+                                        );
+                                        break;
+                                    }
                                     let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
