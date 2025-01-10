@@ -61,13 +61,21 @@ pub const HEALTH_PATH: &str = "/health";
 pub const METRICS_PATH: &str = "/metrics";
 
 /// A small identifier for a Stack, represented as a 64-bit unsigned integer.
-type StackSmallId = u64;
+type StackSmallId = i64;
 
 /// Represents the number of compute units available, stored as a 64-bit unsigned integer.
-type ComputeUnits = u64;
+type ComputeUnits = i64;
 
 /// Represents the result of a blockchain query for stack information.
 type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
+
+/// Represents a sender for stack retrieval requests.
+pub(crate) type StackRetrieveSender = mpsc::UnboundedSender<(
+    TransactionDigest,
+    ComputeUnits,
+    StackSmallId,
+    oneshot::Sender<StackQueryResult>,
+)>;
 
 /// Represents a request for confidential compute decryption.
 type DecryptionRequest = (
@@ -122,8 +130,7 @@ pub struct AppState {
     pub compute_shared_secret_sender: UnboundedSender<SharedSecretRequest>,
 
     /// Channel sender for requesting compute units from the blockchain.
-    pub stack_retrieve_sender:
-        mpsc::UnboundedSender<(TransactionDigest, i64, oneshot::Sender<StackQueryResult>)>,
+    pub stack_retrieve_sender: StackRetrieveSender,
 
     /// Tokenizer used for processing text input.
     ///

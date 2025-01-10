@@ -467,6 +467,8 @@ pub async fn verify_stack_permissions(
             endpoint: endpoint.clone(),
         })?;
     if available_stack.is_none() {
+        // NOTE: If we are within this branch logic, it means that no available stack was found,
+        // which implies that no compute units were locked, so far.
         let tx_digest_str = req_parts
             .headers
             .get(atoma_utils::constants::TX_DIGEST)
@@ -480,27 +482,18 @@ pub async fn verify_stack_permissions(
                 endpoint: endpoint.clone(),
             })?;
         let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
-        let (tx_stack_small_id, compute_units) = utils::request_blockchain_for_stack(
+        utils::request_blockchain_for_stack(
             &state,
             tx_digest,
             total_num_compute_units,
+            stack_small_id,
             endpoint.clone(),
         )
         .await?;
 
-        // NOTE: We need to check that the stack small id matches the one in the request
-        // otherwise, the user is requesting for a different stack, which is invalid. We
-        // must also check that the compute units are enough for processing the request.
-        // We do not update the [`AtomaStateManager`] with the new stack small id and compute units
-        // as the Sui subscriber service should catch the event for `Stack` creation.
-        if stack_small_id != tx_stack_small_id as i64
-            || compute_units > total_num_compute_units as u64
-        {
-            return Err(AtomaServiceError::AuthError {
-                auth_error: "No available stack with enough compute units".to_string(),
-                endpoint,
-            });
-        }
+        // NOTE: We do not need to check that the stack small id matches the one in the request,
+        // or that the number of compute units within the stack is enough for processing the request,
+        // as the Sui subscriber service should handle this verification.
     }
     let request_metadata = req_parts
         .extensions
@@ -656,43 +649,79 @@ pub(crate) mod utils {
 
     use super::*;
 
-    /// Queries the blockchain to retrieve compute units associated with a specific transaction.
+    /// Requests and verifies stack information from the blockchain for a given transaction.
     ///
-    /// This asynchronous function uses a combination of channels to communicate with the blockchain:
-    /// - An mpsc channel to send the query request to the compute units handler
-    /// - A oneshot channel to receive the response back in the current scope
+    /// This function communicates with a blockchain service to verify the existence and validity
+    /// of a stack associated with a transaction. It checks if the stack has sufficient compute
+    /// units available for the requested operation.
     ///
     /// # Arguments
-    /// * `state` - Reference to the application state containing the compute units mpsc sender
-    /// * `tx_digest` - The transaction digest to query compute units for
-    /// * `endpoint` - The endpoint that the request was made to
+    ///
+    /// * `state` - Reference to the application state containing the stack retrieval channel
+    /// * `tx_digest` - Transaction digest to query on the blockchain
+    /// * `estimated_compute_units` - Number of compute units required for the operation
+    /// * `stack_small_id` - Identifier for the stack being verified
+    /// * `endpoint` - API endpoint path (used for error context)
     ///
     /// # Returns
-    /// * `Ok(u64)` - The number of compute units if found
-    /// * `Err(AtomaServiceError)` - If the request fails, returns one of:
-    ///   - `AtomaServiceError::InternalError` if channel communication fails
-    ///   - `AtomaServiceError::AuthError` if no compute units are found for the transaction
     ///
-    /// # Channel Communication Flow
-    /// 1. Creates a oneshot channel for receiving the response
-    /// 2. Sends the transaction digest and oneshot sender through the mpsc channel
-    /// 3. Awaits the response on the oneshot receiver
+    /// * `Ok(())` - If the stack exists and has sufficient compute units
+    /// * `Err(AtomaServiceError)` - If verification fails, with variants:
+    ///   - `InternalError` - Channel communication failures
+    ///   - `AuthError` - Insufficient compute units or invalid stack
     ///
-    /// # Example
+    /// # Channel Communication
+    ///
+    /// Uses a oneshot channel pattern for async communication:
+    /// 1. Creates a oneshot channel for receiving the verification result
+    /// 2. Sends request data through the state's stack retrieval channel
+    /// 3. Awaits response containing stack and compute unit information
+    ///
+    /// # Examples
+    ///
     /// ```rust,ignore
-    /// let compute_units = request_blockchain_for_stack(&app_state, transaction_digest).await?;
+    /// use sui_sdk::types::digests::TransactionDigest;
+    ///
+    /// async fn verify_stack(state: &AppState, digest: TransactionDigest) {
+    ///     let result = request_blockchain_for_stack(
+    ///         state,
+    ///         digest,
+    ///         1000, // estimated compute units
+    ///         42,   // stack_small_id
+    ///         "/v1/completions".to_string()
+    ///     ).await;
+    ///     
+    ///     match result {
+    ///         Ok(()) => println!("Stack verified successfully"),
+    ///         Err(e) => eprintln!("Stack verification failed: {}", e),
+    ///     }
+    /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if:
+    /// - Channel communication fails when sending/receiving verification request
+    /// - No stack is found for the given transaction
+    /// - Stack exists but has insufficient compute units
+    /// - Stack small ID doesn't match the expected value
     #[instrument(level = "trace", skip_all)]
     pub(crate) async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
         estimated_compute_units: i64,
+        stack_small_id: i64,
         endpoint: String,
-    ) -> Result<(u64, u64), AtomaServiceError> {
+    ) -> Result<(), AtomaServiceError> {
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .stack_retrieve_sender
-            .send((tx_digest, estimated_compute_units, result_sender))
+            .send((
+                tx_digest,
+                estimated_compute_units,
+                stack_small_id,
+                result_sender,
+            ))
             .map_err(|_| AtomaServiceError::InternalError {
                 message: "Failed to send compute units request".to_string(),
                 endpoint: endpoint.clone(),
@@ -703,8 +732,8 @@ pub(crate) mod utils {
                 message: "Failed to receive compute units".to_string(),
                 endpoint: endpoint.clone(),
             })?;
-        if let (Some(stack_small_id), Some(compute_units)) = result {
-            Ok((stack_small_id, compute_units))
+        if let (Some(_), Some(_)) = result {
+            Ok(())
         } else {
             Err(AtomaServiceError::AuthError {
                 auth_error: format!(

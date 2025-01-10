@@ -29,10 +29,21 @@ const DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS: u64 = 100;
 
 pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
-type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
+/// Represents the number of compute units available, stored as a 64-bit unsigned integer.
+type ComputeUnits = i64;
+
+/// Represents the small identifier for a stack, stored as a 64-bit unsigned integer.
+type StackSmallId = i64;
+
+/// Represents the result of a blockchain query for stack information.
+type StackQueryResult = (Option<StackSmallId>, Option<ComputeUnits>);
+
+/// Represents a receiver for stack retrieval requests.
+pub(crate) type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
     TransactionDigest,
-    i64,
-    oneshot::Sender<(Option<u64>, Option<u64>)>,
+    ComputeUnits,
+    StackSmallId,
+    oneshot::Sender<StackQueryResult>,
 )>;
 
 /// A subscriber for Sui blockchain events.
@@ -201,7 +212,7 @@ impl SuiEventSubscriber {
         let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
         loop {
             tokio::select! {
-                    Some((tx_digest, estimated_compute_units, result_sender)) = self.stack_retrieve_receiver.recv() => {
+                    Some((tx_digest, estimated_compute_units, selected_stack_small_id, result_sender)) = self.stack_retrieve_receiver.recv() => {
                         let tx_events = client
                             .read_api()
                             .get_transaction_with_options(
@@ -223,6 +234,11 @@ impl SuiEventSubscriber {
                                     // to buy new compute units.
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
+                                    if event.stack_small_id.inner as i64 != selected_stack_small_id {
+                                        // NOTE: This is a safety check to ensure that the stack small id
+                                        // is the same as the one defined in the original transaction
+                                        continue;
+                                    }
                                     if estimated_compute_units > event.num_compute_units as i64 {
                                         // NOTE: If the estimated compute units are greater than the event compute units,
                                         // this means that whoever made a request to the service has requested more compute units
@@ -242,8 +258,8 @@ impl SuiEventSubscriber {
                                     let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
-                                    compute_units = Some(event.num_compute_units);
-                                    stack_small_id = Some(event.stack_small_id.inner);
+                                    compute_units = Some(event.num_compute_units as i64);
+                                    stack_small_id = Some(event.stack_small_id.inner as i64);
                                     self.state_manager_sender
                                         .send(AtomaEvent::StackCreateAndUpdateEvent(event))
                                         .map_err(Box::new)?;
