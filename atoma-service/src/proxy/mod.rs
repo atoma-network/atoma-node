@@ -37,7 +37,7 @@ pub async fn register_on_proxy(
     address_index: usize,
 ) -> anyhow::Result<()> {
     let client = Client::new();
-    let url = format!("{}/node/registration", config.proxy_address);
+    let url = format!("{}/v1/nodes", config.proxy_address);
     tracing::info!(
         target = "atoma-service",
         event = "register_on_proxy",
