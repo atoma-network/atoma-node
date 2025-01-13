@@ -1,4 +1,3 @@
-use atoma_utils::constants::SIGNATURE;
 use config::ProxyConfig;
 use reqwest::Client;
 use serde_json::json;
@@ -7,6 +6,21 @@ use sui_keys::keystore::FileBasedKeystore;
 use crate::server::utils::sign_response_body;
 
 pub mod config;
+
+/// Country field in the registration request
+const COUNTRY: &str = "country";
+
+/// Data field in the registration request
+const DATA: &str = "data";
+
+/// Node public address field in the registration request
+const NODE_PUBLIC_ADDRESS: &str = "public_address";
+
+/// Node small ID field in the registration request
+const NODE_SMALL_ID: &str = "node_small_id";
+
+/// Signature field in the registration request
+const SIGNATURE: &str = "signature";
 
 /// Registers the node on the proxy server
 ///
@@ -31,17 +45,21 @@ pub async fn register_on_proxy(
         "Registering on proxy server"
     );
 
-    let body = json!({
-      "node_small_id": node_small_id,
-      "public_address": config.node_public_address,
-      "country": config.country,
+    let data = json!({
+      NODE_SMALL_ID: node_small_id,
+      NODE_PUBLIC_ADDRESS: config.node_public_address,
+      COUNTRY: config.country,
     });
 
-    let (_, signature) = sign_response_body(&body, keystore, address_index)?;
+    let (_, signature) = sign_response_body(&data, keystore, address_index)?;
+
+    let body = json!({
+        DATA: data,
+        SIGNATURE: signature,
+    });
 
     let res = client
         .post(&url)
-        .header(SIGNATURE, signature)
         .json(&body)
         .send()
         .await
