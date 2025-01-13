@@ -58,20 +58,15 @@ pub async fn register_on_proxy(
         SIGNATURE: signature,
     });
 
-    let res = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                target = "atoma-service",
-                event = "register_on_proxy_error",
-                error = ?e,
-                "Failed to register on proxy server"
-            );
-            anyhow::anyhow!("Failed to register on proxy server: {}", e)
-        })?;
+    let res = client.post(&url).json(&body).send().await.map_err(|e| {
+        tracing::error!(
+            target = "atoma-service",
+            event = "register_on_proxy_error",
+            error = ?e,
+            "Failed to register on proxy server"
+        );
+        anyhow::anyhow!("Failed to register on proxy server: {}", e)
+    })?;
 
     if !res.status().is_success() {
         tracing::error!(
