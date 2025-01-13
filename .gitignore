@@ -11,3 +11,8 @@ data/
 
 ./cursor.toml
 ./keys/
+
+# Coverage files
+coverage/
+*.profraw
+*.profdata
