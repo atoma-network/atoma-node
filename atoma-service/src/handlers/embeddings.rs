@@ -307,6 +307,17 @@ async fn handle_embeddings_response(
             message: format!("Error sending request to embeddings service: {}", e),
             endpoint: endpoint.to_string(),
         })?;
+
+    if !response.status().is_success() {
+        return Err(AtomaServiceError::InternalError {
+            message: format!(
+                "Inference service returned non-success status code: {}",
+                response.status()
+            ),
+            endpoint: endpoint.to_string(),
+        });
+    }
+
     let mut response_body =
         response
             .json::<Value>()

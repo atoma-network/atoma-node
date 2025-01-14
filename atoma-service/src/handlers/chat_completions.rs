@@ -1207,6 +1207,17 @@ pub(crate) mod utils {
                 endpoint: endpoint.to_string(),
             }
         })?;
+
+        if !response.status().is_success() {
+            return Err(AtomaServiceError::InternalError {
+                message: format!(
+                    "Inference service returned non-success status code: {}",
+                    response.status()
+                ),
+                endpoint: endpoint.to_string(),
+            });
+        }
+
         response.json::<Value>().await.map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
