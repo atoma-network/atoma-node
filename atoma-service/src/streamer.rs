@@ -301,22 +301,18 @@ impl Streamer {
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
     #[instrument(level = "debug", skip_all)]
-    pub fn sign_final_chunk(&mut self) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
+    pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
         // Sign the accumulated response
-        let (response_hash, signature) = utils::sign_response_body(
-            &json!(self.accumulated_response),
-            &self.keystore,
-            self.address_index,
-        )
-        .map_err(|e| {
-            error!(
-                target = "atoma-service-streamer",
-                level = "error",
-                "Error signing response: {}",
-                e
-            );
-            Error::new(format!("Error signing response: {}", e))
-        })?;
+        let (response_hash, signature) =
+            utils::sign_response_body(&chunk, &self.keystore, self.address_index).map_err(|e| {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    "Error signing response: {}",
+                    e
+                );
+                Error::new(format!("Error signing response: {}", e))
+            })?;
 
         Ok((signature, response_hash))
     }
@@ -559,6 +555,8 @@ impl Streamer {
             self.decoding_phase_timer = Some(timer);
         }
 
+        let (signature, response_hash) = self.sign_chunk(&chunk)?;
+
         let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
             Some(choices) => choices,
             None => {
@@ -588,9 +586,8 @@ impl Streamer {
                 } else {
                     chunk.clone()
                 };
-                let (signature, response_hash) = self.sign_final_chunk()?;
-                update_final_chunk(&mut chunk, signature, response_hash);
                 self.handle_final_chunk(usage, response_hash)?;
+                update_chunk(&mut chunk, signature, response_hash);
                 Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
             } else {
                 error!(
@@ -604,7 +601,7 @@ impl Streamer {
         } else {
             // Accumulate regular chunks
             self.accumulated_response.push(chunk.clone());
-            let chunk = if let Some(streaming_encryption_metadata) =
+            let mut chunk = if let Some(streaming_encryption_metadata) =
                 self.streaming_encryption_metadata.as_ref()
             {
                 // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
@@ -612,6 +609,7 @@ impl Streamer {
             } else {
                 chunk
             };
+            update_chunk(&mut chunk, signature, response_hash);
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
     }
@@ -703,11 +701,7 @@ impl Stream for Streamer {
 /// * `chunk` - The chunk to update (mut ref, as we update the chunk in place)
 /// * `signature` - The signature to update the chunk with
 /// * `response_hash` - The response hash to update the chunk with
-fn update_final_chunk(
-    chunk: &mut Value,
-    signature: String,
-    response_hash: [u8; PAYLOAD_HASH_SIZE],
-) {
+fn update_chunk(chunk: &mut Value, signature: String, response_hash: [u8; PAYLOAD_HASH_SIZE]) {
     chunk[SIGNATURE_KEY] = json!(signature);
     chunk[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
 }
