@@ -1240,6 +1240,12 @@ pub(crate) mod utils {
             client_dh_public_key: client_dh_public_key_bytes,
             node_dh_public_key: node_dh_public_key_bytes,
         };
+        tracing::info!(
+            level = "info",
+            flag = "FLAG",
+            "Sending confidential compute decryption request: {:?}",
+            confidential_compute_decryption_request
+        );
         let (result_sender, result_receiver) = oneshot::channel();
         state
             .decryption_sender

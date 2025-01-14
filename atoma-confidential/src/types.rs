@@ -10,6 +10,7 @@ pub const DH_PUBLIC_KEY_SIZE: usize = 32;
 /// * Cryptographic nonce for the encryption
 /// * Salt for key derivation
 /// * Public key for Diffie-Hellman key exchange
+#[derive(Debug)]
 pub struct ConfidentialComputeDecryptionRequest {
     /// The encrypted data to be processed
     pub ciphertext: Vec<u8>,

@@ -355,6 +355,14 @@ impl Streamer {
             nonce,
             salt,
         } = streaming_encryption_metadata;
+        tracing::info!(
+            level = "info",
+            event = "handle_streaming_response",
+            flag = "FLAG",
+            "Received chunk: {:?}",
+            chunk
+        );
+    
         // NOTE: We remove the usage key from the chunk before encryption
         // because we need to send the usage key back to the client in the final chunk
         let (encrypted_chunk, nonce) = if usage.is_some() {

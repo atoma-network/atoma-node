@@ -521,7 +521,12 @@ async fn handle_non_streaming_response(
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
         .with_label_values(&[model])
         .start_timer();
-
+    tracing::info!(
+        level = "info",
+        event = "handle_non_streaming_response",
+        "Sending request to inference service: {:?}",
+        payload
+    );
     let response_body = utils::send_request_to_inference_service(
         state,
         &payload,
@@ -531,6 +536,12 @@ async fn handle_non_streaming_response(
     )
     .await?;
 
+    tracing::info!(
+        level = "info",
+        event = "handle_non_streaming_response",
+        "Response from inference service: {:?}",
+        response_body
+    );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
@@ -609,6 +620,14 @@ async fn handle_streaming_response(
     payload["stream_options"] = json!({
         "include_usage": true
     });
+
+    tracing::info!(
+        level = "info",
+        event = "handle_streaming_response",
+        flag = "FLAG",
+        "Sending request to inference service: {:?}",
+        payload
+    );
 
     let model = payload
         .get(MODEL_KEY)

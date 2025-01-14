@@ -201,6 +201,8 @@ services:
     build:
       context: https://github.com/EricLBuehler/mistral.rs.git
       dockerfile: Dockerfile
+    ports:
+      - "80:80"
     command: plain -m ${CHAT_COMPLETIONS_MODEL}
 
   tei:
