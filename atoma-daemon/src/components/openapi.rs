@@ -26,7 +26,7 @@ pub fn openapi_routes() -> Router {
             (name = "Tasks", description = "Tasks management")
         ),
         servers(
-            (url = "http://localhost:8080", description = "Local development server")
+            (url = "http://localhost:3001", description = "Local development server")
         )
     )]
     struct ApiDoc;
