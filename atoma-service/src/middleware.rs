@@ -610,6 +610,12 @@ pub async fn confidential_compute_middleware(
             client_dh_public_key: client_dh_public_key_bytes,
             salt: salt_bytes,
         }) => {
+            tracing::info!(
+                target = "atoma-service",
+                event = "confidential_compute_middleware",
+                "Decrypted confidential compute request: {:?}",
+                plaintext
+            );
             utils::check_plaintext_body_hash(plaintext_body_hash_bytes, &plaintext, &endpoint)?;
             let body = Body::from(plaintext);
             let request_metadata = req_parts

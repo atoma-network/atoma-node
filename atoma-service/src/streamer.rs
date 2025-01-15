@@ -391,6 +391,14 @@ impl Streamer {
             );
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
+        tracing::info!(
+            target = "atoma-service-streamer",
+            event = "handle_streaming_response",
+            flag = "FLAG",
+            "Encrypted chunk: {:?}, nonce: {:?}",
+            hex::encode(encrypted_chunk.clone()),
+            hex::encode(nonce.clone())
+        );
         if let Some(usage) = usage {
             Ok(json!({
                 CIPHERTEXT_KEY: encrypted_chunk,
