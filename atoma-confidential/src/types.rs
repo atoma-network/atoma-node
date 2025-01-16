@@ -48,8 +48,8 @@ pub struct ConfidentialComputeEncryptionRequest {
     pub plaintext: Vec<u8>,
     /// Salt value used in key derivation
     pub salt: [u8; SALT_SIZE],
-    /// Public key component for Diffie-Hellman key exchange
-    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// Client's public key component for Diffie-Hellman key exchange
+    pub client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the encrypted data from a confidential computation request
@@ -67,8 +67,8 @@ pub struct ConfidentialComputeEncryptionResponse {
 ///
 /// This struct contains the public key of the proxy
 pub struct ConfidentialComputeSharedSecretRequest {
-    /// Public key component for Diffie-Hellman key exchange
-    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    /// Client's public key component for Diffie-Hellman key exchange
+    pub client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
 }
 
 /// Response containing the shared secret from a confidential computation request
