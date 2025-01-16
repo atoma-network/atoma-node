@@ -160,10 +160,10 @@ impl AtomaConfidentialComputeService {
     /// - `x25519_dalek::StaticSecret`: The shared secret between the node and the proxy
     pub fn compute_shared_secret(
         &self,
-        proxy_x25519_public_key: &PublicKey,
+        client_x25519_public_key: &PublicKey,
     ) -> x25519_dalek::SharedSecret {
         self.key_manager
-            .compute_shared_secret(proxy_x25519_public_key)
+            .compute_shared_secret(client_x25519_public_key)
     }
 
     /// Starts the TDX service event loop that processes Atoma events and handles graceful shutdown.
@@ -380,7 +380,7 @@ impl AtomaConfidentialComputeService {
     /// * `encryption_request` - The encryption request containing:
     ///   - plaintext: The data to be encrypted
     ///   - salt: The salt value for the encryption
-    ///   - proxy_x25519_public_key: The public key of the proxy requesting encryption
+    ///   - client_x25519_public_key: The public key of the proxy requesting encryption
     /// * `sender` - A oneshot sender channel for returning the encryption response
     ///
     /// # Returns
@@ -396,8 +396,8 @@ impl AtomaConfidentialComputeService {
         name = "handle_encryption_request",
         skip_all,
         fields(
-            proxy_public_key = ?encryption_request.proxy_x25519_public_key,
-            proxy_public_key = ?self.key_manager.get_public_key().as_bytes()
+            client_public_key = ?encryption_request.client_x25519_public_key,
+            node_public_key = ?self.key_manager.get_public_key().as_bytes()
         )
     )]
     fn handle_encryption_request(
@@ -408,11 +408,11 @@ impl AtomaConfidentialComputeService {
         let ConfidentialComputeEncryptionRequest {
             plaintext,
             salt,
-            proxy_x25519_public_key,
+            client_x25519_public_key,
         } = encryption_request;
         let result = self
             .key_manager
-            .encrypt_plaintext(proxy_x25519_public_key, &plaintext, &salt)
+            .encrypt_plaintext(client_x25519_public_key, &plaintext, &salt)
             .map_err(|e| {
                 tracing::error!(
                     target = "atoma-confidential-compute-service",
@@ -439,7 +439,7 @@ impl AtomaConfidentialComputeService {
     ///
     /// # Arguments
     /// * `shared_secret_request` - The shared secret request containing:
-    ///   - proxy_x25519_public_key: The public key of the proxy requesting the shared secret
+    ///   - client_x25519_public_key: The public key of the proxy requesting the shared secret
     /// * `sender` - A oneshot sender channel for returning the shared secret response
     ///
     /// # Returns
@@ -453,7 +453,7 @@ impl AtomaConfidentialComputeService {
         name = "handle_shared_secret_request",
         skip_all,
         fields(
-            proxy_public_key = ?shared_secret_request.proxy_x25519_public_key,
+            client_public_key = ?shared_secret_request.client_x25519_public_key,
             node_public_key = ?self.key_manager.get_public_key().as_bytes()
         )
     )]
@@ -463,9 +463,9 @@ impl AtomaConfidentialComputeService {
         sender: oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
     ) -> Result<()> {
         let ConfidentialComputeSharedSecretRequest {
-            proxy_x25519_public_key,
+            client_x25519_public_key,
         } = shared_secret_request;
-        let shared_secret = self.compute_shared_secret(&PublicKey::from(proxy_x25519_public_key));
+        let shared_secret = self.compute_shared_secret(&PublicKey::from(client_x25519_public_key));
         let nonce = rand::random::<[u8; NONCE_SIZE]>();
         sender
             .send(ConfidentialComputeSharedSecretResponse {
