@@ -1106,7 +1106,7 @@ pub(crate) mod utils {
                 .compute_shared_secret_sender
                 .send((
                     ConfidentialComputeSharedSecretRequest {
-                        proxy_x25519_public_key: client_encryption_metadata.proxy_x25519_public_key,
+                        client_x25519_public_key: client_encryption_metadata.client_x25519_public_key,
                     },
                     sender,
                 ))

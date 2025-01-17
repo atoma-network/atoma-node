@@ -73,7 +73,7 @@ pub struct DecryptionMetadata {
 #[derive(Clone, Debug)]
 pub struct EncryptionMetadata {
     /// The client's proxy X25519 public key
-    pub proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+    pub client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
     /// The salt
     pub salt: [u8; SALT_SIZE],
 }
@@ -162,11 +162,11 @@ impl RequestMetadata {
     /// ```
     pub fn with_client_encryption_metadata(
         mut self,
-        proxy_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
+        client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
         salt: [u8; SALT_SIZE],
     ) -> Self {
         self.client_encryption_metadata = Some(EncryptionMetadata {
-            proxy_x25519_public_key,
+            client_x25519_public_key,
             salt,
         });
         self

@@ -137,15 +137,15 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
     endpoint: String,
 ) -> Result<Value, AtomaServiceError> {
     if let Some(EncryptionMetadata {
-        proxy_x25519_public_key,
+        client_x25519_public_key,
         salt,
     }) = client_encryption_metadata
     {
         info!(
             target = "atoma-service",
             event = "confidential-compute-encryption-response",
-            "Confidential AI inference response, with proxy x25519 public key: {:#?}",
-            proxy_x25519_public_key
+            "Confidential AI inference response, with client x25519 public key: {:#?}",
+            client_x25519_public_key
         );
 
         // Extract signature and response_hash before encryption
@@ -183,7 +183,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 ConfidentialComputeEncryptionRequest {
                     plaintext: response_body.to_string().as_bytes().to_vec(),
                     salt,
-                    proxy_x25519_public_key,
+                    client_x25519_public_key,
                 },
                 sender,
             ))

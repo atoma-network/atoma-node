@@ -327,8 +327,8 @@ impl Streamer {
     /// # Arguments
     ///
     /// * `chunk` - The JSON value containing the data to be encrypted
-    /// * `proxy_x25519_public_key` - The X25519 public key of the proxy (32 bytes)
-    /// * `salt` - The salt value used in the encryption process
+    /// * `usage` - The usage of the chunk
+    /// * `streaming_encryption_metadata` - The streaming encryption metadata
     ///
     /// # Returns
     ///
