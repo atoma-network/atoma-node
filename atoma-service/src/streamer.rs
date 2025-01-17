@@ -76,8 +76,6 @@ pub struct StreamingEncryptionMetadata {
 pub struct Streamer {
     /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
-    /// The accumulated response for final processing
-    accumulated_response: Vec<Value>,
     /// Current status of the stream
     status: StreamStatus,
     /// The stack small id for the request
@@ -139,7 +137,6 @@ impl Streamer {
     ) -> Self {
         Self {
             stream: Box::pin(stream),
-            accumulated_response: Vec::new(),
             status: StreamStatus::NotStarted,
             stack_small_id,
             estimated_total_compute_units,
@@ -381,14 +378,14 @@ impl Streamer {
         })?;
         if let Some(usage) = usage {
             Ok(json!({
-                CIPHERTEXT_KEY: encrypted_chunk,
-                NONCE_KEY: nonce,
+                CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
+                NONCE_KEY: STANDARD.encode(nonce),
                 USAGE_KEY: usage.clone(),
             }))
         } else {
             Ok(json!({
-                CIPHERTEXT_KEY: encrypted_chunk,
-                NONCE_KEY: nonce,
+                CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
+                NONCE_KEY: STANDARD.encode(nonce),
             }))
         }
     }
@@ -430,7 +427,6 @@ impl Streamer {
     /// # State Changes
     /// * Updates `status` field
     /// * Manages `chunk_buffer` for partial chunks
-    /// * Updates `accumulated_response` with processed chunks
     /// * Manages timing metrics via `first_token_generation_timer` and `decoding_phase_timer`
     #[instrument(
         level = "info",
@@ -599,8 +595,6 @@ impl Streamer {
                 Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
             }
         } else {
-            // Accumulate regular chunks
-            self.accumulated_response.push(chunk.clone());
             let mut chunk = if let Some(streaming_encryption_metadata) =
                 self.streaming_encryption_metadata.as_ref()
             {
