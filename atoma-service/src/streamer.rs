@@ -309,15 +309,17 @@ impl Streamer {
 
         // Sign the accumulated response
         let (response_hash, signature) =
-            utils::sign_response_body(&chunk_to_sign, &self.keystore, self.address_index).map_err(|e| {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    "Error signing response: {}",
-                    e
-                );
-                Error::new(format!("Error signing response: {}", e))
-            })?;
+            utils::sign_response_body(&chunk_to_sign, &self.keystore, self.address_index).map_err(
+                |e| {
+                    error!(
+                        target = "atoma-service-streamer",
+                        level = "error",
+                        "Error signing response: {}",
+                        e
+                    );
+                    Error::new(format!("Error signing response: {}", e))
+                },
+            )?;
 
         Ok((signature, response_hash))
     }
