@@ -144,6 +144,7 @@ pub async fn chat_completions_handler(
         estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
+        endpoint_path,
         ..
     } = request_metadata;
     info!(
@@ -153,12 +154,16 @@ pub async fn chat_completions_handler(
         "Received chat completions request, with payload hash: {payload_hash:?}"
     );
 
-    // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
-    let endpoint = request_metadata.endpoint_path.clone();
+    let endpoint = endpoint_path.clone();
+
+    let client_public_key = client_encryption_metadata
+        .as_ref()
+        .map(|m| hex::encode(m.client_x25519_public_key))
+        .unwrap_or_default();
 
     match handle_response(
         &state,
@@ -172,8 +177,16 @@ pub async fn chat_completions_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS
+                .with_label_values(&[&client_public_key])
+                .inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS
+                .with_label_values(&[&client_public_key])
+                .inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -187,7 +200,7 @@ pub async fn chat_completions_handler(
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
-                endpoint: request_metadata.endpoint_path.clone(),
+                endpoint: endpoint.clone(),
             });
         }
     }
@@ -297,6 +310,7 @@ pub async fn confidential_chat_completions_handler(
         estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
+        endpoint_path,
         ..
     } = request_metadata;
     info!(
@@ -306,12 +320,16 @@ pub async fn confidential_chat_completions_handler(
         "Received chat completions request, with payload hash: {payload_hash:?}"
     );
 
-    // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
-    let endpoint = request_metadata.endpoint_path.clone();
+    let endpoint = endpoint_path.clone();
+
+    let client_public_key = client_encryption_metadata
+        .as_ref()
+        .map(|m| hex::encode(m.client_x25519_public_key))
+        .unwrap_or_default();
 
     match handle_response(
         &state,
@@ -325,8 +343,16 @@ pub async fn confidential_chat_completions_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS
+                .with_label_values(&[&client_public_key])
+                .inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS
+                .with_label_values(&[&client_public_key])
+                .inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -340,7 +366,7 @@ pub async fn confidential_chat_completions_handler(
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
-                endpoint: request_metadata.endpoint_path.clone(),
+                endpoint: endpoint.clone(),
             });
         }
     }
@@ -621,6 +647,10 @@ async fn handle_streaming_response(
         .with_label_values(&[model])
         .start_timer();
 
+    let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+        .with_label_values(&[model])
+        .start_timer();
+
     let client = Client::new();
     let response = client
         .post(format!(
@@ -664,6 +694,7 @@ async fn handle_streaming_response(
         streaming_encryption_metadata,
         endpoint,
         timer,
+        intra_token_generation_timer,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -1064,7 +1095,7 @@ pub(crate) mod utils {
     /// - stack_small_id
     /// - endpoint_path
     #[instrument(
-        level = "debug", 
+        level = "debug",
         skip_all,
         fields(
             payload_hash,

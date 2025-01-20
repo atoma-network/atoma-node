@@ -25,7 +25,7 @@ use crate::{
     handlers::{
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -96,6 +96,8 @@ pub struct Streamer {
     /// We need store it as an option because we need to consume its value
     /// once the first token is generated
     first_token_generation_timer: Option<HistogramTimer>,
+    /// A time that measures the time taken between each token generation phase
+    intra_token_generation_timer: Option<HistogramTimer>,
     /// The decoding phase timer for the request.
     decoding_phase_timer: Option<HistogramTimer>,
     /// The client encryption metadata for the request
@@ -134,6 +136,7 @@ impl Streamer {
         streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
         endpoint: String,
         first_token_generation_timer: HistogramTimer,
+        intra_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -146,6 +149,7 @@ impl Streamer {
             address_index,
             model,
             first_token_generation_timer: Some(first_token_generation_timer),
+            intra_token_generation_timer: Some(intra_token_generation_timer),
             decoding_phase_timer: None,
             streaming_encryption_metadata,
             endpoint,
@@ -288,7 +292,7 @@ impl Streamer {
         Ok(())
     }
 
-    /// Signs the accumulated response  
+    /// Signs the accumulated response
     /// This is used when the streaming is complete and we need to send the final chunk back to the client
     /// with the signature and response hash
     ///
@@ -563,8 +567,19 @@ impl Streamer {
 
         let (signature, response_hash) = self.sign_chunk(&chunk)?;
 
+        let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+            .with_label_values(&[&self.model])
+            .start_timer();
+        self.intra_token_generation_timer = Some(intra_token_generation_timer);
+
         let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
-            Some(choices) => choices,
+            Some(choices) => {
+                // Observe the intra-token generation timer
+                if let Some(timer) = self.intra_token_generation_timer.take() {
+                    timer.observe_duration();
+                }
+                choices
+            }
             None => {
                 error!(
                     target = "atoma-service",
@@ -696,7 +711,7 @@ impl Stream for Streamer {
     }
 }
 
-/// Updates the final chunk with the signature and response hash    
+/// Updates the final chunk with the signature and response hash
 /// This is used when the streaming is complete and we need to send the final chunk back to the client
 /// with the signature and response hash
 ///
