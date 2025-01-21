@@ -305,7 +305,6 @@ pub async fn confidential_chat_completions_handler(
         estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
-        endpoint_path,
         ..
     } = request_metadata;
     info!(
@@ -315,16 +314,18 @@ pub async fn confidential_chat_completions_handler(
         "Received chat completions request, with payload hash: {payload_hash:?}"
     );
 
+    // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
-    let endpoint = endpoint_path.clone();
 
-    let client_public_key = client_encryption_metadata
-        .as_ref()
-        .map(|m| hex::encode(m.client_x25519_public_key))
-        .unwrap_or_default();
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
+    let endpoint = request_metadata.endpoint_path.clone();
 
     match handle_response(
         &state,
@@ -332,22 +333,18 @@ pub async fn confidential_chat_completions_handler(
         payload_hash,
         stack_small_id,
         is_stream,
-        payload,
+        payload.clone(),
         estimated_total_compute_units,
         client_encryption_metadata,
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS
-                .with_label_values(&[&client_public_key])
-                .inc();
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS
-                .with_label_values(&[&client_public_key])
-                .inc();
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -361,7 +358,7 @@ pub async fn confidential_chat_completions_handler(
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
-                endpoint: endpoint.clone(),
+                endpoint: request_metadata.endpoint_path.clone(),
             });
         }
     }
