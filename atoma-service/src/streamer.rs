@@ -96,8 +96,6 @@ pub struct Streamer {
     /// We need store it as an option because we need to consume its value
     /// once the first token is generated
     first_token_generation_timer: Option<HistogramTimer>,
-    /// A time that measures the time taken between each token generation phase
-    intra_token_generation_timer: Option<HistogramTimer>,
     /// The decoding phase timer for the request.
     decoding_phase_timer: Option<HistogramTimer>,
     /// The client encryption metadata for the request
@@ -136,7 +134,6 @@ impl Streamer {
         streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
         endpoint: String,
         first_token_generation_timer: HistogramTimer,
-        intra_token_generation_timer: HistogramTimer,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -149,7 +146,6 @@ impl Streamer {
             address_index,
             model,
             first_token_generation_timer: Some(first_token_generation_timer),
-            intra_token_generation_timer: Some(intra_token_generation_timer),
             decoding_phase_timer: None,
             streaming_encryption_metadata,
             endpoint,
@@ -570,16 +566,9 @@ impl Streamer {
         let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
             .with_label_values(&[&self.model])
             .start_timer();
-        self.intra_token_generation_timer = Some(intra_token_generation_timer);
 
         let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
-            Some(choices) => {
-                // Observe the intra-token generation timer
-                if let Some(timer) = self.intra_token_generation_timer.take() {
-                    timer.observe_duration();
-                }
-                choices
-            }
+            Some(choices) => choices,
             None => {
                 error!(
                     target = "atoma-service",
@@ -590,6 +579,10 @@ impl Streamer {
                 return Poll::Ready(Some(Err(Error::new("Error getting choices from chunk"))));
             }
         };
+
+        // Observe the intra-token generation duration for each chunk
+        // this metric excludes the time taken for the encryption request
+        intra_token_generation_timer.observe_duration();
 
         if choices.is_empty() {
             // Check if this is a final chunk with usage info

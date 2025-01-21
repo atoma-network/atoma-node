@@ -97,10 +97,10 @@ pub async fn embeddings_handler(
         .with_label_values(&[model])
         .start_timer();
 
-    let client_public_key = client_encryption_metadata
-        .as_ref()
-        .map(|m| hex::encode(m.client_x25519_public_key))
-        .unwrap_or_default();
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
 
     match handle_embeddings_response(
         &state,
@@ -115,15 +115,11 @@ pub async fn embeddings_handler(
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS
-                .with_label_values(&[&client_public_key])
-                .inc();
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS
-                .with_label_values(&[&client_public_key])
-                .inc();
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
