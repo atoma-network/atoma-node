@@ -197,6 +197,28 @@ pub static CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME: Lazy<HistogramVec> = La
     .unwrap()
 });
 
+/// Histogram metric that tracks the time taken for the encryption request
+///
+/// This metric measures the time taken for the encryption request,
+/// broken down by model type. The histogram buckets range from 0.1ms to 30 seconds to
+/// capture both very fast and slow encryption scenarios.
+///
+/// # Metric Details
+/// - Name: `atoma_chat_completions_encryption_request_time`
+/// - Type: Histogram
+/// - Labels: `model`
+/// - Unit: seconds
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+pub static STREAMER_ENCRYPTION_REQUEST_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "atoma_streamer_encryption_request_time",
+        "Time taken for the encryption request in seconds",
+        &["model"],
+        LATENCY_HISTOGRAM_BUCKETS.to_vec(),
+    )
+    .unwrap()
+});
+
 /// Counter metric that tracks the total number of input tokens processed in chat completions.
 ///
 /// This metric counts the cumulative number of tokens in the input prompts,
