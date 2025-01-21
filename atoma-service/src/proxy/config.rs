@@ -1,14 +1,23 @@
 use config::{Config, File};
+use isocountry::CountryCode;
 use serde::Deserialize;
 use std::path::Path;
+use validator::{Validate, ValidationError};
+
+/// Custom validation function for ISO 3166-1 alpha-2 country codes
+fn validate_country_code(code: &str) -> Result<(), ValidationError> {
+    CountryCode::for_alpha2(code).map_err(|_| ValidationError::new("Country code is invalid."))?;
+    Ok(())
+}
 
 /// Configuration for the proxy server
 ///
 /// This struct holds the configuration parameters needed to connect to proxy server.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct ProxyConfig {
     pub proxy_address: String,
     pub node_public_address: String,
+    #[validate(custom(function = "validate_country_code"))]
     pub country: String,
 }
 

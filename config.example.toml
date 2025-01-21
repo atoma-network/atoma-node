@@ -41,5 +41,5 @@ node_badges = [
 proxy_address = ""
 # replace this with the public url address of this node
 node_public_address = ""
-# replace this with the country of the node
+# required, replace this with the country (ISO 3166-1 alpha-2) of the node 
 country = ""
