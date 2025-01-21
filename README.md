@@ -126,7 +126,7 @@ node_badges = [
 proxy_address = "https://api.atomacloud.com"
 # replace this with the public url address of this node
 node_public_address = ""
-# replace this with the country of the node
+# replace this with the country code (ISO 3166-1 alpha-2) of the node
 country = ""
 ```
 
