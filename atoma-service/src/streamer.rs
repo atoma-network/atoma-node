@@ -26,7 +26,6 @@ use crate::{
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
-            STREAMER_ENCRYPTION_REQUEST_TIME,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -353,17 +352,12 @@ impl Streamer {
         chunk: &Value,
         usage: Option<&Value>,
         streaming_encryption_metadata: &StreamingEncryptionMetadata,
-        model: &str,
     ) -> Result<Value, Error> {
         let StreamingEncryptionMetadata {
             shared_secret,
             nonce,
             salt,
         } = streaming_encryption_metadata;
-
-        let encryption_request_timer = STREAMER_ENCRYPTION_REQUEST_TIME
-            .with_label_values(&[model])
-            .start_timer();
 
         // NOTE: We remove the usage key from the chunk before encryption
         // because we need to send the usage key back to the client in the final chunk
@@ -394,7 +388,6 @@ impl Streamer {
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
 
-        encryption_request_timer.observe_duration();
         if let Some(usage) = usage {
             Ok(json!({
                 CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
@@ -572,10 +565,6 @@ impl Streamer {
 
         let (signature, response_hash) = self.sign_chunk(&chunk)?;
 
-        let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
-            .with_label_values(&[&self.model])
-            .start_timer();
-
         let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
             Some(choices) => choices,
             None => {
@@ -589,10 +578,6 @@ impl Streamer {
             }
         };
 
-        // Observe the intra-token generation duration for each chunk
-        // this metric excludes the time taken for the encryption request
-        intra_token_generation_timer.observe_duration();
-
         if choices.is_empty() {
             // Check if this is a final chunk with usage info
             if let Some(usage) = chunk.get(USAGE_KEY) {
@@ -605,7 +590,6 @@ impl Streamer {
                         &chunk,
                         Some(usage),
                         streaming_encryption_metadata,
-                        &self.model,
                     )?
                 } else {
                     chunk.clone()
@@ -627,12 +611,7 @@ impl Streamer {
                 self.streaming_encryption_metadata.as_ref()
             {
                 // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                Self::handle_encryption_request(
-                    &chunk,
-                    None,
-                    streaming_encryption_metadata,
-                    &self.model,
-                )?
+                Self::handle_encryption_request(&chunk, None, streaming_encryption_metadata)?
             } else {
                 chunk
             };
@@ -650,10 +629,17 @@ impl Stream for Streamer {
             return Poll::Ready(None);
         }
 
+        let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+            .with_label_values(&[&self.model])
+            .start_timer();
+
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
                 match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(event))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        intra_token_generation_timer.observe_duration();
+                        Poll::Ready(Some(Ok(event)))
+                    }
                     Poll::Ready(Some(Err(e))) => {
                         self.status = StreamStatus::Failed(e.to_string());
                         // NOTE: We need to update the stack number of tokens as the service failed to generate
