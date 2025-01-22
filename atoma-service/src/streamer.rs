@@ -104,6 +104,8 @@ pub struct Streamer {
     endpoint: String,
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
+    /// Timer for measuring time between token generations
+    intra_stream_token_generation_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -150,6 +152,7 @@ impl Streamer {
             streaming_encryption_metadata,
             endpoint,
             chunk_buffer: String::new(),
+            intra_stream_token_generation_timer: None,
         }
     }
 
@@ -629,17 +632,22 @@ impl Stream for Streamer {
             return Poll::Ready(None);
         }
 
-        let intra_token_generation_timer = CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
-            .with_label_values(&[&self.model])
-            .start_timer();
-
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
+                // Observe the previous timer if it exists
+                if let Some(timer) = self.intra_stream_token_generation_timer.take() {
+                    timer.observe_duration();
+                }
+
+                // Start a new timer for the next token
+                self.intra_stream_token_generation_timer = Some(
+                    CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+                        .with_label_values(&[&self.model])
+                        .start_timer(),
+                );
+
                 match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => {
-                        intra_token_generation_timer.observe_duration();
-                        Poll::Ready(Some(Ok(event)))
-                    }
+                    Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(event))),
                     Poll::Ready(Some(Err(e))) => {
                         self.status = StreamStatus::Failed(e.to_string());
                         // NOTE: We need to update the stack number of tokens as the service failed to generate

@@ -190,7 +190,7 @@ pub static CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN: Lazy<HistogramVec> = Lazy::new(
 pub static CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_intra_token_generation_time",
-        "Time taken between each token generation phase in seconds",
+        "Time taken to stream between each token generation phase in seconds",
         &["model"],
         LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )
