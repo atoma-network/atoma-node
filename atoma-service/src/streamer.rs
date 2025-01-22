@@ -639,15 +639,16 @@ impl Stream for Streamer {
                     timer.observe_duration();
                 }
 
-                // Start a new timer for the next token
-                self.intra_stream_token_generation_timer = Some(
-                    CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
-                        .with_label_values(&[&self.model])
-                        .start_timer(),
-                );
-
                 match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(event))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        // Start the timer after we've processed this chunk
+                        self.intra_stream_token_generation_timer = Some(
+                            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+                                .with_label_values(&[&self.model])
+                                .start_timer(),
+                        );
+                        Poll::Ready(Some(Ok(event)))
+                    }
                     Poll::Ready(Some(Err(e))) => {
                         self.status = StreamStatus::Failed(e.to_string());
                         // NOTE: We need to update the stack number of tokens as the service failed to generate
