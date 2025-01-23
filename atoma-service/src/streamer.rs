@@ -25,7 +25,7 @@ use crate::{
     handlers::{
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -76,8 +76,6 @@ pub struct StreamingEncryptionMetadata {
 pub struct Streamer {
     /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
-    /// The accumulated response for final processing
-    accumulated_response: Vec<Value>,
     /// Current status of the stream
     status: StreamStatus,
     /// The stack small id for the request
@@ -106,6 +104,8 @@ pub struct Streamer {
     endpoint: String,
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
+    /// Timer for measuring time between token generations
+    intra_stream_token_generation_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -139,7 +139,6 @@ impl Streamer {
     ) -> Self {
         Self {
             stream: Box::pin(stream),
-            accumulated_response: Vec::new(),
             status: StreamStatus::NotStarted,
             stack_small_id,
             estimated_total_compute_units,
@@ -153,6 +152,7 @@ impl Streamer {
             streaming_encryption_metadata,
             endpoint,
             chunk_buffer: String::new(),
+            intra_stream_token_generation_timer: None,
         }
     }
 
@@ -291,7 +291,7 @@ impl Streamer {
         Ok(())
     }
 
-    /// Signs the accumulated response  
+    /// Signs the accumulated response
     /// This is used when the streaming is complete and we need to send the final chunk back to the client
     /// with the signature and response hash
     ///
@@ -300,19 +300,29 @@ impl Streamer {
     /// Returns a tuple containing:
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
+    ///
+    /// NOTE: We remove the usage key from the chunk before signing it, as we need to send the usage key back to the client in the final chunk
     #[instrument(level = "debug", skip_all)]
     pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
+        // Clone the chunk and remove usage if present
+        let mut chunk_to_sign = chunk.clone();
+        if let Some(obj) = chunk_to_sign.as_object_mut() {
+            obj.remove(USAGE_KEY);
+        }
+
         // Sign the accumulated response
         let (response_hash, signature) =
-            utils::sign_response_body(&chunk, &self.keystore, self.address_index).map_err(|e| {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    "Error signing response: {}",
-                    e
-                );
-                Error::new(format!("Error signing response: {}", e))
-            })?;
+            utils::sign_response_body(&chunk_to_sign, &self.keystore, self.address_index).map_err(
+                |e| {
+                    error!(
+                        target = "atoma-service-streamer",
+                        level = "error",
+                        "Error signing response: {}",
+                        e
+                    );
+                    Error::new(format!("Error signing response: {}", e))
+                },
+            )?;
 
         Ok((signature, response_hash))
     }
@@ -351,14 +361,6 @@ impl Streamer {
             nonce,
             salt,
         } = streaming_encryption_metadata;
-        tracing::info!(
-            level = "info",
-            event = "handle_streaming_response",
-            flag = "FLAG",
-            "Received chunk: {:?}",
-            chunk
-        );
-    
         // NOTE: We remove the usage key from the chunk before encryption
         // because we need to send the usage key back to the client in the final chunk
         let (encrypted_chunk, nonce) = if usage.is_some() {
@@ -387,24 +389,16 @@ impl Streamer {
             );
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
-        tracing::info!(
-            target = "atoma-service-streamer",
-            event = "handle_streaming_response",
-            flag = "FLAG",
-            "Encrypted chunk: {:?}, nonce: {:?}",
-            hex::encode(encrypted_chunk.clone()),
-            hex::encode(nonce.clone())
-        );
         if let Some(usage) = usage {
             Ok(json!({
-                CIPHERTEXT_KEY: encrypted_chunk,
-                NONCE_KEY: nonce,
+                CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
+                NONCE_KEY: STANDARD.encode(nonce),
                 USAGE_KEY: usage.clone(),
             }))
         } else {
             Ok(json!({
-                CIPHERTEXT_KEY: encrypted_chunk,
-                NONCE_KEY: nonce,
+                CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
+                NONCE_KEY: STANDARD.encode(nonce),
             }))
         }
     }
@@ -446,7 +440,6 @@ impl Streamer {
     /// # State Changes
     /// * Updates `status` field
     /// * Manages `chunk_buffer` for partial chunks
-    /// * Updates `accumulated_response` with processed chunks
     /// * Manages timing metrics via `first_token_generation_timer` and `decoding_phase_timer`
     #[instrument(
         level = "info",
@@ -615,8 +608,6 @@ impl Streamer {
                 Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
             }
         } else {
-            // Accumulate regular chunks
-            self.accumulated_response.push(chunk.clone());
             let mut chunk = if let Some(streaming_encryption_metadata) =
                 self.streaming_encryption_metadata.as_ref()
             {
@@ -641,8 +632,21 @@ impl Stream for Streamer {
 
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
+                // Observe the previous timer if it exists
+                if let Some(timer) = self.intra_stream_token_generation_timer.take() {
+                    timer.observe_duration();
+                }
+
                 match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(event))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        // Start the timer after we've processed this chunk
+                        self.intra_stream_token_generation_timer = Some(
+                            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+                                .with_label_values(&[&self.model])
+                                .start_timer(),
+                        );
+                        Poll::Ready(Some(Ok(event)))
+                    }
                     Poll::Ready(Some(Err(e))) => {
                         self.status = StreamStatus::Failed(e.to_string());
                         // NOTE: We need to update the stack number of tokens as the service failed to generate
@@ -708,7 +712,7 @@ impl Stream for Streamer {
     }
 }
 
-/// Updates the final chunk with the signature and response hash    
+/// Updates the final chunk with the signature and response hash
 /// This is used when the streaming is complete and we need to send the final chunk back to the client
 /// with the signature and response hash
 ///

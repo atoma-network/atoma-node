@@ -2,7 +2,10 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         handle_confidential_compute_encryption_response,
-        prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
+        prometheus::{
+            TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS,
+            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+        },
         sign_response_and_update_stack_hash, update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
@@ -94,6 +97,11 @@ pub async fn embeddings_handler(
         .with_label_values(&[model])
         .start_timer();
 
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     match handle_embeddings_response(
         &state,
         &payload,
@@ -106,8 +114,12 @@ pub async fn embeddings_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,

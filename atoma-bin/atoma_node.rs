@@ -38,6 +38,7 @@ use tracing_subscriber::{
     prelude::*,
     EnvFilter, Registry,
 };
+use validator::{Validate, ValidationErrors};
 
 /// The name of the environment variable for the Hugging Face token
 const HF_TOKEN: &str = "HF_TOKEN";
@@ -83,14 +84,20 @@ struct Config {
 }
 
 impl Config {
-    async fn load(path: &str) -> Self {
-        Self {
-            sui: AtomaSuiConfig::from_file_path(path),
-            service: AtomaServiceConfig::from_file_path(path),
-            state: AtomaStateManagerConfig::from_file_path(path),
-            daemon: AtomaDaemonConfig::from_file_path(path),
-            proxy: ProxyConfig::from_file_path(path),
-        }
+    async fn load(path: &str) -> Result<Self, ValidationErrors> {
+        let sui = AtomaSuiConfig::from_file_path(path);
+        let service = AtomaServiceConfig::from_file_path(path);
+        let state = AtomaStateManagerConfig::from_file_path(path);
+        let daemon = AtomaDaemonConfig::from_file_path(path);
+        let proxy = ProxyConfig::from_file_path(path);
+        proxy.validate()?;
+        Ok(Self {
+            sui,
+            service,
+            state,
+            daemon,
+            proxy,
+        })
     }
 }
 
@@ -173,7 +180,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let args = Args::parse();
-    let config = Config::load(&args.config_path).await;
+    let config = Config::load(&args.config_path).await?;
 
     info!("Starting Atoma node service");
 

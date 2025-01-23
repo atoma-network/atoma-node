@@ -153,12 +153,16 @@ pub async fn chat_completions_handler(
         "Received chat completions request, with payload hash: {payload_hash:?}"
     );
 
-    // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
     let endpoint = request_metadata.endpoint_path.clone();
+
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or_default();
 
     match handle_response(
         &state,
@@ -166,14 +170,18 @@ pub async fn chat_completions_handler(
         payload_hash,
         stack_small_id,
         is_stream,
-        payload,
+        payload.clone(),
         estimated_total_compute_units,
         client_encryption_metadata,
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[&model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[&model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -311,6 +319,12 @@ pub async fn confidential_chat_completions_handler(
         .get(STREAM_KEY)
         .and_then(|s| s.as_bool())
         .unwrap_or_default();
+
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     let endpoint = request_metadata.endpoint_path.clone();
 
     match handle_response(
@@ -319,14 +333,18 @@ pub async fn confidential_chat_completions_handler(
         payload_hash,
         stack_small_id,
         is_stream,
-        payload,
+        payload.clone(),
         estimated_total_compute_units,
         client_encryption_metadata,
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -1083,7 +1101,7 @@ pub(crate) mod utils {
     /// - stack_small_id
     /// - endpoint_path
     #[instrument(
-        level = "debug", 
+        level = "debug",
         skip_all,
         fields(
             payload_hash,
