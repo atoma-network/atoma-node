@@ -3,7 +3,12 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'atoma-node'
+  - job_name: 'atoma-node-confidential'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['atoma-node:3000']
+      - targets: ['atoma-node-confidential:3000']
+
+  - job_name: 'atoma-node-non-confidential'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['atoma-node-non-confidential:3000']
