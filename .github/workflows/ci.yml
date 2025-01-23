@@ -22,9 +22,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  format:
+    name: format
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.toolchain }}
+          components: rustfmt
+      - name: cargo format
+        run: cargo fmt --all -- --check
+
   clippy:
     name: clippy
-    runs-on: [ubuntu-22.04]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.toolchain }}
+          components: clippy
+      - name: Clippy
+        run: |
+          cargo clippy \
+            --all-targets \
+            -- -D warnings
+  test:
+    name: test
+    runs-on: ubuntu-22.04
     services:
       postgres:
         image: postgres:13
@@ -34,7 +64,6 @@ jobs:
           POSTGRES_PASSWORD: atoma
         ports:
           - 5432:5432
-        # health check to ensure database is ready
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -47,12 +76,5 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.toolchain }}
-          components: clippy, rustfmt
-      - name: cargo format
-        run: cargo fmt --all -- --check
-      - name: Install cargo-lints
-        run: cargo install cargo-lints
-      - name: Clippy check (with lints)
-        run: cargo lints clippy --all-targets
-      - name: Unit tests checks
+      - name: Unit tests
         run: cargo test
