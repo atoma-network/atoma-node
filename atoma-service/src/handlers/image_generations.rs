@@ -1,7 +1,10 @@
 use crate::{
     error::AtomaServiceError,
     handlers::{
-        prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
+        prometheus::{
+            IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TOTAL_FAILED_REQUESTS,
+        },
         update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
@@ -94,9 +97,14 @@ pub async fn image_generations_handler(
         request_type: _,
     } = request_metadata;
 
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     match handle_image_generations_response(
         &state,
-        payload,
+        payload.clone(),
         payload_hash,
         stack_small_id,
         estimated_total_compute_units,
@@ -106,8 +114,12 @@ pub async fn image_generations_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[&model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,

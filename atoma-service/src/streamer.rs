@@ -25,7 +25,7 @@ use crate::{
     handlers::{
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -104,6 +104,8 @@ pub struct Streamer {
     endpoint: String,
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
+    /// Timer for measuring time between token generations
+    intra_stream_token_generation_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -150,6 +152,7 @@ impl Streamer {
             streaming_encryption_metadata,
             endpoint,
             chunk_buffer: String::new(),
+            intra_stream_token_generation_timer: None,
         }
     }
 
@@ -288,7 +291,7 @@ impl Streamer {
         Ok(())
     }
 
-    /// Signs the accumulated response  
+    /// Signs the accumulated response
     /// This is used when the streaming is complete and we need to send the final chunk back to the client
     /// with the signature and response hash
     ///
@@ -358,6 +361,7 @@ impl Streamer {
             nonce,
             salt,
         } = streaming_encryption_metadata;
+
         // NOTE: We remove the usage key from the chunk before encryption
         // because we need to send the usage key back to the client in the final chunk
         let (encrypted_chunk, nonce) = if usage.is_some() {
@@ -386,6 +390,7 @@ impl Streamer {
             );
             Error::new(format!("Error encrypting chunk: {}", e))
         })?;
+
         if let Some(usage) = usage {
             Ok(json!({
                 CIPHERTEXT_KEY: STANDARD.encode(encrypted_chunk),
@@ -629,8 +634,21 @@ impl Stream for Streamer {
 
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
+                // Observe the previous timer if it exists
+                if let Some(timer) = self.intra_stream_token_generation_timer.take() {
+                    timer.observe_duration();
+                }
+
                 match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(event))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        // Start the timer after we've processed this chunk
+                        self.intra_stream_token_generation_timer = Some(
+                            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+                                .with_label_values(&[&self.model])
+                                .start_timer(),
+                        );
+                        Poll::Ready(Some(Ok(event)))
+                    }
                     Poll::Ready(Some(Err(e))) => {
                         self.status = StreamStatus::Failed(e.to_string());
                         // NOTE: We need to update the stack number of tokens as the service failed to generate
@@ -696,7 +714,7 @@ impl Stream for Streamer {
     }
 }
 
-/// Updates the final chunk with the signature and response hash    
+/// Updates the final chunk with the signature and response hash
 /// This is used when the streaming is complete and we need to send the final chunk back to the client
 /// with the signature and response hash
 ///
