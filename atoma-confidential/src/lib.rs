@@ -2,6 +2,8 @@ pub mod key_management;
 pub mod service;
 #[cfg(feature = "tdx")]
 pub mod tdx;
+#[cfg(feature = "sev_snp")]
+pub mod sev_snp;
 pub mod types;
 
 pub use service::AtomaConfidentialComputeService;

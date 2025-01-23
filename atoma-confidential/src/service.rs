@@ -15,6 +15,7 @@ use atoma_sui::client::AtomaSuiClient;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
 use atoma_utils::constants::NONCE_SIZE;
 use std::sync::Arc;
+use strum::EnumString;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
@@ -66,6 +67,26 @@ pub struct AtomaConfidentialComputeService {
     service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
+    /// Provider for the confidential compute service
+    confidential_compute_provider: Option<AtomaConfidentialComputeProvider>,
+}
+
+/// Represents the supported confidential compute providers.
+///
+/// This enum defines the different types of confidential computing technologies
+/// that can be used for secure computation and attestation.
+///
+/// # Variants
+/// * `IntelTdx` - Intel Trust Domain Extensions (TDX) technology
+/// * `AmdSevSnp` - AMD Secure Encrypted Virtualization with Secure Nested Paging (SEV-SNP)
+///
+/// The variants are serialized in kebab-case format (e.g., "intel-tdx", "amd-sev-snp")
+/// when converting to/from strings using the `EnumString` trait from the `strum` crate.
+#[derive(Debug, Clone, Copy, EnumString)]
+#[strum(serialize_all = "kebab-case")]
+pub enum AtomaConfidentialComputeProvider {
+    IntelTdx, // intel-tdx
+    AmdSevSnp, // amd-sev-snp
 }
 
 impl AtomaConfidentialComputeService {
@@ -76,6 +97,7 @@ impl AtomaConfidentialComputeService {
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
         service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
+        confidential_compute_provider: Option<AtomaConfidentialComputeProvider>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
@@ -88,6 +110,7 @@ impl AtomaConfidentialComputeService {
             service_encryption_receiver,
             service_shared_secret_receiver,
             shutdown_signal,
+            confidential_compute_provider
         })
     }
 
@@ -121,6 +144,7 @@ impl AtomaConfidentialComputeService {
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
         service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
+        confidential_compute_provider: Option<AtomaConfidentialComputeProvider>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<()> {
         let mut service = Self::new(
@@ -129,11 +153,12 @@ impl AtomaConfidentialComputeService {
             service_decryption_receiver,
             service_encryption_receiver,
             service_shared_secret_receiver,
+            confidential_compute_provider,
             shutdown_signal,
         )?;
 
-        // NOTE: Submit the first node key rotation attestation, because the node is starting up afresh
-        service.submit_node_key_rotation_tdx_attestation().await?;
+        service.submit_node_key_rotation_attestation().await?;
+
         service.run().await?;
 
         Ok(())
@@ -250,51 +275,118 @@ impl AtomaConfidentialComputeService {
     /// This function can return:
     /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation or public key retrieval fails
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
+    /// 
+    /// 
+    /// Make sure this is under a feature flag for TDX, and add a different CC implemntation for ADM SEV-SNP
     #[instrument(level = "debug", skip_all)]
-    async fn submit_node_key_rotation_tdx_attestation(&mut self) -> Result<()> {
+    async fn submit_node_key_rotation_attestation(&mut self) -> Result<()> {
         self.key_manager.rotate_keys();
-        #[cfg(feature = "tdx")]
-        {
-            let public_key = self.key_manager.get_public_key();
-            let public_key_bytes = public_key.to_bytes();
-            let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
-            let tdx_quote_bytes = tdx_quote.to_bytes();
-            match self
-                .sui_client
-                .write()
-                .await
-                .submit_key_rotation_remote_attestation(
-                    public_key_bytes,
-                    tdx_quote_bytes,
-                    None,
-                    None,
-                    None,
-                )
-                .await
-            {
-                Ok((digest, key_rotation_counter)) => {
-                    tracing::info!(
-                        target = "atoma-tdx-service",
-                        digest = digest,
-                        key_rotation_counter = key_rotation_counter,
-                        "Submitted node key rotation attestation successfully"
-                    );
-                    self.key_rotation_counter = Some(key_rotation_counter);
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!(
-                        target = "atoma-tdx-service",
-                        error = %e,
-                        "Failed to submit node key rotation attestation"
-                    );
-                    Err(AtomaConfidentialComputeError::SuiClientError(e))
-                }
+
+        if let Some(_cc_provider) = self.confidential_compute_provider {
+            #[cfg(feature = "tdx")]
+            if matches!(
+                _cc_provider,
+                AtomaConfidentialComputeProvider::IntelTdx
+            ) {
+                return self.submit_tdx_attestation().await;
+            }
+            #[cfg(feature = "sev_snp")]
+            if matches!(
+                _cc_provider,
+                AtomaConfidentialComputeProvider::AmdSevSnp
+            ) {
+                return self.submit_sev_snp_attestation().await;
             }
         }
-        #[cfg(not(feature = "tdx"))]
+
+        // If we get here, either the feature flags don't match or the provider isn't supported
+        tracing::warn!(
+            target = "atoma-confidential-compute-service",
+            provider = ?self.confidential_compute_provider,
+            "No attestation implementation available for provider"
+        );
+        Ok(())
+    }
+
+    
+    #[cfg(feature = "tdx")]
+    async fn submit_tdx_attestation(&mut self) -> Result<()> {
+        let public_key = self.key_manager.get_public_key();
+        let public_key_bytes = public_key.to_bytes();
+        let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
+        let tdx_quote_bytes = tdx_quote.to_bytes();
+
+        match self
+            .sui_client
+            .write()
+            .await
+            .submit_key_rotation_remote_attestation(
+                public_key_bytes,
+                tdx_quote_bytes,
+                None,
+                None,
+                None,
+            )
+            .await
         {
-            Ok(())
+            Ok((digest, key_rotation_counter)) => {
+                tracing::info!(
+                    target = "atoma-confidential-compute-service",
+                    digest = digest,
+                    key_rotation_counter = key_rotation_counter,
+                    "Submitted TDX attestation successfully"
+                );
+                self.key_rotation_counter = Some(key_rotation_counter);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!(
+                    target = "atoma-confidential-compute-service",
+                    error = %e,
+                    "Failed to submit TDX attestation"
+                );
+                Err(AtomaConfidentialComputeError::SuiClientError(e))
+            }
+        }
+    }
+
+    #[cfg(feature = "sev_snp")]
+    async fn submit_sev_snp_attestation(&mut self) -> Result<()> {
+        let public_key = self.key_manager.get_public_key();
+        let public_key_bytes = public_key.to_bytes();
+        let sev_snp_quote = get_compute_data_attestation(&public_key_bytes)?;
+        let sev_snp_quote_bytes = sev_snp_quote.to_bytes();
+
+        match self
+            .sui_client
+            .write()
+            .await
+            .submit_key_rotation_remote_attestation(
+                public_key_bytes,
+                sev_snp_quote_bytes,
+                None,
+                None,
+                None
+            ).await
+        {
+            Ok((digest, key_rotation_counter)) => {
+                tracing::info!(
+                    target = "atoma-confidential-compute-service",
+                    digest = digest,
+                    key_rotation_counter = key_rotation_counter,
+                    "Submitted SEV-SNP attestation successfully"
+                );
+                self.key_rotation_counter = Some(key_rotation_counter);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!(
+                    target = "atoma-confidential-compute-service",
+                    error = %e,
+                    "Failed to submit SEV-SNP attestation"
+                );
+                Err(AtomaConfidentialComputeError::SuiClientError(e))
+            }
         }
     }
 
@@ -520,7 +612,7 @@ impl AtomaConfidentialComputeService {
                     .map(|counter| counter < event.key_rotation_counter)
                     .unwrap_or(true)
                 {
-                    self.submit_node_key_rotation_tdx_attestation().await?;
+                    self.submit_node_key_rotation_attestation().await?;
                 }
             }
             _ => {
