@@ -115,7 +115,7 @@ pub async fn image_generations_handler(
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[&model]).inc();
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
             Ok(response)
         }
         Err(e) => {
