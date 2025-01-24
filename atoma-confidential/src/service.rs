@@ -6,6 +6,11 @@ use crate::{
         ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
 };
+#[cfg(feature = "sev-snp")]
+use crate::{
+    sev_snp::{get_compute_data_attestation, SevError},
+    ToBytes,
+};
 #[cfg(feature = "tdx")]
 use crate::{
     tdx::{get_compute_data_attestation, TdxError},
