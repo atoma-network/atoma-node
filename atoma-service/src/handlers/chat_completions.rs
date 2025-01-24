@@ -177,11 +177,11 @@ pub async fn chat_completions_handler(
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[&model]).inc();
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS.with_label_values(&[&model]).inc();
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack

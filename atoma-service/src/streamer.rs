@@ -25,7 +25,7 @@ use crate::{
     handlers::{
         prometheus::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -105,7 +105,7 @@ pub struct Streamer {
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
     /// Timer for measuring time between token generations
-    intra_stream_token_generation_timer: Option<HistogramTimer>,
+    inter_stream_token_latency_timer: Option<HistogramTimer>,
 }
 
 /// Represents the various states of a streaming process
@@ -152,7 +152,7 @@ impl Streamer {
             streaming_encryption_metadata,
             endpoint,
             chunk_buffer: String::new(),
-            intra_stream_token_generation_timer: None,
+            inter_stream_token_latency_timer: None,
         }
     }
 
@@ -632,19 +632,19 @@ impl Stream for Streamer {
 
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
-                // Observe the previous timer if it exists
-                if let Some(timer) = self.intra_stream_token_generation_timer.take() {
-                    timer.observe_duration();
-                }
-
                 match self.handle_streaming_chunk(chunk) {
                     Poll::Ready(Some(Ok(event))) => {
+                        // Observe the previous timer if it exists
+                        if let Some(timer) = self.inter_stream_token_latency_timer.take() {
+                            timer.observe_duration();
+                        }
                         // Start the timer after we've processed this chunk
-                        self.intra_stream_token_generation_timer = Some(
-                            CHAT_COMPLETIONS_INTRA_TOKEN_GENERATION_TIME
+                        self.inter_stream_token_latency_timer = Some(
+                            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME
                                 .with_label_values(&[&self.model])
                                 .start_timer(),
                         );
+
                         Poll::Ready(Some(Ok(event)))
                     }
                     Poll::Ready(Some(Err(e))) => {
