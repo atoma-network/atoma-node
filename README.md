@@ -43,7 +43,7 @@ You then need to create a wallet and fund it with some testnet SUI. Please refer
 
 ### Register with the Atoma Testnet smart contract
 
-Please refer to the [setup script](https://github.com/atoma-network/atoma-contracts/pull/132/files#diff-00fdca2a8379052d26447658c20d8c7e93f8b7468979e4c96704c55e91406b96) to register with the Atoma Testnet smart contract. This will assign you a node badge and a package ID, which you'll need to configure in the `config.toml` file.
+Please refer to the [setup script](https://github.com/atoma-network/atoma-contracts/blob/main/sui/dev/setup.py) to register with the Atoma Testnet smart contract. This will assign you a node badge and a package ID, which you'll need to configure in the `config.toml` file.
 
 ### Docker Deployment
 
