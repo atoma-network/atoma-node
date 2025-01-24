@@ -2,7 +2,7 @@ pub mod key_management;
 pub mod service;
 #[cfg(feature = "tdx")]
 pub mod tdx;
-#[cfg(feature = "sev_snp")]
+#[cfg(feature = "sev-snp")]
 pub mod sev_snp;
 pub mod types;
 

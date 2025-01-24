@@ -290,7 +290,7 @@ impl AtomaConfidentialComputeService {
             ) {
                 return self.submit_tdx_attestation().await;
             }
-            #[cfg(feature = "sev_snp")]
+            #[cfg(feature = "sev-snp")]
             if matches!(
                 _cc_provider,
                 AtomaConfidentialComputeProvider::AmdSevSnp
@@ -350,7 +350,7 @@ impl AtomaConfidentialComputeService {
         }
     }
 
-    #[cfg(feature = "sev_snp")]
+    #[cfg(feature = "sev-snp")]
     async fn submit_sev_snp_attestation(&mut self) -> Result<()> {
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
