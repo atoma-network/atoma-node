@@ -140,7 +140,7 @@ country = ""
 mkdir -p data logs
 ```
 
-1. Start the containers with the desired inference services, please note if you don't have a GPU, you'll need to use the you will need to use a `mistral` backend as currently the other vllms are not supported on CPU.
+1. Start the containers with the desired inference services, please note if you don't have a GPU, you'll need to use the you will need to use a `vllm_cpu`  backend, but these are only compatible with  `x86_64` architectures. Otherwise we recommend using the `mistral` for CPUs.
 
 We currently support the following inference services:
 
