@@ -12,7 +12,7 @@ atoma-utils = { workspace = true }
 blake2 = { workspace = true }
 dcap-rs = { workspace = true, optional = true }
 flume = { workspace = true }
-sev = { workspace = true, optional = true }
+sev = { workspace = true, optional = true, features = ["crypto_nossl"]}
 strum = { workspace = true, features = ["derive"] }
 rand = { workspace = true }
 tokio = { workspace = true }
