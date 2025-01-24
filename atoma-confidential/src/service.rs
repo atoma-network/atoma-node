@@ -85,7 +85,7 @@ pub struct AtomaConfidentialComputeService {
 #[derive(Debug, Clone, Copy, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum AtomaConfidentialComputeProvider {
-    IntelTdx, // intel-tdx
+    IntelTdx,  // intel-tdx
     AmdSevSnp, // amd-sev-snp
 }
 
@@ -110,7 +110,7 @@ impl AtomaConfidentialComputeService {
             service_encryption_receiver,
             service_shared_secret_receiver,
             shutdown_signal,
-            confidential_compute_provider
+            confidential_compute_provider,
         })
     }
 
@@ -275,8 +275,8 @@ impl AtomaConfidentialComputeService {
     /// This function can return:
     /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation or public key retrieval fails
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
-    /// 
-    /// 
+    ///
+    ///
     /// Make sure this is under a feature flag for TDX, and add a different CC implemntation for ADM SEV-SNP
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_attestation(&mut self) -> Result<()> {
@@ -284,17 +284,11 @@ impl AtomaConfidentialComputeService {
 
         if let Some(_cc_provider) = self.confidential_compute_provider {
             #[cfg(feature = "tdx")]
-            if matches!(
-                _cc_provider,
-                AtomaConfidentialComputeProvider::IntelTdx
-            ) {
+            if matches!(_cc_provider, AtomaConfidentialComputeProvider::IntelTdx) {
                 return self.submit_tdx_attestation().await;
             }
             #[cfg(feature = "sev-snp")]
-            if matches!(
-                _cc_provider,
-                AtomaConfidentialComputeProvider::AmdSevSnp
-            ) {
+            if matches!(_cc_provider, AtomaConfidentialComputeProvider::AmdSevSnp) {
                 return self.submit_sev_snp_attestation().await;
             }
         }
@@ -308,7 +302,6 @@ impl AtomaConfidentialComputeService {
         Ok(())
     }
 
-    
     #[cfg(feature = "tdx")]
     async fn submit_tdx_attestation(&mut self) -> Result<()> {
         let public_key = self.key_manager.get_public_key();
@@ -366,8 +359,9 @@ impl AtomaConfidentialComputeService {
                 sev_snp_quote_bytes,
                 None,
                 None,
-                None
-            ).await
+                None,
+            )
+            .await
         {
             Ok((digest, key_rotation_counter)) => {
                 tracing::info!(

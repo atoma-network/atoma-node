@@ -5,7 +5,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use atoma_confidential::{AtomaConfidentialComputeService, service::AtomaConfidentialComputeProvider};
+use atoma_confidential::{
+    service::AtomaConfidentialComputeProvider, AtomaConfidentialComputeService,
+};
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
@@ -265,12 +267,12 @@ async fn main() -> Result<()> {
     let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    let confidential_compute_provider = config.service.confidential_compute_provider
+    let confidential_compute_provider = config
+        .service
+        .confidential_compute_provider
         .as_ref()
-        .and_then(|provider| {
-            AtomaConfidentialComputeProvider::from_str(provider).ok()
-        });
-    
+        .and_then(|provider| AtomaConfidentialComputeProvider::from_str(provider).ok());
+
     let confidential_compute_service_handle = spawn_with_shutdown(
         AtomaConfidentialComputeService::start_confidential_compute_service(
             client.clone(),
