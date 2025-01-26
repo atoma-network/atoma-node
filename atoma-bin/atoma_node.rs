@@ -333,10 +333,7 @@ async fn main() -> Result<()> {
         compute_shared_secret_sender,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.service.models),
-        chat_completions_service_url: config
-            .service
-            .chat_completions_service_url
-            .context("Chat completions service URL not configured")?,
+        chat_completions_service_urls: config.service.chat_completions_service_urls,
         embeddings_service_url: config
             .service
             .embeddings_service_url
