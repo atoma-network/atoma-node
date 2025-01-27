@@ -16,9 +16,16 @@ concurrency:
 
 jobs:
   coverage:
-    runs-on: ubuntu-22.04 # Match your CI's Ubuntu version
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
+      # Add these steps to install system dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libtss2-dev
+
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
 
