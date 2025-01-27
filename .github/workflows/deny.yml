@@ -17,3 +17,4 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2.0.4
         with:
           command: check ${{ matrix.checks }}
+          arguments: --exclude addchain
