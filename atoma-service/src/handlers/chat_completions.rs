@@ -43,6 +43,9 @@ const MODEL_KEY: &str = "model";
 /// The key for the stream parameter in the request body
 const STREAM_KEY: &str = "stream";
 
+/// The default model to use if the model is not found in the request body
+const UNKNOWN_MODEL: &str = "unknown";
+
 /// OpenAPI documentation structure for the chat completions endpoint.
 ///
 /// This struct defines the OpenAPI (Swagger) documentation for the chat completions API,
@@ -631,7 +634,7 @@ async fn handle_streaming_response(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or(UNKNOWN_MODEL);
     CHAT_COMPLETIONS_NUM_REQUESTS
         .with_label_values(&[model])
         .inc();
@@ -1213,7 +1216,10 @@ pub(crate) mod utils {
         endpoint: &str,
     ) -> Result<Value, AtomaServiceError> {
         let client = Client::new();
-        let model = payload.get("model").unwrap().as_str().unwrap();
+        let model = payload
+            .get(MODEL_KEY)
+            .and_then(|m| m.as_str())
+            .unwrap_or(UNKNOWN_MODEL);
         let chat_completions_service_url = state
             .chat_completions_service_urls
             .get(&model.to_lowercase())
