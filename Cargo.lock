@@ -3564,8 +3564,7 @@ dependencies = [
 [[package]]
 name = "hyper-rustls"
 version = "0.27.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d191583f3da1305256f22463b9bb0471acad48a4e534a5218b9963e9c1f59b2"
+source = "git+https://github.com/rustls/hyper-rustls?branch=main#426c0a7091b8ca4a938440fdb527c5a37e53a5ab"
 dependencies = [
  "futures-util",
  "http 1.2.0",
@@ -8684,8 +8683,7 @@ dependencies = [
 [[package]]
 name = "tokio-rustls"
 version = "0.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f6d0975eaace0cf0fcadee4e4aaa5da15b5c079146f2cffb67c113be122bf37"
+source = "git+https://github.com/rustls/tokio-rustls?branch=main#cd399aba544e01f08047b40a6988365c195d6076"
 dependencies = [
  "rustls 0.23.21",
  "tokio",
