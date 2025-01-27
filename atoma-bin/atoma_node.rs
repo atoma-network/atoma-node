@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use atoma_confidential::AtomaConfidentialComputeService;
+use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
@@ -13,7 +13,7 @@ use atoma_service::{
     server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
-use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
+use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use dotenv::dotenv;
@@ -66,9 +66,9 @@ struct Args {
 /// This struct holds the configuration settings for various components
 /// of the Atoma node, including the Sui, service, and state manager configurations.
 #[derive(Debug)]
-struct Config {
+struct NodeConfig {
     /// Configuration for the Sui component.
-    sui: AtomaSuiConfig,
+    sui: Config,
 
     /// Configuration for the service component.
     service: AtomaServiceConfig,
@@ -83,9 +83,9 @@ struct Config {
     proxy: ProxyConfig,
 }
 
-impl Config {
+impl NodeConfig {
     async fn load(path: &str) -> Result<Self, ValidationErrors> {
-        let sui = AtomaSuiConfig::from_file_path(path);
+        let sui = Config::from_file_path(path);
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
         let daemon = AtomaDaemonConfig::from_file_path(path);
@@ -127,7 +127,7 @@ impl Config {
 /// async fn example() -> Result<()> {
 ///     let models = vec!["facebook/opt-125m".to_string()];
 ///     let revisions = vec!["main".to_string()];
-///     
+///
 ///     let tokenizers = initialize_tokenizers(&models, &revisions).await?;
 ///     Ok(())
 /// }
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let args = Args::parse();
-    let config = Config::load(&args.config_path).await?;
+    let config = NodeConfig::load(&args.config_path).await?;
 
     info!("Starting Atoma node service");
 
@@ -259,14 +259,14 @@ async fn main() -> Result<()> {
     );
 
     let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_path).await?,
+        Client::new_from_config(args.config_path).await?,
     ));
 
     let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     let confidential_compute_service_handle = spawn_with_shutdown(
-        AtomaConfidentialComputeService::start_confidential_compute_service(
+        AtomaConfidentialCompute::start_confidential_compute_service(
             client.clone(),
             _subscriber_confidential_compute_receiver,
             _app_state_decryption_receiver,
@@ -286,7 +286,7 @@ async fn main() -> Result<()> {
         "Spawning subscriber service"
     );
 
-    let subscriber = SuiEventSubscriber::new(
+    let subscriber = Subscriber::new(
         config.sui,
         event_subscriber_sender,
         stack_retrieve_receiver,

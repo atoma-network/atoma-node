@@ -1,12 +1,9 @@
 use std::path::Path;
-use sui_sdk::{
-    json::SuiJsonValue, rpc_types::SuiData, types::base_types::ObjectID,
-    wallet_context::WalletContext,
-};
+use sui_sdk::{json::SuiJsonValue, types::base_types::ObjectID, wallet_context::WalletContext};
 use thiserror::Error;
 use tracing::{error, info, instrument};
 
-use crate::{config::AtomaSuiConfig, events::NodePublicKeyCommittmentEvent};
+use crate::{config::Config as SuiConfig, events::NodePublicKeyCommittmentEvent};
 
 type Result<T> = std::result::Result<T, AtomaSuiClientError>;
 
@@ -46,31 +43,35 @@ const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 /// The Atoma's contract method name for submitting a node key rotation attestation
 const ROTATE_NODE_PUBLIC_KEY: &str = "rotate_node_public_key";
 
-/// A client for interacting with the Atoma network using the Sui blockchain.
-///
-/// The `AtomaSuiClient` struct provides methods to perform various operations
-/// in the Atoma network, such as registering nodes, subscribing to models and tasks,
-/// and managing transactions. It maintains a wallet context and optionally stores
-/// a node badge representing the client's node registration status.
-pub struct AtomaSuiClient {
-    /// Configuration settings for the Atoma client, including paths and timeouts.
-    config: AtomaSuiConfig,
-
-    /// The wallet context used for managing blockchain interactions.
-    wallet_ctx: WalletContext,
-
-    /// An optional tuple containing the ObjectID and small ID of the node badge,
-    /// which represents the node's registration in the Atoma network.
+/// Client for interacting with Atoma's Sui blockchain functionality
+pub struct Client {
+    /// Configuration settings for the Atoma client
+    config: SuiConfig,
+    /// The Sui client for blockchain interactions
+    client: WalletContext,
+    /// An optional tuple containing the `ObjectID` and small ID of the node badge,
+    /// used for authentication
     node_badge: Option<(ObjectID, u64)>,
-
-    /// The ObjectID of the USDC wallet address
-    /// for the current operator
-    usdc_wallet_id: Option<ObjectID>,
+    /// The `ObjectID` of the USDC wallet address
+    usdc_wallet: Option<ObjectID>,
 }
 
-impl AtomaSuiClient {
-    /// Constructor
-    pub async fn new(config: AtomaSuiConfig) -> Result<Self> {
+impl Client {
+    /// Creates a new Sui client instance
+    ///
+    /// # Arguments
+    /// * `config` - Configuration settings for the client
+    ///
+    /// # Returns
+    /// A new client instance
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Failed to initialize wallet context
+    /// - Failed to get client from wallet context
+    /// - Failed to get active address
+    /// - Failed to retrieve node badge
+    pub async fn new(config: SuiConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
         let mut wallet_ctx = WalletContext::new(
@@ -86,32 +87,20 @@ impl AtomaSuiClient {
         .await;
         Ok(Self {
             config,
-            wallet_ctx,
+            client: wallet_ctx,
             node_badge,
-            usdc_wallet_id: None,
+            usdc_wallet: None,
         })
     }
 
-    /// Creates a new `AtomaSuiClient` instance from a configuration file.
-    ///
-    /// This method reads the configuration from the specified file path and initializes
-    /// a new `AtomaSuiClient` with the loaded configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `config_path` - A path-like type that represents the location of the configuration file.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self>` - A Result containing the new `AtomaSuiClient` instance if successful,
-    ///   or an error if the configuration couldn't be read.
+    /// Creates a new client instance
     ///
     /// # Errors
-    ///
-    /// This function will return an error if:
-    /// * The configuration file cannot be read or parsed.
-    pub async fn new_from_config<P: AsRef<Path>>(config_path: P) -> Result<Self> {
-        let config = AtomaSuiConfig::from_file_path(config_path);
+    /// - If Sui client initialization fails
+    /// - If keystore operations fail
+    /// - If network connection fails
+    pub async fn new_from_config<P: AsRef<Path> + Send>(config_path: P) -> Result<Self> {
+        let config = SuiConfig::from_file_path(config_path);
         Self::new(config).await
     }
 
@@ -156,7 +145,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn submit_node_registration_tx(
         &mut self,
@@ -164,8 +153,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
 
         let tx = client
             .transaction_builder()
@@ -182,8 +171,8 @@ impl AtomaSuiClient {
             )
             .await?;
         info!("Submitting node registration transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node registration transaction submitted successfully. Transaction digest: {:?}",
@@ -193,7 +182,7 @@ impl AtomaSuiClient {
         let created_object = utils::get_node_badge(
             &client,
             self.config.atoma_package_id(),
-            self.wallet_ctx.active_address()?,
+            self.client.active_address()?,
         )
         .await
         .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?;
@@ -255,7 +244,7 @@ impl AtomaSuiClient {
     #[instrument(level = "info", skip_all, fields(
         model_name = %model_name,
         echelon = %echelon,
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn submit_node_model_subscription_tx(
         &mut self,
@@ -266,8 +255,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -294,8 +283,8 @@ impl AtomaSuiClient {
             )
             .await?;
         info!("Submitting model subscription transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node model subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -355,7 +344,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap(),
+        address = %self.client.active_address().unwrap(),
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -368,8 +357,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -396,8 +385,8 @@ impl AtomaSuiClient {
             )
             .await?;
         info!("Submitting node task subscription transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node task subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -446,7 +435,7 @@ impl AtomaSuiClient {
     ///         None,                   // default gas budget
     ///         None                    // default gas price
     ///     ).await?;
-    ///     
+    ///
     ///     // Or with custom gas settings and specific node badge ID
     ///     let gas_object = ObjectID::new([1; 32]);
     ///     let node_badge = ObjectID::new([2; 32]);
@@ -458,7 +447,7 @@ impl AtomaSuiClient {
     ///         Some(10_000_000),       // 0.01 SUI gas budget
     ///         Some(1000)              // specific gas price
     ///     ).await?;
-    ///     
+    ///
     ///     println!("Task subscription updated: {}", tx_digest);
     ///     Ok(())
     /// # }
@@ -466,7 +455,7 @@ impl AtomaSuiClient {
     #[instrument(level = "info", skip_all, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_update_node_task_subscription_tx(
@@ -478,8 +467,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -506,8 +495,8 @@ impl AtomaSuiClient {
             )
             .await?;
         info!("Submitting node task update subscription transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node task update subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -563,7 +552,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn submit_unsubscribe_node_from_task_tx(
         &mut self,
@@ -573,8 +562,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -600,8 +589,8 @@ impl AtomaSuiClient {
             )
             .await?;
         info!("Submitting node try settle stack transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -667,7 +656,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap(),
+        address = %self.client.active_address().unwrap(),
         num_claimed_compute_units = %num_claimed_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -682,8 +671,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -713,8 +702,8 @@ impl AtomaSuiClient {
             .await?;
 
         info!("Submitting node try settle stack transaction...");
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -778,7 +767,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_stack_settlement_attestation_tx(
@@ -791,8 +780,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -822,8 +811,8 @@ impl AtomaSuiClient {
 
         info!("Submitting stack settlement attestation transaction...");
 
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Stack settlement attestation transaction submitted successfully. Transaction digest: {:?}",
@@ -884,7 +873,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn submit_start_attestation_dispute_tx(
         &mut self,
@@ -895,8 +884,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<()> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -925,8 +914,8 @@ impl AtomaSuiClient {
 
         info!("Submitting start attestation dispute transaction...");
 
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Start attestation dispute transaction submitted successfully. Transaction digest: {:?}",
@@ -983,7 +972,7 @@ impl AtomaSuiClient {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn submit_claim_funds_tx(
         &mut self,
@@ -993,8 +982,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -1022,8 +1011,8 @@ impl AtomaSuiClient {
 
         info!("Submitting claim funds transaction...");
 
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Claim funds transaction submitted successfully. Transaction digest: {:?}",
@@ -1068,7 +1057,7 @@ impl AtomaSuiClient {
     /// async fn example(client: &mut AtomaSuiClient) -> Result<()> {
     ///     let tdx_quote = vec![1, 2, 3, 4]; // Your TDX quote bytes
     ///     let public_key = [0u8; 32];       // Your new public key
-    ///     
+    ///
     ///     // Submit with default gas settings
     ///     let tx_digest = client.submit_key_rotation_remote_attestation(
     ///         tdx_quote,
@@ -1077,13 +1066,13 @@ impl AtomaSuiClient {
     ///         None,    // default gas budget
     ///         None,    // default gas price
     ///     ).await?;
-    ///     
+    ///
     ///     println!("Key rotation submitted: {}", tx_digest);
     ///     Ok(())
     /// }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.wallet_ctx.active_address().unwrap(),
+        address = %self.client.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
         remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
     ))]
@@ -1095,8 +1084,8 @@ impl AtomaSuiClient {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<(String, u64)> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.client.get_client().await?;
+        let active_address = self.client.active_address()?;
         let node_badge_id = self
             .node_badge
             .as_ref()
@@ -1125,8 +1114,8 @@ impl AtomaSuiClient {
 
         info!("Submitting key rotation remote attestation transaction...");
 
-        let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let tx = self.client.sign_transaction(&tx);
+        let response = self.client.execute_transaction_must_succeed(tx).await;
         let digest = response.digest.to_string();
         let events = response.events;
         if let Some(tx_block_events) = events {
@@ -1162,22 +1151,22 @@ impl AtomaSuiClient {
     /// ```
     #[instrument(level = "info", skip_all, fields(
         endpoint = "get_or_load_usdc_wallet_object_id",
-        address = %self.wallet_ctx.active_address().unwrap()
+        address = %self.client.active_address().unwrap()
     ))]
     pub async fn get_or_load_usdc_wallet_object_id(&mut self) -> Result<ObjectID> {
-        if let Some(usdc_wallet_id) = self.usdc_wallet_id {
+        if let Some(usdc_wallet_id) = self.usdc_wallet {
             Ok(usdc_wallet_id)
         } else {
-            let active_address = self.wallet_ctx.active_address()?;
+            let active_address = self.client.active_address()?;
             match utils::find_usdc_token_wallet(
-                &self.wallet_ctx.get_client().await?,
+                &self.client.get_client().await?,
                 self.config.usdc_package_id(),
                 active_address,
             )
             .await
             {
                 Ok(usdc_wallet) => {
-                    self.usdc_wallet_id = Some(usdc_wallet);
+                    self.usdc_wallet = Some(usdc_wallet);
                     Ok(usdc_wallet)
                 }
                 Err(e) => Err(e),
@@ -1209,37 +1198,39 @@ pub enum AtomaSuiClientError {
 }
 
 pub(crate) mod utils {
-    use super::*;
+    use super::{AtomaSuiClientError, ObjectID, Result, MODULE_ID};
     use sui_sdk::{
-        rpc_types::{Page, SuiObjectDataFilter, SuiObjectDataOptions, SuiObjectResponseQuery},
+        rpc_types::{
+            Page, SuiData, SuiObjectDataFilter, SuiObjectDataOptions, SuiObjectResponseQuery,
+        },
         types::base_types::{ObjectType, SuiAddress},
         SuiClient,
     };
-    use tracing::error;
+    use tracing::{error, instrument};
 
     /// The name of the Atoma's contract node badge type
     const DB_NODE_TYPE_NAME: &str = "NodeBadge";
 
-    /// Retrieves the node badge (ObjectID and small_id) associated with a given address.
+    /// Retrieves the node badge (`ObjectID` and `small_id`) associated with a given address.
     ///
-    /// This function queries the Sui blockchain to find a NodeBadge object owned by the specified
-    /// address that was created by the specified package. The NodeBadge represents a node's
+    /// This function queries the Sui blockchain to find a `NodeBadge` object owned by the specified
+    /// address that was created by the specified package. The `NodeBadge` represents a node's
     /// registration in the Atoma network.
     ///
     /// # Arguments
     ///
-    /// * `client` - A reference to the SuiClient used to interact with the blockchain
-    /// * `package` - The ObjectID of the Atoma package that created the NodeBadge
-    /// * `active_address` - The SuiAddress to query for owned NodeBadge objects
+    /// * `client` - A reference to the `SuiClient` used to interact with the blockchain
+    /// * `package` - The `ObjectID` of the Atoma package that created the `NodeBadge`
+    /// * `active_address` - The `SuiAddress` to query for owned `NodeBadge` objects
     ///
     /// # Returns
     ///
     /// Returns `Option<(ObjectID, u64)>` where:
-    /// - `Some((object_id, small_id))` if a NodeBadge is found, where:
-    ///   - `object_id` is the unique identifier of the NodeBadge object
+    /// - `Some((object_id, small_id))` if a `NodeBadge` is found, where:
+    ///   - `object_id` is the unique identifier of the `NodeBadge` object
     ///   - `small_id` is the node's numeric identifier in the Atoma network
     /// - `None` if:
-    ///   - No NodeBadge is found
+    ///   - No `NodeBadge` is found
     ///   - The query fails
     ///   - The object data cannot be parsed
     ///
@@ -1252,7 +1243,7 @@ pub(crate) mod utils {
     /// async fn example(client: &SuiClient) {
     ///     let package_id = ObjectID::new([1; 32]);
     ///     let address = SuiAddress::random_for_testing_only();
-    ///     
+    ///
     ///     match get_node_badge(client, package_id, address).await {
     ///         Some((badge_id, small_id)) => {
     ///             println!("Found NodeBadge: ID={}, small_id={}", badge_id, small_id);
@@ -1267,9 +1258,9 @@ pub(crate) mod utils {
     /// # Implementation Notes
     ///
     /// - The function queries up to 100 objects at a time
-    /// - The function filters objects by package and looks for the specific NodeBadge type
-    /// - Object content is parsed to extract the small_id from the Move object's fields
-    pub(crate) async fn get_node_badge(
+    /// - The function filters objects by package and looks for the specific `NodeBadge` type
+    /// - Object content is parsed to extract the `small_id` from the Move object's fields
+    pub async fn get_node_badge(
         client: &SuiClient,
         package: ObjectID,
         active_address: SuiAddress,
@@ -1354,7 +1345,7 @@ pub(crate) mod utils {
         endpoint = "find_usdc_token_wallet",
         address = %active_address
     ))]
-    pub(crate) async fn find_usdc_token_wallet(
+    pub async fn find_usdc_token_wallet(
         client: &SuiClient,
         usdc_package: ObjectID,
         active_address: SuiAddress,

@@ -1,15 +1,14 @@
 use std::{path::Path, time::Duration};
 
-use config::Config;
+use config::Config as RustConfig;
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
 
-/// Configuration for the Sui Event Subscriber
-///
+/// Configuration for Sui blockchain interactions
 /// This struct holds the necessary configuration parameters for connecting to and
 /// interacting with a Sui network, including URLs, package ID, timeout, and small IDs.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AtomaSuiConfig {
+pub struct Config {
     /// The HTTP URL for a Sui RPC node, to which the subscriber will connect
     /// This is used for making HTTP requests to the Sui RPC node
     http_rpc_node_addr: String,
@@ -58,100 +57,80 @@ pub struct AtomaSuiConfig {
     cursor_path: String,
 }
 
-impl AtomaSuiConfig {
-    /// Constructor
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        http_rpc_node_addr: String,
-        atoma_db: ObjectID,
-        atoma_package_id: ObjectID,
-        usdc_package_id: ObjectID,
-        request_timeout: Option<Duration>,
-        limit: Option<usize>,
-        node_small_ids: Option<Vec<u64>>,
-        task_small_ids: Option<Vec<u64>>,
-        max_concurrent_requests: Option<u64>,
-        sui_config_path: String,
-        sui_keystore_path: String,
-        cursor_path: String,
-    ) -> Self {
-        Self {
-            http_rpc_node_addr,
-            atoma_db,
-            atoma_package_id,
-            usdc_package_id,
-            request_timeout,
-            limit,
-            node_small_ids,
-            task_small_ids,
-            max_concurrent_requests,
-            sui_config_path,
-            sui_keystore_path,
-            cursor_path,
-        }
-    }
-
-    /// Getter for `http_url`
+impl Config {
+    /// Gets the HTTP RPC node address
+    #[must_use]
     pub fn http_rpc_node_addr(&self) -> String {
         self.http_rpc_node_addr.clone()
     }
 
     /// Getter for `limit`
-    pub fn limit(&self) -> Option<usize> {
+    #[must_use]
+    pub const fn limit(&self) -> Option<usize> {
         self.limit
     }
 
     /// Getter for `package_id`
-    pub fn atoma_package_id(&self) -> ObjectID {
+    #[must_use]
+    pub const fn atoma_package_id(&self) -> ObjectID {
         self.atoma_package_id
     }
 
     /// Getter for `usdc_package_id`
-    pub fn usdc_package_id(&self) -> ObjectID {
+    #[must_use]
+    pub const fn usdc_package_id(&self) -> ObjectID {
         self.usdc_package_id
     }
 
     /// Getter for `atoma_db`
-    pub fn atoma_db(&self) -> ObjectID {
+    #[must_use]
+    pub const fn atoma_db(&self) -> ObjectID {
         self.atoma_db
     }
 
     /// Getter for `request_timeout`
-    pub fn request_timeout(&self) -> Option<Duration> {
+    #[must_use]
+    pub const fn request_timeout(&self) -> Option<Duration> {
         self.request_timeout
     }
 
     /// Getter for `small_id`
+    #[must_use]
     pub fn node_small_ids(&self) -> Option<Vec<u64>> {
         self.node_small_ids.clone()
     }
 
     /// Getter for `task_small_ids`
+    #[must_use]
     pub fn task_small_ids(&self) -> Option<Vec<u64>> {
         self.task_small_ids.clone()
     }
 
     /// Getter for `max_concurrent_requests`
-    pub fn max_concurrent_requests(&self) -> Option<u64> {
+    #[must_use]
+    pub const fn max_concurrent_requests(&self) -> Option<u64> {
         self.max_concurrent_requests
     }
 
     /// Getter for `keystore_path`
+    #[must_use]
     pub fn sui_config_path(&self) -> String {
         self.sui_config_path.clone()
     }
 
     /// Getter for `sui_keystore_path`
+    #[must_use]
     pub fn sui_keystore_path(&self) -> String {
         self.sui_keystore_path.clone()
     }
 
     /// Getter for `cursor_path`
+    #[must_use]
     pub fn cursor_path(&self) -> String {
         self.cursor_path.clone()
     }
 
-    /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
+    /// Constructs a new `Config` instance from a configuration file path.
     ///
     /// # Arguments
     ///
@@ -159,25 +138,26 @@ impl AtomaSuiConfig {
     ///
     /// # Returns
     ///
-    /// Returns a new `AtomaSuiConfig` instance populated with values from the configuration file.
+    /// Returns a new `Config` instance populated with values from the configuration file.
     ///
     /// # Panics
     ///
     /// This method will panic if:
     /// - The configuration file cannot be read or parsed.
     /// - The "atoma-sui" section is missing from the configuration file.
-    /// - The configuration values cannot be deserialized into a `AtomaSuiConfig` instance.
+    /// - The configuration values cannot be deserialized into a `Config` instance.
     ///
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use atoma_sui::config::AtomaSuiConfig;
+    /// use atoma_sui::config::Config;
     /// use std::path::Path;
     ///
-    /// let config = AtomaSuiConfig::from_file_path("config.toml");
+    /// let config = Config::from_file_path("config.toml");
     /// ```
+    #[must_use]
     pub fn from_file_path<P: AsRef<Path>>(config_file_path: P) -> Self {
-        let builder = Config::builder()
+        let builder = RustConfig::builder()
             .add_source(config::File::with_name(
                 config_file_path.as_ref().to_str().unwrap(),
             ))
@@ -196,32 +176,180 @@ impl AtomaSuiConfig {
     }
 }
 
+/// Builder for creating Config instances
+pub struct Builder {
+    http_rpc_node_addr: Option<String>,
+    atoma_db: Option<ObjectID>,
+    atoma_package_id: Option<ObjectID>,
+    usdc_package_id: Option<ObjectID>,
+    request_timeout: Option<Duration>,
+    max_concurrent_requests: Option<u64>,
+    limit: Option<usize>,
+    node_small_ids: Option<Vec<u64>>,
+    task_small_ids: Option<Vec<u64>>,
+    sui_config_path: Option<String>,
+    sui_keystore_path: Option<String>,
+    cursor_path: Option<String>,
+}
+
+impl Builder {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            http_rpc_node_addr: None,
+            atoma_db: None,
+            atoma_package_id: None,
+            usdc_package_id: None,
+            request_timeout: None,
+            max_concurrent_requests: None,
+            limit: None,
+            node_small_ids: None,
+            task_small_ids: None,
+            sui_config_path: None,
+            sui_keystore_path: None,
+            cursor_path: None,
+        }
+    }
+
+    #[must_use]
+    pub fn http_rpc_node_addr(mut self, addr: String) -> Self {
+        self.http_rpc_node_addr = Some(addr);
+        self
+    }
+
+    #[must_use]
+    pub const fn atoma_db(mut self, db: ObjectID) -> Self {
+        self.atoma_db = Some(db);
+        self
+    }
+
+    #[must_use]
+    pub const fn atoma_package_id(mut self, package_id: ObjectID) -> Self {
+        self.atoma_package_id = Some(package_id);
+        self
+    }
+
+    #[must_use]
+    pub const fn usdc_package_id(mut self, package_id: ObjectID) -> Self {
+        self.usdc_package_id = Some(package_id);
+        self
+    }
+
+    #[must_use]
+    pub const fn request_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    #[must_use]
+    pub const fn max_concurrent_requests(mut self, requests: Option<u64>) -> Self {
+        self.max_concurrent_requests = requests;
+        self
+    }
+
+    #[must_use]
+    pub const fn limit(mut self, limit: Option<usize>) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    #[must_use]
+    pub fn node_small_ids(mut self, ids: Option<Vec<u64>>) -> Self {
+        self.node_small_ids = ids;
+        self
+    }
+
+    #[must_use]
+    pub fn task_small_ids(mut self, ids: Option<Vec<u64>>) -> Self {
+        self.task_small_ids = ids;
+        self
+    }
+
+    #[must_use]
+    pub fn sui_config_path(mut self, path: String) -> Self {
+        self.sui_config_path = Some(path);
+        self
+    }
+
+    #[must_use]
+    pub fn sui_keystore_path(mut self, path: String) -> Self {
+        self.sui_keystore_path = Some(path);
+        self
+    }
+
+    #[must_use]
+    pub fn cursor_path(mut self, path: String) -> Self {
+        self.cursor_path = Some(path);
+        self
+    }
+
+    /// Builds the final Config from the builder
+    ///
+    /// # Returns
+    /// A new `Config` instance with the configured values
+    ///
+    /// # Panics
+    /// This function will panic if:
+    /// - `atoma_db` is not set
+    /// - `atoma_package_id` is not set
+    /// - `usdc_package_id` is not set
+    #[must_use]
+    pub fn build(self) -> Config {
+        Config {
+            http_rpc_node_addr: self.http_rpc_node_addr.unwrap_or_default(),
+            atoma_db: self.atoma_db.expect("atoma_db is required"),
+            atoma_package_id: self.atoma_package_id.expect("atoma_package_id is required"),
+            usdc_package_id: self.usdc_package_id.expect("usdc_package_id is required"),
+            request_timeout: self.request_timeout,
+            max_concurrent_requests: self.max_concurrent_requests,
+            limit: self.limit,
+            node_small_ids: self.node_small_ids,
+            task_small_ids: self.task_small_ids,
+            sui_config_path: self.sui_config_path.unwrap_or_default(),
+            sui_keystore_path: self.sui_keystore_path.unwrap_or_default(),
+            cursor_path: self.cursor_path.unwrap_or_default(),
+        }
+    }
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
 
     #[test]
     fn test_config() {
-        let config = AtomaSuiConfig::new(
-            "".to_string(),
-            "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
-                .parse()
-                .unwrap(),
-            "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
-                .parse()
-                .unwrap(),
-            "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
-                .parse()
-                .unwrap(),
-            Some(Duration::from_secs(5 * 60)),
-            Some(10),
-            Some(vec![0, 1, 2]),
-            Some(vec![3, 4, 5]),
-            Some(10),
-            "".to_string(),
-            "".to_string(),
-            "".to_string(),
-        );
+        let config = Builder::new()
+            .http_rpc_node_addr(String::new())
+            .atoma_db(
+                "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
+                    .parse()
+                    .unwrap(),
+            )
+            .atoma_package_id(
+                "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
+                    .parse()
+                    .unwrap(),
+            )
+            .usdc_package_id(
+                "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
+                    .parse()
+                    .unwrap(),
+            )
+            .request_timeout(Some(Duration::from_secs(5 * 60)))
+            .limit(Some(10))
+            .node_small_ids(Some(vec![0, 1, 2]))
+            .task_small_ids(Some(vec![3, 4, 5]))
+            .max_concurrent_requests(Some(10))
+            .sui_config_path(String::new())
+            .sui_keystore_path(String::new())
+            .cursor_path(String::new())
+            .build();
 
         let toml_str = toml::to_string(&config).unwrap();
         let should_be_toml_str = "http_rpc_node_addr = \"\"\natoma_db = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\natoma_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nusdc_package_id = \"0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e\"\nmax_concurrent_requests = 10\nlimit = 10\nnode_small_ids = [0, 1, 2]\ntask_small_ids = [3, 4, 5]\nsui_config_path = \"\"\nsui_keystore_path = \"\"\ncursor_path = \"\"\n\n[request_timeout]\nsecs = 300\nnanos = 0\n";

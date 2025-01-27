@@ -1,5 +1,5 @@
 use atoma_state::state_manager::AtomaState;
-use atoma_sui::client::AtomaSuiClient;
+use atoma_sui::client::Client;
 use axum::{http::StatusCode, routing::get, Router};
 use std::sync::Arc;
 use sui_sdk::types::base_types::ObjectID;
@@ -37,7 +37,7 @@ use crate::{
 /// ```rust,ignore
 /// // Create a new daemon state instance
 /// let daemon_state = DaemonState {
-///     client: Arc::new(RwLock::new(AtomaSuiClient::new())),
+///     client: Arc::new(RwLock::new(Client::new())),
 ///     state_manager: AtomaStateManager::new(),
 ///     node_badges: vec![(ObjectID::new([0; 32]), 1)],
 /// };
@@ -50,7 +50,7 @@ pub struct DaemonState {
     /// Thread-safe reference to the Sui blockchain client that handles all blockchain interactions.
     /// Wrapped in `Arc<RwLock>` to allow multiple handlers to safely access and modify the client
     /// state concurrently.
-    pub client: Arc<RwLock<AtomaSuiClient>>,
+    pub client: Arc<RwLock<Client>>,
 
     /// Manages the persistent state of nodes, tasks, and other system components.
     /// Handles database operations and state synchronization.
@@ -93,7 +93,7 @@ pub struct DaemonState {
 /// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
 ///     let daemon_state = DaemonState::new(/* ... */);
 ///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
-///     
+///
 ///     run_server(daemon_state, listener).await
 /// }
 /// ```

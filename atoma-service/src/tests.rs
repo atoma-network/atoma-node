@@ -1,5 +1,5 @@
 mod middleware {
-    use atoma_confidential::AtomaConfidentialComputeService;
+    use atoma_confidential::AtomaConfidentialCompute;
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
@@ -100,7 +100,7 @@ mod middleware {
             .await
             .expect("Failed to connect to database");
         sqlx::query(
-            "TRUNCATE TABLE 
+            "TRUNCATE TABLE
                 tasks,
                 node_subscriptions,
                 stacks,
@@ -259,7 +259,7 @@ mod middleware {
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
-            let confidential_compute_service = AtomaConfidentialComputeService::new(
+            let confidential_compute_service = AtomaConfidentialCompute::new(
                 Arc::new(RwLock::new(
                     AtomaSuiClient::new(client_config)
                         .await

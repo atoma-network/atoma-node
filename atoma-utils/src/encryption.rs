@@ -1,58 +1,27 @@
 use aes_gcm::{aead::Aead, Aes256Gcm, Error as AesError, KeyInit};
 use hkdf::Hkdf;
 use sha2::Sha256;
-use thiserror::Error;
 use x25519_dalek::SharedSecret;
 
 pub const NONCE_BYTE_SIZE: usize = 12;
 
-type Result<T> = std::result::Result<T, EncryptionError>;
+type Result<T> = std::result::Result<T, Error>;
 
-/// Decrypts ciphertext using AES-256-GCM with a derived key from a shared secret.
-///
-/// This function performs the following steps:
-/// 1. Derives a symmetric key from the shared secret using HKDF-SHA256
-/// 2. Initializes an AES-256-GCM cipher with the derived key
-/// 3. Decrypts the ciphertext using the provided nonce
+/// Decrypts a ciphertext using the provided shared secret and nonce.
 ///
 /// # Arguments
-///
-/// * `shared_secret` - The shared secret derived from X25519 key exchange
+/// * `shared_secret` - The shared secret key for decryption
 /// * `ciphertext` - The encrypted data to decrypt
-/// * `salt` - Salt value used in the key derivation process
-/// * `nonce` - Unique nonce (number used once) for AES-GCM
+/// * `salt` - Salt used in key derivation
+/// * `nonce` - Nonce used in encryption
 ///
 /// # Returns
+/// The decrypted plaintext as a byte vector
 ///
-/// Returns the decrypted plaintext as a vector of bytes, or a `DecryptionError` if the operation fails.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use atoma_tdx::decryption::decrypt_ciphertext;
-/// # use your_crate::SharedSecret;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let shared_secret = SharedSecret::new();
-/// let ciphertext = vec![/* encrypted data */];
-/// let salt = b"unique_salt_value";
-/// let nonce = b"unique_nonce_12"; // Must be 12 bytes for AES-GCM
-///
-/// let plaintext = decrypt_ciphertext(
-///     shared_secret,
-///     &ciphertext,
-///     salt,
-///     nonce
-/// )?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// # Security Considerations
-///
-/// - The nonce must be unique for each encryption operation
-/// - The salt should be randomly generated for each key derivation
-/// - The shared secret should be derived using secure key exchange
+/// # Errors
+/// Returns an error if:
+/// - Key derivation fails
+/// - Decryption fails due to invalid data or parameters
 pub fn decrypt_ciphertext(
     shared_secret: &SharedSecret,
     ciphertext: &[u8],
@@ -62,57 +31,29 @@ pub fn decrypt_ciphertext(
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());
     let mut symmetric_key = [0u8; 32];
     hkdf.expand(b"", &mut symmetric_key)
-        .map_err(EncryptionError::KeyExpansionFailed)?;
+        .map_err(Error::KeyExpansionFailed)?;
 
     let cipher = Aes256Gcm::new(&symmetric_key.into());
     cipher
         .decrypt(nonce.into(), ciphertext)
-        .map_err(EncryptionError::DecryptionFailed)
+        .map_err(Error::DecryptionFailed)
 }
 
-/// Encrypts plaintext using AES-256-GCM with a derived key from a shared secret.
-///
-/// This function performs the following steps:
-/// 1. Derives a symmetric key from the shared secret using HKDF-SHA256
-/// 2. Initializes an AES-256-GCM cipher with the derived key
-/// 3. Generates a random nonce
-/// 4. Encrypts the plaintext using the generated nonce
+/// Encrypts plaintext using the provided shared secret.
 ///
 /// # Arguments
-///
 /// * `plaintext` - The data to encrypt
-/// * `shared_secret` - The shared secret derived from X25519 key exchange
-/// * `salt` - Salt value used in the key derivation process
+/// * `shared_secret` - The shared secret key for encryption
+/// * `salt` - Salt for key derivation
+/// * `nonce` - Optional nonce (generated if None)
 ///
 /// # Returns
+/// Tuple of (encrypted data, nonce used)
 ///
-/// Returns a tuple containing the encrypted ciphertext and the generated nonce, or a `DecryptionError` if the operation fails.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use atoma_tdx::decryption::encrypt_plaintext;
-/// # use your_crate::SharedSecret;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let shared_secret = SharedSecret::new();
-/// let plaintext = b"secret message";
-/// let salt = b"unique_salt_value";
-///
-/// let (ciphertext, nonce) = encrypt_plaintext(
-///     plaintext,
-///     shared_secret,
-///     salt
-/// )?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// # Security Considerations
-///
-/// - The salt should be randomly generated for each key derivation
-/// - The shared secret should be derived using secure key exchange
-/// - The generated nonce is guaranteed to be unique for each encryption operation
+/// # Errors
+/// Returns an error if:
+/// - Key derivation fails
+/// - Encryption operation fails
 pub fn encrypt_plaintext(
     plaintext: &[u8],
     shared_secret: &SharedSecret,
@@ -122,19 +63,20 @@ pub fn encrypt_plaintext(
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret.as_bytes());
     let mut symmetric_key = [0u8; 32];
     hkdf.expand(b"", &mut symmetric_key)
-        .map_err(EncryptionError::KeyExpansionFailed)?;
+        .map_err(Error::KeyExpansionFailed)?;
 
     let cipher = Aes256Gcm::new(&symmetric_key.into());
-    let nonce = nonce.unwrap_or(rand::random::<[u8; NONCE_BYTE_SIZE]>());
+    let nonce = nonce.unwrap_or_else(rand::random::<[u8; NONCE_BYTE_SIZE]>);
     let ciphertext = cipher
         .encrypt(&nonce.into(), plaintext)
-        .map_err(EncryptionError::EncryptionFailed)?;
+        .map_err(Error::EncryptionFailed)?;
 
     Ok((ciphertext, nonce))
 }
 
-#[derive(Debug, Error)]
-pub enum EncryptionError {
+/// Errors that can occur during encryption/decryption operations
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
     #[error("Failed to decrypt ciphertext, with error: `{0}`")]
     DecryptionFailed(AesError),
     #[error("Failed to encrypt plaintext, with error: `{0}`")]

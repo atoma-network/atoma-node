@@ -1,5 +1,5 @@
 use crate::{
-    config::AtomaSuiConfig,
+    config::Config as SuiConfig,
     events::{
         AtomaEvent, AtomaEventIdentifier, StackCreateAndUpdateEvent, StackCreatedEvent,
         SuiEventParseError,
@@ -31,7 +31,6 @@ pub(crate) type Result<T> = std::result::Result<T, SuiEventSubscriberError>;
 
 /// Represents the number of compute units available, stored as a 64-bit unsigned integer.
 type ComputeUnits = i64;
-
 /// Represents the small identifier for a stack, stored as a 64-bit unsigned integer.
 type StackSmallId = i64;
 
@@ -50,9 +49,9 @@ pub(crate) type StackRetrieveReceiver = mpsc::UnboundedReceiver<(
 ///
 /// This struct provides functionality to subscribe to and process events
 /// from the Sui blockchain based on specified filters.
-pub struct SuiEventSubscriber {
+pub struct Subscriber {
     /// The configuration values for the subscriber.
-    config: AtomaSuiConfig,
+    config: SuiConfig,
 
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
@@ -73,10 +72,15 @@ pub struct SuiEventSubscriber {
     shutdown_signal: Receiver<bool>,
 }
 
-impl SuiEventSubscriber {
+impl Subscriber {
     /// Constructor
+    ///
+    /// # Panics
+    /// - If identifier creation fails for DB module name
+    /// - If event filtering setup fails
+    #[must_use]
     pub fn new(
-        config: AtomaSuiConfig,
+        config: SuiConfig,
         state_manager_sender: Sender<AtomaEvent>,
         stack_retrieve_receiver: StackRetrieveReceiver,
         confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
@@ -96,10 +100,10 @@ impl SuiEventSubscriber {
         }
     }
 
-    /// Creates a new `SuiEventSubscriber` instance from a configuration file.
+    /// Creates a new `Subscriber` instance from a configuration file.
     ///
     /// This method reads the configuration from the specified file path and initializes
-    /// a new `SuiEventSubscriber` with the loaded configuration.
+    /// a new `Subscriber` with the loaded configuration.
     ///
     /// # Arguments
     ///
@@ -107,7 +111,7 @@ impl SuiEventSubscriber {
     ///
     /// # Returns
     ///
-    /// * `Result<Self>` - A Result containing the new `SuiEventSubscriber` instance if successful,
+    /// * `Result<Self>` - A Result containing the new `Subscriber` instance if successful,
     ///   or an error if the configuration couldn't be read.
     ///
     /// # Errors
@@ -121,7 +125,7 @@ impl SuiEventSubscriber {
         confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
         shutdown_signal: Receiver<bool>,
     ) -> Self {
-        let config = AtomaSuiConfig::from_file_path(config_path);
+        let config = SuiConfig::from_file_path(config_path);
         Self::new(
             config,
             state_manager_sender,
@@ -155,7 +159,7 @@ impl SuiEventSubscriber {
     #[instrument(level = "info", skip_all, fields(
         http_rpc_node_addr = %config.http_rpc_node_addr()
     ))]
-    pub async fn build_client(config: &AtomaSuiConfig) -> Result<SuiClient> {
+    pub async fn build_client(config: &SuiConfig) -> Result<SuiClient> {
         let mut client_builder = SuiClientBuilder::default();
         if let Some(request_timeout) = config.request_timeout() {
             client_builder = client_builder.request_timeout(request_timeout);
@@ -226,7 +230,7 @@ impl SuiEventSubscriber {
                         let mut compute_units = None;
                         let mut stack_small_id = None;
                         if let Some(tx_events) = tx_events {
-                            for event in tx_events.data.iter() {
+                            for event in &tx_events.data {
                                 let event_identifier = AtomaEventIdentifier::from_str(event.type_.name.as_str())?;
                                 if event_identifier == AtomaEventIdentifier::StackCreatedEvent {
                                     // NOTE: In this case, the transaction contains a stack creation event,
@@ -234,7 +238,7 @@ impl SuiEventSubscriber {
                                     // to buy new compute units.
                                     // We need to count the compute units used by the transaction.
                                     let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
-                                    if event.stack_small_id.inner as i64 != selected_stack_small_id {
+                                    if event.stack_small_id.inner != selected_stack_small_id as u64 {
                                         // NOTE: This is a safety check to ensure that the stack small id
                                         // is the same as the one defined in the original transaction
                                         continue;
@@ -255,7 +259,8 @@ impl SuiEventSubscriber {
                                         );
                                         break;
                                     }
-                                    let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
+                                    #[allow(clippy::cast_possible_wrap)]
+                                    let event: StackCreateAndUpdateEvent = (event, estimated_compute_units as i64).into();
                                     // NOTE: We also send the event to the state manager, so it can be processed
                                     // right away.
                                     compute_units = Some(event.num_compute_units as i64);
@@ -655,155 +660,60 @@ async fn parse_event(
     }
 }
 
-/// Filters events based on a list of small IDs.
-///
-/// This function checks if the given `AtomaEvent` is associated with any of the small IDs
-/// provided in the `node_small_ids` and `task_small_ids` options. It returns `true` if the event
-/// is relevant to the specified small IDs, and `false` otherwise.
-///
-/// # Arguments
-///
-/// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to filter.
-/// * `node_small_ids` - An optional reference to a vector of node IDs that are relevant for the current context.
-/// * `task_small_ids` - An optional reference to a vector of task IDs that are relevant for the current context.
-///
-/// # Returns
-///
-/// Returns a `bool` indicating whether the event is associated with any of the small IDs:
-/// * `true` if the event is relevant to the small IDs,
-/// * `false` if it is not.
-///
-/// # Event Types
-///
-/// The function specifically checks for the following event types:
-/// * `NodeSubscribedToTaskEvent`
-/// * `NodeUnsubscribedFromTaskEvent`
-/// * `NodeSubscriptionUpdatedEvent`
-/// * `StackCreatedEvent`
-/// * `StackTrySettleEvent`
-/// * `NewStackSettlementAttestationEvent`
-/// * `StackSettlementTicketEvent`
-/// * `StackSettlementTicketClaimedEvent`
-/// * `TaskDeprecationEvent`
-/// * `TaskRemovedEvent`
-///
-/// For all other event types, the function returns `true`, indicating that they are not
-/// filtered out by small IDs.
+fn filter_event_by_node(event: &AtomaEvent, node_small_ids: &[u64]) -> bool {
+    match event {
+        AtomaEvent::NodeRegisteredEvent((event, _)) => {
+            node_small_ids.contains(&event.node_small_id.inner)
+        }
+        AtomaEvent::NodeSubscribedToModelEvent(event) => {
+            node_small_ids.contains(&event.node_small_id.inner)
+        }
+        AtomaEvent::NodeSubscribedToTaskEvent(event) => {
+            node_small_ids.contains(&event.node_small_id.inner)
+        }
+        AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
+            node_small_ids.contains(&event.node_small_id.inner)
+        }
+        AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
+            node_small_ids.contains(&event.node_small_id.inner)
+        }
+        _ => true,
+    }
+}
+
+fn filter_event_by_task(event: &AtomaEvent, task_small_ids: &[u64]) -> bool {
+    match event {
+        AtomaEvent::TaskDeprecationEvent(event) => {
+            task_small_ids.contains(&event.task_small_id.inner)
+        }
+        AtomaEvent::TaskRemovedEvent(event) => task_small_ids.contains(&event.task_small_id.inner),
+        AtomaEvent::StackCreatedEvent((event, _)) => {
+            task_small_ids.contains(&event.task_small_id.inner)
+        }
+        AtomaEvent::NodeSubscribedToTaskEvent(event) => {
+            task_small_ids.contains(&event.task_small_id.inner)
+        }
+        AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
+            task_small_ids.contains(&event.task_small_id.inner)
+        }
+        AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
+            task_small_ids.contains(&event.task_small_id.inner)
+        }
+        _ => true,
+    }
+}
+
 fn filter_event(
     event: &AtomaEvent,
     node_small_ids: Option<&Vec<u64>>,
     task_small_ids: Option<&Vec<u64>>,
 ) -> bool {
     match (node_small_ids, task_small_ids) {
-        (Some(node_small_ids), Some(task_small_ids)) => match event {
-            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-                    && task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-                    && task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-                    && task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::StackCreatedEvent((event, _)) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    && task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::StackTrySettleEvent((event, _)) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .requested_attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            AtomaEvent::NewStackSettlementAttestationEvent(event) => {
-                node_small_ids.contains(&event.attestation_node_id.inner)
-            }
-            AtomaEvent::StackSettlementTicketEvent(event) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .requested_attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            AtomaEvent::StackSettlementTicketClaimedEvent(event) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            AtomaEvent::TaskDeprecationEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::TaskRemovedEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            _ => true,
-        },
-        (Some(node_small_ids), None) => match event {
-            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-            }
-            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-            }
-            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
-                node_small_ids.contains(&event.node_small_id.inner)
-            }
-            AtomaEvent::StackCreatedEvent((event, _)) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-            }
-            AtomaEvent::StackTrySettleEvent((event, _)) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .requested_attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            AtomaEvent::NewStackSettlementAttestationEvent(event) => {
-                node_small_ids.contains(&event.attestation_node_id.inner)
-            }
-            AtomaEvent::StackSettlementTicketEvent(event) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .requested_attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            AtomaEvent::StackSettlementTicketClaimedEvent(event) => {
-                node_small_ids.contains(&event.selected_node_id.inner)
-                    || event
-                        .attestation_nodes
-                        .iter()
-                        .any(|id| node_small_ids.contains(&id.inner))
-            }
-            _ => true,
-        },
-        (None, Some(task_small_ids)) => match event {
-            AtomaEvent::TaskDeprecationEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::TaskRemovedEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::StackCreatedEvent((event, _)) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::NodeSubscribedToTaskEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            AtomaEvent::NodeSubscriptionUpdatedEvent(event) => {
-                task_small_ids.contains(&event.task_small_id.inner)
-            }
-            _ => true,
-        },
+        (Some(node_ids), Some(task_ids)) => {
+            filter_event_by_node(event, node_ids) && filter_event_by_task(event, task_ids)
+        }
+        (Some(node_ids), None) => filter_event_by_node(event, node_ids),
+        (None, Some(task_ids)) => filter_event_by_task(event, task_ids),
         (None, None) => true,
     }
 }
@@ -826,6 +736,8 @@ pub enum SuiEventSubscriberError {
     SerializeCursorError(#[from] toml::ser::Error),
     #[error("Failed to deserialize cursor: {0}")]
     DeserializeCursorError(#[from] toml::de::Error),
+    #[error("Failed to convert stack small id: {0}")]
+    ConversionError(#[from] std::num::TryFromIntError),
 }
 
 #[cfg(test)]

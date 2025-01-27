@@ -3,21 +3,14 @@ use blake2::{
     Blake2b, Digest,
 };
 
-/// Computes a Blake2b hash of the input data
+/// Computes the `BLAKE2b` hash of the provided data
 ///
 /// # Arguments
-/// * `slice` - A byte slice containing the data to be hashed
+/// * `slice` - Data to hash
 ///
 /// # Returns
-/// A 32-byte [`GenericArray`] containing the computed hash
-///
-/// # Example
-/// ```rust,ignore
-/// use atoma_utils::hashing::blake2b_hash;
-///
-/// let data = b"Hello, world!";
-/// let hash = blake2b_hash(data);
-/// ```
+/// The 32-byte `BLAKE2b` hash
+#[must_use]
 pub fn blake2b_hash(slice: &[u8]) -> GenericArray<u8, U32> {
     let mut hasher = Blake2b::new();
     hasher.update(slice);

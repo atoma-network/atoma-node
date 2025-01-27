@@ -6,7 +6,7 @@ use atoma_daemon::{
     server::{run_server, DaemonState},
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
-use atoma_sui::client::AtomaSuiClient;
+use atoma_sui::client::Client;
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use sui_sdk::types::base_types::ObjectID;
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let daemon_config = AtomaDaemonConfig::from_file_path(args.config_path.clone());
     let state_manager_config = AtomaStateManagerConfig::from_file_path(args.config_path.clone());
     let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_path).await?,
+        Client::new_from_config(args.config_path).await?,
     ));
 
     info!(

@@ -4,7 +4,7 @@ pub mod service;
 pub mod tdx;
 pub mod types;
 
-pub use service::AtomaConfidentialComputeService;
+pub use service::AtomaConfidentialCompute;
 
 /// Trait for converting types into a byte representation
 ///
