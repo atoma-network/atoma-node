@@ -59,7 +59,7 @@ sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", ta
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.39.3" }
 tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.13.0"
-thiserror = "1.0.58"
+thiserror = "2.0.11"
 tokenizers = "0.21.0"
 tokio = "1.36.0"
 toml = "0.8.12"
