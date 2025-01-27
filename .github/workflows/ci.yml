@@ -51,7 +51,16 @@ jobs:
         run: |
           cargo clippy \
             --all-targets \
-            -- -D warnings
+            --all-features \
+            -- -D warnings \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -W clippy::style \
+            -W clippy::complexity \
+            -W clippy::perf \
+            -W clippy::suspicious \
+            -W clippy::correctness
+
   test:
     name: test
     runs-on: ubuntu-22.04
