@@ -19,7 +19,7 @@ mod middleware {
     use serde_json::{json, Value};
     use serial_test::serial;
     use sqlx::PgPool;
-    use std::{str::FromStr, sync::Arc};
+    use std::{collections::HashMap, str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
         base_types::{ObjectID, SuiAddress},
@@ -292,7 +292,7 @@ mod middleware {
                 decryption_sender,
                 encryption_sender,
                 compute_shared_secret_sender,
-                chat_completions_service_url: "".to_string(),
+                chat_completions_service_urls: HashMap::new(),
                 embeddings_service_url: "".to_string(),
                 image_generations_service_url: "".to_string(),
                 keystore: Arc::new(keystore),

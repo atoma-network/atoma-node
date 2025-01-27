@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -147,12 +147,13 @@ pub struct AppState {
     /// models as needed.
     pub models: Arc<Vec<String>>,
 
-    /// URL of the chat completions service.
+    /// Mapping between model names and the URLs of the chat completions
+    /// services available to the current node.
     ///
-    /// This URL points to the external service responsible for performing
+    /// These URLs point to the external services responsible for performing
     /// AI model chat completions. The application forwards requests to this
     /// service to obtain AI-generated responses.
-    pub chat_completions_service_url: String,
+    pub chat_completions_service_urls: HashMap<String, String>,
 
     /// URL for the embeddings service.
     ///
