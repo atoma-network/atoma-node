@@ -46,7 +46,6 @@ allow = [
 	"Unicode-3.0",
 	"Zlib",
 ]
-allow-git = ["https://github.com/mystenlabs/anemo.git"]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
 # canonical license text of a valid SPDX license file.
@@ -55,12 +54,16 @@ confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
 exceptions = [
-	# OpenSSL is Apache License v2.0 (ASL v2)
-	# https://www.openssl.org/blog/blog/2017/03/22/license/
-	# ring crate is ISC & MIT
-	{ allow = ["ISC", "MIT", "OpenSSL"], name = "ring" },
-	# libp2p is not re-distributing unicode tables data by itself
-	{ allow = ["MIT", "Apache-2.0", "Unicode-DFS-2016"], name = "unicode-ident" },
+
+	{ allow = [
+		"MIT",
+	], name = "addchain" },
+	{ allow = [
+		"MIT",
+	], name = "anemo" },
+	{ allow = [
+		"MIT",
+	], name = "addr2line" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
