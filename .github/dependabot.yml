@@ -4,6 +4,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Ignoring these dependencies until we have more comprehensive testing
+    # See: https://github.com/atoma-network/atoma-node/pull/366
+    ignore:
+      - dependency-name: "sui-*"
+        # Ignore all Sui related packages
+      - dependency-name: "tdx-*"
+        # Ignore all TDX related packages
+      - dependency-name: "sev-*"
+        # Ignore all AMD SEV-SNP related packages
 
   # Optionally keep Actions up to date too
   - package-ecosystem: "github-actions"
