@@ -62,41 +62,25 @@ pub struct DaemonState {
     pub node_badges: Vec<(ObjectID, u64)>,
 }
 
-/// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
-/// This function initializes and runs the main daemon service that handles node operations,
+/// Runs the daemon server, handling incoming connections and graceful shutdown.
 ///
 /// # Arguments
-///
-/// * `daemon_state` - The shared state container for the daemon service, containing the Sui client,
-///   state manager, and node badge information
-/// * `tcp_listener` - A pre-configured TCP listener that the HTTP server will bind to
+/// * `daemon_state` - The shared state of the daemon
+/// * `tcp_listener` - The TCP listener for accepting connections
+/// * `shutdown_receiver` - Channel receiver for shutdown signals
 ///
 /// # Returns
+/// Result indicating success or failure of server operation
 ///
-/// * `anyhow::Result<()>` - Ok(()) on successful shutdown, or an error if
-///   server initialization or shutdown fails
+/// # Errors
+/// Returns an error if:
+/// - Failed to accept new connections
+/// - Failed to spawn connection handlers
 ///
-/// # Shutdown Behavior
-///
-/// The server implements graceful shutdown by:
-/// 1. Listening for a Ctrl+C signal
-/// 2. Logging shutdown initiation
-/// 3. Waiting for existing connections to complete
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use tokio::net::TcpListener;
-/// use tokio::sync::watch;
-/// use atoma_daemon::{DaemonState, run_server};
-///
-/// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
-///     let daemon_state = DaemonState::new(/* ... */);
-///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
-///
-///     run_server(daemon_state, listener).await
-/// }
-/// ```
+/// # Panics
+/// This function will panic if:
+/// - The shutdown signal receiver is closed unexpectedly
+/// - Failed to receive shutdown signal
 pub async fn run_server(
     daemon_state: DaemonState,
     tcp_listener: TcpListener,
@@ -108,7 +92,7 @@ pub async fn run_server(
             shutdown_receiver
                 .changed()
                 .await
-                .expect("Error receiving shutdown signal")
+                .expect("Error receiving shutdown signal");
         });
     server.await?;
     Ok(())

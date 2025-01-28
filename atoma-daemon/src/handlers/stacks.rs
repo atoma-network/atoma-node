@@ -23,7 +23,7 @@ pub struct StackQuery {
     paths(stacks_nodes_list),
     components(schemas(Stack, StackSettlementTicket, StackQuery))
 )]
-pub(crate) struct StacksOpenApi;
+pub struct StacksOpenApi;
 
 pub fn stacks_router() -> Router<DaemonState> {
     Router::new().route(
