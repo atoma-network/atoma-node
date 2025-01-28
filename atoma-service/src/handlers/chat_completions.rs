@@ -24,7 +24,15 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, time::Duration};
 use utoipa::ToSchema;
 
-use crate::{error::AtomaServiceError, handlers::prometheus::*, middleware::RequestMetadata};
+use crate::{
+    error::AtomaServiceError,
+    handlers::prometheus::{
+        CHAT_COMPLETIONS_INPUT_TOKENS_METRICS, CHAT_COMPLETIONS_LATENCY_METRICS,
+        CHAT_COMPLETIONS_NUM_REQUESTS, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+    },
+    middleware::RequestMetadata,
+};
 
 use super::handle_confidential_compute_encryption_response;
 
@@ -94,7 +102,7 @@ const UNKNOWN_MODEL: &str = "unknown";
         ChatCompletionsResponse
     ))
 )]
-pub(crate) struct ChatCompletionsOpenApi;
+pub struct ChatCompletionsOpenApi;
 
 /// Create chat completion
 ///
@@ -158,7 +166,7 @@ pub async fn chat_completions_handler(
 
     let is_stream = payload
         .get(STREAM_KEY)
-        .and_then(|s| s.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or_default();
     let endpoint = request_metadata.endpoint_path.clone();
 
@@ -225,13 +233,12 @@ pub async fn chat_completions_handler(
 ///
 /// The confidential variant ensures end-to-end encryption of the chat completion responses,
 /// making it suitable for sensitive or private conversations.
-
 #[derive(OpenApi)]
 #[openapi(
     paths(chat_completions_handler),
     components(schemas(ChatCompletionsRequest, ConfidentialComputeResponse))
 )]
-pub(crate) struct ConfidentialChatCompletionsOpenApi;
+pub struct ConfidentialChatCompletionsOpenApi;
 
 /// Handles confidential chat completion requests by providing end-to-end encrypted responses.
 ///
@@ -320,7 +327,7 @@ pub async fn confidential_chat_completions_handler(
     // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
-        .and_then(|s| s.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or_default();
 
     let model = payload
@@ -431,18 +438,7 @@ async fn handle_response(
     estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<Response<Body>, AtomaServiceError> {
-    if !is_stream {
-        handle_non_streaming_response(
-            state,
-            payload,
-            stack_small_id,
-            estimated_total_compute_units,
-            payload_hash,
-            client_encryption_metadata,
-            endpoint,
-        )
-        .await
-    } else {
+    if is_stream {
         let streaming_encryption_metadata = utils::get_streaming_encryption_metadata(
             state,
             client_encryption_metadata,
@@ -459,6 +455,17 @@ async fn handle_response(
             estimated_total_compute_units,
             payload_hash,
             streaming_encryption_metadata,
+            endpoint,
+        )
+        .await
+    } else {
+        handle_non_streaming_response(
+            state,
+            payload,
+            stack_small_id,
+            estimated_total_compute_units,
+            payload_hash,
+            client_encryption_metadata,
             endpoint,
         )
         .await
@@ -823,11 +830,11 @@ pub enum MessageContent {
 impl std::fmt::Display for MessageContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageContent::Text(text) => write!(f, "{}", text),
-            MessageContent::Array(parts) => {
+            Self::Text(text) => write!(f, "{}", text),
+            Self::Array(parts) => {
                 let mut content = String::new();
                 for part in parts {
-                    content.push_str(&format!("{}\n", part))
+                    content.push_str(&format!("{}\n", part));
                 }
                 write!(f, "{}", content)
             }
@@ -844,7 +851,7 @@ impl<'de> Deserialize<'de> for MessageContent {
         let value: Value = Value::deserialize(deserializer)?;
 
         if let Some(s) = value.as_str() {
-            return Ok(MessageContent::Text(s.to_string()));
+            return Ok(Self::Text(s.to_string()));
         }
 
         if let Some(arr) = value.as_array() {
@@ -852,7 +859,7 @@ impl<'de> Deserialize<'de> for MessageContent {
                 .iter()
                 .map(|v| serde_json::from_value(v.clone()).map_err(serde::de::Error::custom))
                 .collect();
-            return Ok(MessageContent::Array(parts?));
+            return Ok(Self::Array(parts?));
         }
 
         Err(serde::de::Error::custom(
@@ -884,10 +891,10 @@ pub enum MessageContentPart {
 impl std::fmt::Display for MessageContentPart {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageContentPart::Text { r#type, text } => {
+            Self::Text { r#type, text } => {
                 write!(f, "{}: {}", r#type, text)
             }
-            MessageContentPart::Image { r#type, image_url } => {
+            Self::Image { r#type, image_url } => {
                 write!(f, "{}: [Image URL: {}]", r#type, image_url)
             }
         }
@@ -1023,10 +1030,9 @@ impl TryFrom<Option<&str>> for FinishReason {
 
     fn try_from(value: Option<&str>) -> Result<Self, Self::Error> {
         match value {
-            Some("stopped") => Ok(FinishReason::Stopped),
-            Some("length_capped") => Ok(FinishReason::LengthCapped),
-            Some("content_filter") => Ok(FinishReason::ContentFilter),
-            None => Ok(FinishReason::Stopped),
+            None | Some("stopped") => Ok(Self::Stopped),
+            Some("length_capped") => Ok(Self::LengthCapped),
+            Some("content_filter") => Ok(Self::ContentFilter),
             _ => Err(format!("Invalid finish reason: {}", value.unwrap())),
         }
     }
@@ -1051,11 +1057,18 @@ pub struct Usage {
     pub completion_tokens_details: Option<Value>,
 }
 
-pub(crate) mod utils {
+pub mod utils {
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
     use prometheus::HistogramTimer;
 
-    use super::*;
+    use super::{
+        handle_confidential_compute_encryption_response, info, instrument,
+        sign_response_and_update_stack_hash, update_stack_num_compute_units, AppState,
+        AtomaServiceError, Body, Client, ConfidentialComputeSharedSecretRequest,
+        ConfidentialComputeSharedSecretResponse, EncryptionMetadata, IntoResponse, Json, Response,
+        StreamingEncryptionMetadata, Value, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, CHAT_COMPLETIONS_PATH, MODEL_KEY, UNKNOWN_MODEL,
+    };
 
     /// Retrieves encryption metadata for streaming chat completions when confidential compute is enabled.
     ///
@@ -1100,7 +1113,7 @@ pub(crate) mod utils {
             endpoint_path = endpoint
         )
     )]
-    pub(crate) async fn get_streaming_encryption_metadata(
+    pub async fn get_streaming_encryption_metadata(
         state: &AppState,
         client_encryption_metadata: Option<EncryptionMetadata>,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
@@ -1208,7 +1221,7 @@ pub(crate) mod utils {
         skip_all,
         fields(stack_small_id, payload_hash, endpoint)
     )]
-    pub(crate) async fn send_request_to_inference_service(
+    pub async fn send_request_to_inference_service(
         state: &AppState,
         payload: &Value,
         stack_small_id: i64,
@@ -1322,7 +1335,7 @@ pub(crate) mod utils {
     /// let total = extract_total_num_tokens(&response_body, "gpt-4");
     /// assert_eq!(total, 30);
     /// ```
-    pub(crate) fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
+    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
         let mut total_compute_units = 0;
         if let Some(usage) = response_body.get("usage") {
             if let Some(prompt_tokens) = usage.get("prompt_tokens") {
@@ -1406,7 +1419,7 @@ pub(crate) mod utils {
         fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint)
     )]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn serve_non_streaming_response(
+    pub async fn serve_non_streaming_response(
         state: &AppState,
         mut response_body: Value,
         stack_small_id: i64,

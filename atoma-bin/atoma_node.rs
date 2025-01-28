@@ -84,7 +84,7 @@ struct NodeConfig {
 }
 
 impl NodeConfig {
-    async fn load(path: &str) -> Result<Self, ValidationErrors> {
+    fn load(path: &str) -> Result<Self, ValidationErrors> {
         let sui = Config::from_file_path(path);
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
@@ -174,13 +174,15 @@ async fn initialize_tokenizers(
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::redundant_pub_crate)]
 async fn main() -> Result<()> {
     let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
 
     dotenv().ok();
 
     let args = Args::parse();
-    let config = NodeConfig::load(&args.config_path).await?;
+    let config = NodeConfig::load(&args.config_path)?;
 
     info!("Starting Atoma node service");
 
@@ -203,13 +205,13 @@ async fn main() -> Result<()> {
         config.sui.max_concurrent_requests(),
     )?;
     let address = wallet_ctx.active_address()?;
-    let address_index = args.address_index.unwrap_or(
+    let address_index = args.address_index.unwrap_or_else(|| {
         wallet_ctx
             .get_addresses()
             .iter()
             .position(|a| a == &address)
-            .unwrap(),
-    );
+            .unwrap()
+    });
 
     info!(
         target = "atoma-node-service",
@@ -232,14 +234,14 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let (subscriber_confidential_compute_sender, _subscriber_confidential_compute_receiver) =
+    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_decryption_sender, _app_state_decryption_receiver) =
+    let (app_state_decryption_sender, app_state_decryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_encryption_sender, _app_state_encryption_receiver) =
+    let (app_state_encryption_sender, app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    for (_, node_small_id) in config.daemon.node_badges.iter() {
+    for (_, node_small_id) in &config.daemon.node_badges {
         if let Err(e) =
             register_on_proxy(&config.proxy, *node_small_id, &keystore, address_index).await
         {
@@ -262,16 +264,16 @@ async fn main() -> Result<()> {
         Client::new_from_config(args.config_path).await?,
     ));
 
-    let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
+    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     let confidential_compute_service_handle = spawn_with_shutdown(
         AtomaConfidentialCompute::start_confidential_compute_service(
             client.clone(),
-            _subscriber_confidential_compute_receiver,
-            _app_state_decryption_receiver,
-            _app_state_encryption_receiver,
-            _compute_shared_secret_receiver,
+            subscriber_confidential_compute_receiver,
+            app_state_decryption_receiver,
+            app_state_encryption_receiver,
+            compute_shared_secret_receiver,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
@@ -320,8 +322,8 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let hf_token = std::env::var(HF_TOKEN)
-        .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
+    let hf_token =
+        std::env::var(HF_TOKEN).context(format!("Variable {HF_TOKEN} not set in the .env file"))?;
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
 

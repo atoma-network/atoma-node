@@ -36,7 +36,7 @@ pub const MODEL_KEY: &str = "model";
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(image_generations_handler))]
-pub(crate) struct ImageGenerationsOpenApi;
+pub struct ImageGenerationsOpenApi;
 
 /// Create image generation
 ///
@@ -143,7 +143,7 @@ pub async fn image_generations_handler(
 /// computing requirements.
 #[derive(OpenApi)]
 #[openapi(paths(confidential_image_generations_handler))]
-pub(crate) struct ConfidentialImageGenerationsOpenApi;
+pub struct ConfidentialImageGenerationsOpenApi;
 
 /// Handles confidential image generation requests
 ///

@@ -39,8 +39,9 @@ struct DaemonArgs {
 }
 
 #[tokio::main]
+#[allow(clippy::redundant_pub_crate)]
 async fn main() -> Result<()> {
-    setup_logging()?;
+    setup_logging();
     let args = DaemonArgs::parse();
     let daemon_config = AtomaDaemonConfig::from_file_path(args.config_path.clone());
     let state_manager_config = AtomaStateManagerConfig::from_file_path(args.config_path.clone());
@@ -86,7 +87,7 @@ async fn main() -> Result<()> {
 
     let ctrl_c = tokio::task::spawn(async move {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
+            result = tokio::signal::ctrl_c() => {
                 info!(
                     target = "atoma_daemon",
                     event = "atoma-daemon-stop",
@@ -95,10 +96,10 @@ async fn main() -> Result<()> {
                 shutdown_sender
                     .send(true)
                     .context("Failed to send shutdown signal")?;
-                Ok::<(), anyhow::Error>(())
+                result.map_err(anyhow::Error::from)
             }
             _ = shutdown_receiver.changed() => {
-                Ok::<(), anyhow::Error>(())
+                Ok(())
             }
         }
     });
@@ -108,7 +109,7 @@ async fn main() -> Result<()> {
     daemon_result
 }
 
-fn setup_logging() -> Result<()> {
+fn setup_logging() {
     let log_dir = Path::new(LOGS);
     let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
     let (non_blocking_appender, _guard) = non_blocking(file_appender);
@@ -133,5 +134,4 @@ fn setup_logging() -> Result<()> {
         .with(console_layer)
         .with(file_layer)
         .init();
-    Ok(())
 }
