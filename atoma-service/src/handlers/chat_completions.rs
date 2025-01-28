@@ -652,9 +652,14 @@ async fn handle_streaming_response(
     let chat_completions_service_url = state
         .chat_completions_service_urls
         .get(&model.to_lowercase())
-        .ok_or(AtomaServiceError::InternalError {
-            message: format!("Chat completions service URL not found, likely that model is not supported by the current node: {}", model),
-            endpoint: endpoint.clone(),
+        .ok_or_else(|| {
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                    model
+                ),
+                endpoint: endpoint.clone(),
+            }
         })?;
     let client = Client::new();
     let response = client
@@ -1236,12 +1241,14 @@ pub mod utils {
         let chat_completions_service_url = state
             .chat_completions_service_urls
             .get(&model.to_lowercase())
-            .ok_or(AtomaServiceError::InternalError {
-                message: format!(
-                    "Chat completions service URL not found, likely that model is not supported by the current node: {}",
-                    model
-                ),
-                endpoint: endpoint.to_string(),
+            .ok_or_else(|| {
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                        model
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
             })?;
         let response = client
         .post(format!(

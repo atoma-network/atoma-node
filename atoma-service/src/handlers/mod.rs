@@ -165,18 +165,17 @@ pub async fn handle_confidential_compute_encryption_response(
         }
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        let usage = if endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
-            None
-        } else {
-            Some(
-                response_body
-                    .get(USAGE_KEY)
-                    .ok_or(AtomaServiceError::InvalidBody {
+        let usage =
+            if endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
+                None
+            } else {
+                Some(response_body.get(USAGE_KEY).ok_or_else(|| {
+                    AtomaServiceError::InvalidBody {
                         message: "Usage not found in response body".to_string(),
                         endpoint: endpoint.clone(),
-                    })?,
-            )
-        };
+                    }
+                })?)
+            };
         state
             .encryption_sender
             .send((

@@ -4,7 +4,8 @@ use config::Config as RustConfig;
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::base_types::ObjectID;
 
-/// Configuration for Sui blockchain interactions
+/// Configuration for Sui blockchain interactions.
+///
 /// This struct holds the necessary configuration parameters for connecting to and
 /// interacting with a Sui network, including URLs, package ID, timeout, and small IDs.
 #[derive(Clone, Debug, Deserialize, Serialize)]
