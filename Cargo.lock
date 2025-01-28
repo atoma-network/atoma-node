@@ -749,7 +749,7 @@ dependencies = [
  "flume",
  "rand",
  "tdx",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
  "x25519-dalek",
@@ -815,7 +815,7 @@ dependencies = [
  "sui-keys",
  "sui-sdk",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokenizers",
  "tokio",
  "tower 0.5.2",
@@ -840,7 +840,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sqlx",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
  "utoipa",
@@ -859,7 +859,7 @@ dependencies = [
  "serde_json",
  "sui-sdk",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokio",
  "toml 0.8.19",
  "tracing",
@@ -879,7 +879,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.8",
  "sui-sdk",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
  "x25519-dalek",
@@ -2127,7 +2127,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1145d32e826a7748b69ee8fc62d3e6355ff7f1051df53141e7048162fc90481b"
 dependencies = [
  "data-encoding",
- "syn 2.0.96",
+ "syn 1.0.109",
 ]
 
 [[package]]
