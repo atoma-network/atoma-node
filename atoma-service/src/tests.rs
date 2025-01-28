@@ -248,6 +248,9 @@ mod middleware {
             .atoma_db(ObjectID::from_str("0x1").unwrap())
             .atoma_package_id(ObjectID::from_str("0x2").unwrap())
             .usdc_package_id(ObjectID::from_str("0x3").unwrap())
+            .sui_config_path(client_yaml_path.to_string_lossy().to_string())
+            .sui_keystore_path("./keystore".to_string())
+            .cursor_path("./".to_string())
             .build();
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
