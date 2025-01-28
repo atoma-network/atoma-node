@@ -1,15 +1,12 @@
 services:
-  db:
-    image: postgres:13
-    restart: always
+  postgres:
+    image: postgres:latest
     environment:
-      - POSTGRES_DB=atoma
-      - POSTGRES_USER=atoma
-      - POSTGRES_PASSWORD=atoma
+      POSTGRES_DB: atoma
+      POSTGRES_USER: atoma
+      POSTGRES_PASSWORD: atoma
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - 5432:5432
 
 volumes:
   postgres-data:
