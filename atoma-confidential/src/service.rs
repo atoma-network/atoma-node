@@ -70,6 +70,21 @@ pub struct AtomaConfidentialCompute {
 
 impl AtomaConfidentialCompute {
     /// Constructor
+    ///
+    /// # Arguments
+    /// * `sui_client` - Configuration settings for the client
+    /// * `event_receiver` - Channel receiver for Atoma events
+    /// * `service_decryption_receiver` - Channel receiver for decryption requests
+    /// * `service_encryption_receiver` - Channel receiver for encryption requests
+    /// * `service_shared_secret_receiver` - Channel receiver for shared secret requests
+    /// * `shutdown_signal` - Channel receiver for shutdown signals
+    ///
+    /// # Returns
+    /// A new client instance
+    ///
+    /// # Errors
+    /// Returns `AtomaConfidentialComputeError` if:
+    /// - Key manager initialization fails
     pub fn new(
         sui_client: Arc<RwLock<Client>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
@@ -159,6 +174,7 @@ impl AtomaConfidentialCompute {
     ///
     /// # Returns
     /// - `x25519_dalek::StaticSecret`: The shared secret between the node and the proxy
+    #[must_use]
     pub fn compute_shared_secret(
         &self,
         client_x25519_public_key: &PublicKey,

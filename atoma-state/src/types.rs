@@ -1,15 +1,16 @@
-use crate::state_manager::Result;
+use crate::AtomaStateManagerError;
 use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
     StackTrySettleEvent, TaskRegisteredEvent,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::result::Result;
 use tokio::sync::oneshot;
 use utoipa::ToSchema;
 
 /// Represents a task in the system
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Task {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
@@ -33,22 +34,22 @@ pub struct Task {
 
 impl From<TaskRegisteredEvent> for Task {
     fn from(event: TaskRegisteredEvent) -> Self {
-        Task {
+        Self {
             task_id: event.task_id,
             task_small_id: event.task_small_id.inner as i64,
-            role: event.role.inner as i64,
+            role: i64::from(event.role.inner),
             model_name: event.model_name,
             is_deprecated: false,
             valid_until_epoch: None,
             deprecated_at_epoch: None,
-            security_level: event.security_level.inner as i64,
-            minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
+            security_level: i64::from(event.security_level.inner),
+            minimum_reputation_score: event.minimum_reputation_score.map(i64::from),
         }
     }
 }
 
 /// Represents a stack of compute units for a specific task
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Stack {
     /// Address of the owner of the stack
     pub owner_address: String,
@@ -77,7 +78,7 @@ pub struct Stack {
 
 impl From<StackCreatedEvent> for Stack {
     fn from(event: StackCreatedEvent) -> Self {
-        Stack {
+        Self {
             owner_address: event.owner,
             stack_id: event.stack_id,
             stack_small_id: event.stack_small_id.inner as i64,
@@ -95,7 +96,7 @@ impl From<StackCreatedEvent> for Stack {
 
 impl From<StackCreateAndUpdateEvent> for Stack {
     fn from(event: StackCreateAndUpdateEvent) -> Self {
-        Stack {
+        Self {
             owner_address: event.owner,
             stack_small_id: event.stack_small_id.inner as i64,
             stack_id: event.stack_id,
@@ -112,7 +113,7 @@ impl From<StackCreateAndUpdateEvent> for Stack {
 }
 
 /// Represents a settlement ticket for a compute stack
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StackSettlementTicket {
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
@@ -138,8 +139,10 @@ pub struct StackSettlementTicket {
     pub is_claimed: bool,
 }
 
-impl From<StackTrySettleEvent> for StackSettlementTicket {
-    fn from(event: StackTrySettleEvent) -> Self {
+impl TryFrom<StackTrySettleEvent> for StackSettlementTicket {
+    type Error = AtomaStateManagerError;
+
+    fn try_from(event: StackTrySettleEvent) -> Result<Self, Self::Error> {
         let num_attestation_nodes = event.requested_attestation_nodes.len();
         let expanded_size = 32 * num_attestation_nodes;
 
@@ -149,7 +152,7 @@ impl From<StackTrySettleEvent> for StackSettlementTicket {
         let mut expanded_leaves = event.stack_merkle_leaf;
         expanded_leaves.resize(expanded_size, 0);
 
-        StackSettlementTicket {
+        Ok(Self {
             stack_small_id: event.stack_small_id.inner as i64,
             selected_node_id: event.selected_node_id.inner as i64,
             num_claimed_compute_units: event.num_claimed_compute_units as i64,
@@ -160,20 +163,21 @@ impl From<StackTrySettleEvent> for StackSettlementTicket {
                     .map(|id| id.inner)
                     .collect::<Vec<_>>(),
             )
-            .unwrap(),
+            .map_err(AtomaStateManagerError::JsonParseError)?,
             committed_stack_proofs: expanded_proofs,
             stack_merkle_leaves: expanded_leaves,
             dispute_settled_at_epoch: None,
-            already_attested_nodes: serde_json::to_string(&Vec::<i64>::new()).unwrap(),
+            already_attested_nodes: serde_json::to_string(&Vec::<i64>::new())
+                .map_err(AtomaStateManagerError::JsonParseError)?,
             is_in_dispute: false,
             user_refund_amount: 0,
             is_claimed: false,
-        }
+        })
     }
 }
 
 /// Represents a dispute in the stack attestation process
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StackAttestationDispute {
     /// Unique small integer identifier for the stack involved in the dispute
     pub stack_small_id: i64,
@@ -189,7 +193,7 @@ pub struct StackAttestationDispute {
 
 impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
     fn from(event: StackAttestationDisputeEvent) -> Self {
-        StackAttestationDispute {
+        Self {
             stack_small_id: event.stack_small_id.inner as i64,
             attestation_commitment: event.attestation_commitment,
             attestation_node_id: event.attestation_node_id.inner as i64,
@@ -200,7 +204,7 @@ impl From<StackAttestationDisputeEvent> for StackAttestationDispute {
 }
 
 /// Represents a node subscription to a task
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct NodeSubscription {
     /// Unique small integer identifier for the node subscription
     pub node_small_id: i64,
@@ -240,6 +244,6 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Total number of compute units
         total_num_compute_units: i64,
         /// Oneshot channel to send the result back to the sender channel
-        result_sender: oneshot::Sender<Result<Option<Stack>>>,
+        result_sender: oneshot::Sender<Result<Option<Stack>, AtomaStateManagerError>>,
     },
 }

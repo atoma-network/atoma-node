@@ -216,152 +216,151 @@ impl Subscriber {
         let mut cursor = read_cursor_from_toml_file(&self.config.cursor_path())?;
         loop {
             tokio::select! {
-                    Some((tx_digest, estimated_compute_units, selected_stack_small_id, result_sender)) = self.stack_retrieve_receiver.recv() => {
-                        let tx_events = client
-                            .read_api()
-                            .get_transaction_with_options(
-                                tx_digest,
-                                SuiTransactionBlockResponseOptions {
-                                    show_events: true, ..Default::default()
+                Some((tx_digest, estimated_compute_units, selected_stack_small_id, result_sender)) = self.stack_retrieve_receiver.recv() => {
+                    let tx_events = client
+                        .read_api()
+                        .get_transaction_with_options(
+                            tx_digest,
+                            SuiTransactionBlockResponseOptions {
+                                show_events: true, ..Default::default()
+                            }
+                        )
+                        .await?
+                        .events;
+                    let mut compute_units = None;
+                    let mut stack_small_id = None;
+                    if let Some(tx_events) = tx_events {
+                        for event in &tx_events.data {
+                            let event_identifier = AtomaEventIdentifier::from_str(event.type_.name.as_str())?;
+                            if event_identifier == AtomaEventIdentifier::StackCreatedEvent {
+                                // NOTE: In this case, the transaction contains a stack creation event,
+                                // which means that whoever made a request to the service has already paid
+                                // to buy new compute units.
+                                // We need to count the compute units used by the transaction.
+                                let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
+
+                                // Move the cast to a separate statement with the attribute
+                                #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+                                let selected_stack_small_id_u64 = selected_stack_small_id as u64;
+                                if event.stack_small_id.inner != selected_stack_small_id_u64 {
+                                    continue;
                                 }
-                            )
-                            .await?
-                            .events;
-                        let mut compute_units = None;
-                        let mut stack_small_id = None;
-                        if let Some(tx_events) = tx_events {
-                            for event in &tx_events.data {
-                                let event_identifier = AtomaEventIdentifier::from_str(event.type_.name.as_str())?;
-                                if event_identifier == AtomaEventIdentifier::StackCreatedEvent {
-                                    // NOTE: In this case, the transaction contains a stack creation event,
-                                    // which means that whoever made a request to the service has already paid
-                                    // to buy new compute units.
-                                    // We need to count the compute units used by the transaction.
-                                    let event: StackCreatedEvent = serde_json::from_value(event.parsed_json.clone())?;
-                                    if event.stack_small_id.inner != selected_stack_small_id as u64 {
-                                        // NOTE: This is a safety check to ensure that the stack small id
-                                        // is the same as the one defined in the original transaction
-                                        continue;
-                                    }
-                                    if estimated_compute_units > event.num_compute_units as i64 {
-                                        // NOTE: If the estimated compute units are greater than the event compute units,
-                                        // this means that whoever made a request to the service has requested more compute units
-                                        // than those that it paid for. In this case, we should not process the event, and break
-                                        // out of the loop. This will send `None` values to the Atoma service, which will
-                                        // trigger an error back to the client.
-                                        // SAFETY: It is fine if we do not process the [`StackCreatedEvent`] right away, as it will
-                                        // be catched later by the Sui's event subscriber.
-                                        error!(
-                                            target = "atoma-sui-subscriber",
-                                            event = "subscriber-stack-create-event-error",
-                                            "Stack create event with id {} has more compute units than the transaction used, this is not possible",
-                                            event.stack_small_id.inner
-                                        );
-                                        break;
-                                    }
-                                    #[allow(clippy::cast_possible_wrap)]
-                                    let event: StackCreateAndUpdateEvent = (event, estimated_compute_units as i64).into();
-                                    // NOTE: We also send the event to the state manager, so it can be processed
-                                    // right away.
-                                    compute_units = Some(event.num_compute_units as i64);
-                                    stack_small_id = Some(event.stack_small_id.inner as i64);
-                                    self.state_manager_sender
-                                        .send(AtomaEvent::StackCreateAndUpdateEvent(event))
-                                        .map_err(Box::new)?;
-                                    // We found the stack creation event, so we can break out of the loop
+
+                                // Move the cast to a separate statement with the attribute
+                                #[allow(clippy::cast_possible_wrap)]
+                                let event_compute_units = event.num_compute_units as i64;
+                                if estimated_compute_units > event_compute_units {
                                     break;
                                 }
+
+                                let event: StackCreateAndUpdateEvent = (event, estimated_compute_units).into();
+
+                                // Move the casts to separate statements with attributes
+                                #[allow(clippy::cast_possible_wrap)]
+                                let compute_units_val = event.num_compute_units as i64;
+                                compute_units = Some(compute_units_val);
+
+                                #[allow(clippy::cast_possible_wrap)]
+                                let stack_small_id_val = event.stack_small_id.inner as i64;
+                                stack_small_id = Some(stack_small_id_val);
+
+                                self.state_manager_sender
+                                    .send(AtomaEvent::StackCreateAndUpdateEvent(event))
+                                    .map_err(Box::new)?;
+                                // We found the stack creation event, so we can break out of the loop
+                                break;
                             }
                         }
-                        // Send the compute units to the Atoma service, so it can be used to validate the
-                        // request.
-                        result_sender
-                            .send((stack_small_id, compute_units))
-                            .map_err(|_| SuiEventSubscriberError::SendComputeUnitsError)?;
                     }
-                    page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
-                        let EventPage {
-                            data,
-                            next_cursor,
-                            has_next_page,
-                        } = match page {
-                            Ok(page) => page,
+                    // Send the compute units to the Atoma service, so it can be used to validate the
+                    // request.
+                    result_sender
+                        .send((stack_small_id, compute_units))
+                        .map_err(|_| SuiEventSubscriberError::SendComputeUnitsError)?;
+                }
+                page = client.event_api().query_events(self.filter.clone(), cursor, limit, false) => {
+                    let EventPage {
+                        data,
+                        next_cursor,
+                        has_next_page,
+                    } = match page {
+                        Ok(page) => page,
+                        Err(e) => {
+                            error!(
+                                target = "atoma-sui-subscriber",
+                                event = "subscriber-read-events-error",
+                                "Failed to read paged events, with error: {e}"
+                            );
+                            continue;
+                        }
+                    };
+                    cursor = next_cursor;
+
+                    for sui_event in data {
+                        let event_name = sui_event.type_.name;
+                        trace!(
+                            target = "atoma-sui-subscriber",
+                            event = "subscriber-received-new-event",
+                            event_name = %event_name,
+                            "Received new event: {event_name:#?}"
+                        );
+                        match AtomaEventIdentifier::from_str(event_name.as_str()) {
+                            Ok(atoma_event_id) => {
+                                let sender = sui_event.sender;
+                                let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json, sender, sui_event.timestamp_ms).await {
+                                    Ok(atoma_event) => atoma_event,
+                                    Err(e) => {
+                                        error!(
+                                            target = "atoma-sui-subscriber",
+                                            event = "subscriber-event-parse-error",
+                                            event_name = %event_name,
+                                            "Failed to parse event: {e}",
+                                        );
+                                        continue;
+                                    }
+                                };
+                                if filter_event(
+                                    &atoma_event,
+                                    self.config.node_small_ids().as_ref(),
+                                    self.config.task_small_ids().as_ref(),
+                                ) {
+                                    self.handle_atoma_event(atoma_event_id, atoma_event).await?;
+                                } else {
+                                    continue;
+                                }
+                            }
                             Err(e) => {
                                 error!(
                                     target = "atoma-sui-subscriber",
-                                    event = "subscriber-read-events-error",
-                                    "Failed to read paged events, with error: {e}"
+                                    event = "subscriber-event-parse-error",
+                                    "Failed to parse event: {e}",
                                 );
-                                continue;
+                                // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
                             }
-                        };
-                        cursor = next_cursor;
-
-                        for sui_event in data {
-                            let event_name = sui_event.type_.name;
-                            trace!(
-                                target = "atoma-sui-subscriber",
-                                event = "subscriber-received-new-event",
-                                event_name = %event_name,
-                                "Received new event: {event_name:#?}"
-                            );
-                            match AtomaEventIdentifier::from_str(event_name.as_str()) {
-                                Ok(atoma_event_id) => {
-                                    let sender = sui_event.sender;
-                                    let atoma_event = match parse_event(&atoma_event_id, sui_event.parsed_json, sender, sui_event.timestamp_ms).await {
-                                        Ok(atoma_event) => atoma_event,
-                                        Err(e) => {
-                                            error!(
-                                                target = "atoma-sui-subscriber",
-                                                event = "subscriber-event-parse-error",
-                                                event_name = %event_name,
-                                                "Failed to parse event: {e}",
-                                            );
-                                            continue;
-                                        }
-                                    };
-                                    if filter_event(
-                                        &atoma_event,
-                                        self.config.node_small_ids().as_ref(),
-                                        self.config.task_small_ids().as_ref(),
-                                    ) {
-                                        self.handle_atoma_event(atoma_event_id, atoma_event).await?;
-                                    } else {
-                                        continue;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(
-                                        target = "atoma-sui-subscriber",
-                                        event = "subscriber-event-parse-error",
-                                        "Failed to parse event: {e}",
-                                    );
-                                    // NOTE: `AtomaEvent` didn't match any known event, so we skip it.
-                                }
-                            }
-                        }
-
-                        if !has_next_page {
-                            // Update the cursor file with the current cursor
-                            write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
-                            // No new events to read, so let's wait for a while
-                            trace!(
-                                target = "atoma-sui-subscriber",
-                                event = "subscriber-no-new-events",
-                                wait_duration = DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
-                                "No new events to read, the node is now synced with the Atoma protocol, waiting until the next synchronization..."
-                            );
-                            tokio::time::sleep(Duration::from_millis(
-                                DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
-                                ))
-                            .await;
                         }
                     }
-                    shutdown_signal_changed = self.shutdown_signal.changed() => {
-                        match shutdown_signal_changed {
-                            Ok(()) => {
-                                if *self.shutdown_signal.borrow() {
-                                    info!(
+
+                    if !has_next_page {
+                        // Update the cursor file with the current cursor
+                        write_cursor_to_toml_file(cursor, &self.config.cursor_path())?;
+                        // No new events to read, so let's wait for a while
+                        trace!(
+                            target = "atoma-sui-subscriber",
+                            event = "subscriber-no-new-events",
+                            wait_duration = DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
+                            "No new events to read, the node is now synced with the Atoma protocol, waiting until the next synchronization..."
+                        );
+                        tokio::time::sleep(Duration::from_millis(
+                            DURATION_TO_WAIT_FOR_NEW_EVENTS_IN_MILLIS,
+                        ))
+                        .await;
+                    }
+                }
+                shutdown_signal_changed = self.shutdown_signal.changed() => {
+                    match shutdown_signal_changed {
+                        Ok(()) => {
+                            if *self.shutdown_signal.borrow() {
+                                info!(
                                     target = "atoma-sui-subscriber",
                                     event = "subscriber-stopped",
                                     "Shutdown signal received, gracefully stopping subscriber..."

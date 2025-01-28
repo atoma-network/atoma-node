@@ -29,7 +29,8 @@ pub struct AtomaStateManager {
 
 impl AtomaStateManager {
     /// Constructor
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
@@ -45,6 +46,20 @@ impl AtomaStateManager {
     ///
     /// This method establishes a connection to the Postgres database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
+    ///
+    /// # Arguments
+    /// * `database_url` - The URL of the PostgreSQL database to connect to
+    /// * `event_subscriber_receiver` - Channel receiver for Atoma events
+    /// * `state_manager_receiver` - Channel receiver for state manager events
+    ///
+    /// # Returns
+    /// A new state manager instance
+    ///
+    /// # Errors
+    /// Returns `AtomaStateManagerError` if:
+    /// - Failed to connect to database
+    /// - Failed to create connection pool
+    /// - Failed to run database migrations
     pub async fn new_from_url(
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
@@ -181,11 +196,29 @@ pub struct AtomaState {
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: PgPool) -> Self {
+    ///
+    /// # Arguments
+    /// * `db` - The Postgres connection pool
+    ///
+    /// # Returns
+    /// A new `AtomaState` instance
+    #[must_use]
+    pub const fn new(db: PgPool) -> Self {
         Self { db }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
+    ///
+    /// # Arguments
+    /// * `database_url` - The URL of the PostgreSQL database to connect to
+    ///
+    /// # Returns
+    /// A new state instance wrapped in `Result`
+    ///
+    /// # Errors
+    /// Returns `AtomaStateManagerError` if:
+    /// - Failed to connect to database
+    /// - Failed to run database migrations
     pub async fn new_from_url(database_url: &str) -> Result<Self> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./src/migrations").run(&db).await?;
@@ -4023,11 +4056,11 @@ mod tests {
                 stack_small_id: 1,
                 selected_node_id: 1,
                 num_claimed_compute_units: 100,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: true,
@@ -4040,11 +4073,11 @@ mod tests {
                 stack_small_id: 2,
                 selected_node_id: 1,
                 num_claimed_compute_units: 100,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: false,
@@ -4057,11 +4090,11 @@ mod tests {
                 stack_small_id: 3,
                 selected_node_id: 2,
                 num_claimed_compute_units: 200,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: true,
@@ -4541,7 +4574,7 @@ mod tests {
         ];
 
         // Insert rotations for multiple nodes
-        for (node_id, pub_key, tee_bytes) in nodes.iter() {
+        for (node_id, pub_key, tee_bytes) in &nodes {
             state_manager
                 .insert_node_public_key_rotation(
                     100u64,
@@ -4554,7 +4587,7 @@ mod tests {
         }
 
         // Verify all insertions
-        for (node_id, pub_key, tee_bytes) in nodes.iter() {
+        for (node_id, pub_key, tee_bytes) in &nodes {
             let row =
                 sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
                     .bind(*node_id as i64)

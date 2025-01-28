@@ -1,3 +1,6 @@
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+
 pub mod key_management;
 pub mod service;
 #[cfg(feature = "tdx")]

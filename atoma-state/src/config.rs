@@ -11,7 +11,8 @@ pub struct AtomaStateManagerConfig {
 
 impl AtomaStateManagerConfig {
     /// Constructor
-    pub fn new(database_url: String) -> Self {
+    #[must_use]
+    pub const fn new(database_url: String) -> Self {
         Self { database_url }
     }
 
