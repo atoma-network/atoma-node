@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "atoma-confidential",
-    "atoma-daemon", 
+    "atoma-daemon",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
@@ -71,3 +71,7 @@ utoipa = "5.1.1"
 utoipa-swagger-ui = "8.0.1"
 validator = "0.20.0"
 x25519-dalek = "2.0.1"
+
+[patch.crates-io]
+hyper-rustls = { git = "https://github.com/rustls/hyper-rustls", branch = "main" }
+tokio-rustls = { git = "https://github.com/rustls/tokio-rustls", branch = "main" }
