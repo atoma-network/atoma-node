@@ -14,6 +14,8 @@ yanked = "warn"
 # output a note when they are encountered.
 ignore = [
 	# These are all related to the sui SDK, which is outside of our control
+	# derivative is not maintained
+	"RUSTSEC-2024-0388",
 	# difference 2.0.0 is unmaintained
 	"RUSTSEC-2020-0095",
 	# rusoto is unmaintained, use aws crates
@@ -54,6 +56,7 @@ allow = [
 	"ISC",
 	"MIT",
 	"MPL-2.0",
+	"CC0-1.0",
 	"Unlicense",
 	"Unicode-3.0",
 	"Zlib",
@@ -145,4 +148,4 @@ allow-git = [
 ]
 
 [sources.allow-org]
-github = ["mystenmark", "bmwill", "mystenlabs", "nextest-rs"]
+github = ["mystenmark", "bmwill", "mystenlabs", "nextest-rs", "rustls"]
