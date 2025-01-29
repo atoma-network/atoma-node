@@ -34,7 +34,7 @@ use crate::{
     middleware::RequestMetadata,
 };
 
-use super::handle_confidential_compute_encryption_response;
+use super::{handle_confidential_compute_encryption_response, handle_status_code_error};
 
 /// The path for confidential chat completions requests
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
@@ -683,10 +683,11 @@ async fn handle_streaming_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: "Inference service returned error".to_string(),
-            endpoint,
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), &endpoint, error)?;
     }
 
     let stream = response.bytes_stream();
@@ -1066,6 +1067,8 @@ pub mod utils {
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
     use prometheus::HistogramTimer;
 
+    use crate::handlers::handle_status_code_error;
+
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
         sign_response_and_update_stack_hash, update_stack_num_compute_units, AppState,
@@ -1271,13 +1274,11 @@ pub mod utils {
         })?;
 
         if !response.status().is_success() {
-            return Err(AtomaServiceError::InternalError {
-                message: format!(
-                    "Inference service returned non-success status code: {}",
-                    response.status()
-                ),
-                endpoint: endpoint.to_string(),
-            });
+            let error = response
+                .status()
+                .canonical_reason()
+                .unwrap_or("Unknown error");
+            handle_status_code_error(response.status(), endpoint, error)?;
         }
 
         response.json::<Value>().await.map_err(|e| {

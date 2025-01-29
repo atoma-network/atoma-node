@@ -19,6 +19,8 @@ use serde_json::Value;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
+use super::handle_status_code_error;
+
 /// The path for confidential embeddings requests
 pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
 
@@ -321,13 +323,11 @@ async fn handle_embeddings_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: format!(
-                "Inference service returned non-success status code: {}",
-                response.status()
-            ),
-            endpoint: endpoint.to_string(),
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), endpoint, error)?;
     }
 
     let mut response_body =

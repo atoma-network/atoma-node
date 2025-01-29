@@ -18,7 +18,10 @@ use serde_json::Value;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
-use super::{handle_confidential_compute_encryption_response, sign_response_and_update_stack_hash};
+use super::{
+    handle_confidential_compute_encryption_response, handle_status_code_error,
+    sign_response_and_update_stack_hash,
+};
 
 /// The path for confidential image generations requests
 pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
@@ -307,13 +310,11 @@ async fn handle_image_generations_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: format!(
-                "Inference service returned non-success status code: {}",
-                response.status()
-            ),
-            endpoint: endpoint.to_string(),
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), endpoint, error)?;
     }
 
     let mut response_body =
