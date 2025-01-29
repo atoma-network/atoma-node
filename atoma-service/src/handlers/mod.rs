@@ -9,6 +9,7 @@ use atoma_confidential::types::{
 use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender;
+use hyper::StatusCode;
 use image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
@@ -304,4 +305,43 @@ pub fn update_stack_num_compute_units(
             message: format!("Error sending update stack num compute units event: {e}"),
             endpoint: endpoint.to_string(),
         })
+}
+
+/// Handles the status code returned by the inference service.
+///
+/// This function maps the status code to an appropriate error variant.
+///
+/// # Arguments
+///
+/// * `status_code` - The status code returned by the inference service
+/// * `endpoint` - The API endpoint path where the request was received
+/// * `error` - The error message returned by the inference service
+///
+/// # Returns
+///
+/// Returns an `AtomaServiceError` variant based on the status code.
+#[instrument(level = "info", skip_all, fields(endpoint))]
+pub fn handle_status_code(
+    status_code: StatusCode,
+    endpoint: &str,
+    error: &str,
+) -> Result<(), AtomaServiceError> {
+    match status_code {
+        StatusCode::UNAUTHORIZED => Err(AtomaServiceError::AuthError {
+            auth_error: format!("Unauthorized response from inference service: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        StatusCode::INTERNAL_SERVER_ERROR => Err(AtomaServiceError::InternalError {
+            message: format!("Inference service returned internal server error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        StatusCode::BAD_REQUEST => Err(AtomaServiceError::InvalidBody {
+            message: format!("Inference service returned bad request error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        _ => Err(AtomaServiceError::InternalError {
+            message: format!("Inference service returned non-success error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+    }
 }
