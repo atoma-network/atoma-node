@@ -19,7 +19,7 @@ use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 use super::{
-    handle_confidential_compute_encryption_response, handle_status_code,
+    handle_confidential_compute_encryption_response, handle_status_code_error,
     sign_response_and_update_stack_hash,
 };
 
@@ -314,7 +314,7 @@ async fn handle_image_generations_response(
             .status()
             .canonical_reason()
             .unwrap_or("Unknown error");
-        handle_status_code(response.status(), endpoint, error)?;
+        handle_status_code_error(response.status(), endpoint, error)?;
     }
 
     let mut response_body =

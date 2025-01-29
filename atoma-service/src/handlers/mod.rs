@@ -321,7 +321,7 @@ pub fn update_stack_num_compute_units(
 ///
 /// Returns an `AtomaServiceError` variant based on the status code.
 #[instrument(level = "info", skip_all, fields(endpoint))]
-pub fn handle_status_code(
+pub fn handle_status_code_error(
     status_code: StatusCode,
     endpoint: &str,
     error: &str,

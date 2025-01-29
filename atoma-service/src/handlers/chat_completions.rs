@@ -34,7 +34,7 @@ use crate::{
     middleware::RequestMetadata,
 };
 
-use super::{handle_confidential_compute_encryption_response, handle_status_code};
+use super::{handle_confidential_compute_encryption_response, handle_status_code_error};
 
 /// The path for confidential chat completions requests
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
@@ -687,7 +687,7 @@ async fn handle_streaming_response(
             .status()
             .canonical_reason()
             .unwrap_or("Unknown error");
-        handle_status_code(response.status(), &endpoint, error)?;
+        handle_status_code_error(response.status(), &endpoint, error)?;
     }
 
     let stream = response.bytes_stream();
@@ -1067,7 +1067,7 @@ pub mod utils {
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
     use prometheus::HistogramTimer;
 
-    use crate::handlers::handle_status_code;
+    use crate::handlers::handle_status_code_error;
 
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
@@ -1278,7 +1278,7 @@ pub mod utils {
                 .status()
                 .canonical_reason()
                 .unwrap_or("Unknown error");
-            handle_status_code(response.status(), endpoint, error)?;
+            handle_status_code_error(response.status(), endpoint, error)?;
         }
 
         response.json::<Value>().await.map_err(|e| {
