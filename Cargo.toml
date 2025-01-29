@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "atoma-confidential",
-    "atoma-daemon", 
+    "atoma-daemon",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
@@ -55,8 +55,8 @@ serde_yaml = "0.9.34"
 serial_test = "3.1.1"
 sha2 = "0.10.8"
 sqlx = "0.8.2"
-sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.39.3" }
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.39.3" }
+sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.41.1" }
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.41.1" }
 tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.13.0"
 thiserror = "2.0.11"
@@ -71,3 +71,7 @@ utoipa = "5.1.1"
 utoipa-swagger-ui = "8.0.1"
 validator = "0.20.0"
 x25519-dalek = "2.0.1"
+
+[patch.crates-io]
+hyper-rustls = { git = "https://github.com/rustls/hyper-rustls", branch = "main" }
+tokio-rustls = { git = "https://github.com/rustls/tokio-rustls", branch = "main" }
