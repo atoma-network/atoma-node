@@ -793,7 +793,7 @@ dependencies = [
  "base64 0.22.1",
  "clap 4.5.27",
  "config",
- "dotenv",
+ "dotenvy",
  "flume",
  "futures",
  "hex",

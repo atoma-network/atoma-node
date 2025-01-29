@@ -13,7 +13,19 @@ yanked = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-	#"RUSTSEC-0000-0000",
+	# These are all related to the sui SDK, which is outside of our control
+	# difference 2.0.0 is unmaintained
+	"RUSTSEC-2020-0095",
+	# rusoto is unmaintained, use aws crates
+	"RUSTSEC-2022-0071",
+	# we don't do RSA signing on Sui (only verifying for zklogin)
+	"RUSTSEC-2023-0071",
+	# A few dependencies use unpatched rustls.
+	"RUSTSEC-2024-0336",
+	# allow yaml-rust being unmaintained
+	"RUSTSEC-2024-0320",
+	# allow unmaintained proc-macro-error used in transitive dependencies
+	"RUSTSEC-2024-0370",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
@@ -126,5 +138,11 @@ unknown-git = "deny"
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
-#allow-git = [
-#]
+# Allow the mysten labs repositories for Sui
+allow-git = [
+	"https://github.com/asonnino/prometheus-parser",
+	"https://github.com/zhiburt/tabled",
+]
+
+[sources.allow-org]
+github = ["mystenmark", "bmwill", "mystenlabs", "nextest-rs"]

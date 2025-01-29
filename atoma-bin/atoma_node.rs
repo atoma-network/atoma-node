@@ -16,7 +16,6 @@ use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager
 use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
-use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
@@ -127,7 +126,7 @@ impl Config {
 /// async fn example() -> Result<()> {
 ///     let models = vec!["facebook/opt-125m".to_string()];
 ///     let revisions = vec!["main".to_string()];
-///     
+///
 ///     let tokenizers = initialize_tokenizers(&models, &revisions).await?;
 ///     Ok(())
 /// }
@@ -177,7 +176,7 @@ async fn initialize_tokenizers(
 async fn main() -> Result<()> {
     let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
 
-    dotenv().ok();
+    dotenvy::dotenv().ok();
 
     let args = Args::parse();
     let config = Config::load(&args.config_path).await?;

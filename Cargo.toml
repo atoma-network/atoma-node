@@ -30,7 +30,7 @@ blake2 = "0.10.6"
 clap = "4.5.4"
 config = "0.14.0"
 dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
-dotenv = "0.15.0"
+dotenvy = "0.15.7"
 fastcrypto = "0.1.8"
 flume = "0.11.1"
 futures = "0.3.30"
