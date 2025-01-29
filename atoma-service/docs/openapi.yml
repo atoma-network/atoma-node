@@ -357,12 +357,20 @@ components:
           - boolean
           - 'null'
           description: Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the content of message.
-        max_tokens:
+        max_completion_tokens:
           type:
           - integer
           - 'null'
           format: int32
           description: An upper bound for the number of tokens that can be generated for a completion,
+          minimum: 0
+        max_tokens:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: An upper bound for the number of tokens that can be generated for a completion, currently deprecated, as per OpenAI API spec
+          deprecated: true
           minimum: 0
         messages:
           type: array
