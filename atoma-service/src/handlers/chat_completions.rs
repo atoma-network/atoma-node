@@ -739,7 +739,7 @@ pub struct ChatCompletionsRequest {
     top_logprobs: Option<i32>,
     /// An upper bound for the number of tokens that can be generated for a completion, currently deprecated, as per OpenAI API spec
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(deprecated)]
+    #[deprecated = "Recommended to use max_completion_tokens instead"]
     max_tokens: Option<u32>,
     /// An upper bound for the number of tokens that can be generated for a completion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
