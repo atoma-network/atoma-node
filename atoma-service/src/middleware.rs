@@ -39,8 +39,11 @@ const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
 /// The key for the model in the request body
 const MODEL: &str = "model";
 
-/// The key for the max tokens in the request body
+/// The key for the max tokens in the request body (currently deprecated, as per OpenAI API spec)
 const MAX_TOKENS: &str = "max_tokens";
+
+/// The key for max completion tokens in the request body
+const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
 
 /// The default value for the max tokens for chat completions
 const DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS: i64 = 8192;
@@ -651,8 +654,8 @@ pub(crate) mod utils {
         blake2b_hash, instrument, oneshot, verify_signature, AppState, AtomaServiceError,
         ConfidentialComputeDecryptionRequest, ConfidentialComputeRequest, DecryptionMetadata,
         Engine, RequestType, TransactionDigest, Value, DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS,
-        DH_PUBLIC_KEY_SIZE, IMAGE_N, IMAGE_SIZE, INPUT, MAX_TOKENS, MESSAGES, NONCE_SIZE,
-        PAYLOAD_HASH_SIZE, SALT_SIZE, STANDARD,
+        DH_PUBLIC_KEY_SIZE, IMAGE_N, IMAGE_SIZE, INPUT, MAX_COMPLETION_TOKENS, MAX_TOKENS,
+        MESSAGES, NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE, STANDARD,
     };
 
     /// Requests and verifies stack information from the blockchain for a given transaction.
@@ -892,7 +895,8 @@ pub(crate) mod utils {
         }
 
         total_num_compute_units += body_json
-            .get(MAX_TOKENS)
+            .get(MAX_COMPLETION_TOKENS)
+            .or_else(|| body_json.get(MAX_TOKENS))
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS);
 

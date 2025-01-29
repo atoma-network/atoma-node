@@ -737,9 +737,13 @@ pub struct ChatCompletionsRequest {
     /// logprobs must be set to true if this parameter is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     top_logprobs: Option<i32>,
+    /// An upper bound for the number of tokens that can be generated for a completion, currently deprecated, as per OpenAI API spec
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated = "Recommended to use max_completion_tokens instead"]
+    max_tokens: Option<u32>,
     /// An upper bound for the number of tokens that can be generated for a completion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
+    max_completion_tokens: Option<u32>,
     /// How many chat completion choices to generate for each input message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     n: Option<usize>,
