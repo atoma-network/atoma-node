@@ -16,7 +16,6 @@ use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
-use dotenv::dotenv;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
@@ -179,7 +178,7 @@ async fn initialize_tokenizers(
 async fn main() -> Result<()> {
     let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
 
-    dotenv().ok();
+    dotenvy::dotenv().ok();
 
     let args = Args::parse();
     let config = NodeConfig::load(&args.config_path)?;
