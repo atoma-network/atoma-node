@@ -896,7 +896,7 @@ pub(crate) mod utils {
 
         total_num_compute_units += body_json
             .get(MAX_COMPLETION_TOKENS)
-            .or(body_json.get(MAX_TOKENS))
+            .or_else(|| body_json.get(MAX_TOKENS))
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS);
 
