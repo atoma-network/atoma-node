@@ -6,8 +6,7 @@ use blake2::{
 /// Computes the `BLAKE2b` hash of the provided data
 ///
 /// # Arguments
-/// * `slice` - Data to hash
-///
+/// * `slice` - A byte slice containing the data to be hashed
 /// # Returns
 /// The 32-byte `BLAKE2b` hash
 #[must_use]

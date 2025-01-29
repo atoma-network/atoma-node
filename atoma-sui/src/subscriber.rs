@@ -659,6 +659,24 @@ async fn parse_event(
     }
 }
 
+/// Filters an Atoma event based on a list of node small IDs.
+///
+/// This function checks if the given event is related to any of the nodes specified by their small IDs.
+/// For node-specific events (like registration, subscriptions, etc.), it returns true only if the
+/// event's node small ID is in the provided list. For all other event types, it returns true.
+///
+/// # Arguments
+///
+/// * `event` - Reference to the Atoma event to filter
+/// * `node_small_ids` - Slice containing the node small IDs to filter by
+///
+/// # Returns
+///
+/// Returns `true` if:
+/// - The event is not node-specific
+/// - The event's node small ID is contained in `node_small_ids`
+///
+/// Returns `false` if the event is node-specific but its node small ID is not in `node_small_ids`
 fn filter_event_by_node(event: &AtomaEvent, node_small_ids: &[u64]) -> bool {
     match event {
         AtomaEvent::NodeRegisteredEvent((event, _)) => {

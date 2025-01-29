@@ -48,7 +48,7 @@ pub struct Client {
     /// Configuration settings for the Atoma client
     config: SuiConfig,
     /// The Sui client for blockchain interactions
-    client: WalletContext,
+    wallet_ctx: WalletContext,
     /// An optional tuple containing the `ObjectID` and small ID of the node badge,
     /// used for authentication
     node_badge: Option<(ObjectID, u64)>,
@@ -87,7 +87,7 @@ impl Client {
         .await;
         Ok(Self {
             config,
-            client: wallet_ctx,
+            wallet_ctx,
             node_badge,
             usdc_wallet: None,
         })
@@ -145,7 +145,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_node_registration_tx(
         &mut self,
@@ -153,8 +153,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
 
         let tx = client
             .transaction_builder()
@@ -171,8 +171,8 @@ impl Client {
             )
             .await?;
         info!("Submitting node registration transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node registration transaction submitted successfully. Transaction digest: {:?}",
@@ -182,7 +182,7 @@ impl Client {
         let created_object = utils::get_node_badge(
             &client,
             self.config.atoma_package_id(),
-            self.client.active_address()?,
+            self.wallet_ctx.active_address()?,
         )
         .await
         .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?;
@@ -244,7 +244,7 @@ impl Client {
     #[instrument(level = "info", skip_all, fields(
         model_name = %model_name,
         echelon = %echelon,
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_node_model_subscription_tx(
         &mut self,
@@ -255,8 +255,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -283,8 +283,8 @@ impl Client {
             )
             .await?;
         info!("Submitting model subscription transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node model subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -344,7 +344,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap(),
+        address = %self.wallet_ctx.active_address().unwrap(),
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -357,8 +357,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -385,8 +385,8 @@ impl Client {
             )
             .await?;
         info!("Submitting node task subscription transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node task subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -455,7 +455,7 @@ impl Client {
     #[instrument(level = "info", skip_all, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_update_node_task_subscription_tx(
@@ -467,8 +467,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -495,8 +495,8 @@ impl Client {
             )
             .await?;
         info!("Submitting node task update subscription transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node task update subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -552,7 +552,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_unsubscribe_node_from_task_tx(
         &mut self,
@@ -562,8 +562,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -589,8 +589,8 @@ impl Client {
             )
             .await?;
         info!("Submitting node try settle stack transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -656,7 +656,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap(),
+        address = %self.wallet_ctx.active_address().unwrap(),
         num_claimed_compute_units = %num_claimed_compute_units,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -671,8 +671,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -702,8 +702,8 @@ impl Client {
             .await?;
 
         info!("Submitting node try settle stack transaction...");
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -767,7 +767,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_stack_settlement_attestation_tx(
@@ -780,8 +780,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -811,8 +811,8 @@ impl Client {
 
         info!("Submitting stack settlement attestation transaction...");
 
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Stack settlement attestation transaction submitted successfully. Transaction digest: {:?}",
@@ -873,7 +873,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_start_attestation_dispute_tx(
         &mut self,
@@ -884,8 +884,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<()> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -914,8 +914,8 @@ impl Client {
 
         info!("Submitting start attestation dispute transaction...");
 
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Start attestation dispute transaction submitted successfully. Transaction digest: {:?}",
@@ -972,7 +972,7 @@ impl Client {
     /// # }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_claim_funds_tx(
         &mut self,
@@ -982,8 +982,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .as_ref()
@@ -1011,8 +1011,8 @@ impl Client {
 
         info!("Submitting claim funds transaction...");
 
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
 
         info!(
             "Claim funds transaction submitted successfully. Transaction digest: {:?}",
@@ -1072,7 +1072,7 @@ impl Client {
     /// }
     /// ```
     #[instrument(level = "info", skip_all, fields(
-        address = %self.client.active_address().unwrap(),
+        address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
         remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
     ))]
@@ -1084,8 +1084,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<(String, u64)> {
-        let client = self.client.get_client().await?;
-        let active_address = self.client.active_address()?;
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = self
             .node_badge
             .as_ref()
@@ -1114,8 +1114,8 @@ impl Client {
 
         info!("Submitting key rotation remote attestation transaction...");
 
-        let tx = self.client.sign_transaction(&tx);
-        let response = self.client.execute_transaction_must_succeed(tx).await;
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
         let digest = response.digest.to_string();
         let events = response.events;
         if let Some(tx_block_events) = events {
@@ -1151,15 +1151,15 @@ impl Client {
     /// ```
     #[instrument(level = "info", skip_all, fields(
         endpoint = "get_or_load_usdc_wallet_object_id",
-        address = %self.client.active_address().unwrap()
+        address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn get_or_load_usdc_wallet_object_id(&mut self) -> Result<ObjectID> {
         if let Some(usdc_wallet_id) = self.usdc_wallet {
             Ok(usdc_wallet_id)
         } else {
-            let active_address = self.client.active_address()?;
+            let active_address = self.wallet_ctx.active_address()?;
             match utils::find_usdc_token_wallet(
-                &self.client.get_client().await?,
+                &self.wallet_ctx.get_client().await?,
                 self.config.usdc_package_id(),
                 active_address,
             )

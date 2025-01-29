@@ -178,6 +178,35 @@ impl Config {
 }
 
 /// Builder for creating Config instances
+/// Builder pattern implementation for creating `Config` instances.
+///
+/// This struct provides a flexible way to construct `Config` objects by allowing optional
+/// setting of individual configuration parameters. Each field is wrapped in an `Option`
+/// to track whether it has been explicitly set.
+///
+/// # Fields
+///
+/// * `http_rpc_node_addr` - Optional HTTP URL for the Sui RPC node
+/// * `atoma_db` - Optional Atoma's DB object ID on the Sui network
+/// * `atoma_package_id` - Optional Atoma's package ID on the Sui network
+/// * `usdc_package_id` - Optional USDC token package ID on the Sui network
+/// * `request_timeout` - Optional timeout duration for requests
+/// * `max_concurrent_requests` - Optional maximum number of concurrent requests
+/// * `limit` - Optional limit on number of dynamic fields per iteration
+/// * `node_small_ids` - Optional list of node small IDs under control
+/// * `task_small_ids` - Optional list of task small IDs under control
+/// * `sui_config_path` - Optional path to Sui config file
+/// * `sui_keystore_path` - Optional path to Sui keystore
+/// * `cursor_path` - Optional path to cursor file
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let config = Builder::new()
+///     .http_rpc_node_addr("http://localhost:9000".to_string())
+///     .atoma_db(object_id)
+///     .build();
+/// ```
 pub struct Builder {
     http_rpc_node_addr: Option<String>,
     atoma_db: Option<ObjectID>,
