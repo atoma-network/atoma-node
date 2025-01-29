@@ -11,7 +11,7 @@ use crate::{
     tdx::{get_compute_data_attestation, TdxError},
     ToBytes,
 };
-use atoma_sui::client::AtomaSuiClient;
+use atoma_sui::client::Client;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
 use atoma_utils::constants::NONCE_SIZE;
 use std::sync::Arc;
@@ -46,12 +46,12 @@ type ServiceSharedSecretRequest = (
 /// - Managing TDX key rotations and attestations
 /// - Submitting attestations to the Sui blockchain
 /// - Graceful shutdown handling
-pub struct AtomaConfidentialComputeService {
+pub struct AtomaConfidentialCompute {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
     /// NOTE: We disable clippy's `dead_code` lint warning here, as the `sui_client` is used
     /// in the `submit_node_key_rotation_tdx_attestation` method, when the tdx feature is enabled.
     #[allow(dead_code)]
-    sui_client: Arc<RwLock<AtomaSuiClient>>,
+    sui_client: Arc<RwLock<Client>>,
     /// Current key rotation counter
     key_rotation_counter: Option<u64>,
     /// Manages TDX key operations including key rotation and attestation generation
@@ -68,10 +68,25 @@ pub struct AtomaConfidentialComputeService {
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
 
-impl AtomaConfidentialComputeService {
+impl AtomaConfidentialCompute {
     /// Constructor
+    ///
+    /// # Arguments
+    /// * `sui_client` - Configuration settings for the client
+    /// * `event_receiver` - Channel receiver for Atoma events
+    /// * `service_decryption_receiver` - Channel receiver for decryption requests
+    /// * `service_encryption_receiver` - Channel receiver for encryption requests
+    /// * `service_shared_secret_receiver` - Channel receiver for shared secret requests
+    /// * `shutdown_signal` - Channel receiver for shutdown signals
+    ///
+    /// # Returns
+    /// A new client instance
+    ///
+    /// # Errors
+    /// Returns `AtomaConfidentialComputeError` if:
+    /// - Key manager initialization fails
     pub fn new(
-        sui_client: Arc<RwLock<AtomaSuiClient>>,
+        sui_client: Arc<RwLock<Client>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -116,7 +131,7 @@ impl AtomaConfidentialComputeService {
     /// * `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
     #[instrument(level = "info", skip_all)]
     pub async fn start_confidential_compute_service(
-        sui_client: Arc<RwLock<AtomaSuiClient>>,
+        sui_client: Arc<RwLock<Client>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -147,6 +162,7 @@ impl AtomaConfidentialComputeService {
     ///
     /// # Returns
     /// - `x25519_dalek::PublicKey`: The current public key from the key manager
+    #[must_use]
     pub fn get_public_key(&self) -> x25519_dalek::PublicKey {
         self.key_manager.get_public_key()
     }
@@ -158,6 +174,7 @@ impl AtomaConfidentialComputeService {
     ///
     /// # Returns
     /// - `x25519_dalek::StaticSecret`: The shared secret between the node and the proxy
+    #[must_use]
     pub fn compute_shared_secret(
         &self,
         client_x25519_public_key: &PublicKey,
@@ -337,18 +354,7 @@ impl AtomaConfidentialComputeService {
             client_dh_public_key,
             node_dh_public_key,
         } = decryption_request;
-        let result = if PublicKey::from(node_dh_public_key) != self.key_manager.get_public_key() {
-            tracing::error!(
-                target = "atoma-confidential-compute-service",
-                event = "confidential_compute_service_decryption_error",
-                "Node X25519 public key does not match the expected key: {:?} != {:?}",
-                node_dh_public_key,
-                self.key_manager.get_public_key().as_bytes()
-            );
-            Err(anyhow::anyhow!(
-                "Node X25519 public key does not match the expected key"
-            ))
-        } else {
+        let result = if PublicKey::from(node_dh_public_key) == self.key_manager.get_public_key() {
             self.key_manager
                 .decrypt_ciphertext(client_dh_public_key, &ciphertext, &salt, &nonce)
                 .map_err(|e| {
@@ -360,6 +366,15 @@ impl AtomaConfidentialComputeService {
                     );
                     anyhow::anyhow!(e)
                 })
+        } else {
+            tracing::error!(
+                target = "atoma-confidential-compute-service",
+                event = "confidential_compute_service_decryption_error",
+                "Failed to decrypt request: node public key mismatch"
+            );
+            Err(anyhow::anyhow!(
+                "Node X25519 public key does not match the expected key"
+            ))
         };
         let message = result
             .map(|plaintext| ConfidentialComputeDecryptionResponse { plaintext })
@@ -517,8 +532,7 @@ impl AtomaConfidentialComputeService {
                 // for a previous key rotation counter and not for the current one).
                 if self
                     .key_rotation_counter
-                    .map(|counter| counter < event.key_rotation_counter)
-                    .unwrap_or(true)
+                    .map_or(true, |counter| counter < event.key_rotation_counter)
                 {
                     self.submit_node_key_rotation_tdx_attestation().await?;
                 }

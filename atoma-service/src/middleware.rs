@@ -98,7 +98,7 @@ pub struct RequestMetadata {
 /// The type of request
 ///
 /// This enum is used to determine the type of request based on the path of the request.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Copy)]
 pub enum RequestType {
     #[default]
     ChatCompletions,
@@ -109,7 +109,8 @@ pub enum RequestType {
 
 impl RequestMetadata {
     /// Create a new `RequestMetadata` with the given stack info
-    pub fn with_stack_info(
+    #[must_use]
+    pub const fn with_stack_info(
         mut self,
         stack_small_id: i64,
         estimated_total_compute_units: i64,
@@ -120,7 +121,8 @@ impl RequestMetadata {
     }
 
     /// Create a new `RequestMetadata` with the given payload hash
-    pub fn with_payload_hash(mut self, payload_hash: [u8; PAYLOAD_HASH_SIZE]) -> Self {
+    #[must_use]
+    pub const fn with_payload_hash(mut self, payload_hash: [u8; PAYLOAD_HASH_SIZE]) -> Self {
         self.payload_hash = payload_hash;
         self
     }
@@ -140,7 +142,8 @@ impl RequestMetadata {
     /// let metadata = RequestMetadata::default()
     ///     .with_request_type(RequestType::ChatCompletions);
     /// ```
-    pub fn with_request_type(mut self, request_type: RequestType) -> Self {
+    #[must_use]
+    pub const fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
         self
     }
@@ -160,7 +163,8 @@ impl RequestMetadata {
     /// let metadata = RequestMetadata::default()
     ///     .with_client_encryption_metadata(client_dh_public_key, salt);
     /// ```
-    pub fn with_client_encryption_metadata(
+    #[must_use]
+    pub const fn with_client_encryption_metadata(
         mut self,
         client_x25519_public_key: [u8; DH_PUBLIC_KEY_SIZE],
         salt: [u8; SALT_SIZE],
@@ -185,6 +189,7 @@ impl RequestMetadata {
     ///
     /// let metadata = RequestMetadata::default().with_endpoint_path(CHAT_COMPLETIONS_PATH.to_string());
     /// ```
+    #[must_use]
     pub fn with_endpoint_path(mut self, endpoint_path: String) -> Self {
         self.endpoint_path = endpoint_path;
         self
@@ -429,13 +434,8 @@ pub async fn verify_stack_permissions(
         });
     }
 
-    let total_num_compute_units = utils::calculate_compute_units(
-        &body_json,
-        request_type.clone(),
-        &state,
-        model,
-        endpoint.clone(),
-    )?;
+    let total_num_compute_units =
+        utils::calculate_compute_units(&body_json, request_type, &state, model, endpoint.clone())?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -647,7 +647,13 @@ pub async fn confidential_compute_middleware(
 pub(crate) mod utils {
     use hyper::HeaderMap;
 
-    use super::*;
+    use super::{
+        blake2b_hash, instrument, oneshot, verify_signature, AppState, AtomaServiceError,
+        ConfidentialComputeDecryptionRequest, ConfidentialComputeRequest, DecryptionMetadata,
+        Engine, RequestType, TransactionDigest, Value, DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS,
+        DH_PUBLIC_KEY_SIZE, IMAGE_N, IMAGE_SIZE, INPUT, MAX_TOKENS, MESSAGES, NONCE_SIZE,
+        PAYLOAD_HASH_SIZE, SALT_SIZE, STANDARD,
+    };
 
     /// Requests and verifies stack information from the blockchain for a given transaction.
     ///
@@ -690,7 +696,7 @@ pub(crate) mod utils {
     ///         42,   // stack_small_id
     ///         "/v1/completions".to_string()
     ///     ).await;
-    ///     
+    ///
     ///     match result {
     ///         Ok(()) => println!("Stack verified successfully"),
     ///         Err(e) => eprintln!("Stack verification failed: {}", e),
@@ -706,7 +712,7 @@ pub(crate) mod utils {
     /// - Stack exists but has insufficient compute units
     /// - Stack small ID doesn't match the expected value
     #[instrument(level = "trace", skip_all)]
-    pub(crate) async fn request_blockchain_for_stack(
+    pub async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
         estimated_compute_units: i64,
@@ -768,7 +774,7 @@ pub(crate) mod utils {
     /// - `calculate_chat_completion_compute_units`
     /// - `calculate_embedding_compute_units`
     /// - `calculate_image_generation_compute_units`
-    pub(crate) fn calculate_compute_units(
+    pub fn calculate_compute_units(
         body_json: &Value,
         request_type: RequestType,
         state: &AppState,
@@ -829,7 +835,7 @@ pub(crate) mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub(crate) fn calculate_chat_completion_compute_units(
+    pub fn calculate_chat_completion_compute_units(
         body_json: &Value,
         state: &AppState,
         model: &str,
@@ -887,7 +893,7 @@ pub(crate) mod utils {
 
         total_num_compute_units += body_json
             .get(MAX_TOKENS)
-            .and_then(|value| value.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS);
 
         Ok(total_num_compute_units)
@@ -967,14 +973,12 @@ pub(crate) mod utils {
             Value::Array(texts) => texts
                 .iter()
                 .map(|v| {
-                    v.as_str()
-                        .map(|s| {
-                            state.tokenizers[tokenizer_index]
-                                .encode(s, true)
-                                .map(|tokens| tokens.get_ids().len() as i64)
-                                .unwrap_or(0)
-                        })
-                        .unwrap_or(0)
+                    v.as_str().map_or(0, |s| {
+                        state.tokenizers[tokenizer_index]
+                            .encode(s, true)
+                            .map(|tokens| tokens.get_ids().len() as i64)
+                            .unwrap_or(0)
+                    })
                 })
                 .sum(),
             _ => {
@@ -1046,7 +1050,7 @@ pub(crate) mod utils {
         // n is the number of images to generate
         let n = body_json
             .get(IMAGE_N)
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| AtomaServiceError::InvalidBody {
                 message: "Invalid or missing image count (n)".to_string(),
                 endpoint: endpoint.clone(),
@@ -1093,7 +1097,7 @@ pub(crate) mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub(crate) fn verify_plaintext_body_hash(
+    pub fn verify_plaintext_body_hash(
         plaintext_body_hash: &[u8; PAYLOAD_HASH_SIZE],
         headers: &HeaderMap,
         endpoint: &str,
@@ -1154,7 +1158,7 @@ pub(crate) mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub(crate) async fn decrypt_confidential_compute_request(
+    pub async fn decrypt_confidential_compute_request(
         state: &AppState,
         confidential_compute_request: &ConfidentialComputeRequest,
         endpoint: &str,
@@ -1301,7 +1305,7 @@ pub(crate) mod utils {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub(crate) fn check_plaintext_body_hash(
+    pub fn check_plaintext_body_hash(
         plaintext_body_hash_bytes: [u8; PAYLOAD_HASH_SIZE],
         plaintext: &[u8],
         endpoint: &str,

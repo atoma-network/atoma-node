@@ -14,7 +14,7 @@ pub const SUBSCRIPTIONS_PATH: &str = "/subscriptions";
 
 #[derive(OpenApi)]
 #[openapi(paths(subscriptions_nodes_list), components(schemas(NodeSubscription)))]
-pub(crate) struct SubscriptionsOpenApi;
+pub struct SubscriptionsOpenApi;
 
 /// Router for handling subscription-related endpoints
 ///

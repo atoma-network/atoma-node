@@ -20,7 +20,7 @@ pub const ATTESTATION_DISPUTES_PATH: &str = "/attestation_disputes";
     ),
     components(schemas(StackAttestationDispute))
 )]
-pub(crate) struct AttestationDisputesOpenApi;
+pub struct AttestationDisputesOpenApi;
 
 //TODO: this endpoint can be merged into one (I think) through filters
 

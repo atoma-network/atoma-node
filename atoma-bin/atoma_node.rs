@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use atoma_confidential::AtomaConfidentialComputeService;
+use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
 use atoma_service::{
     config::AtomaServiceConfig,
@@ -13,7 +13,7 @@ use atoma_service::{
     server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
-use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig, SuiEventSubscriber};
+use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use dotenv::dotenv;
@@ -66,9 +66,9 @@ struct Args {
 /// This struct holds the configuration settings for various components
 /// of the Atoma node, including the Sui, service, and state manager configurations.
 #[derive(Debug)]
-struct Config {
+struct NodeConfig {
     /// Configuration for the Sui component.
-    sui: AtomaSuiConfig,
+    sui: Config,
 
     /// Configuration for the service component.
     service: AtomaServiceConfig,
@@ -83,9 +83,9 @@ struct Config {
     proxy: ProxyConfig,
 }
 
-impl Config {
-    async fn load(path: &str) -> Result<Self, ValidationErrors> {
-        let sui = AtomaSuiConfig::from_file_path(path);
+impl NodeConfig {
+    fn load(path: &str) -> Result<Self, ValidationErrors> {
+        let sui = Config::from_file_path(path);
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
         let daemon = AtomaDaemonConfig::from_file_path(path);
@@ -127,7 +127,7 @@ impl Config {
 /// async fn example() -> Result<()> {
 ///     let models = vec!["facebook/opt-125m".to_string()];
 ///     let revisions = vec!["main".to_string()];
-///     
+///
 ///     let tokenizers = initialize_tokenizers(&models, &revisions).await?;
 ///     Ok(())
 /// }
@@ -174,13 +174,15 @@ async fn initialize_tokenizers(
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::redundant_pub_crate)]
 async fn main() -> Result<()> {
     let _log_guards = setup_logging(LOGS).context("Failed to setup logging")?;
 
     dotenv().ok();
 
     let args = Args::parse();
-    let config = Config::load(&args.config_path).await?;
+    let config = NodeConfig::load(&args.config_path)?;
 
     info!("Starting Atoma node service");
 
@@ -203,13 +205,13 @@ async fn main() -> Result<()> {
         config.sui.max_concurrent_requests(),
     )?;
     let address = wallet_ctx.active_address()?;
-    let address_index = args.address_index.unwrap_or(
+    let address_index = args.address_index.unwrap_or_else(|| {
         wallet_ctx
             .get_addresses()
             .iter()
             .position(|a| a == &address)
-            .unwrap(),
-    );
+            .unwrap()
+    });
 
     info!(
         target = "atoma-node-service",
@@ -232,14 +234,14 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let (subscriber_confidential_compute_sender, _subscriber_confidential_compute_receiver) =
+    let (subscriber_confidential_compute_sender, subscriber_confidential_compute_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_decryption_sender, _app_state_decryption_receiver) =
+    let (app_state_decryption_sender, app_state_decryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-    let (app_state_encryption_sender, _app_state_encryption_receiver) =
+    let (app_state_encryption_sender, app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    for (_, node_small_id) in config.daemon.node_badges.iter() {
+    for (_, node_small_id) in &config.daemon.node_badges {
         if let Err(e) =
             register_on_proxy(&config.proxy, *node_small_id, &keystore, address_index).await
         {
@@ -259,19 +261,19 @@ async fn main() -> Result<()> {
     );
 
     let client = Arc::new(RwLock::new(
-        AtomaSuiClient::new_from_config(args.config_path).await?,
+        Client::new_from_config(args.config_path).await?,
     ));
 
-    let (compute_shared_secret_sender, _compute_shared_secret_receiver) =
+    let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     let confidential_compute_service_handle = spawn_with_shutdown(
-        AtomaConfidentialComputeService::start_confidential_compute_service(
+        AtomaConfidentialCompute::start_confidential_compute_service(
             client.clone(),
-            _subscriber_confidential_compute_receiver,
-            _app_state_decryption_receiver,
-            _app_state_encryption_receiver,
-            _compute_shared_secret_receiver,
+            subscriber_confidential_compute_receiver,
+            app_state_decryption_receiver,
+            app_state_encryption_receiver,
+            compute_shared_secret_receiver,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
@@ -286,7 +288,7 @@ async fn main() -> Result<()> {
         "Spawning subscriber service"
     );
 
-    let subscriber = SuiEventSubscriber::new(
+    let subscriber = Subscriber::new(
         config.sui,
         event_subscriber_sender,
         stack_retrieve_receiver,
@@ -320,8 +322,8 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let hf_token = std::env::var(HF_TOKEN)
-        .context(format!("Variable {} not set in the .env file", HF_TOKEN))?;
+    let hf_token =
+        std::env::var(HF_TOKEN).context(format!("Variable {HF_TOKEN} not set in the .env file"))?;
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
 

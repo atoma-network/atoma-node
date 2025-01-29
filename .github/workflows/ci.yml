@@ -29,7 +29,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
           components: rustfmt
@@ -43,7 +43,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
           components: clippy
@@ -51,7 +51,15 @@ jobs:
         run: |
           cargo clippy \
             --all-targets \
-            -- -D warnings
+            -- -D warnings \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -W clippy::style \
+            -W clippy::complexity \
+            -W clippy::perf \
+            -W clippy::suspicious \
+            -W clippy::correctness
+
   test:
     name: test
     runs-on: ubuntu-22.04
@@ -73,7 +81,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
       - name: Unit tests

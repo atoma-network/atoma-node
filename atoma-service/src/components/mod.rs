@@ -1,1 +1,1 @@
-pub(crate) mod openapi;
+pub mod openapi;

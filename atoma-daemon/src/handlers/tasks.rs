@@ -9,7 +9,7 @@ pub const TASKS_PATH: &str = "/tasks";
 
 #[derive(OpenApi)]
 #[openapi(paths(tasks_list), components(schemas(Task)))]
-pub(crate) struct TasksOpenApi;
+pub struct TasksOpenApi;
 
 /// Router for handling task-related endpoints
 ///

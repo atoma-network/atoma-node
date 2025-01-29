@@ -1,7 +1,7 @@
-pub(crate) mod chat_completions;
-pub(crate) mod embeddings;
-pub(crate) mod image_generations;
-pub(crate) mod prometheus;
+pub mod chat_completions;
+pub mod embeddings;
+pub mod image_generations;
+pub mod prometheus;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
@@ -130,7 +130,7 @@ async fn sign_response_and_update_stack_hash(
     skip(state, response_body, client_encryption_metadata),
     fields(event = "confidential-compute-encryption-response")
 )]
-pub(crate) async fn handle_confidential_compute_encryption_response(
+pub async fn handle_confidential_compute_encryption_response(
     state: &AppState,
     mut response_body: Value,
     client_encryption_metadata: Option<EncryptionMetadata>,
@@ -165,18 +165,17 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
         }
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        let usage = if endpoint != CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
-            Some(
-                response_body
-                    .get(USAGE_KEY)
-                    .ok_or(AtomaServiceError::InvalidBody {
+        let usage =
+            if endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
+                None
+            } else {
+                Some(response_body.get(USAGE_KEY).ok_or_else(|| {
+                    AtomaServiceError::InvalidBody {
                         message: "Usage not found in response body".to_string(),
                         endpoint: endpoint.clone(),
-                    })?,
-            )
-        } else {
-            None
-        };
+                    }
+                })?)
+            };
         state
             .encryption_sender
             .send((
@@ -188,13 +187,13 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 sender,
             ))
             .map_err(|e| AtomaServiceError::InternalError {
-                message: format!("Error sending encryption request: {}", e),
+                message: format!("Error sending encryption request: {e}"),
                 endpoint: endpoint.clone(),
             })?;
         let result = receiver
             .await
             .map_err(|e| AtomaServiceError::InternalError {
-                message: format!("Error receiving encryption response: {}", e),
+                message: format!("Error receiving encryption response: {e}"),
                 endpoint: endpoint.clone(),
             })?;
         match result {
@@ -288,7 +287,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
         endpoint
     )
 )]
-pub(crate) fn update_stack_num_compute_units(
+pub fn update_stack_num_compute_units(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     stack_small_id: i64,
     estimated_total_compute_units: i64,
@@ -302,7 +301,7 @@ pub(crate) fn update_stack_num_compute_units(
             estimated_total_compute_units,
         })
         .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Error sending update stack num compute units event: {}", e,),
+            message: format!("Error sending update stack num compute units event: {e}"),
             endpoint: endpoint.to_string(),
         })
 }

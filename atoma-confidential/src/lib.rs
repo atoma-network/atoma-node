@@ -1,10 +1,13 @@
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+
 pub mod key_management;
 pub mod service;
 #[cfg(feature = "tdx")]
 pub mod tdx;
 pub mod types;
 
-pub use service::AtomaConfidentialComputeService;
+pub use service::AtomaConfidentialCompute;
 
 /// Trait for converting types into a byte representation
 ///

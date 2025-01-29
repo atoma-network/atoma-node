@@ -107,7 +107,7 @@ impl AtomaServiceError {
     /// - `"MODEL_ERROR"` for ML model errors
     /// - `"AUTH_ERROR"` for authentication failures
     /// - `"INTERNAL_ERROR"` for unexpected server errors
-    fn error_code(&self) -> &'static str {
+    const fn error_code(&self) -> &'static str {
         match self {
             Self::MissingHeader { .. } => "MISSING_HEADER",
             Self::InvalidHeader { .. } => "INVALID_HEADER",
@@ -154,7 +154,8 @@ impl AtomaServiceError {
     /// # Returns
     ///
     /// An [`axum::http::StatusCode`] representing the appropriate HTTP response code for this error
-    pub fn status_code(&self) -> StatusCode {
+    #[must_use]
+    pub const fn status_code(&self) -> StatusCode {
         match self {
             Self::MissingHeader { .. }
             | Self::InvalidHeader { .. }
@@ -173,14 +174,15 @@ impl AtomaServiceError {
     /// # Returns
     ///
     /// A `String` containing the API endpoint path where the error was encountered.
-    fn endpoint(&self) -> String {
+    #[must_use]
+    pub fn get_endpoint(&self, _endpoint: &str) -> String {
         match self {
-            Self::MissingHeader { endpoint, .. } => endpoint.clone(),
-            Self::InvalidHeader { endpoint, .. } => endpoint.clone(),
-            Self::InvalidBody { endpoint, .. } => endpoint.clone(),
-            Self::ModelError { endpoint, .. } => endpoint.clone(),
-            Self::AuthError { endpoint, .. } => endpoint.clone(),
-            Self::InternalError { endpoint, .. } => endpoint.clone(),
+            Self::MissingHeader { endpoint, .. }
+            | Self::InvalidHeader { endpoint, .. }
+            | Self::InvalidBody { endpoint, .. }
+            | Self::ModelError { endpoint, .. }
+            | Self::AuthError { endpoint, .. }
+            | Self::InternalError { endpoint, .. } => endpoint.clone(),
         }
     }
 
@@ -216,7 +218,7 @@ impl IntoResponse for AtomaServiceError {
         tracing::error!(
             target = "atoma-service",
             event = "error_occurred",
-            endpoint = self.endpoint(),
+            endpoint = self.get_endpoint(""),
             error = %self.message(),
         );
         let error_response = ErrorResponse {

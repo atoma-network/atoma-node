@@ -30,6 +30,14 @@ const SIGNATURE: &str = "signature";
 /// * `node_small_id` - Small ID of the node
 /// * `keystore` - Keystore for signing the registration request
 /// * `address_index` - Index of the address to use for signing
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The request to the proxy server fails
+/// - The server returns a non-success status code
+/// - The signature generation fails
+/// - The HTTP request fails to be sent
 pub async fn register_on_proxy(
     config: &ProxyConfig,
     node_small_id: u64,

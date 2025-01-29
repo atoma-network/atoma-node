@@ -320,7 +320,7 @@ impl Streamer {
                         "Error signing response: {}",
                         e
                     );
-                    Error::new(format!("Error signing response: {}", e))
+                    Error::new(format!("Error signing response: {e}"))
                 },
             )?;
 
@@ -388,7 +388,7 @@ impl Streamer {
                 "Error encrypting chunk: {}",
                 e
             );
-            Error::new(format!("Error encrypting chunk: {}", e))
+            Error::new(format!("Error encrypting chunk: {e}"))
         })?;
 
         if let Some(usage) = usage {
@@ -472,8 +472,7 @@ impl Streamer {
                     e
                 );
                 return Poll::Ready(Some(Err(Error::new(format!(
-                    "Invalid UTF-8 sequence: {}",
-                    e
+                    "Invalid UTF-8 sequence: {e}",
                 )))));
             }
         };
@@ -517,10 +516,9 @@ impl Streamer {
                         "Error parsing chunk {chunk_str}: {}",
                         e
                     );
-                    return Poll::Ready(Some(Err(Error::new(format!(
-                        "Error parsing chunk: {}",
-                        e
-                    )))));
+                    return Poll::Ready(Some(Err(Error::new(
+                        format!("Error parsing chunk: {e}",),
+                    ))));
                 }
 
                 self.chunk_buffer.push_str(chunk_str);
@@ -549,8 +547,7 @@ impl Streamer {
                         );
                         self.chunk_buffer.clear();
                         return Poll::Ready(Some(Err(Error::new(format!(
-                            "Error parsing chunk: {}",
-                            e
+                            "Error parsing chunk: {e}",
                         )))));
                     }
                 }
@@ -568,17 +565,14 @@ impl Streamer {
 
         let (signature, response_hash) = self.sign_chunk(&chunk)?;
 
-        let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
-            Some(choices) => choices,
-            None => {
-                error!(
-                    target = "atoma-service",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error getting choices from chunk"
-                );
-                return Poll::Ready(Some(Err(Error::new("Error getting choices from chunk"))));
-            }
+        let Some(choices) = chunk.get(CHOICES).and_then(|choices| choices.as_array()) else {
+            error!(
+                target = "atoma-service",
+                level = "error",
+                endpoint = self.endpoint,
+                "Error getting choices from chunk"
+            );
+            return Poll::Ready(Some(Err(Error::new("Error getting choices from chunk"))));
         };
 
         if choices.is_empty() {
@@ -598,7 +592,7 @@ impl Streamer {
                     chunk.clone()
                 };
                 self.handle_final_chunk(usage, response_hash)?;
-                update_chunk(&mut chunk, signature, response_hash);
+                update_chunk(&mut chunk, &signature, response_hash);
                 Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
             } else {
                 error!(
@@ -618,7 +612,7 @@ impl Streamer {
             } else {
                 chunk
             };
-            update_chunk(&mut chunk, signature, response_hash);
+            update_chunk(&mut chunk, &signature, response_hash);
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
     }
@@ -633,83 +627,88 @@ impl Stream for Streamer {
         }
 
         match self.stream.as_mut().poll_next(cx) {
-            Poll::Ready(Some(Ok(chunk))) => {
-                match self.handle_streaming_chunk(chunk) {
-                    Poll::Ready(Some(Ok(event))) => {
-                        // Observe the previous timer if it exists
-                        if let Some(timer) = self.inter_stream_token_latency_timer.take() {
-                            timer.observe_duration();
-                        }
-                        // Start the timer after we've processed this chunk
-                        self.inter_stream_token_latency_timer = Some(
-                            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME
-                                .with_label_values(&[&self.model])
-                                .start_timer(),
-                        );
-
-                        Poll::Ready(Some(Ok(event)))
-                    }
-                    Poll::Ready(Some(Err(e))) => {
-                        self.status = StreamStatus::Failed(e.to_string());
-                        // NOTE: We need to update the stack number of tokens as the service failed to generate
-                        // a proper response. For this reason, we set the total number of tokens to 0.
-                        // This will ensure that the stack number of tokens is not updated, and the stack
-                        // will not be penalized for the failed request.
-                        if let Err(e) = update_stack_num_compute_units(
-                            &self.state_manager_sender,
-                            self.stack_small_id,
-                            self.estimated_total_compute_units,
-                            0,
-                            &self.endpoint,
-                        ) {
-                            error!(
-                                target = "atoma-service-streamer",
-                                level = "error",
-                                "Error updating stack num tokens: {}",
-                                e
-                            );
-                        }
-                        Poll::Ready(Some(Err(e)))
-                    }
-                    Poll::Ready(None) => Poll::Ready(None),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-            Poll::Ready(Some(Err(e))) => {
-                self.status = StreamStatus::Failed(e.to_string());
-                // NOTE: We need to update the stack number of tokens as the service failed to generate
-                // a proper response. For this reason, we set the total number of tokens to 0.
-                // This will ensure that the stack number of tokens is not updated, and the stack
-                // will not be penalized for the failed request.
-                if let Err(e) = update_stack_num_compute_units(
-                    &self.state_manager_sender,
-                    self.stack_small_id,
-                    self.estimated_total_compute_units,
-                    0,
-                    &self.endpoint,
-                ) {
-                    error!(
-                        target = "atoma-service-streamer",
-                        level = "error",
-                        "Error updating stack num tokens: {}",
-                        e
-                    );
-                }
-                Poll::Ready(None)
-            }
-            Poll::Ready(None) => {
-                if !self.chunk_buffer.is_empty() {
-                    error!(
-                        target = "atoma-service-streamer",
-                        level = "error",
-                        "Stream ended, but the chunk buffer is not empty, this should not happen: {}",
-                        self.chunk_buffer
-                    );
-                }
-                self.status = StreamStatus::Completed;
-                Poll::Ready(None)
-            }
+            Poll::Ready(Some(Ok(chunk))) => self.handle_poll_chunk(chunk),
+            Poll::Ready(Some(Err(e))) => self.handle_poll_error(&e),
+            Poll::Ready(None) => self.handle_poll_complete(),
             Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Streamer {
+    /// Handles a successful chunk from the stream
+    fn handle_poll_chunk(&mut self, chunk: Bytes) -> Poll<Option<Result<Event, Error>>> {
+        match self.handle_streaming_chunk(chunk) {
+            Poll::Ready(Some(Ok(event))) => self.handle_successful_event(event),
+            Poll::Ready(Some(Err(e))) => self.handle_streaming_error(e),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    /// Handles a successful event, updating timers
+    fn handle_successful_event(&mut self, event: Event) -> Poll<Option<Result<Event, Error>>> {
+        // Observe the previous timer if it exists
+        if let Some(timer) = self.inter_stream_token_latency_timer.take() {
+            timer.observe_duration();
+        }
+        // Start the timer after we've processed this chunk
+        self.inter_stream_token_latency_timer = Some(
+            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME
+                .with_label_values(&[&self.model])
+                .start_timer(),
+        );
+
+        Poll::Ready(Some(Ok(event)))
+    }
+
+    /// Handles errors during streaming
+    fn handle_streaming_error(&mut self, e: Error) -> Poll<Option<Result<Event, Error>>> {
+        self.status = StreamStatus::Failed(e.to_string());
+        self.update_stack_tokens_on_error();
+        Poll::Ready(Some(Err(e)))
+    }
+
+    /// Handles stream poll errors
+    fn handle_poll_error(&mut self, e: &reqwest::Error) -> Poll<Option<Result<Event, Error>>> {
+        self.status = StreamStatus::Failed(e.to_string());
+        self.update_stack_tokens_on_error();
+        Poll::Ready(None)
+    }
+
+    /// Handles stream completion
+    fn handle_poll_complete(&mut self) -> Poll<Option<Result<Event, Error>>> {
+        if !self.chunk_buffer.is_empty() {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                "Stream ended, but the chunk buffer is not empty, this should not happen: {}",
+                self.chunk_buffer
+            );
+        }
+        self.status = StreamStatus::Completed;
+        Poll::Ready(None)
+    }
+
+    /// Updates stack tokens when an error occurs
+    fn update_stack_tokens_on_error(&self) {
+        // NOTE: We need to update the stack number of tokens as the service failed to generate
+        // a proper response. For this reason, we set the total number of tokens to 0.
+        // This will ensure that the stack number of tokens is not updated, and the stack
+        // will not be penalized for the failed request.
+        if let Err(e) = update_stack_num_compute_units(
+            &self.state_manager_sender,
+            self.stack_small_id,
+            self.estimated_total_compute_units,
+            0,
+            &self.endpoint,
+        ) {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                "Error updating stack num tokens: {}",
+                e
+            );
         }
     }
 }
@@ -723,7 +722,7 @@ impl Stream for Streamer {
 /// * `chunk` - The chunk to update (mut ref, as we update the chunk in place)
 /// * `signature` - The signature to update the chunk with
 /// * `response_hash` - The response hash to update the chunk with
-fn update_chunk(chunk: &mut Value, signature: String, response_hash: [u8; PAYLOAD_HASH_SIZE]) {
+fn update_chunk(chunk: &mut Value, signature: &str, response_hash: [u8; PAYLOAD_HASH_SIZE]) {
     chunk[SIGNATURE_KEY] = json!(signature);
     chunk[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
 }

@@ -207,23 +207,19 @@ pub fn verify_signature(
 )]
 pub fn parse_json_byte_array(value: &serde_json::Value, field: &str) -> Result<Vec<u8>, String> {
     let array = value.get(field).and_then(|v| v.as_array()).ok_or_else(|| {
-        error!("Error getting field array {} from JSON", field);
-        format!("Error getting field array {} from JSON", field)
+        error!("Error getting field array {field} from JSON");
+        format!("Error getting field array {field} from JSON")
     })?;
 
     array
         .iter()
         .map(|b| {
-            b.as_u64().map(|u| u as u8).ok_or_else(|| {
-                error!(
-                    "Error parsing field array {} values as bytes from JSON",
-                    field
-                );
-                format!(
-                    "Error parsing field array {} values as bytes from JSON",
-                    field
-                )
-            })
+            b.as_u64()
+                .and_then(|u| u8::try_from(u).ok())
+                .ok_or_else(|| {
+                    error!("Error parsing field array {field} values as bytes from JSON");
+                    format!("Error parsing field array {field} values as bytes from JSON")
+                })
         })
         .collect()
 }

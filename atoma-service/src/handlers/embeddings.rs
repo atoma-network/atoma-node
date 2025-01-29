@@ -35,7 +35,7 @@ pub const MODEL_KEY: &str = "model";
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(embeddings_handler))]
-pub(crate) struct EmbeddingsOpenApi;
+pub struct EmbeddingsOpenApi;
 
 /// Create embeddings
 ///
@@ -139,7 +139,7 @@ pub async fn embeddings_handler(
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(confidential_embeddings_handler))]
-pub(crate) struct ConfidentialEmbeddingsOpenApi;
+pub struct ConfidentialEmbeddingsOpenApi;
 
 /// Handler for confidential embeddings requests
 ///
