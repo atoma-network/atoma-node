@@ -291,38 +291,25 @@ impl Streamer {
         Ok(())
     }
 
-    /// Signs the accumulated response
-    /// This is used when the streaming is complete and we need to send the final chunk back to the client
-    /// with the signature and response hash
+    /// Signs the each chunk of the response
     ///
     /// # Returns
     ///
     /// Returns a tuple containing:
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
-    ///
-    /// NOTE: We remove the usage key from the chunk before signing it, as we need to send the usage key back to the client in the final chunk
     #[instrument(level = "debug", skip_all)]
     pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
-        // Clone the chunk and remove usage if present
-        let mut chunk_to_sign = chunk.clone();
-        if let Some(obj) = chunk_to_sign.as_object_mut() {
-            obj.remove(USAGE_KEY);
-        }
-
-        // Sign the accumulated response
         let (response_hash, signature) =
-            utils::sign_response_body(&chunk_to_sign, &self.keystore, self.address_index).map_err(
-                |e| {
-                    error!(
-                        target = "atoma-service-streamer",
-                        level = "error",
-                        "Error signing response: {}",
-                        e
-                    );
-                    Error::new(format!("Error signing response: {e}"))
-                },
-            )?;
+            utils::sign_response_body(chunk, &self.keystore, self.address_index).map_err(|e| {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    "Error signing response: {}",
+                    e
+                );
+                Error::new(format!("Error signing response: {e}"))
+            })?;
 
         Ok((signature, response_hash))
     }
