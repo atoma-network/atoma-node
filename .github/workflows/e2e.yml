@@ -1,9 +1,6 @@
 name: End-to-end testing
 on:
-  pull_request:
-  push:
-    branches:
-      - "master"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,7 +9,7 @@ concurrency:
 jobs:
   run-atoma-e2e-tests:
     name: Run Atoma e2e tests
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ fromJSON(github.repository == 'atoma-network/atoma-node' && '["self-hosted", "linux", "x64", "4xlarge"]' || '"ubuntu-latest"') }}
     strategy:
       matrix:
