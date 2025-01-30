@@ -732,7 +732,7 @@ pub(crate) async fn handle_state_manager_event(
 /// # Behavior
 ///
 /// The function performs the following steps:
-/// 1. Extracts the `epoch`, `node_id`, `new_public_key`, and `tee_remote_attestation_bytes` from the event.
+/// 1. Extracts the `epoch`, `node_id`, `new_public_key`, `tee_remote_attestation_bytes`, and `tee_provider` from the event.
 /// 2. Calls the `insert_node_public_key_rotation` method on the `AtomaStateManager` to update the node's public key in the database.
 #[instrument(level = "info", skip_all)]
 async fn handle_node_key_rotation_event(
@@ -750,6 +750,7 @@ async fn handle_node_key_rotation_event(
         node_id,
         new_public_key,
         tee_remote_attestation_bytes,
+        tee_provider,
     } = event;
     state_manager
         .state
@@ -759,6 +760,7 @@ async fn handle_node_key_rotation_event(
             node_id.inner,
             new_public_key,
             tee_remote_attestation_bytes,
+            tee_provider,
         )
         .await?;
     Ok(())

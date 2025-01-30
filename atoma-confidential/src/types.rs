@@ -81,3 +81,51 @@ pub struct ConfidentialComputeSharedSecretResponse {
     /// Cryptographic nonce used in the encryption process
     pub nonce: [u8; NONCE_SIZE],
 }
+
+/// Represents the type of Trusted Execution Environment (TEE) provider used by a node.
+///
+/// This enum identifies different TEE providers that can be used for secure computation
+/// and attestation in the Atoma network. Each variant corresponds to a specific TEE
+/// technology from different hardware vendors.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TEEProvider {
+    /// Intel Trust Domain Extensions (TDX) technology
+    Tdx = 0,
+    /// AMD SEV with Secure Nested Paging (SNP) technology
+    Snp = 1,
+    /// ARM TrustZone technology
+    Arm = 2,
+}
+
+impl crate::ToBytes for TEEProvider {
+    /// Converts the TEE provider enum to a single byte representation.
+    ///
+    /// # Returns
+    /// A vector containing a single byte representing the TEE provider variant.
+    fn to_bytes(&self) -> Vec<u8> {
+        vec![*self as u8]
+    }
+}
+
+impl TEEProvider {
+    /// Creates a TEEProvider from its byte representation.
+    ///
+    /// # Arguments
+    /// * `bytes` - A byte slice containing the TEE provider identifier.
+    ///            Expected to be a single byte with value 0, 1, or 2.
+    ///
+    /// # Returns
+    /// * `Ok(TEEProvider)` - The corresponding TEE provider variant
+    /// * `Err(anyhow::Error)` - If the byte value is not recognized as a valid TEE provider
+    ///
+    /// # Errors
+    /// Returns an error if the input byte does not correspond to a known TEE provider variant.
+    fn _from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        Ok(match bytes[0] {
+            0 => TEEProvider::Tdx,
+            1 => TEEProvider::Snp,
+            2 => TEEProvider::Arm,
+            _ => anyhow::bail!("Invalid TEE provider"),
+        })
+    }
+}
