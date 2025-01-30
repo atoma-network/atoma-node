@@ -54,7 +54,7 @@ pub const NODES_PATH: &str = "/nodes";
         NodeClaimFundsResponse
     ))
 )]
-pub(crate) struct NodesOpenApi;
+pub struct NodesOpenApi;
 
 /// Router for handling node-related endpoints
 ///
@@ -118,8 +118,11 @@ pub async fn nodes_register(
         gas_budget,
         gas_price,
     } = value;
-    let mut tx_client = daemon_state.client.write().await;
-    let tx_digest = tx_client
+
+    let tx_digest = daemon_state
+        .client
+        .write()
+        .await
         .submit_node_registration_tx(gas, gas_budget, gas_price)
         .await
         .map_err(|_| {

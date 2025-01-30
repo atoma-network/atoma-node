@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -147,12 +147,13 @@ pub struct AppState {
     /// models as needed.
     pub models: Arc<Vec<String>>,
 
-    /// URL of the chat completions service.
+    /// Mapping between model names and the URLs of the chat completions
+    /// services available to the current node.
     ///
-    /// This URL points to the external service responsible for performing
+    /// These URLs point to the external services responsible for performing
     /// AI model chat completions. The application forwards requests to this
     /// service to obtain AI-generated responses.
-    pub chat_completions_service_url: String,
+    pub chat_completions_service_urls: HashMap<String, String>,
 
     /// URL for the embeddings service.
     ///
@@ -260,8 +261,7 @@ pub fn create_router(app_state: AppState) -> Router {
 /// * `app_state` - The shared application state containing database connections, tokenizers,
 ///   and other configuration.
 /// * `tcp_listener` - A configured TCP listener that specifies the address and port for the server.
-/// * `shutdown_sender` - A channel sender used to communicate the shutdown status to other parts
-///   of the application.
+/// * `shutdown_receiver` - A channel receiver used to listen for shutdown signals.
 ///
 /// # Returns
 ///
@@ -273,6 +273,12 @@ pub fn create_router(app_state: AppState) -> Router {
 /// - The server fails to start or encounters an error while running
 /// - The shutdown signal fails to be sent through the channel
 ///
+/// # Panics
+///
+/// This function will panic if:
+/// - The shutdown receiver channel is closed unexpectedly
+/// - The shutdown signal cannot be received due to channel errors
+///
 /// # Example
 ///
 /// ```rust,ignore
@@ -280,7 +286,7 @@ pub fn create_router(app_state: AppState) -> Router {
 /// let listener = TcpListener::bind("127.0.0.1:3000").await?;
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
 ///
-/// run_server(app_state, listener, shutdown_tx).await?;
+/// run_server(app_state, listener, shutdown_rx).await?;
 /// ```
 pub async fn run_server(
     app_state: AppState,
@@ -293,7 +299,7 @@ pub async fn run_server(
             shutdown_receiver
                 .changed()
                 .await
-                .expect("Error receiving shutdown signal")
+                .expect("Error receiving shutdown signal");
         });
     server.await?;
 
@@ -379,7 +385,7 @@ async fn metrics_handler() -> Result<impl IntoResponse, StatusCode> {
 }
 
 pub(crate) mod utils {
-    use super::*;
+    use super::{FileBasedKeystore, Value};
 
     use atoma_utils::hashing::blake2b_hash;
     use sui_keys::keystore::AccountKeystore;
@@ -407,7 +413,7 @@ pub(crate) mod utils {
     /// Returns an error if:
     /// * The keystore fails to sign the hash
     /// * The SHA-256 hash cannot be converted to a 32-byte array
-    pub(crate) fn sign_response_body(
+    pub fn sign_response_body(
         response_body: &Value,
         keystore: &FileBasedKeystore,
         address_index: usize,

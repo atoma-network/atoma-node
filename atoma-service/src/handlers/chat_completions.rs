@@ -24,9 +24,17 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, time::Duration};
 use utoipa::ToSchema;
 
-use crate::{error::AtomaServiceError, handlers::prometheus::*, middleware::RequestMetadata};
+use crate::{
+    error::AtomaServiceError,
+    handlers::prometheus::{
+        CHAT_COMPLETIONS_INPUT_TOKENS_METRICS, CHAT_COMPLETIONS_LATENCY_METRICS,
+        CHAT_COMPLETIONS_NUM_REQUESTS, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+    },
+    middleware::RequestMetadata,
+};
 
-use super::handle_confidential_compute_encryption_response;
+use super::{handle_confidential_compute_encryption_response, handle_status_code_error};
 
 /// The path for confidential chat completions requests
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
@@ -42,6 +50,9 @@ const MODEL_KEY: &str = "model";
 
 /// The key for the stream parameter in the request body
 const STREAM_KEY: &str = "stream";
+
+/// The default model to use if the model is not found in the request body
+const UNKNOWN_MODEL: &str = "unknown";
 
 /// OpenAPI documentation structure for the chat completions endpoint.
 ///
@@ -91,7 +102,7 @@ const STREAM_KEY: &str = "stream";
         ChatCompletionsResponse
     ))
 )]
-pub(crate) struct ChatCompletionsOpenApi;
+pub struct ChatCompletionsOpenApi;
 
 /// Create chat completion
 ///
@@ -153,12 +164,16 @@ pub async fn chat_completions_handler(
         "Received chat completions request, with payload hash: {payload_hash:?}"
     );
 
-    // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
-        .and_then(|s| s.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or_default();
     let endpoint = request_metadata.endpoint_path.clone();
+
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or_default();
 
     match handle_response(
         &state,
@@ -166,14 +181,18 @@ pub async fn chat_completions_handler(
         payload_hash,
         stack_small_id,
         is_stream,
-        payload,
+        payload.clone(),
         estimated_total_compute_units,
         client_encryption_metadata,
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -214,13 +233,12 @@ pub async fn chat_completions_handler(
 ///
 /// The confidential variant ensures end-to-end encryption of the chat completion responses,
 /// making it suitable for sensitive or private conversations.
-
 #[derive(OpenApi)]
 #[openapi(
     paths(chat_completions_handler),
     components(schemas(ChatCompletionsRequest, ConfidentialComputeResponse))
 )]
-pub(crate) struct ConfidentialChatCompletionsOpenApi;
+pub struct ConfidentialChatCompletionsOpenApi;
 
 /// Handles confidential chat completion requests by providing end-to-end encrypted responses.
 ///
@@ -309,8 +327,14 @@ pub async fn confidential_chat_completions_handler(
     // Check if streaming is requested
     let is_stream = payload
         .get(STREAM_KEY)
-        .and_then(|s| s.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or_default();
+
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     let endpoint = request_metadata.endpoint_path.clone();
 
     match handle_response(
@@ -319,14 +343,18 @@ pub async fn confidential_chat_completions_handler(
         payload_hash,
         stack_small_id,
         is_stream,
-        payload,
+        payload.clone(),
         estimated_total_compute_units,
         client_encryption_metadata,
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -410,18 +438,7 @@ async fn handle_response(
     estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<Response<Body>, AtomaServiceError> {
-    if !is_stream {
-        handle_non_streaming_response(
-            state,
-            payload,
-            stack_small_id,
-            estimated_total_compute_units,
-            payload_hash,
-            client_encryption_metadata,
-            endpoint,
-        )
-        .await
-    } else {
+    if is_stream {
         let streaming_encryption_metadata = utils::get_streaming_encryption_metadata(
             state,
             client_encryption_metadata,
@@ -438,6 +455,17 @@ async fn handle_response(
             estimated_total_compute_units,
             payload_hash,
             streaming_encryption_metadata,
+            endpoint,
+        )
+        .await
+    } else {
+        handle_non_streaming_response(
+            state,
+            payload,
+            stack_small_id,
+            estimated_total_compute_units,
+            payload_hash,
+            client_encryption_metadata,
             endpoint,
         )
         .await
@@ -613,7 +641,7 @@ async fn handle_streaming_response(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or(UNKNOWN_MODEL);
     CHAT_COMPLETIONS_NUM_REQUESTS
         .with_label_values(&[model])
         .inc();
@@ -621,11 +649,23 @@ async fn handle_streaming_response(
         .with_label_values(&[model])
         .start_timer();
 
+    let chat_completions_service_url = state
+        .chat_completions_service_urls
+        .get(&model.to_lowercase())
+        .ok_or_else(|| {
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                    model
+                ),
+                endpoint: endpoint.clone(),
+            }
+        })?;
     let client = Client::new();
     let response = client
         .post(format!(
             "{}{}",
-            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+            chat_completions_service_url, CHAT_COMPLETIONS_PATH
         ))
         .json(&payload)
         .send()
@@ -643,10 +683,11 @@ async fn handle_streaming_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: "Inference service returned error".to_string(),
-            endpoint,
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), &endpoint, error)?;
     }
 
     let stream = response.bytes_stream();
@@ -696,9 +737,13 @@ pub struct ChatCompletionsRequest {
     /// logprobs must be set to true if this parameter is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     top_logprobs: Option<i32>,
+    /// An upper bound for the number of tokens that can be generated for a completion, currently deprecated, as per OpenAI API spec
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated = "Recommended to use max_completion_tokens instead"]
+    max_tokens: Option<u32>,
     /// An upper bound for the number of tokens that can be generated for a completion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
+    max_completion_tokens: Option<u32>,
     /// How many chat completion choices to generate for each input message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     n: Option<usize>,
@@ -795,11 +840,11 @@ pub enum MessageContent {
 impl std::fmt::Display for MessageContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageContent::Text(text) => write!(f, "{}", text),
-            MessageContent::Array(parts) => {
+            Self::Text(text) => write!(f, "{}", text),
+            Self::Array(parts) => {
                 let mut content = String::new();
                 for part in parts {
-                    content.push_str(&format!("{}\n", part))
+                    content.push_str(&format!("{}\n", part));
                 }
                 write!(f, "{}", content)
             }
@@ -816,7 +861,7 @@ impl<'de> Deserialize<'de> for MessageContent {
         let value: Value = Value::deserialize(deserializer)?;
 
         if let Some(s) = value.as_str() {
-            return Ok(MessageContent::Text(s.to_string()));
+            return Ok(Self::Text(s.to_string()));
         }
 
         if let Some(arr) = value.as_array() {
@@ -824,7 +869,7 @@ impl<'de> Deserialize<'de> for MessageContent {
                 .iter()
                 .map(|v| serde_json::from_value(v.clone()).map_err(serde::de::Error::custom))
                 .collect();
-            return Ok(MessageContent::Array(parts?));
+            return Ok(Self::Array(parts?));
         }
 
         Err(serde::de::Error::custom(
@@ -856,10 +901,10 @@ pub enum MessageContentPart {
 impl std::fmt::Display for MessageContentPart {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageContentPart::Text { r#type, text } => {
+            Self::Text { r#type, text } => {
                 write!(f, "{}: {}", r#type, text)
             }
-            MessageContentPart::Image { r#type, image_url } => {
+            Self::Image { r#type, image_url } => {
                 write!(f, "{}: [Image URL: {}]", r#type, image_url)
             }
         }
@@ -995,10 +1040,9 @@ impl TryFrom<Option<&str>> for FinishReason {
 
     fn try_from(value: Option<&str>) -> Result<Self, Self::Error> {
         match value {
-            Some("stopped") => Ok(FinishReason::Stopped),
-            Some("length_capped") => Ok(FinishReason::LengthCapped),
-            Some("content_filter") => Ok(FinishReason::ContentFilter),
-            None => Ok(FinishReason::Stopped),
+            None | Some("stopped") => Ok(Self::Stopped),
+            Some("length_capped") => Ok(Self::LengthCapped),
+            Some("content_filter") => Ok(Self::ContentFilter),
             _ => Err(format!("Invalid finish reason: {}", value.unwrap())),
         }
     }
@@ -1023,11 +1067,20 @@ pub struct Usage {
     pub completion_tokens_details: Option<Value>,
 }
 
-pub(crate) mod utils {
+pub mod utils {
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
     use prometheus::HistogramTimer;
 
-    use super::*;
+    use crate::handlers::handle_status_code_error;
+
+    use super::{
+        handle_confidential_compute_encryption_response, info, instrument,
+        sign_response_and_update_stack_hash, update_stack_num_compute_units, AppState,
+        AtomaServiceError, Body, Client, ConfidentialComputeSharedSecretRequest,
+        ConfidentialComputeSharedSecretResponse, EncryptionMetadata, IntoResponse, Json, Response,
+        StreamingEncryptionMetadata, Value, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, CHAT_COMPLETIONS_PATH, MODEL_KEY, UNKNOWN_MODEL,
+    };
 
     /// Retrieves encryption metadata for streaming chat completions when confidential compute is enabled.
     ///
@@ -1064,7 +1117,7 @@ pub(crate) mod utils {
     /// - stack_small_id
     /// - endpoint_path
     #[instrument(
-        level = "debug", 
+        level = "debug",
         skip_all,
         fields(
             payload_hash,
@@ -1072,7 +1125,7 @@ pub(crate) mod utils {
             endpoint_path = endpoint
         )
     )]
-    pub(crate) async fn get_streaming_encryption_metadata(
+    pub async fn get_streaming_encryption_metadata(
         state: &AppState,
         client_encryption_metadata: Option<EncryptionMetadata>,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
@@ -1180,7 +1233,7 @@ pub(crate) mod utils {
         skip_all,
         fields(stack_small_id, payload_hash, endpoint)
     )]
-    pub(crate) async fn send_request_to_inference_service(
+    pub async fn send_request_to_inference_service(
         state: &AppState,
         payload: &Value,
         stack_small_id: i64,
@@ -1188,10 +1241,26 @@ pub(crate) mod utils {
         endpoint: &str,
     ) -> Result<Value, AtomaServiceError> {
         let client = Client::new();
+        let model = payload
+            .get(MODEL_KEY)
+            .and_then(|m| m.as_str())
+            .unwrap_or(UNKNOWN_MODEL);
+        let chat_completions_service_url = state
+            .chat_completions_service_urls
+            .get(&model.to_lowercase())
+            .ok_or_else(|| {
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                        model
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?;
         let response = client
         .post(format!(
             "{}{}",
-            state.chat_completions_service_url, CHAT_COMPLETIONS_PATH
+            chat_completions_service_url, CHAT_COMPLETIONS_PATH
         ))
         .json(&payload)
         .send()
@@ -1209,13 +1278,11 @@ pub(crate) mod utils {
         })?;
 
         if !response.status().is_success() {
-            return Err(AtomaServiceError::InternalError {
-                message: format!(
-                    "Inference service returned non-success status code: {}",
-                    response.status()
-                ),
-                endpoint: endpoint.to_string(),
-            });
+            let error = response
+                .status()
+                .canonical_reason()
+                .unwrap_or("Unknown error");
+            handle_status_code_error(response.status(), endpoint, error)?;
         }
 
         response.json::<Value>().await.map_err(|e| {
@@ -1280,7 +1347,7 @@ pub(crate) mod utils {
     /// let total = extract_total_num_tokens(&response_body, "gpt-4");
     /// assert_eq!(total, 30);
     /// ```
-    pub(crate) fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
+    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
         let mut total_compute_units = 0;
         if let Some(usage) = response_body.get("usage") {
             if let Some(prompt_tokens) = usage.get("prompt_tokens") {
@@ -1364,7 +1431,7 @@ pub(crate) mod utils {
         fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint)
     )]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn serve_non_streaming_response(
+    pub async fn serve_non_streaming_response(
         state: &AppState,
         mut response_body: Value,
         stack_small_id: i64,

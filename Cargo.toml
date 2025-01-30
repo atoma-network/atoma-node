@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "atoma-confidential",
-    "atoma-daemon", 
+    "atoma-daemon",
     "atoma-service",
     "atoma-state",
     "atoma-sui",
@@ -30,7 +30,7 @@ blake2 = "0.10.6"
 clap = "4.5.4"
 config = "0.14.0"
 dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
-dotenv = "0.15.0"
+dotenvy = "0.15.7"
 fastcrypto = "0.1.8"
 flume = "0.11.1"
 futures = "0.3.30"
@@ -38,7 +38,7 @@ futures-util = "0.3.30"
 hex = "0.4.3"
 hf-hub = "0.3.2"
 hkdf = "0.12.4"
-http = "0.2"
+http = "1.2"
 hyper = "1.5.0"
 isocountry = "0.3.2"
 lazy_static = "1.5.0"
@@ -50,18 +50,18 @@ rand = "0.8.5"
 reqwest = "0.12.1"
 rs_merkle = "1.4.2"
 sev = "5.0.0"
-serde = "1.0.204"
+serde = "1.0.217"
 serde_json = "1.0.120"
 serde_yaml = "0.9.34"
 serial_test = "3.1.1"
 sha2 = "0.10.8"
 strum = "0.26.3"
 sqlx = "0.8.2"
-sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.39.3" }
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.39.3" }
+sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.41.1" }
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.41.1" }
 tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.13.0"
-thiserror = "1.0.58"
+thiserror = "2.0.11"
 tokenizers = "0.21.0"
 tokio = "1.36.0"
 toml = "0.8.12"
@@ -73,3 +73,7 @@ utoipa = "5.1.1"
 utoipa-swagger-ui = "8.0.1"
 validator = "0.20.0"
 x25519-dalek = "2.0.1"
+
+[patch.crates-io]
+hyper-rustls = { git = "https://github.com/rustls/hyper-rustls", branch = "main" }
+tokio-rustls = { git = "https://github.com/rustls/tokio-rustls", branch = "main" }

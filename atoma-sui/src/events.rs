@@ -200,11 +200,11 @@ where
 
 /// Represents an event that is emitted when the Atoma contract is first published.
 ///
-/// This event contains information about the newly published AtomaDb object id and
+/// This event contains information about the newly published `AtomaDb` object id and
 /// the associated manager badge id.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublishedEvent {
-    /// The object id of the AtomaDb.
+    /// The object id of the `AtomaDb`.
     pub db: String,
 
     /// The identifier of the manager badge associated with the Atoma contract.
@@ -239,7 +239,7 @@ pub struct NodeSubscribedToModelEvent {
 
     /// The name of the model that the node is subscribing to.
     /// This field represents the name of the AI models avaiable in the network
-    /// (which is compatible with HuggingFace's model naming convention).
+    /// (which is compatible with `HuggingFace` 's  model naming convention).
     pub model_name: String,
 
     /// The echelon ID representing the performance tier or capability level
@@ -684,7 +684,7 @@ pub struct Text2ImagePromptEvent {
     pub nodes: Vec<NodeSmallId>,
 
     /// The output destination where the output will be stored.
-    /// The output is serialized with MessagePack.
+    /// The output is serialized with `MessagePack`.
     pub output_destination: Vec<u8>,
 }
 
@@ -721,7 +721,7 @@ pub struct NewlySampledNodesEvent {
 /// Represents an event emitted when a ticket is settled.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettledEvent {
-    /// The ID of the settlement object.   
+    /// The ID of the settlement object.
     pub ticket_id: String,
 
     /// The oracle node ID that settled the ticket.
@@ -731,7 +731,7 @@ pub struct SettledEvent {
 /// Represents an event emitted when a retry settlement is requested.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RetrySettlementEvent {
-    /// The ID of the settlement object.   
+    /// The ID of the settlement object.
     pub ticket_id: String,
 
     /// The number of nodes in the echelon that should be used to retry the settlement.
@@ -815,7 +815,7 @@ pub struct Text2TextPromptEvent {
     pub nodes: Vec<NodeSmallId>,
 
     /// The output destination where the output will be stored.
-    /// The output is serialized with MessagePack.
+    /// The output is serialized with `MessagePack`.
     pub output_destination: Vec<u8>,
 }
 
@@ -1242,7 +1242,7 @@ mod tests {
         assert_eq!(timeout.timed_out_count, 2);
         assert_eq!(timeout.timeout_ms, 5000);
         assert_eq!(timeout.started_in_epoch, 4000);
-        assert_eq!(timeout.started_at_epoch_timestamp_ms, 162000);
+        assert_eq!(timeout.started_at_epoch_timestamp_ms, 162_000);
     }
 
     #[test]
@@ -1332,11 +1332,11 @@ mod tests {
                 "prompt": [65, 66, 67],
                 "random_seed": "42",
                 "repeat_last_n": "64",
-                "repeat_penalty": 1065353216,  // 1.0 in IEEE 754 single-precision float
+                "repeat_penalty": 1_065_353_216,  // 1.0 in IEEE 754 single-precision float
                 "should_stream_output": false,
-                "temperature": 1065353216,  // 1.0 in IEEE 754 single-precision float
+                "temperature": 1_065_353_216,     // 1.0 in IEEE 754 single-precision float
                 "top_k": "50",
-                "top_p": 1065353216  // 1.0 in IEEE 754 single-precision float
+                "top_p": 1_065_353_216           // 1.0 in IEEE 754 single-precision float
             },
             "chunks_count": "2",
             "nodes": [{"inner": "3"}, {"inner": "4"}],
@@ -1351,11 +1351,11 @@ mod tests {
         assert_eq!(event.params.prompt, vec![65, 66, 67]);
         assert_eq!(event.params.random_seed, 42);
         assert_eq!(event.params.repeat_last_n, 64);
-        assert_eq!(event.params.repeat_penalty, 1065353216);
+        assert_eq!(event.params.repeat_penalty, 1_065_353_216);
         assert!(!event.params.should_stream_output);
-        assert_eq!(event.params.temperature, 1065353216);
+        assert_eq!(event.params.temperature, 1_065_353_216);
         assert_eq!(event.params.top_k, 50);
-        assert_eq!(event.params.top_p, 1065353216);
+        assert_eq!(event.params.top_p, 1_065_353_216);
         assert_eq!(event.chunks_count, 2);
         assert_eq!(event.nodes.len(), 2);
         assert_eq!(event.nodes[0].inner, 3);

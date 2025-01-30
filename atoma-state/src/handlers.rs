@@ -8,8 +8,9 @@ use atoma_sui::events::{
 use tracing::{info, instrument};
 
 use crate::{
-    state_manager::Result, types::AtomaAtomaStateManagerEvent, AtomaStateManager,
-    AtomaStateManagerError,
+    state_manager::Result,
+    types::{AtomaAtomaStateManagerEvent, StackSettlementTicket},
+    AtomaStateManager, AtomaStateManagerError,
 };
 
 #[instrument(level = "info", skip_all)]
@@ -435,7 +436,7 @@ pub(crate) async fn handle_stack_try_settle_event(
         event = "handle-stack-try-settle-event",
         "Processing stack try settle event"
     );
-    let stack_settlement_ticket = event.into();
+    let stack_settlement_ticket = StackSettlementTicket::try_from(event)?;
     state_manager
         .state
         .insert_new_stack_settlement_ticket(stack_settlement_ticket)
@@ -695,7 +696,7 @@ pub(crate) async fn handle_state_manager_event(
                     estimated_total_compute_units,
                     total_compute_units,
                 )
-                .await?
+                .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
             stack_small_id,
@@ -704,7 +705,7 @@ pub(crate) async fn handle_state_manager_event(
             state_manager
                 .state
                 .update_stack_total_hash(stack_small_id, total_hash)
-                .await?
+                .await?;
         }
     }
     Ok(())

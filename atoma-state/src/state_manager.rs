@@ -29,7 +29,8 @@ pub struct AtomaStateManager {
 
 impl AtomaStateManager {
     /// Constructor
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
@@ -45,6 +46,20 @@ impl AtomaStateManager {
     ///
     /// This method establishes a connection to the Postgres database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
+    ///
+    /// # Arguments
+    /// * `database_url` - The URL of the PostgreSQL database to connect to
+    /// * `event_subscriber_receiver` - Channel receiver for Atoma events
+    /// * `state_manager_receiver` - Channel receiver for state manager events
+    ///
+    /// # Returns
+    /// A new state manager instance
+    ///
+    /// # Errors
+    /// Returns `AtomaStateManagerError` if:
+    /// - Failed to connect to database
+    /// - Failed to create connection pool
+    /// - Failed to run database migrations
     pub async fn new_from_url(
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
@@ -181,11 +196,29 @@ pub struct AtomaState {
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: PgPool) -> Self {
+    ///
+    /// # Arguments
+    /// * `db` - The Postgres connection pool
+    ///
+    /// # Returns
+    /// A new `AtomaState` instance
+    #[must_use]
+    pub const fn new(db: PgPool) -> Self {
         Self { db }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
+    ///
+    /// # Arguments
+    /// * `database_url` - The URL of the PostgreSQL database to connect to
+    ///
+    /// # Returns
+    /// A new state instance wrapped in `Result`
+    ///
+    /// # Errors
+    /// Returns `AtomaStateManagerError` if:
+    /// - Failed to connect to database
+    /// - Failed to run database migrations
     pub async fn new_from_url(database_url: &str) -> Result<Self> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./src/migrations").run(&db).await?;
@@ -561,8 +594,8 @@ impl AtomaState {
         max_num_compute_units: i64,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_subscriptions 
-                (node_small_id, task_small_id, price_per_one_million_compute_units, max_num_compute_units, valid) 
+            "INSERT INTO node_subscriptions
+                (node_small_id, task_small_id, price_per_one_million_compute_units, max_num_compute_units, valid)
                 VALUES ($1, $2, $3, $4, TRUE)
                 ON CONFLICT (task_small_id, node_small_id) DO NOTHING",
         )
@@ -818,7 +851,7 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn get_stack(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Stack, AtomaStateManagerError> {  
+    /// async fn get_stack(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Stack, AtomaStateManagerError> {
     ///     state_manager.get_stack(stack_id).await
     /// }
     /// ```
@@ -1016,7 +1049,7 @@ impl AtomaState {
     /// async fn get_filled_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
     ///     let node_ids = &[1, 2, 3];  // Check stacks for these nodes
     ///     let threshold = 0.8;        // Look for stacks that are 80% or more filled
-    ///     
+    ///
     ///     state_manager.get_almost_filled_stacks(node_ids, threshold).await
     /// }
     /// ```
@@ -1031,15 +1064,15 @@ impl AtomaState {
         fraction: f64,
     ) -> Result<Vec<Stack>> {
         Ok(sqlx::query_as::<_, Stack>(
-            r#"
+            r"
             SELECT *
             FROM stacks
             WHERE selected_node_id = ANY($1)
-            AND CASE 
+            AND CASE
                 WHEN num_compute_units = 0 THEN true
                 ELSE (already_computed_units::float / num_compute_units::float) > $2
             END
-            "#,
+            ",
         )
         .bind(node_small_ids)
         .bind(fraction)
@@ -1119,7 +1152,7 @@ impl AtomaState {
     ) -> Result<Option<Stack>> {
         // Single query that updates and returns the modified row
         let maybe_stack = sqlx::query_as::<_, Stack>(
-            r#"
+            r"
             UPDATE stacks
             SET already_computed_units = already_computed_units + $1
             WHERE stack_small_id = $2
@@ -1127,7 +1160,7 @@ impl AtomaState {
             AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
             RETURNING *
-            "#,
+            ",
         )
         .bind(num_compute_units)
         .bind(stack_small_id)
@@ -1168,7 +1201,7 @@ impl AtomaState {
     /// async fn insert_stack(state_manager: &AtomaStateManager, stack: Stack) -> Result<(), AtomaStateManagerError> {
     ///     // If a stack with the same stack_small_id exists, this will succeed without modifying it
     ///     state_manager.insert_new_stack(stack).await
-    /// }   
+    /// }
     /// ```
     #[tracing::instrument(
         level = "trace",
@@ -1182,8 +1215,8 @@ impl AtomaState {
     )]
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
-            "INSERT INTO stacks 
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price_per_one_million_compute_units, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+            "INSERT INTO stacks
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price_per_one_million_compute_units, already_computed_units, in_settle_period, total_hash, num_total_messages)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (stack_small_id) DO UPDATE
             SET already_computed_units = stacks.already_computed_units + $8
@@ -1293,8 +1326,8 @@ impl AtomaState {
         total_compute_units: i64,
     ) -> Result<()> {
         let result = sqlx::query(
-            "UPDATE stacks 
-            SET already_computed_units = already_computed_units - ($1 - $2) 
+            "UPDATE stacks
+            SET already_computed_units = already_computed_units - ($1 - $2)
             WHERE stack_small_id = $3",
         )
         .bind(estimated_total_compute_units)
@@ -1450,19 +1483,19 @@ impl AtomaState {
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
         sqlx::query(
-            "INSERT INTO stack_settlement_tickets 
+            "INSERT INTO stack_settlement_tickets
                 (
-                    stack_small_id, 
-                    selected_node_id, 
-                    num_claimed_compute_units, 
-                    requested_attestation_nodes, 
-                    committed_stack_proofs, 
-                    stack_merkle_leaves, 
-                    dispute_settled_at_epoch, 
-                    already_attested_nodes, 
-                    is_in_dispute, 
-                    user_refund_amount, 
-                    is_claimed) 
+                    stack_small_id,
+                    selected_node_id,
+                    num_claimed_compute_units,
+                    requested_attestation_nodes,
+                    committed_stack_proofs,
+                    stack_merkle_leaves,
+                    dispute_settled_at_epoch,
+                    already_attested_nodes,
+                    is_in_dispute,
+                    user_refund_amount,
+                    is_claimed)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (stack_small_id, selected_node_id) DO NOTHING",
         )
@@ -1532,7 +1565,7 @@ impl AtomaState {
         new_hash: [u8; 32],
     ) -> Result<()> {
         let rows_affected = sqlx::query(
-            "UPDATE stacks 
+            "UPDATE stacks
             SET total_hash = total_hash || $1,
                 num_total_messages = num_total_messages + 1
             WHERE stack_small_id = $2",
@@ -1711,7 +1744,7 @@ impl AtomaState {
         // First query remains the same - get existing data
         let row = sqlx::query(
             "SELECT committed_stack_proofs, stack_merkle_leaves, requested_attestation_nodes, already_attested_nodes
-             FROM stack_settlement_tickets 
+             FROM stack_settlement_tickets
              WHERE stack_small_id = $1",
         )
         .bind(stack_small_id)
@@ -1753,7 +1786,7 @@ impl AtomaState {
 
         // Simplified update query
         sqlx::query(
-            "UPDATE stack_settlement_tickets 
+            "UPDATE stack_settlement_tickets
             SET committed_stack_proofs = $1,
                 stack_merkle_leaves = $2,
                 already_attested_nodes = $3
@@ -1864,7 +1897,7 @@ impl AtomaState {
         user_refund_amount: i64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE stack_settlement_tickets 
+            "UPDATE stack_settlement_tickets
                 SET user_refund_amount = $1,
                     is_claimed = true
                 WHERE stack_small_id = $2",
@@ -1977,7 +2010,7 @@ impl AtomaState {
         attestation_node_id: i64,
     ) -> Result<Vec<StackAttestationDispute>> {
         let disputes = sqlx::query(
-            "SELECT * FROM stack_attestation_disputes 
+            "SELECT * FROM stack_attestation_disputes
                 WHERE stack_small_id = $1 AND attestation_node_id = $2",
         )
         .bind(stack_small_id)
@@ -2147,8 +2180,8 @@ impl AtomaState {
         stack_attestation_dispute: StackAttestationDispute,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO stack_attestation_disputes 
-                (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment) 
+            "INSERT INTO stack_attestation_disputes
+                (stack_small_id, attestation_commitment, attestation_node_id, original_node_id, original_commitment)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (stack_small_id, attestation_node_id) DO NOTHING",
         )
@@ -2202,7 +2235,7 @@ mod tests {
     async fn truncate_tables(db: &sqlx::PgPool) {
         // List all your tables here
         sqlx::query(
-            "TRUNCATE TABLE 
+            "TRUNCATE TABLE
                 tasks,
                 node_subscriptions,
                 stacks,
@@ -4026,11 +4059,11 @@ mod tests {
                 stack_small_id: 1,
                 selected_node_id: 1,
                 num_claimed_compute_units: 100,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: true,
@@ -4043,11 +4076,11 @@ mod tests {
                 stack_small_id: 2,
                 selected_node_id: 1,
                 num_claimed_compute_units: 100,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: false,
@@ -4060,11 +4093,11 @@ mod tests {
                 stack_small_id: 3,
                 selected_node_id: 2,
                 num_claimed_compute_units: 200,
-                requested_attestation_nodes: "".to_string(),
+                requested_attestation_nodes: String::new(),
                 committed_stack_proofs: vec![],
                 stack_merkle_leaves: vec![],
                 dispute_settled_at_epoch: None,
-                already_attested_nodes: "".to_string(),
+                already_attested_nodes: String::new(),
                 is_in_dispute: false,
                 user_refund_amount: 0,
                 is_claimed: true,
@@ -4552,7 +4585,7 @@ mod tests {
         ];
 
         // Insert rotations for multiple nodes
-        for (node_id, pub_key, tee_bytes, tee_provider) in nodes.iter() {
+        for (node_id, pub_key, tee_bytes, tee_provider) in &nodes {
             state_manager
                 .insert_node_public_key_rotation(
                     100u64,
@@ -4566,7 +4599,7 @@ mod tests {
         }
 
         // Verify all insertions
-        for (node_id, pub_key, tee_bytes, tee_provider) in nodes.iter() {
+        for (node_id, pub_key, tee_bytes, tee_provider) in &nodes {
             let row =
                 sqlx::query("SELECT * FROM node_public_key_rotations WHERE node_small_id = $1")
                     .bind(*node_id as i64)

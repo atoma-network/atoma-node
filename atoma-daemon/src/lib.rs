@@ -1,3 +1,11 @@
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::missing_docs_in_private_items)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::cast_sign_loss)]
+
 pub(crate) mod components;
 pub mod config;
 pub(crate) mod handlers;

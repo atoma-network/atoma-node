@@ -1,0 +1,32 @@
+name: End-to-end testing
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run-atoma-e2e-tests:
+    name: Run Atoma e2e tests
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ fromJSON(github.repository == 'atoma-network/atoma-node' && '["self-hosted", "linux", "x64", "4xlarge"]' || '"ubuntu-latest"') }}
+    strategy:
+      matrix:
+        flavour: [chromium, native]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.flavour }} image
+        run: ./scripts/build-e2e-image.sh
+        env:
+          AWS_BUCKET_NAME: ${{ vars.S3_ATOMA_BUILD_CACHE_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ vars.S3_ATOMA_BUILD_CACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_ATOMA_BUILD_CACHE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.S3_ATOMA_BUILD_CACHE_AWS_REGION }}
+          FLAVOUR: ${{ matrix.flavour }}
+
+      - name: Run ${{ matrix.flavour }} tests
+        uses: atoma-network/atoma-testground/.github/actions/run-chat-completion-request@master

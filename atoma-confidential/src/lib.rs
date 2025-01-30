@@ -1,3 +1,6 @@
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+
 pub mod key_management;
 pub mod service;
 #[cfg(feature = "sev-snp")]
@@ -6,7 +9,7 @@ pub mod sev_snp;
 pub mod tdx;
 pub mod types;
 
-pub use service::AtomaConfidentialComputeService;
+pub use service::AtomaConfidentialCompute;
 
 /// Trait for converting types into a byte representation
 ///

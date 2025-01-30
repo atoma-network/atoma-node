@@ -1,7 +1,7 @@
-pub(crate) mod chat_completions;
-pub(crate) mod embeddings;
-pub(crate) mod image_generations;
-pub(crate) mod prometheus;
+pub mod chat_completions;
+pub mod embeddings;
+pub mod image_generations;
+pub mod prometheus;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
@@ -9,6 +9,7 @@ use atoma_confidential::types::{
 use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender;
+use hyper::StatusCode;
 use image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
@@ -130,7 +131,7 @@ async fn sign_response_and_update_stack_hash(
     skip(state, response_body, client_encryption_metadata),
     fields(event = "confidential-compute-encryption-response")
 )]
-pub(crate) async fn handle_confidential_compute_encryption_response(
+pub async fn handle_confidential_compute_encryption_response(
     state: &AppState,
     mut response_body: Value,
     client_encryption_metadata: Option<EncryptionMetadata>,
@@ -165,18 +166,17 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
         }
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        let usage = if endpoint != CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
-            Some(
-                response_body
-                    .get(USAGE_KEY)
-                    .ok_or(AtomaServiceError::InvalidBody {
+        let usage =
+            if endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH {
+                None
+            } else {
+                Some(response_body.get(USAGE_KEY).ok_or_else(|| {
+                    AtomaServiceError::InvalidBody {
                         message: "Usage not found in response body".to_string(),
                         endpoint: endpoint.clone(),
-                    })?,
-            )
-        } else {
-            None
-        };
+                    }
+                })?)
+            };
         state
             .encryption_sender
             .send((
@@ -188,13 +188,13 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
                 sender,
             ))
             .map_err(|e| AtomaServiceError::InternalError {
-                message: format!("Error sending encryption request: {}", e),
+                message: format!("Error sending encryption request: {e}"),
                 endpoint: endpoint.clone(),
             })?;
         let result = receiver
             .await
             .map_err(|e| AtomaServiceError::InternalError {
-                message: format!("Error receiving encryption response: {}", e),
+                message: format!("Error receiving encryption response: {e}"),
                 endpoint: endpoint.clone(),
             })?;
         match result {
@@ -288,7 +288,7 @@ pub(crate) async fn handle_confidential_compute_encryption_response(
         endpoint
     )
 )]
-pub(crate) fn update_stack_num_compute_units(
+pub fn update_stack_num_compute_units(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     stack_small_id: i64,
     estimated_total_compute_units: i64,
@@ -302,7 +302,46 @@ pub(crate) fn update_stack_num_compute_units(
             estimated_total_compute_units,
         })
         .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Error sending update stack num compute units event: {}", e,),
+            message: format!("Error sending update stack num compute units event: {e}"),
             endpoint: endpoint.to_string(),
         })
+}
+
+/// Handles the status code returned by the inference service.
+///
+/// This function maps the status code to an appropriate error variant.
+///
+/// # Arguments
+///
+/// * `status_code` - The status code returned by the inference service
+/// * `endpoint` - The API endpoint path where the request was received
+/// * `error` - The error message returned by the inference service
+///
+/// # Returns
+///
+/// Returns an `AtomaServiceError` variant based on the status code.
+#[instrument(level = "info", skip_all, fields(endpoint))]
+pub fn handle_status_code_error(
+    status_code: StatusCode,
+    endpoint: &str,
+    error: &str,
+) -> Result<(), AtomaServiceError> {
+    match status_code {
+        StatusCode::UNAUTHORIZED => Err(AtomaServiceError::AuthError {
+            auth_error: format!("Unauthorized response from inference service: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        StatusCode::INTERNAL_SERVER_ERROR => Err(AtomaServiceError::InternalError {
+            message: format!("Inference service returned internal server error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        StatusCode::BAD_REQUEST => Err(AtomaServiceError::InvalidBody {
+            message: format!("Inference service returned bad request error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+        _ => Err(AtomaServiceError::InternalError {
+            message: format!("Inference service returned non-success error: {error}"),
+            endpoint: endpoint.to_string(),
+        }),
+    }
 }

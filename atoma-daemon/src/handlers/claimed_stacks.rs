@@ -12,7 +12,7 @@ pub const CLAIMED_STACKS_PATH: &str = "/claimed-stacks";
     paths(claimed_stacks_nodes_list),
     components(schemas(StackSettlementTicket))
 )]
-pub(crate) struct ClaimedStacksOpenApi;
+pub struct ClaimedStacksOpenApi;
 
 pub fn claimed_stacks_router() -> Router<DaemonState> {
     Router::new().route(

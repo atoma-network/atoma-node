@@ -2,7 +2,10 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         handle_confidential_compute_encryption_response,
-        prometheus::{TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS},
+        prometheus::{
+            TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS,
+            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+        },
         sign_response_and_update_stack_hash, update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
@@ -15,6 +18,8 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
+
+use super::handle_status_code_error;
 
 /// The path for confidential embeddings requests
 pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
@@ -32,7 +37,7 @@ pub const MODEL_KEY: &str = "model";
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(embeddings_handler))]
-pub(crate) struct EmbeddingsOpenApi;
+pub struct EmbeddingsOpenApi;
 
 /// Create embeddings
 ///
@@ -94,6 +99,11 @@ pub async fn embeddings_handler(
         .with_label_values(&[model])
         .start_timer();
 
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     match handle_embeddings_response(
         &state,
         &payload,
@@ -106,8 +116,12 @@ pub async fn embeddings_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -127,7 +141,7 @@ pub async fn embeddings_handler(
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(confidential_embeddings_handler))]
-pub(crate) struct ConfidentialEmbeddingsOpenApi;
+pub struct ConfidentialEmbeddingsOpenApi;
 
 /// Handler for confidential embeddings requests
 ///
@@ -309,13 +323,11 @@ async fn handle_embeddings_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: format!(
-                "Inference service returned non-success status code: {}",
-                response.status()
-            ),
-            endpoint: endpoint.to_string(),
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), endpoint, error)?;
     }
 
     let mut response_body =

@@ -1,6 +1,4 @@
-use atoma_utils::encryption::{
-    decrypt_ciphertext, encrypt_plaintext, EncryptionError, NONCE_BYTE_SIZE,
-};
+use atoma_utils::encryption::{decrypt_ciphertext, encrypt_plaintext, Error, NONCE_BYTE_SIZE};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
@@ -21,6 +19,15 @@ pub struct X25519KeyPairManager {
 
 impl X25519KeyPairManager {
     /// Constructor
+    ///
+    /// # Returns
+    /// A new `X25519KeyPairManager` instance if successful
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Failed to initialize the key store
+    /// - Failed to load existing keys
+    /// - Failed to generate initial keys
     #[allow(clippy::new_without_default)]
     pub fn new() -> Result<Self> {
         let mut rng = rand::thread_rng();
@@ -36,6 +43,7 @@ impl X25519KeyPairManager {
     /// - Identity verification
     ///
     /// The public key will change when `rotate_keys()` is called.
+    #[must_use]
     pub fn get_public_key(&self) -> PublicKey {
         PublicKey::from(&self.secret_key)
     }
@@ -72,6 +80,7 @@ impl X25519KeyPairManager {
     ///
     /// # Returns
     /// - `SharedSecret` - The shared secret
+    #[must_use]
     pub fn compute_shared_secret(&self, public_key: &PublicKey) -> SharedSecret {
         self.secret_key.diffie_hellman(public_key)
     }
@@ -91,7 +100,12 @@ impl X25519KeyPairManager {
     ///
     /// # Returns
     /// * `Ok(Vec<u8>)` - The decrypted plaintext as a byte vector
-    /// * `Err(KeyManagementError)` - If decryption fails
+    ///
+    /// # Errors
+    /// Returns a `KeyManagementError` if:
+    /// - Decryption fails due to invalid key material
+    /// - The ciphertext is malformed
+    /// - The authentication tag is invalid
     ///
     /// # Example
     /// ```rust,ignore
@@ -132,7 +146,12 @@ impl X25519KeyPairManager {
     /// * `Ok((Vec<u8>, [u8; NONCE_BYTE_SIZE]))` - A tuple containing:
     ///   - The encrypted ciphertext as a byte vector
     ///   - A randomly generated nonce used in the encryption
-    /// * `Err(KeyManagementError)` - If encryption fails
+    ///
+    /// # Errors
+    /// Returns a `KeyManagementError` if:
+    /// - Encryption fails due to invalid key material
+    /// - Random number generation fails
+    /// - The plaintext is too large
     ///
     /// # Example
     /// ```rust,ignore
@@ -156,10 +175,14 @@ impl X25519KeyPairManager {
     }
 }
 
+/// Errors that can occur during key management operations
 #[derive(Debug, Error)]
 pub enum KeyManagementError {
+    /// Error during encryption/decryption operations
     #[error("Encryption error: `{0}`")]
-    EncryptionError(#[from] EncryptionError),
+    EncryptionError(#[from] Error),
+
+    /// Error during file I/O operations
     #[error("IO error: `{0}`")]
     IoError(#[from] std::io::Error),
 }

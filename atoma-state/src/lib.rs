@@ -1,3 +1,9 @@
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::missing_docs_in_private_items)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+
 pub mod config;
 pub mod handlers;
 pub mod state_manager;

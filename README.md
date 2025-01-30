@@ -1,8 +1,8 @@
 # Atoma Node Infrastructure
 
-<img src="https://github.com/atoma-network/atoma-node/blob/ja-improve-readme/atoma-assets/atoma-banner.png" alt="Logo"/>
+![Atoma Banner](https://github.com/atoma-network/atoma-node/blob/ja-improve-readme/atoma-assets/atoma-banner.png)
 
-[![Discord](https://img.shields.io/discord/1172593757586214964?label=Discord&logo=discord&logoColor=white)]
+[![Discord](https://img.shields.io/discord/1172593757586214964?label=Discord&logo=discord&logoColor=white)](https://discord.com/channels/1172593757586214964/1258484557083054081)
 [![Twitter](https://img.shields.io/twitter/follow/Atoma_Network?style=social)](https://x.com/Atoma_Network)
 [![Documentation](https://img.shields.io/badge/docs-mintify-blue?logo=mintify)](https://docs.atoma.network)
 [![License](https://img.shields.io/github/license/atoma-network/atoma-node)](LICENSE)
@@ -39,7 +39,11 @@ The first step in setting up an Atoma node is installing the Sui client locally.
 
 Once you have the Sui client installed, locally, you need to connect to a Sui RPC node to be able to interact with the Sui blockchain and therefore the Atoma smart contract. Please refer to the [Connect to a Sui Network guide](https://docs.sui.io/guides/developer/getting-started/connect) for more information.
 
-You then need to create a wallet and fund it with some testnet SUI. Please refer to the [Sui wallet guide](https://docs.sui.io/guides/developer/getting-started/get-address) for more information. If you are plan to run the Atoma node on Sui's testnet, you can request testnet SUI tokens by following the [docs](https://docs.sui.io/guides/developer/getting-started/get-coins).
+You then need to create a wallet and fund it with some testnet SUI. Please refer to the [Sui wallet guide](https://docs.sui.io/guides/developer/getting-started/get-address) for more information. If you plan to run the Atoma node on Sui's testnet, you can request testnet SUI tokens by following the [docs](https://docs.sui.io/guides/developer/getting-started/get-coins).
+
+### Register with the Atoma Testnet smart contract
+
+Please refer to the [setup script](https://github.com/atoma-network/atoma-contracts/blob/main/sui/dev/setup.py) to register with the Atoma Testnet smart contract. This will assign you a node badge and a package ID, which you'll need to configure in the `config.toml` file.
 
 ### Docker Deployment
 
@@ -59,7 +63,7 @@ git clone https://github.com/atoma-network/atoma-node.git
 cd atoma-node
 ```
 
-2. Configure environment variables by creating `.env` file, use `.env.example` for reference:
+1. Configure environment variables by creating `.env` file, you'll need a hugging face token use `.env.example` for reference:
 
 ```bash
 # Hugging Face Configuration
@@ -130,15 +134,15 @@ node_public_address = ""
 country = ""
 ```
 
-4. Create required directories
+1. Create required directories
 
 ```bash
 mkdir -p data logs
 ```
 
-5. Start the containers with the desired inference services
+1. Start the containers with the desired inference services, please note if you don't have a GPU, you'll need to use the you will need to use a `vllm_cpu`  backend, but these are only compatible with  `x86_64` architectures. Otherwise we recommend using the `mistral` for CPUs.
 
-We currenlty support the following inference services:
+We currently support the following inference services:
 
 ##### Chat Completions
 
@@ -200,7 +204,7 @@ The deployment consists of two main services:
 - **Atoma Node**: Manages the node operations and connects to the Atoma Network
 
 #### Service URLs
-- Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT). You are free to change the port to any other available port, as long as it is not already in use by another service. Moreover, in order for your node to be accessible by the Atoma Network, you need to make sure that the port is open to the public internet, through your router's firewall and NAT configuration. Moreover, it is recommended to use a static IP address for your node, in order to avoid having to reconfigure your router's NAT table every time you restart your node. The Atoma Node service handles all the required authentication and authorization for the LLM Inference Service, ensuring that only authenticated (and already paid for) requests are processed.
+Atoma Node: `http://localhost:3000` (configured via ATOMA_SERVICE_PORT). You are free to change the port to any other available port, as long as it is not already in use by another service. Moreover, in order for your node to be accessible by the Atoma Network, you need to make sure that the port is open to the public internet, through your router's firewall and NAT configuration. Moreover, it is recommended to use a static IP address for your node, in order to avoid having to reconfigure your router's NAT table every time you restart your node. The Atoma Node service handles all the required authentication and authorization for the LLM Inference Service, ensuring that only authenticated (and already paid for) requests are processed.
 
 
 #### Volume Mounts
@@ -247,25 +251,25 @@ docker compose down
 docker compose ps
 ```
 
-2. Test vLLM service:
+1. Test vLLM service:
 
 ```bash
 curl http://localhost:50000/health
 ```
 
-3. Test Atoma Node service:
+1. Test Atoma Node service:
 
 ```bash
 curl http://localhost:3000/health
 ```
 
-4. Check GPU availability:
+1. Check GPU availability:
 
 ```bash
 docker compose exec vllm nvidia-smi
 ```
 
-5. View container networks:
+1. View container networks:
 
 ```bash
 docker network ls
@@ -284,18 +288,18 @@ sudo ufw allow 3000/tcp
 sudo ufw allow 50000/tcp
 ```
 
-2. HuggingFace Token
+1. HuggingFace Token
 
 - Store HF_TOKEN in .env file
 - Never commit .env file to version control
 - Consider using Docker secrets for production deployments
 
-3. Sui Configuration
+1. Sui Configuration
 
 - Ensure Sui configuration files have appropriate permissions
 - Keep keystore file secure and never commit to version control
 
-### Testing 
+### Testing
 
 Since the `AtomaStateManager` instance relies on a PostgreSQL database, we need to have a local instance running to run the tests. You can spawn one using the `docker-compose.test.yaml` file:
 

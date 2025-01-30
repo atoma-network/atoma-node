@@ -1,7 +1,10 @@
 use crate::{
     error::AtomaServiceError,
     handlers::{
-        prometheus::{IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS},
+        prometheus::{
+            IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TOTAL_FAILED_REQUESTS,
+        },
         update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
@@ -15,7 +18,10 @@ use serde_json::Value;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
-use super::{handle_confidential_compute_encryption_response, sign_response_and_update_stack_hash};
+use super::{
+    handle_confidential_compute_encryption_response, handle_status_code_error,
+    sign_response_and_update_stack_hash,
+};
 
 /// The path for confidential image generations requests
 pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
@@ -33,7 +39,7 @@ pub const MODEL_KEY: &str = "model";
 /// the API documentation.
 #[derive(OpenApi)]
 #[openapi(paths(image_generations_handler))]
-pub(crate) struct ImageGenerationsOpenApi;
+pub struct ImageGenerationsOpenApi;
 
 /// Create image generation
 ///
@@ -94,9 +100,14 @@ pub async fn image_generations_handler(
         request_type: _,
     } = request_metadata;
 
+    let model = payload
+        .get(MODEL_KEY)
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown");
+
     match handle_image_generations_response(
         &state,
-        payload,
+        payload.clone(),
         payload_hash,
         stack_small_id,
         estimated_total_compute_units,
@@ -106,8 +117,12 @@ pub async fn image_generations_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -131,7 +146,7 @@ pub async fn image_generations_handler(
 /// computing requirements.
 #[derive(OpenApi)]
 #[openapi(paths(confidential_image_generations_handler))]
-pub(crate) struct ConfidentialImageGenerationsOpenApi;
+pub struct ConfidentialImageGenerationsOpenApi;
 
 /// Handles confidential image generation requests
 ///
@@ -295,13 +310,11 @@ async fn handle_image_generations_response(
         })?;
 
     if !response.status().is_success() {
-        return Err(AtomaServiceError::InternalError {
-            message: format!(
-                "Inference service returned non-success status code: {}",
-                response.status()
-            ),
-            endpoint: endpoint.to_string(),
-        });
+        let error = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown error");
+        handle_status_code_error(response.status(), endpoint, error)?;
     }
 
     let mut response_body =

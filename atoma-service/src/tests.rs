@@ -1,10 +1,10 @@
 mod middleware {
-    use atoma_confidential::AtomaConfidentialComputeService;
+    use atoma_confidential::AtomaConfidentialCompute;
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
     };
-    use atoma_sui::{client::AtomaSuiClient, events::AtomaEvent, AtomaSuiConfig};
+    use atoma_sui::{client::Client, config::Builder, events::AtomaEvent};
     use atoma_utils::{
         constants::{self, SALT_SIZE},
         encryption::encrypt_plaintext,
@@ -19,7 +19,7 @@ mod middleware {
     use serde_json::{json, Value};
     use serial_test::serial;
     use sqlx::PgPool;
-    use std::{str::FromStr, sync::Arc};
+    use std::{collections::HashMap, str::FromStr, sync::Arc};
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
         base_types::{ObjectID, SuiAddress},
@@ -100,7 +100,7 @@ mod middleware {
             .await
             .expect("Failed to connect to database");
         sqlx::query(
-            "TRUNCATE TABLE 
+            "TRUNCATE TABLE
                 tasks,
                 node_subscriptions,
                 stacks,
@@ -122,7 +122,7 @@ mod middleware {
         Sender<AtomaEvent>,
         tokio::sync::watch::Receiver<bool>,
     ) {
-        let (_event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
+        let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
             POSTGRES_TEST_DB_URL,
@@ -175,11 +175,12 @@ mod middleware {
             state_manager_handle,
             state_manager_sender,
             shutdown_sender,
-            _event_subscriber_sender,
+            event_subscriber_sender,
             shutdown_signal,
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn setup_app_state() -> (
         AppState,
         PublicKey,
@@ -205,7 +206,7 @@ mod middleware {
             state_manager_handle,
             state_manager_sender,
             shutdown_sender,
-            _event_subscriber_sender,
+            event_subscriber_sender,
             shutdown_receiver,
         ) = setup_database(public_key.clone()).await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
@@ -242,26 +243,21 @@ mod middleware {
             .expect("Failed to create .sui/keystore directory");
         std::fs::write(keystore_path.clone(), sui_keystore_contents)
             .expect("Failed to write to keystore");
-        let client_config = AtomaSuiConfig::new(
-            "http://localhost:9000".to_string(),
-            ObjectID::from_str("0x1").unwrap(),
-            ObjectID::from_str("0x2").unwrap(),
-            ObjectID::from_str("0x3").unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            client_yaml_path.to_string_lossy().to_string(),
-            "./keystore".to_string(),
-            "./".to_string(),
-        );
+        let client_config = Builder::new()
+            .http_rpc_node_addr("http://localhost:9000".to_string())
+            .atoma_db(ObjectID::from_str("0x1").unwrap())
+            .atoma_package_id(ObjectID::from_str("0x2").unwrap())
+            .usdc_package_id(ObjectID::from_str("0x3").unwrap())
+            .sui_config_path(client_yaml_path.to_string_lossy().to_string())
+            .sui_keystore_path("./keystore".to_string())
+            .cursor_path("./".to_string())
+            .build();
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
-            let confidential_compute_service = AtomaConfidentialComputeService::new(
+            let confidential_compute_service = AtomaConfidentialCompute::new(
                 Arc::new(RwLock::new(
-                    AtomaSuiClient::new(client_config)
+                    Client::new(client_config)
                         .await
                         .expect("Failed to create Sui client"),
                 )),
@@ -287,15 +283,20 @@ mod middleware {
             .expect("Failed to remove keystore");
         (
             AppState {
-                models: Arc::new(models.into_iter().map(|s| s.to_string()).collect()),
+                models: Arc::new(
+                    models
+                        .into_iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
+                ),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
                 decryption_sender,
                 encryption_sender,
                 compute_shared_secret_sender,
-                chat_completions_service_url: "".to_string(),
-                embeddings_service_url: "".to_string(),
-                image_generations_service_url: "".to_string(),
+                chat_completions_service_urls: HashMap::new(),
+                embeddings_service_url: String::new(),
+                image_generations_service_url: String::new(),
                 keystore: Arc::new(keystore),
                 address_index: 0,
                 stack_retrieve_sender,
@@ -304,7 +305,7 @@ mod middleware {
             signature,
             shutdown_sender,
             state_manager_handle,
-            _event_subscriber_sender,
+            event_subscriber_sender,
             dh_public_key,
         )
     }
@@ -1471,7 +1472,7 @@ mod middleware {
         let client_dh_public_key = x25519_dalek::PublicKey::from(&client_dh_private_key);
 
         // Create incorrect hash (hash of different data)
-        let incorrect_plaintext = "different data".as_bytes();
+        let incorrect_plaintext = b"different data";
         let incorrect_hash: [u8; 32] = blake2b_hash(incorrect_plaintext).into();
 
         let shared_secret = client_dh_private_key.diffie_hellman(&server_dh_public_key);
