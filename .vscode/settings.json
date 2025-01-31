@@ -1,0 +1,22 @@
+{
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.extraArgs": [
+        "--",
+        "-D",
+        "warnings",
+        "-W",
+        "clippy::pedantic",
+        "-W",
+        "clippy::nursery",
+        "-W",
+        "clippy::style",
+        "-W",
+        "clippy::complexity",
+        "-W",
+        "clippy::perf",
+        "-W",
+        "clippy::suspicious",
+        "-W",
+        "clippy::correctness"
+    ]
+}
