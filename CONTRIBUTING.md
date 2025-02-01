@@ -9,7 +9,8 @@ Once you've tested your changes and verified that they work, you can commit your
 To enable the pre-commit hook, run the following command:
 
 ```bash
-./githooks/setup-hooks.sh
+chmod +x ./.githooks/setup-hooks.sh
+./.githooks/setup-hooks.sh
 ```
 
 This script will configure the hooks directory and make the pre-commit hook executable.
