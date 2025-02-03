@@ -58,7 +58,7 @@ sqlx = "0.8.2"
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.41.1" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.41.1" }
 tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
-tempfile = "3.13.0"
+tempfile = "3.16.0"
 thiserror = "2.0.11"
 tokenizers = "0.21.0"
 tokio = "1.36.0"
