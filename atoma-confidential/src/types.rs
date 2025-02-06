@@ -97,22 +97,12 @@ pub enum TEEProvider {
     Arm = 2,
 }
 
-impl crate::ToBytes for TEEProvider {
-    /// Converts the TEE provider enum to a single byte representation.
-    ///
-    /// # Returns
-    /// A vector containing a single byte representing the TEE provider variant.
-    fn to_bytes(&self) -> Vec<u8> {
-        vec![*self as u8]
-    }
-}
 
 impl TEEProvider {
     /// Creates a TEEProvider from its byte representation.
     ///
     /// # Arguments
-    /// * `bytes` - A byte slice containing the TEE provider identifier.
-    ///            Expected to be a single byte with value 0, 1, or 2.
+    /// * `byte` - A byte containing the TEE provider identifier (0, 1, or 2)
     ///
     /// # Returns
     /// * `Ok(TEEProvider)` - The corresponding TEE provider variant
@@ -120,12 +110,21 @@ impl TEEProvider {
     ///
     /// # Errors
     /// Returns an error if the input byte does not correspond to a known TEE provider variant.
-    fn _from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
-        Ok(match bytes[0] {
-            0 => TEEProvider::Tdx,
-            1 => TEEProvider::Snp,
-            2 => TEEProvider::Arm,
+    pub fn from_byte(byte: u8) -> Result<Self, anyhow::Error> {
+        Ok(match byte {
+            0 => Self::Tdx,
+            1 => Self::Snp,
+            2 => Self::Arm,
             _ => anyhow::bail!("Invalid TEE provider"),
         })
+    }
+
+    /// Converts the TEE provider enum to a byte representation.
+    ///
+    /// # Returns
+    /// A byte representing the TEE provider variant.
+    #[must_use]
+    pub const fn to_byte(self) -> u8 {
+        self as u8
     }
 }
