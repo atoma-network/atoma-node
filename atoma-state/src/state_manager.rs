@@ -803,7 +803,7 @@ impl AtomaState {
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
-        tee_provider: Vec<u8>,
+        tee_provider: u16,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_public_key_rotations (epoch, key_rotation_counter, node_small_id, public_key_bytes, tee_quote_bytes, tee_provider) VALUES ($1, $2, $3, $4, $5, $6)
@@ -820,7 +820,7 @@ impl AtomaState {
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
         .bind(tee_remote_attestation_bytes)
-        .bind(tee_provider)
+        .bind(tee_provider as i16)
         .execute(&self.db)
         .await?;
         Ok(())
@@ -4478,7 +4478,7 @@ mod tests {
         let node_small_id = 789u64;
         let public_key_bytes = vec![1, 2, 3, 4];
         let tee_remote_attestation_bytes = vec![5, 6, 7, 8];
-        let tee_provider = vec![0];
+        let tee_provider = 0u16;
 
         // Insert initial rotation
         state_manager
@@ -4488,7 +4488,7 @@ mod tests {
                 node_small_id,
                 public_key_bytes.clone(),
                 tee_remote_attestation_bytes.clone(),
-                tee_provider.clone(),
+                tee_provider,
             )
             .await?;
 
@@ -4509,13 +4509,13 @@ mod tests {
             row.get::<Vec<u8>, _>("tee_quote_bytes"),
             tee_remote_attestation_bytes
         );
-        assert_eq!(row.get::<Vec<u8>, _>("tee_provider"), tee_provider);
+        assert_eq!(row.get::<i16, _>("tee_provider"), tee_provider as i16);
         // Test update with new values
         let new_epoch = 999u64;
         let new_key_rotation_counter = 888u64;
         let new_public_key_bytes = vec![9, 10, 11, 12];
         let new_tee_remote_attestation_bytes = vec![13, 14, 15, 16];
-        let new_tee_provider = vec![2];
+        let new_tee_provider = 2u16;
 
         state_manager
             .insert_node_public_key_rotation(
@@ -4552,10 +4552,7 @@ mod tests {
             updated_row.get::<Vec<u8>, _>("tee_quote_bytes"),
             new_tee_remote_attestation_bytes
         );
-        assert_eq!(
-            updated_row.get::<Vec<u8>, _>("tee_provider"),
-            new_tee_provider
-        );
+        assert_eq!(updated_row.get::<i16, _>("tee_provider"), new_tee_provider as i16);
 
         // Verify only one row exists
         let count = sqlx::query(
@@ -4579,9 +4576,9 @@ mod tests {
 
         // Test data for multiple nodes
         let nodes = [
-            (1u64, vec![1, 2, 3], vec![4, 5, 6], vec![0]),
-            (2u64, vec![7, 8, 9], vec![10, 11, 12], vec![1]),
-            (3u64, vec![13, 14, 15], vec![16, 17, 18], vec![2]),
+            (1u64, vec![1, 2, 3], vec![4, 5, 6], 0u16),
+            (2u64, vec![7, 8, 9], vec![10, 11, 12], 1u16),
+            (3u64, vec![13, 14, 15], vec![16, 17, 18], 2u16),
         ];
 
         // Insert rotations for multiple nodes
@@ -4609,7 +4606,7 @@ mod tests {
             assert_eq!(row.get::<i64, _>("node_small_id"), *node_id as i64);
             assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), *pub_key);
             assert_eq!(row.get::<Vec<u8>, _>("tee_quote_bytes"), *tee_bytes);
-            assert_eq!(row.get::<Vec<u8>, _>("tee_provider"), *tee_provider);
+            assert_eq!(row.get::<i16, _>("tee_provider"), *tee_provider as i16);
         }
 
         // Verify total count
@@ -4639,7 +4636,7 @@ mod tests {
                 node_small_id,
                 empty_bytes.clone(),
                 empty_bytes.clone(),
-                empty_bytes.clone(),
+                0u16,
             )
             .await?;
 
@@ -4650,7 +4647,7 @@ mod tests {
 
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
         assert_eq!(row.get::<Vec<u8>, _>("tee_quote_bytes"), empty_bytes);
-        assert_eq!(row.get::<Vec<u8>, _>("tee_provider"), empty_bytes);
+        assert_eq!(row.get::<i16, _>("tee_provider"), 0 as i16);
         
         truncate_tables(&state_manager.db).await;
         Ok(())
