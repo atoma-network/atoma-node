@@ -4524,7 +4524,7 @@ mod tests {
                 node_small_id,
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
-                new_tee_provider.clone(),
+                new_tee_provider,
             )
             .await?;
 
@@ -4590,7 +4590,7 @@ mod tests {
                     *node_id,
                     pub_key.clone(),
                     tee_bytes.clone(),
-                    tee_provider.clone(),
+                    *tee_provider,
                 )
                 .await?;
         }
@@ -4647,7 +4647,7 @@ mod tests {
 
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
         assert_eq!(row.get::<Vec<u8>, _>("tee_quote_bytes"), empty_bytes);
-        assert_eq!(row.get::<i16, _>("tee_provider"), 0 as i16);
+        assert_eq!(row.get::<i16, _>("tee_provider"), 0_i16);
         
         truncate_tables(&state_manager.db).await;
         Ok(())
