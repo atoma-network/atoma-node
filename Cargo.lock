@@ -742,6 +742,7 @@ dependencies = [
  "anyhow",
  "atoma-sui",
  "atoma-utils",
+ "bincode",
  "blake2",
  "dcap-rs",
  "flume",

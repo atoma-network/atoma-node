@@ -26,6 +26,7 @@ atoma-sui = { path = "./atoma-sui" }
 atoma-utils = { path = "./atoma-utils" }
 axum = "0.7.5"
 base64 = "0.22.1"
+bincode = "1.3.3"
 blake2 = "0.10.6"
 clap = "4.5.4"
 config = "0.14.0"
