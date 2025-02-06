@@ -1,7 +1,6 @@
 target/
-.vscode/
 /models/
-config.toml
+/config.toml
 cursor.toml
 
 .env

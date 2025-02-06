@@ -90,7 +90,7 @@ services:
     image: grafana/grafana:latest
     restart: always
     ports:
-      - "${GRAFANA_PORT:-30001}:30000"
+      - "${GRAFANA_PORT:-30001}:3000"
     depends_on:
       - prometheus
     volumes:
@@ -163,7 +163,7 @@ services:
     <<: *inference-service-cuda
     container_name: chat-completions
     profiles: [chat_completions_vllm]
-    image: vllm/vllm-openai:v0.7.0
+    image: vllm/vllm-openai:v0.7.1
     environment:
     # Backend for attention computation
     # Available options:
