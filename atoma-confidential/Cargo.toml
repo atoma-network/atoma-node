@@ -12,17 +12,18 @@ atoma-utils = { workspace = true }
 blake2 = { workspace = true }
 dcap-rs = { workspace = true, optional = true }
 flume = { workspace = true }
-sev = { workspace = true, optional = true, features = ["crypto_nossl"]}
-strum = { workspace = true, features = ["derive"] }
+p384 = { workspace = true, optional = true }
 rand = { workspace = true }
-tokio = { workspace = true }
+sev = { workspace = true, optional = true, features = ["crypto_nossl"]}
+sha2 = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
 tdx = { workspace = true, optional = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
-
 
 [features]
 default = []
 tdx = ["dep:dcap-rs", "dep:tdx" ]
-sev-snp = ["dep:dcap-rs", "dep:sev" ]
+sev-snp = [ "dep:p384", "dep:sev" ]

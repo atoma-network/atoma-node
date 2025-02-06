@@ -42,6 +42,7 @@ type Result<T> = std::result::Result<T, SevError>;
 ///     Err(e) => eprintln!("Attestation failed: {}", e),
 /// }
 /// ```
+#[cfg(all(target_os="linux", feature="sev-snp"))]
 pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<SNPAttestationReport> {
     if attested_data.len() != SEV_SNP_REPORT_DATA_SIZE {
         return Err(SevError::InvalidAttestedDataSize(attested_data.len()));
@@ -92,6 +93,7 @@ impl ToSNPAttestationReport for (Chain, AttestationReport) {
 }
 
 /// Implements the Verifiable trait (crypto_nossl feature-gated implementation) for SNPAttestationReport.
+#[cfg(all(target_os="linux", feature="sev-snp"))]
 impl sev::snp::certs::Verifiable for SNPAttestationReport {
     type Output = bool;
 
@@ -127,7 +129,7 @@ impl sev::snp::certs::Verifiable for SNPAttestationReport {
 
 #[derive(Error, Debug)]
 pub enum SevError {
-    #[error("Invalid attested data size: expected {}, got {0}", SEV_SNP_REPORT_DATA_SIZE)]
+    #[error("Invalid attested data size: expected {expected}, got {actual}", expected = SEV_SNP_REPORT_DATA_SIZE, actual = _0)]
     InvalidAttestedDataSize(usize),
     #[error("Failed to verify attestation report: {0}")]
     FailedVerification(#[source] std::io::Error),
@@ -135,4 +137,6 @@ pub enum SevError {
     FailedToOpenFirmware(#[source] std::io::Error),
     #[error("Failed to get attestation report: {0}")]
     FailedToGetAttestationReport(#[source] std::io::Error),
+    #[error("SEV-SNP attestation is only supported on Linux platforms")]
+    UnsupportedPlatform,
 }
