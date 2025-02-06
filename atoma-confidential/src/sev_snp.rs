@@ -1,10 +1,10 @@
-use bincode::{serialize, deserialize};
+use bincode::{deserialize, serialize};
 
 use crate::ToBytes;
 
 use sev::{
     attestation::{AttestationReport, AttestationReportSignature, Chain},
-    firmware::Firmware,
+    firmware::guest::Firmware,
 };
 
 use thiserror::Error;
@@ -43,7 +43,7 @@ type Result<T> = std::result::Result<T, SnpError>;
 ///     Err(e) => eprintln!("Attestation failed: {}", e),
 /// }
 /// ```
-#[cfg(all(target_os="linux", feature="sev-snp"))]
+#[cfg(all(target_os = "linux", feature = "sev-snp"))]
 pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<SNPAttestationReport> {
     if attested_data.len() != SEV_SNP_REPORT_DATA_SIZE {
         return Err(SnpError::InvalidAttestedDataSize(attested_data.len()));
@@ -56,7 +56,7 @@ pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<SNPAttestati
     let message_version = 1;
 
     // Virtual Machine Privilege Level, 0 = least privileged, 3 = most privileged.
-    // VMPL allows for page security levels in the SNP Guest. 
+    // VMPL allows for page security levels in the SNP Guest.
     // If VMPL is disabled on the platform, set to 0.
     // See: https://docs.enclaive.cloud/confidential-cloud/technology-in-depth/amd-sev/technology/fundamentals/features/virtual-machine-privilege-levels
     let vmpl = 0;
@@ -88,13 +88,16 @@ impl ToBytes for SNPAttestationReport {
 
 /// Trait for converting Vec<u8> to an SNPAttestationReport.
 pub trait FromBytes {
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, SnpError>;
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self>;
 }
 
 impl FromBytes for SNPAttestationReport {
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, SnpError> {
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         bincode::deserialize(&bytes).map_err(|e| {
-            SnpError::FailedToDeserializeBytes(format!("Unable to deserialize bytes for SNPAttestationReport: {}", e))
+            SnpError::FailedToDeserializeBytes(format!(
+                "Unable to deserialize bytes for SNPAttestationReport: {}",
+                e
+            ))
         })
     }
 }
@@ -114,7 +117,7 @@ impl ToSNPAttestationReport for (Chain, AttestationReport) {
 }
 
 /// Implements the Verifiable trait (crypto_nossl feature-gated implementation) for SNPAttestationReport.
-#[cfg(all(target_os="linux", feature="sev-snp"))]
+#[cfg(all(target_os = "linux", feature = "sev-snp"))]
 impl sev::snp::certs::Verifiable for SNPAttestationReport {
     type Output = bool;
 
@@ -127,10 +130,13 @@ impl sev::snp::certs::Verifiable for SNPAttestationReport {
         // [spec]: https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf
 
         let vcek = self.0.verify()?;
-        let sig  = p384::ecdsa::Signature::try_from(&self.1.signature)?;
+        let sig = p384::ecdsa::Signature::try_from(&self.1.signature)?;
 
         let measurable_bytes: &[u8] = &bincode::serialize(self.1).map_err(|e| {
-            SnpError::FailedVerification(format!("Unable to serialize bytes for AttestationReport: {}", e))
+            SnpError::FailedVerification(format!(
+                "Unable to serialize bytes for AttestationReport: {}",
+                e
+            ))
         })?[..0x2a0];
 
         use sha2::Digest;
@@ -138,12 +144,16 @@ impl sev::snp::certs::Verifiable for SNPAttestationReport {
 
         let verifying_key = p384::ecdsa::VerifyingKey::from_sec1_bytes(vcek.public_key_sec1())
             .map_err(|e| {
-                SnpError::FailedVerification(format!("Failed to deserialize public key from sec1 bytes: {e:?}"))
+                SnpError::FailedVerification(format!(
+                    "Failed to deserialize public key from sec1 bytes: {e:?}"
+                ))
             })?;
 
         use p384::ecdsa::signature::DigestVerifier;
         verifying_key.verify_digest(base_digest, &sig).map_err(|e| {
-            SnpError::FailedVerification(format!("VCEK does not sign the attestation report: {e:?}"))
+            SnpError::FailedVerification(format!(
+                "VCEK does not sign the attestation report: {e:?}"
+            ))
         })
     }
 }

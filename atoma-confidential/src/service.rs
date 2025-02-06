@@ -8,12 +8,12 @@ use crate::{
 };
 #[cfg(feature = "sev-snp")]
 use crate::{
-    sev_snp::{get_compute_data_attestation, SevError},
+    sev_snp::{get_compute_data_attestation as snp_attestation, SnpError},
     ToBytes,
 };
 #[cfg(feature = "tdx")]
 use crate::{
-    tdx::{get_compute_data_attestation, TdxError},
+    tdx::{get_compute_data_attestation as tdx_attestation, TdxError},
     ToBytes,
 };
 use atoma_sui::client::Client;
@@ -328,7 +328,7 @@ impl AtomaConfidentialCompute {
     async fn submit_tdx_attestation(&mut self) -> Result<()> {
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
-        let tdx_quote = get_compute_data_attestation(&public_key_bytes)?;
+        let tdx_quote = tdx_attestation(&public_key_bytes)?;
         let tdx_quote_bytes = tdx_quote.to_bytes();
 
         match self
@@ -369,7 +369,7 @@ impl AtomaConfidentialCompute {
     async fn submit_sev_snp_attestation(&mut self) -> Result<()> {
         let public_key = self.key_manager.get_public_key();
         let public_key_bytes = public_key.to_bytes();
-        let sev_snp_quote = get_compute_data_attestation(&public_key_bytes)?;
+        let sev_snp_quote = snp_attestation(&public_key_bytes)?;
         let sev_snp_quote_bytes = sev_snp_quote.to_bytes();
 
         match self
@@ -651,4 +651,7 @@ pub enum AtomaConfidentialComputeError {
     #[cfg(feature = "tdx")]
     #[error("TDX device error: {0}")]
     TdxDeviceError(#[from] TdxError),
+    #[cfg(feature = "sev-snp")]
+    #[error("SEV-SNP device error: {0}")]
+    SevSnpDeviceError(#[from] SnpError),
 }

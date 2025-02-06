@@ -4552,7 +4552,10 @@ mod tests {
             updated_row.get::<Vec<u8>, _>("tee_quote_bytes"),
             new_tee_remote_attestation_bytes
         );
-        assert_eq!(updated_row.get::<i16, _>("tee_provider"), new_tee_provider as i16);
+        assert_eq!(
+            updated_row.get::<i16, _>("tee_provider"),
+            new_tee_provider as i16
+        );
 
         // Verify only one row exists
         let count = sqlx::query(
@@ -4648,7 +4651,7 @@ mod tests {
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
         assert_eq!(row.get::<Vec<u8>, _>("tee_quote_bytes"), empty_bytes);
         assert_eq!(row.get::<i16, _>("tee_provider"), 0_i16);
-        
+
         truncate_tables(&state_manager.db).await;
         Ok(())
     }

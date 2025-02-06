@@ -97,7 +97,6 @@ pub enum TEEProvider {
     Arm = 2,
 }
 
-
 impl TEEProvider {
     /// Creates a TEEProvider from its byte representation.
     ///
