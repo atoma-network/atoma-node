@@ -843,7 +843,7 @@ pub struct NodePublicKeyCommittmentEvent {
     /// The TEE Provider used to generate the public key.
     /// This type is used to identify which attestation
     /// verification method should be used.
-    pub tee_provider: Vec<u8>
+    pub tee_provider: u16
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.
