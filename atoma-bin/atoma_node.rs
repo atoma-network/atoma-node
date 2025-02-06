@@ -7,11 +7,8 @@ use std::{
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{AtomaDaemonConfig, DaemonState};
-use atoma_service::{
-    config::AtomaServiceConfig,
-    proxy::{config::ProxyConfig, register_on_proxy},
-    server::AppState,
-};
+use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
+use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -37,7 +34,6 @@ use tracing_subscriber::{
     prelude::*,
     EnvFilter, Registry,
 };
-use validator::{Validate, ValidationErrors};
 
 /// The name of the environment variable for the Hugging Face token
 const HF_TOKEN: &str = "HF_TOKEN";
@@ -69,6 +65,9 @@ struct NodeConfig {
     /// Configuration for the Sui component.
     sui: Config,
 
+    /// Configuration for the p2p component.
+    p2p: AtomaP2pNodeConfig,
+
     /// Configuration for the service component.
     service: AtomaServiceConfig,
 
@@ -77,26 +76,22 @@ struct NodeConfig {
 
     /// Configuration for the daemon component.
     daemon: AtomaDaemonConfig,
-
-    /// Configuration for the proxy component.
-    proxy: ProxyConfig,
 }
 
 impl NodeConfig {
-    fn load(path: &str) -> Result<Self, ValidationErrors> {
+    fn load(path: &str) -> Self {
         let sui = Config::from_file_path(path);
+        let p2p = AtomaP2pNodeConfig::from_file_path(path);
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
         let daemon = AtomaDaemonConfig::from_file_path(path);
-        let proxy = ProxyConfig::from_file_path(path);
-        proxy.validate()?;
-        Ok(Self {
+        Self {
             sui,
+            p2p,
             service,
             state,
             daemon,
-            proxy,
-        })
+        }
     }
 }
 
@@ -181,14 +176,14 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     let args = Args::parse();
-    let config = NodeConfig::load(&args.config_path)?;
+    let config = NodeConfig::load(&args.config_path);
 
     info!("Starting Atoma node service");
 
     let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
-
+    let (p2p_event_sender, p2p_event_receiver) = flume::unbounded();
     info!(
         target = "atoma-node-service",
         event = "keystore_path",
@@ -214,6 +209,22 @@ async fn main() -> Result<()> {
 
     info!(
         target = "atoma-node-service",
+        event = "p2p_node_spawn",
+        "Spawning Atoma's p2p node service"
+    );
+    let p2p_node_service_shutdown_receiver = shutdown_receiver.clone();
+    let p2p_node_service_handle = spawn_with_shutdown(
+        async move {
+            let p2p_node =
+                AtomaP2pNode::start(config.p2p, Arc::new(keystore), p2p_event_sender, false)?;
+            let pinned_future = Box::pin(p2p_node.run(p2p_node_service_shutdown_receiver));
+            pinned_future.await
+        },
+        shutdown_sender.clone(),
+    );
+
+    info!(
+        target = "atoma-node-service",
         event = "state_manager_service_spawn",
         database_url = config.state.database_url,
         "Spawning state manager service"
@@ -226,6 +237,7 @@ async fn main() -> Result<()> {
                 &database_url,
                 event_subscriber_receiver,
                 state_manager_receiver,
+                p2p_event_receiver,
             )
             .await?;
             state_manager.run(state_manager_shutdown_receiver).await
@@ -239,19 +251,6 @@ async fn main() -> Result<()> {
         tokio::sync::mpsc::unbounded_channel();
     let (app_state_encryption_sender, app_state_encryption_receiver) =
         tokio::sync::mpsc::unbounded_channel();
-
-    for (_, node_small_id) in &config.daemon.node_badges {
-        if let Err(e) =
-            register_on_proxy(&config.proxy, *node_small_id, &keystore, address_index).await
-        {
-            error!(
-                target = "atoma-node-service",
-                event = "register_on_proxy_error",
-                error = ?e,
-                "Failed to register on proxy server"
-            );
-        }
-    }
 
     info!(
         target = "atoma-node-service",
@@ -288,7 +287,7 @@ async fn main() -> Result<()> {
     );
 
     let subscriber = Subscriber::new(
-        config.sui,
+        config.sui.clone(),
         event_subscriber_sender,
         stack_retrieve_receiver,
         subscriber_confidential_compute_sender,
@@ -325,6 +324,9 @@ async fn main() -> Result<()> {
         std::env::var(HF_TOKEN).context(format!("Variable {HF_TOKEN} not set in the .env file"))?;
     let tokenizers =
         initialize_tokenizers(&config.service.models, &config.service.revisions, hf_token).await?;
+
+    let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
+        .context("Failed to initialize keystore")?;
 
     let app_state = AppState {
         state_manager_sender,
@@ -417,6 +419,7 @@ async fn main() -> Result<()> {
         state_manager_result,
         server_result,
         daemon_result,
+        p2p_node_service_result,
         confidential_compute_service_result,
         _,
     ) = try_join!(
@@ -424,6 +427,7 @@ async fn main() -> Result<()> {
         state_manager_handle,
         service_handle,
         daemon_handle,
+        p2p_node_service_handle,
         confidential_compute_service_handle,
         ctrl_c
     )?;
@@ -432,6 +436,7 @@ async fn main() -> Result<()> {
         state_manager_result,
         server_result,
         daemon_result,
+        p2p_node_service_result,
         confidential_compute_service_result,
     )?;
 
@@ -534,6 +539,7 @@ fn handle_tasks_results(
     state_manager_result: Result<()>,
     server_result: Result<()>,
     daemon_result: Result<()>,
+    p2p_node_service_result: Result<()>,
     confidential_compute_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
@@ -552,6 +558,10 @@ fn handle_tasks_results(
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
     result_handler(daemon_result, "Daemon terminated abruptly")?;
+    result_handler(
+        p2p_node_service_result,
+        "P2P node service terminated abruptly",
+    )?;
     result_handler(
         confidential_compute_service_result,
         "Confidential compute service terminated abruptly",

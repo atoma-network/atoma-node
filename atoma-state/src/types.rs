@@ -218,6 +218,17 @@ pub struct NodeSubscription {
     pub valid: bool,
 }
 
+/// Represents a node in the system
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct Node {
+    /// Unique small integer identifier for the node
+    pub node_small_id: i64,
+    /// Unique string identifier for the node
+    pub node_id: String,
+    /// Sui address of the owner of the node
+    pub node_sui_address: String,
+}
+
 pub enum AtomaAtomaStateManagerEvent {
     /// Represents an update to the number of compute units in a stack
     UpdateStackNumComputeUnits {

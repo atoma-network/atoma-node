@@ -205,7 +205,7 @@ pub static TEXT_EMBEDDINGS_LATENCY_METRICS: Lazy<HistogramVec> = Lazy::new(|| {
 pub static CHAT_COMPLETIONS_DECODING_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     register_histogram_vec!(
         "atoma_chat_completions_decoding_time",
-        "Time taken for the complete decoding phase  in seconds",
+        "Time taken for the complete decoding phase in seconds",
         &["model"],
         LATENCY_HISTOGRAM_BUCKETS.to_vec(),
     )

@@ -105,6 +105,7 @@ mod middleware {
                 node_subscriptions,
                 stacks,
                 stack_settlement_tickets,
+                nodes,
                 stack_attestation_disputes
             CASCADE",
         )
@@ -120,14 +121,20 @@ mod middleware {
         Sender<AtomaAtomaStateManagerEvent>,
         tokio::sync::watch::Sender<bool>,
         Sender<AtomaEvent>,
+        Sender<(
+            atoma_p2p::types::AtomaP2pEvent,
+            std::option::Option<tokio::sync::oneshot::Sender<bool>>,
+        )>,
         tokio::sync::watch::Receiver<bool>,
     ) {
         let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
         let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+        let (p2p_event_sender, p2p_event_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
             POSTGRES_TEST_DB_URL,
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_event_receiver,
         )
         .await
         .expect("Failed to create state manager");
@@ -176,44 +183,16 @@ mod middleware {
             state_manager_sender,
             shutdown_sender,
             event_subscriber_sender,
+            p2p_event_sender,
             shutdown_signal,
         )
     }
 
-    #[allow(clippy::too_many_lines)]
-    async fn setup_app_state() -> (
-        AppState,
-        PublicKey,
-        Signature,
-        tokio::sync::watch::Sender<bool>,
-        JoinHandle<()>,
-        Sender<AtomaEvent>,
-        x25519_dalek::PublicKey,
+    fn build_client_config() -> (
+        atoma_sui::config::Config,
+        std::path::PathBuf,
+        std::path::PathBuf,
     ) {
-        let keystore = setup_keystore();
-        let models = vec![
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "intfloat/multilingual-e5-large-instruct",
-            "black-forest-labs/FLUX.1-schnell",
-        ];
-        let public_key = keystore.key_pairs().first().unwrap().public();
-        let blake2b_hash = blake2b_hash(TEST_MESSAGE.as_bytes());
-        let signature = keystore
-            .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
-            .expect("Failed to sign message");
-        let tokenizer = load_tokenizer().await;
-        let (
-            state_manager_handle,
-            state_manager_sender,
-            shutdown_sender,
-            event_subscriber_sender,
-            shutdown_receiver,
-        ) = setup_database(public_key.clone()).await;
-        let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
-        let (_, event_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
         let client_yaml_contents = r#"
             keystore:
                 File: ./.sui/keystore
@@ -252,6 +231,49 @@ mod middleware {
             .sui_keystore_path("./keystore".to_string())
             .cursor_path("./".to_string())
             .build();
+        (client_config, client_yaml_path, keystore_path)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn setup_app_state() -> (
+        AppState,
+        PublicKey,
+        Signature,
+        tokio::sync::watch::Sender<bool>,
+        JoinHandle<()>,
+        Sender<AtomaEvent>,
+        Sender<(
+            atoma_p2p::types::AtomaP2pEvent,
+            std::option::Option<tokio::sync::oneshot::Sender<bool>>,
+        )>,
+        x25519_dalek::PublicKey,
+    ) {
+        let keystore = setup_keystore();
+        let models = vec![
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "intfloat/multilingual-e5-large-instruct",
+            "black-forest-labs/FLUX.1-schnell",
+        ];
+        let public_key = keystore.key_pairs().first().unwrap().public();
+        let blake2b_hash = blake2b_hash(TEST_MESSAGE.as_bytes());
+        let signature = keystore
+            .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
+            .expect("Failed to sign message");
+        let tokenizer = load_tokenizer().await;
+        let (
+            state_manager_handle,
+            state_manager_sender,
+            shutdown_sender,
+            event_subscriber_sender,
+            p2p_event_sender,
+            shutdown_receiver,
+        ) = setup_database(public_key.clone()).await;
+        let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let (_, event_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
+        let (client_config, client_yaml_path, keystore_path) = build_client_config();
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
@@ -305,6 +327,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             event_subscriber_sender,
+            p2p_event_sender,
             dh_public_key,
         )
     }
@@ -341,6 +364,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -385,8 +409,16 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_missing_public_key() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender, _) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            _,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+            _p2p_event_sender,
+            _,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -427,6 +459,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -469,6 +502,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -511,6 +545,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -549,8 +584,16 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_invalid_stack() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _event_subscriber_sender, _) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            _,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+            _p2p_event_sender,
+            _,
+        ) = setup_app_state().await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -591,6 +634,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -650,6 +694,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -1010,6 +1055,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -1086,6 +1132,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -1188,6 +1235,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _event_subscriber_sender,
+            _p2p_event_sender,
             _,
         ) = setup_app_state().await;
 
@@ -1231,6 +1279,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _,
+            _p2p_event_sender,
             server_dh_public_key,
         ) = setup_app_state().await;
 
@@ -1287,8 +1336,16 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_missing_headers() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, server_dh_public_key) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            _,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            _p2p_event_sender,
+            server_dh_public_key,
+        ) = setup_app_state().await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1337,8 +1394,16 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_invalid_dh_key() {
-        let (app_state, _, signature, shutdown_sender, state_manager_handle, _, _) =
-            setup_app_state().await;
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _,
+            _p2p_event_sender,
+            _,
+        ) = setup_app_state().await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1412,6 +1477,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _,
+            _p2p_event_sender,
             server_dh_public_key,
         ) = setup_app_state().await;
 
@@ -1463,6 +1529,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _,
+            _p2p_event_sender,
             server_dh_public_key,
         ) = setup_app_state().await;
 
@@ -1521,6 +1588,7 @@ mod middleware {
             shutdown_sender,
             state_manager_handle,
             _,
+            _p2p_event_sender,
             server_dh_public_key,
         ) = setup_app_state().await;
 
@@ -1600,7 +1668,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_confidential_compute_middleware_invalid_json() {
-        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _) =
+        let (app_state, _, _, shutdown_sender, state_manager_handle, _, _p2p_event_sender, _) =
             setup_app_state().await;
 
         // Create invalid JSON request
