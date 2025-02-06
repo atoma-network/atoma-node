@@ -3,8 +3,10 @@ use crate::{
     handlers::{
         handle_confidential_compute_encryption_response,
         prometheus::{
-            TEXT_EMBEDDINGS_LATENCY_METRICS, TEXT_EMBEDDINGS_NUM_REQUESTS,
-            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+            TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS,
+            TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+            TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS,
+            TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_stack_num_compute_units,
     },
@@ -121,6 +123,9 @@ pub async fn embeddings_handler(
             Ok(response)
         }
         Err(e) => {
+            TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
+                .with_label_values(&[model])
+                .inc();
             TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
@@ -201,6 +206,7 @@ pub async fn confidential_embeddings_handler(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
+
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units,
@@ -210,7 +216,7 @@ pub async fn confidential_embeddings_handler(
         request_type: _,
     } = request_metadata;
 
-    TEXT_EMBEDDINGS_NUM_REQUESTS
+    TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS
         .with_label_values(&[model])
         .inc();
     let timer = TEXT_EMBEDDINGS_LATENCY_METRICS
@@ -229,8 +235,15 @@ pub async fn confidential_embeddings_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
+                .with_label_values(&[model])
+                .inc();
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
