@@ -16,6 +16,7 @@ use axum::{
 use flume::Sender as FlumeSender;
 use hyper::StatusCode;
 use prometheus::Encoder;
+use reqwest::Method;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use sui_sdk::types::digests::TransactionDigest;
@@ -29,6 +30,7 @@ use tokio::{
     },
 };
 use tower::ServiceBuilder;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::error;
 use utoipa::OpenApi;
 
@@ -204,6 +206,10 @@ pub struct AppState {
 /// // Use the router to start the server
 /// ```
 pub fn create_router(app_state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(vec![Method::GET, Method::POST])
+        .allow_headers(Any);
     let confidential_routes = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
@@ -248,6 +254,7 @@ pub fn create_router(app_state: AppState) -> Router {
         .route(METRICS_PATH, get(metrics_handler))
         .merge(confidential_routes)
         .merge(openapi_routes())
+        .layer(cors)
 }
 
 /// Starts and runs the HTTP server with graceful shutdown handling.
