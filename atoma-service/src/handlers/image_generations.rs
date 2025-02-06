@@ -2,8 +2,9 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         prometheus::{
-            IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS,
-            TOTAL_FAILED_REQUESTS,
+            IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
+            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
+            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS,
         },
         update_stack_num_compute_units,
     },
@@ -123,6 +124,9 @@ pub async fn image_generations_handler(
         }
         Err(e) => {
             TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
+                .with_label_values(&[model])
+                .inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -204,7 +208,9 @@ pub async fn confidential_image_generations_handler(
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
-    IMAGE_GEN_NUM_REQUESTS.with_label_values(&[model]).inc();
+    IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
     let timer = IMAGE_GEN_LATENCY_METRICS
         .with_label_values(&[model])
         .start_timer();
@@ -220,7 +226,7 @@ pub async fn confidential_image_generations_handler(
 
     match handle_image_generations_response(
         &state,
-        payload,
+        payload.clone(),
         payload_hash,
         stack_small_id,
         estimated_total_compute_units,
@@ -230,8 +236,15 @@ pub async fn confidential_image_generations_handler(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            Ok(response)
+        }
         Err(e) => {
+            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
+                .with_label_values(&[model])
+                .inc();
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,

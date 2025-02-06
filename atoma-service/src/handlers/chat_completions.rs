@@ -1,5 +1,11 @@
 use crate::{
-    handlers::{sign_response_and_update_stack_hash, update_stack_num_compute_units},
+    handlers::{
+        prometheus::{
+            CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS,
+            TOTAL_FAILED_CHAT_REQUESTS,
+        },
+        sign_response_and_update_stack_hash, update_stack_num_compute_units,
+    },
     middleware::EncryptionMetadata,
     server::AppState,
     streamer::{Streamer, StreamingEncryptionMetadata},
@@ -192,6 +198,7 @@ pub async fn chat_completions_handler(
             Ok(response)
         }
         Err(e) => {
+            TOTAL_FAILED_CHAT_REQUESTS.with_label_values(&[model]).inc();
             TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
@@ -335,6 +342,10 @@ pub async fn confidential_chat_completions_handler(
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
+    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
+
     let endpoint = request_metadata.endpoint_path.clone();
 
     match handle_response(
@@ -354,6 +365,9 @@ pub async fn confidential_chat_completions_handler(
             Ok(response)
         }
         Err(e) => {
+            TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
+                .with_label_values(&[model])
+                .inc();
             TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
@@ -546,6 +560,10 @@ async fn handle_non_streaming_response(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
+
+    CHAT_COMPLETIONS_NUM_REQUESTS
+        .with_label_values(&[model])
+        .inc();
     let timer = CHAT_COMPLETIONS_LATENCY_METRICS
         .with_label_values(&[model])
         .start_timer();

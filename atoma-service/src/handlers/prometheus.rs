@@ -25,6 +25,26 @@ pub static CHAT_COMPLETIONS_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
+/// Counter metric that tracks the total number of confidential chat completion requests.
+///
+/// This metric counts the number of incoming requests for confidential chat completions,
+/// broken down by model type. This helps monitor usage patterns and load
+/// across different models.
+///
+/// # Metric Details
+/// - Name: `atoma_chat_completions_confidential_num_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_chat_completions_confidential_num_requests",
+        "The number of incoming requests for confidential chat completions tasks",
+        &["model"]
+    )
+    .unwrap()
+});
+
 /// Counter metric that tracks the total number of image generation requests.
 ///
 /// This metric counts the number of incoming requests for image generations,
@@ -40,6 +60,26 @@ pub static IMAGE_GEN_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
     register_counter_vec!(
         "atoma_image_gen_num_requests",
         "The number of incoming requests for image generation tasks",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of confidential image generation requests.
+///
+/// This metric counts the number of incoming requests for confidential image generations,
+/// broken down by model type. This helps monitor usage patterns and load
+/// across different image generation models.
+///
+/// # Metric Details
+/// - Name: `atoma_image_gen_confidential_num_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_image_gen_confidential_num_requests",
+        "The number of incoming requests for confidential image generation tasks",
         &["model"]
     )
     .unwrap()
@@ -65,6 +105,25 @@ pub static TEXT_EMBEDDINGS_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
+/// Counter metric that tracks the total number of confidential text embedding requests.
+///
+/// This metric counts the number of incoming requests for confidential text embeddings,
+/// broken down by model type. This helps monitor usage patterns and load
+/// across different embedding models.
+///
+/// # Metric Details
+/// - Name: `atoma_text_embs_confidential_num_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_text_embs_confidential_num_requests",
+        "The number of incoming requests for confidential text embeddings tasks",
+        &["model"]
+    )
+    .unwrap()
+});
 /// Histogram metric that tracks the latency of chat completion token generation.
 ///
 /// This metric measures the time taken to generate each token during chat completions,
@@ -266,6 +325,103 @@ pub static TOTAL_FAILED_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
     register_counter_vec!(
         "atoma_total_failed_requests",
         "Total number of failed requests",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of failed chat requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_chat_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_CHAT_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_total_failed_chat_requests",
+        "Total number of failed chat requests",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of failed chat confidential requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_chat_confidential_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_total_failed_chat_confidential_requests",
+        "Total number of failed chat confidential requests",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of failed image generation requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_image_generation_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_IMAGE_GENERATION_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_total_failed_image_generation_requests",
+        "Total number of failed image generation requests",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of failed confidential image generation requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_image_confidential_generation_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS: Lazy<CounterVec> =
+    Lazy::new(|| {
+        register_counter_vec!(
+            "atoma_total_failed_image_confidential_generation_requests",
+            "Total number of failed confidential image generation requests",
+            &["model"]
+        )
+        .unwrap()
+    });
+
+/// Counter metric that tracks the total number of failed text embedding requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_text_embedding_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_total_failed_text_embedding_requests",
+        "Total number of failed text embedding requests",
+        &["model"]
+    )
+    .unwrap()
+});
+
+/// Counter metric that tracks the total number of failed confidential text embedding requests
+///
+/// # Metric Details
+/// - Name: `atoma_total_failed_text_embedding_confidential_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
+        "atoma_total_failed_text_embedding_confidential_requests",
+        "Total number of failed confidential text embedding requests",
         &["model"]
     )
     .unwrap()
