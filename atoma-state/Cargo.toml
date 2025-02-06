@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+atoma-p2p = { workspace = true }
 atoma-sui = { workspace = true }
 config = { workspace = true }
 flume = { workspace = true }

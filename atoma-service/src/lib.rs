@@ -17,7 +17,6 @@ pub mod config;
 pub mod error;
 pub(crate) mod handlers;
 pub mod middleware;
-pub mod proxy;
 pub mod server;
 pub mod streamer;
 #[cfg(test)]
