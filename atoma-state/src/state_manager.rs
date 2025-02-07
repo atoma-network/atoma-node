@@ -1,15 +1,17 @@
 use crate::build_query_with_in;
-use crate::handlers::{handle_atoma_event, handle_state_manager_event};
+use crate::handlers::{handle_atoma_event, handle_p2p_event, handle_state_manager_event};
 use crate::types::{
-    AtomaAtomaStateManagerEvent, NodeSubscription, Stack, StackAttestationDispute,
+    AtomaAtomaStateManagerEvent, Node, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
 
+use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
+use tokio::sync::oneshot;
 use tokio::sync::watch::Receiver;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
@@ -25,6 +27,8 @@ pub struct AtomaStateManager {
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+    /// Atoma p2p service receiver
+    pub p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
 }
 
 impl AtomaStateManager {
@@ -34,11 +38,13 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_service_receiver,
         }
     }
 
@@ -64,6 +70,7 @@ impl AtomaStateManager {
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
         let db = PgPool::connect(database_url).await?;
@@ -72,6 +79,7 @@ impl AtomaStateManager {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            p2p_service_receiver,
         })
     }
 
@@ -149,6 +157,30 @@ impl AtomaStateManager {
                                 event = "state_manager_receiver_error",
                                 error = %e,
                                 "All state manager senders have been dropped, we will not be able to handle any more events from the Atoma node inference service"
+                            );
+                            // NOTE: We continue the loop, as the inference service might be shutting down,
+                            // but we want to keep the state manager running
+                            // for event synchronization with the Atoma Network protocol.
+                            continue;
+                        }
+                    }
+                }
+                p2p_event = self.p2p_service_receiver.recv_async() => {
+                    match p2p_event {
+                        Ok((p2p_event, Some(sender))) => {
+                            handle_p2p_event(&self, p2p_event, sender).await?;
+                        }
+                        Ok((_, None)) => {
+                            // NOTE: Atoma nodes do not need to register public URLs of other peer nodes, and this event is unreachable
+                            // from the Atoma state manager service
+                            unreachable!("Atoma nodes do not need to register public URLs of other peer nodes");
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                target = "atoma-state-manager",
+                                event = "p2p_service_receiver_error",
+                                error = %e,
+                                "All p2p service senders have been dropped, terminating the state manager running process"
                             );
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
@@ -713,6 +745,149 @@ impl AtomaState {
             .bind(task_small_id)
             .execute(&self.db)
             .await?;
+        Ok(())
+    }
+
+    /// Inserts a new node registration event into the database.
+    ///
+    /// This method records a new node registration by inserting the node's details into the `nodes` table.
+    /// Each record consists of a small ID (used for internal references), a node ID (unique identifier),
+    /// and the node's Sui blockchain address.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - An internal identifier for the node, used for efficient database operations
+    /// * `node_id` - The unique identifier string for the node
+    /// * `node_sui_address` - The Sui blockchain address associated with the node
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError))
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute
+    /// - There's a constraint violation (e.g., duplicate node_small_id or node_id)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn register_node(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.insert_node_registration_event(
+    ///         1,                              // node_small_id
+    ///         "node_123".to_string(),        // node_id
+    ///         "0x123...abc".to_string()      // node_sui_address
+    ///     ).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id, node_id = %node_id, node_sui_address = %node_sui_address)
+    )]
+    pub async fn insert_node_registration_event(
+        &self,
+        node_small_id: i64,
+        node_id: String,
+        node_sui_address: String,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO nodes (node_small_id, node_id, node_sui_address) VALUES ($1, $2, $3)",
+        )
+        .bind(node_small_id)
+        .bind(node_id)
+        .bind(node_sui_address)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Retrieves a node from the database by its small ID.
+    ///
+    /// This method fetches a node record from the `nodes` table using the provided `node_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node to retrieve.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Node>`: A result containing either:
+    ///   - `Ok(Node)`: A `Node` object representing the requested node.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The specified node doesn't exist.
+    /// - There's an issue converting the database row into a `Node` object.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::{AtomaStateManager, Node};
+    ///
+    /// async fn get_node(state_manager: &AtomaStateManager, node_small_id: i64) -> Result<Node, AtomaStateManagerError> {
+    ///     state_manager.get_node_by_small_id(node_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id)
+    )]
+    pub async fn get_node_by_small_id(&self, node_small_id: i64) -> Result<Node> {
+        let node = sqlx::query("SELECT * FROM nodes WHERE node_small_id = $1")
+            .bind(node_small_id)
+            .fetch_one(&self.db)
+            .await?;
+        Ok(Node::from_row(&node)?)
+    }
+
+    /// Verifies the ownership of a node's small ID by checking the Sui address.
+    ///
+    /// This method fetches the node's small ID from the database and checks if the provided Sui address
+    /// matches the address stored in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The small ID of the node to verify.
+    /// * `sui_address` - The Sui address to verify against the node's small ID.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails to execute.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(node_small_id = %node_small_id, sui_address = %sui_address)
+    )]
+    pub async fn verify_node_small_id_ownership(
+        &self,
+        node_small_id: u64,
+        sui_address: String,
+    ) -> Result<()> {
+        let exists = sqlx::query(
+            "SELECT EXISTS(SELECT 1 FROM nodes WHERE node_small_id = $1 AND node_sui_address = $2)",
+        )
+        .bind(node_small_id as i64)
+        .bind(sui_address)
+        .fetch_one(&self.db)
+        .await?
+        .get::<bool, _>(0);
+
+        if !exists {
+            return Err(AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed);
+        }
+
         Ok(())
     }
 
@@ -2216,6 +2391,8 @@ pub enum AtomaStateManagerError {
     FailedToCreateDatabaseDirectory(#[from] std::io::Error),
     #[error("Failed to migrate database")]
     FailedToMigrateDatabase(#[from] sqlx::migrate::MigrateError),
+    #[error("Node small ID ownership verification failed")]
+    NodeSmallIdOwnershipVerificationFailed,
 }
 
 #[cfg(test)]
@@ -2336,6 +2513,190 @@ mod tests {
         let subscribed_tasks = state_manager.get_subscribed_tasks(1).await.unwrap();
         assert_eq!(subscribed_tasks.len(), 1);
         assert_eq!(subscribed_tasks[0], task1);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_insert_node_registration_event() {
+        let state_manager = setup_test_db().await;
+
+        // Test data
+        let node_small_id = 42;
+        let node_id = "test_node_123".to_string();
+        let node_sui_address = "0xabc...def".to_string();
+
+        // Test successful insertion
+        let result = state_manager
+            .insert_node_registration_event(
+                node_small_id,
+                node_id.clone(),
+                node_sui_address.clone(),
+            )
+            .await;
+        assert!(result.is_ok(), "Failed to insert node registration event");
+
+        let node = state_manager
+            .get_node_by_small_id(node_small_id)
+            .await
+            .unwrap();
+        assert_eq!(node.node_small_id, node_small_id);
+        assert_eq!(node.node_id, node_id);
+        assert_eq!(node.node_sui_address, node_sui_address);
+
+        truncate_tables(&state_manager.db).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_verify_node_small_id_ownership() {
+        let state_manager = setup_test_db().await;
+
+        // Setup: Create nodes with different addresses
+        let nodes = vec![
+            (1, "0x123abc".to_string()),
+            (2, "0x456def".to_string()),
+            (3, "0x789ghi".to_string()),
+        ];
+
+        for (node_small_id, node_sui_address) in nodes.clone() {
+            sqlx::query(
+                "INSERT INTO nodes (node_small_id, node_id, node_sui_address) VALUES ($1, $2, $3)",
+            )
+            .bind(node_small_id)
+            .bind(format!("node{node_small_id}"))
+            .bind(node_sui_address.clone())
+            .execute(&state_manager.db)
+            .await
+            .unwrap();
+        }
+
+        // Test 1: Verify correct ownership
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x123abc".to_string())
+            .await;
+        assert!(
+            result.is_ok(),
+            "Valid ownership verification should succeed"
+        );
+
+        // Test 2: Verify incorrect address for existing node
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x456def".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with wrong address should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 3: Verify non-existent node
+        let result = state_manager
+            .verify_node_small_id_ownership(999, "0x999xyz".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification of non-existent node should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 4: Verify with empty address
+        let result = state_manager
+            .verify_node_small_id_ownership(1, String::new())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with empty address should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 5: Verify case sensitivity
+        let result = state_manager
+            .verify_node_small_id_ownership(1, "0x123ABC".to_string())
+            .await;
+        assert!(result.is_err(), "Verification should be case sensitive");
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 6: Verify with leading/trailing whitespace
+        let result = state_manager
+            .verify_node_small_id_ownership(1, " 0x123abc ".to_string())
+            .await;
+        assert!(result.is_err(), "Verification with whitespace should fail");
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 7: Verify multiple nodes in sequence
+        for (node_small_id, node_address) in nodes {
+            let result = state_manager
+                .verify_node_small_id_ownership(u64::try_from(node_small_id).unwrap(), node_address)
+                .await;
+            assert!(
+                result.is_ok(),
+                "Valid ownership verification should succeed for all valid nodes"
+            );
+        }
+
+        // Test 8: Verify with maximum u64 value
+        let result = state_manager
+            .verify_node_small_id_ownership(u64::MAX, "0xffffff".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with maximum u64 value should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
+
+        // Test 9: Verify node zero
+        let result = state_manager
+            .verify_node_small_id_ownership(0, "0x000000".to_string())
+            .await;
+        assert!(
+            result.is_err(),
+            "Verification with node_small_id 0 should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AtomaStateManagerError::NodeSmallIdOwnershipVerificationFailed
+            ),
+            "Should return NodeSmallIdOwnershipVerificationFailed error"
+        );
 
         truncate_tables(&state_manager.db).await;
     }

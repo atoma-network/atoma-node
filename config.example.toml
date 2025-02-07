@@ -36,10 +36,24 @@ node_badges = [
     ],
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
 
-[proxy_server]
-# replace this with the public url address of the Atoma proxy server (currently https://api.atomacloud.com)
-proxy_address = ""
-# replace this with the public url address of this node
-node_public_address = ""
+[atoma_p2p]
+# Interval for sending heartbeat messages to peers (in seconds)
+heartbeat_interval = { secs = 30, nanos = 0 }
+# Maximum duration a connection can remain idle before closing (in seconds)
+idle_connection_timeout = { secs = 60, nanos = 0 }
+# Address to listen for incoming TCP connections (format: "/ip4/x.x.x.x/tcp/x")
+listen_addr = "/ip4/0.0.0.0/tcp/4001"
+# Node's small ID (assigned by Atoma smart contract)
+node_small_id = 1
+# The HTTP(s) public URL of the node
+public_url = "https://<PUBLIC_URL>"
+# List of bootstrap nodes to connect to
+bootstrap_nodes = [
+    "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",  
+    "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",  
+    "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",  
+    "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",  
+    "12D3KooWKnDdG3iXw9eTFijk3EWSunZcFi54Zka4wmtqtt6rPxc",  
+]
 # required, replace this with the country (ISO 3166-1 alpha-2) of the node (https://www.iso.org/obp/ui/#search/code/
 country = ""

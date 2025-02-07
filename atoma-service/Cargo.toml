@@ -12,6 +12,7 @@ path = "../atoma-bin/atoma_node.rs"
 anyhow = { workspace = true }
 atoma-confidential = { workspace = true }
 atoma-daemon = { workspace = true }
+atoma-p2p = { workspace = true }
 atoma-state = { workspace = true }
 atoma-sui = { workspace = true }
 atoma-utils = { workspace = true }
