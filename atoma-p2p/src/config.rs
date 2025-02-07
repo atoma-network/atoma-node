@@ -2,15 +2,17 @@ use config::{Config, File};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;
+use validator::{Validate, ValidationError};
 
 /// Configuration settings for a P2P Atoma Node.
 ///
 /// This struct holds timing-related configuration parameters that control
 /// the behavior of peer-to-peer connections in an Atoma node.
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct AtomaP2pNodeConfig {
     /// Country of origin of the node
+    #[validate(custom(function = validate_country_code))]
     pub country: String,
 
     /// The interval at which heartbeat messages are sent to peers.
@@ -35,6 +37,7 @@ pub struct AtomaP2pNodeConfig {
     ///
     /// This is the URL that the node will use to send requests to the network.
     /// It is a string in the format of "https://x.x.x.x:x".
+    #[validate(custom(function = validate_public_url))]
     pub public_url: String,
 
     /// The node's small id (assigned by the Atoma smart contract)
@@ -91,4 +94,37 @@ impl AtomaP2pNodeConfig {
             .get::<Self>("atoma_p2p")
             .expect("Failed to generate configuration instance")
     }
+}
+
+/// Validates the country code of the node.
+///
+/// This function validates the country code of the node by checking if it is a valid ISO 3166-1 alpha-2 country code.
+///
+/// # Arguments
+///
+/// * `country` - The country code of the node.
+///
+/// # Returns
+///
+/// Returns a `Result<()>`, which is `Ok(())` if the country code is valid, or an error if it is invalid.
+fn validate_country_code(country: &str) -> Result<(), ValidationError> {
+    isocountry::CountryCode::for_alpha2(country)
+        .map_err(|_| ValidationError::new("Country code is invalid"))?;
+    Ok(())
+}
+
+/// Validates the public URL of the node.
+///
+/// This function validates the public URL of the node by parsing it and checking if it is a valid URL.
+///
+/// # Arguments
+///
+/// * `public_url` - The public URL of the node.
+///
+/// # Returns
+///
+/// Returns a `Result<()>`, which is `Ok(())` if the public URL is valid, or an error if it is invalid.
+fn validate_public_url(public_url: &str) -> Result<(), ValidationError> {
+    url::Url::parse(public_url).map_err(|_| ValidationError::new("Public URL is invalid"))?;
+    Ok(())
 }

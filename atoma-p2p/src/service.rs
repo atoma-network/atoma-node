@@ -904,6 +904,8 @@ pub enum AtomaP2pNodeError {
     UrlParseError(#[from] url::ParseError),
     #[error("Country code is invalid: `{0}`")]
     InvalidCountryCodeError(String),
+    #[error("Validation error: `{0}`")]
+    ValidationError(#[from] validator::ValidationError),
 }
 
 mod utils {

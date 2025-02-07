@@ -10,7 +10,7 @@ ciborium = { workspace = true }
 chrono = { workspace = true }
 config = { workspace = true }
 isocountry = { workspace = true }
-libp2p = { workspace = true, features = [ "tokio", "identify", "gossipsub", "mdns", "kad", "noise", "macros", "tcp", "yamux", "quic"] }
+libp2p = { workspace = true, features = [ "tokio", "identify", "gossipsub", "mdns", "kad", "macros","quic"] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 url = { workspace = true }
+validator = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 rand = { workspace = true }
