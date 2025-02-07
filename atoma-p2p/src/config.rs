@@ -90,9 +90,11 @@ impl AtomaP2pNodeConfig {
         let config = builder
             .build()
             .expect("Failed to generate atoma-p2p configuration file");
-        config
+        let config = config
             .get::<Self>("atoma_p2p")
-            .expect("Failed to generate configuration instance")
+            .expect("Failed to generate configuration instance");
+        config.validate().expect("Configuration is invalid");
+        config
     }
 }
 
