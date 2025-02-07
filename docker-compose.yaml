@@ -23,7 +23,6 @@ x-atoma-node-non-confidential: &atoma-node-non-confidential
   networks:
     - atoma-network
 
-
 # Base configuration for cuda inference services
 x-inference-service-cuda: &inference-service-cuda
   runtime: nvidia
@@ -74,20 +73,30 @@ services:
     env_file: .env
     networks:
       - atoma-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p ${POSTGRES_PORT} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.1.0
     restart: always
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
     env_file: .env
     networks:
       - atoma-network
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.5.1
     restart: always
     ports:
       - "${GRAFANA_PORT:-30001}:3000"
@@ -98,6 +107,51 @@ services:
     env_file: .env
     networks:
       - atoma-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:2.9.4
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yaml:/etc/loki/local.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - atoma-network
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
+    ports:
+      - "3200:3200"
+    networks:
+      - atoma-network
+    user: "0"
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.119.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+      - "8889:8889" # Prometheus exporter
+    networks:
+      - atoma-network
+    depends_on:
+      - prometheus
+      - grafana
+      - loki
+      - tempo
 
   atoma-node-confidential:
     <<: *atoma-node-confidential
@@ -165,13 +219,13 @@ services:
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.7.1
     environment:
-    # Backend for attention computation
-    # Available options:
-    # - "TORCH_SDPA": use torch.nn.MultiheadAttention
-    # - "FLASH_ATTN": use FlashAttention
-    # - "XFORMERS": use XFormers
-    # - "ROCM_FLASH": use ROCmFlashAttention
-    # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
       - VLLM_ATTENTION_BACKEND=FLASH_ATTN
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
@@ -225,3 +279,6 @@ volumes:
   postgres-data:
   grafana_data:
   sui-config-volume:
+  prometheus-data:
+  loki-data:
+  tempo-data:
