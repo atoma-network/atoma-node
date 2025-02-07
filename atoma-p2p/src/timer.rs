@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::time::Duration;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tracing::{error, instrument};
@@ -93,9 +94,17 @@ pub struct NodeUsageMetrics {
 
 /// Returns the usage metrics for the node
 fn get_usage_metrics(
-    _node_public_url: String,
-    _node_small_id: u64,
-    _country: String,
+    node_public_url: String,
+    node_small_id: u64,
+    country: String,
 ) -> NodeUsageMetrics {
-    todo!()
+    NodeUsageMetrics {
+        node_public_url,
+        node_small_id,
+        country,
+        timestamp: Utc::now()
+            .timestamp()
+            .try_into()
+            .expect("Failed to convert timestamp to u64, timestamp should never be negative"),
+    }
 }
