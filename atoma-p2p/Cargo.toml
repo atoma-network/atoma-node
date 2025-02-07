@@ -9,6 +9,7 @@ blake3 = { workspace = true }
 ciborium = { workspace = true }
 chrono = { workspace = true }
 config = { workspace = true }
+isocountry = { workspace = true }
 libp2p = { workspace = true, features = [ "tokio", "identify", "gossipsub", "mdns", "kad", "noise", "macros", "tcp", "yamux", "quic"] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
