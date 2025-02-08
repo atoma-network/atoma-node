@@ -902,6 +902,10 @@ pub enum AtomaP2pNodeError {
     UsageMetricsDeserializeError(#[from] ciborium::de::Error<std::io::Error>),
     #[error("Failed to parse URL: `{0}`")]
     UrlParseError(#[from] url::ParseError),
+    #[error("Country code is invalid: `{0}`")]
+    InvalidCountryCodeError(String),
+    #[error("Validation error: `{0}`")]
+    ValidationError(#[from] validator::ValidationError),
 }
 
 mod utils {
@@ -972,10 +976,13 @@ mod utils {
     /// * Replay attacks by enforcing timestamp freshness
     /// * Future timestamp manipulation attempts
     #[instrument(level = "debug", skip_all)]
-    pub fn validate_usage_metrics_url_and_timestamp(
+    pub fn validate_usage_metrics_country_url_and_timestamp(
         usage_metrics: &UsageMetrics,
     ) -> Result<(), AtomaP2pNodeError> {
         let now = std::time::Instant::now().elapsed().as_secs();
+
+        let country = usage_metrics.country.as_str();
+        validate_country_code(country)?;
 
         // Check if the URL is valid
         let _usage_metrics_url = Url::parse(&usage_metrics.node_public_url).map_err(|e| {
@@ -1005,6 +1012,14 @@ mod utils {
             ));
         }
 
+        Ok(())
+    }
+
+    /// Custom validation function for ISO 3166-1 alpha-2 country codes
+    fn validate_country_code(code: &str) -> Result<(), AtomaP2pNodeError> {
+        isocountry::CountryCode::for_alpha2(code).map_err(|_| {
+            AtomaP2pNodeError::InvalidCountryCodeError("Country code is invalid.".to_string())
+        })?;
         Ok(())
     }
 
@@ -1218,7 +1233,7 @@ mod utils {
         state_manager_sender: &Sender<StateManagerEvent>,
     ) -> Result<(), AtomaP2pNodeError> {
         // Validate the message's node public URL and timestamp
-        validate_usage_metrics_url_and_timestamp(message)?;
+        validate_usage_metrics_country_url_and_timestamp(message)?;
         // Check if the signature is valid
         let UsageMetrics {
             node_public_url,

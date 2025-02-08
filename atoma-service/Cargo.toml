@@ -49,9 +49,9 @@ tracing-subscriber = { workspace = true, features = [
   "json",
   "local-time",
 ] }
+url = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
-validator = { workspace = true, features = ["derive"] }
 x25519-dalek = { workspace = true }
 
 [dev-dependencies]
