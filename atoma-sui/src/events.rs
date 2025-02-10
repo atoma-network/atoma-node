@@ -879,6 +879,11 @@ pub struct NodePublicKeyCommittmentEvent {
     /// The TEE remote attestation report attesting for
     /// the public key's generation integrity, in byte format.
     pub tee_remote_attestation_bytes: Vec<u8>,
+
+    /// The TEE Provider used to generate the public key.
+    /// This type is used to identify which attestation
+    /// verification method should be used.
+    pub tee_provider: u16,
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.

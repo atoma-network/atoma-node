@@ -62,3 +62,4 @@ tempfile = { workspace = true }
 
 [features]
 tdx = ["atoma-confidential/tdx"]
+sev-snp = ["atoma-confidential/sev-snp"]

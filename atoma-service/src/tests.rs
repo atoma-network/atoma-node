@@ -287,6 +287,7 @@ mod middleware {
                 decryption_receiver,
                 encryption_receiver,
                 compute_shared_secret_receiver,
+                None,
                 shutdown_receiver,
             )
             .expect("Failed to create confidential compute service");

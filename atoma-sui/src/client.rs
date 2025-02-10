@@ -1024,13 +1024,13 @@ impl Client {
 
     /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
     ///
-    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
+    /// This method creates and submits a transaction that rotates a node's key using remote
     /// attestation. The node must have a valid node badge to perform this operation. The method requires
     /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
     ///
     /// # Arguments
     ///
-    /// * `tdx_quote_bytes` - A vector of bytes containing the Intel TDX remote attestation quote
+    /// * `tdx_quote_bytes` - A vector of bytes containing the remote attestation quote
     /// * `public_key_bytes` - A 32-byte array containing the new public key
     /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
     ///           automatically select a gas object
@@ -1055,12 +1055,12 @@ impl Client {
     /// use sui_sdk::types::base_types::ObjectID;
     ///
     /// async fn example(client: &mut AtomaSuiClient) -> Result<()> {
-    ///     let tdx_quote = vec![1, 2, 3, 4]; // Your TDX quote bytes
+    ///     let quote = vec![1, 2, 3, 4]; // Your quote bytes
     ///     let public_key = [0u8; 32];       // Your new public key
     ///
     ///     // Submit with default gas settings
     ///     let tx_digest = client.submit_key_rotation_remote_attestation(
-    ///         tdx_quote,
+    ///         quote,
     ///         public_key,
     ///         None,    // default gas
     ///         None,    // default gas budget
@@ -1074,12 +1074,12 @@ impl Client {
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
-        remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
+        remote_attestation_quote = %hex::encode(&quote_bytes)
     ))]
     pub async fn submit_key_rotation_remote_attestation(
         &mut self,
         public_key_bytes: [u8; 32],
-        tdx_quote_bytes: Vec<u8>,
+        quote_bytes: Vec<u8>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -1104,7 +1104,7 @@ impl Client {
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(public_key_bytes.to_vec().into())?,
-                    SuiJsonValue::new(tdx_quote_bytes.into())?,
+                    SuiJsonValue::new(quote_bytes.into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),

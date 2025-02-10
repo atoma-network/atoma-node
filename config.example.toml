@@ -6,6 +6,7 @@ image_generations_service_url = "http://image-generations:80"
 models = ["meta-llama/Llama-3.2-3B-Instruct"]
 revisions = ["main"]
 service_bind_address = "0.0.0.0:3000"
+confidential_compute_provider = "intel-tdx"
 
 [atoma_sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet

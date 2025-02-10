@@ -43,6 +43,9 @@ pub struct AtomaServiceConfig {
     ///
     /// This field specifies the address and port on which the Atoma Service will bind.
     pub service_bind_address: String,
+
+    /// Provider for the confidential compute service
+    pub confidential_compute_provider: Option<String>,
 }
 
 impl AtomaServiceConfig {
