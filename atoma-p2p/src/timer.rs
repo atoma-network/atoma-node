@@ -81,7 +81,7 @@ pub fn usage_metrics_timer_task(
     })
 }
 
-/// Returns the node metadata for the node
+/// Returns metadata for the node
 ///
 /// This metadata is used to identify the node and its location in the network
 /// and is published to the network for monitoring and analytics purposes.

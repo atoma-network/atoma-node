@@ -14,8 +14,6 @@ use tracing::instrument;
 /// to be sent across the p2p network, for efficient request routing.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct NodeMetrics {
-    // /// The uptime of the node
-    // pub uptime: u64,
     /// The CPU usage of the node
     pub cpu_usage: f32,
     /// The amount of RAM used
@@ -41,8 +39,6 @@ pub struct NodeMetrics {
 /// Structure to store the usage metrics for each GPU
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GpuMetrics {
-    /// The utilization of the GPU
-    pub utilization: u32,
     /// The amount of memory used by the GPU
     pub memory_used: u64,
     /// The total amount of memory on the GPU
@@ -73,7 +69,6 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
         let temperature = device.temperature(TemperatureSensor::Gpu)?;
         let power_usage = device.power_usage()?;
         gpus.push(GpuMetrics {
-            utilization: gpu,
             memory_used: used,
             memory_total: total,
             memory_free: free,
@@ -84,6 +79,8 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
         });
     }
 
+    // Refresh the system information so we can get the latest metrics
+    sys.refresh_all();
     let cpu_usage = sys.global_cpu_usage();
     let ram_used = sys.used_memory();
     let ram_total = sys.total_memory();
@@ -97,8 +94,6 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
         network_rx += data.received();
         network_tx += data.transmitted();
     }
-
-    sys.refresh_all();
 
     Ok(NodeMetrics {
         cpu_usage,

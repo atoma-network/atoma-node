@@ -27,10 +27,10 @@ pub struct AtomaP2pNodeConfig {
     /// will be terminated to free up resources.
     pub idle_connection_timeout: Duration,
 
-    /// The address to listen on for incoming tcp connections.
+    /// The address to listen on for incoming QUIC connections.
     ///
     /// This is the address that the node will use to listen for incoming connections.
-    /// It is a string in the format of "/ip4/x.x.x.x/tcp/x".
+    /// It is a string in the format of "/ip4/x.x.x.x/udp/x/quic-v1".
     pub listen_addr: String,
 
     /// The public URL of the node.
@@ -46,7 +46,7 @@ pub struct AtomaP2pNodeConfig {
     /// The list of bootstrap nodes to connect to.
     ///
     /// Bootstrap nodes are nodes that the node will use to bootstrap its network connection.
-    /// They are a list of strings in the format of "/ip4/x.x.x.x/tcp/x".
+    /// They are a list of strings in the format of "/ip4/x.x.x.x/udp/x/quic-v1/p2p/QmHash...".
     pub bootstrap_nodes: Vec<String>,
 }
 

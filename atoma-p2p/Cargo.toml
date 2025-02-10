@@ -10,7 +10,19 @@ ciborium = { workspace = true }
 chrono = { workspace = true }
 config = { workspace = true }
 isocountry = { workspace = true }
-libp2p = { workspace = true, features = [ "tokio", "identify", "gossipsub", "mdns", "kad", "macros","quic"] }
+libp2p = { workspace = true, features = [
+	"tokio",
+	"dns",
+	"identify",
+	"gossipsub",
+	"mdns",
+	"kad",
+	"macros",
+	"quic",
+	"tcp",
+	"yamux",
+	"noise",
+] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

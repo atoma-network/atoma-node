@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::metrics::NodeMetrics;
+use crate::{metrics::NodeMetrics, service::AtomaP2pNodeError};
+
+type Result<T> = std::result::Result<T, AtomaP2pNodeError>;
 
 pub enum AtomaP2pEvent {
     /// An event emitted when a node joins the Atoma network and registers its public URL,
@@ -84,6 +86,26 @@ pub struct NodeP2pMetadata {
     pub timestamp: u64,
 }
 
+/// A struct containing a serialized message and its hash
+pub struct SerializedMessage {
+    /// The serialized message
+    pub message: Vec<u8>,
+
+    /// The hash of the serialized message
+    pub hash: blake3::Hash,
+}
+
+/// A trait for serializing a message (with ciborium) and returning the hash of the serialized message
+pub trait SerializeWithHash {
+    /// Serialize the message and return the hash of the serialized message
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the message cannot be serialized
+    /// or if the hash cannot be computed
+    fn serialize_with_hash(&self) -> Result<SerializedMessage>;
+}
+
 /// A message containing usage metrics for a node.
 ///
 /// This struct represents a signed message that includes the node's small ID,
@@ -97,6 +119,18 @@ pub struct NodeMessage {
     pub node_metrics: NodeMetrics,
 }
 
+impl SerializeWithHash for NodeMessage {
+    fn serialize_with_hash(&self) -> Result<SerializedMessage> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(self, &mut bytes)
+            .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
+        Ok(SerializedMessage {
+            hash: blake3::hash(&bytes),
+            message: bytes,
+        })
+    }
+}
+
 /// A signed message containing a node message.
 ///
 /// This struct represents a signed message that includes a node message and a cryptographic signature
@@ -108,4 +142,26 @@ pub struct SignedNodeMessage {
 
     /// The signature of the node message
     pub signature: Vec<u8>,
+}
+
+/// A trait for serializing a message (with ciborium)
+///
+/// This trait is used to serialize a message and return the serialized message
+/// as a vector of bytes.
+pub trait SerializeWithSignature {
+    /// Serialize the message
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the message cannot be serialized
+    fn serialize_with_signature(&self) -> Result<Vec<u8>>;
+}
+
+impl SerializeWithSignature for SignedNodeMessage {
+    fn serialize_with_signature(&self) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(self, &mut bytes)
+            .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
+        Ok(bytes)
+    }
 }
