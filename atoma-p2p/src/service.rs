@@ -250,18 +250,27 @@ impl AtomaP2pNode {
                 );
                 AtomaP2pNodeError::GossipsubSubscriptionError(e)
             })?;
-        swarm
-            .listen_on(config.listen_addr.parse().unwrap())
-            .map_err(|e| {
-                error!(
-                    target = "atoma-p2p",
-                    event = "listen_on_error",
-                    listen_addr = config.listen_addr,
-                    error = %e,
-                    "Failed to listen on address"
-                );
-                AtomaP2pNodeError::SwarmListenOnError(e)
-            })?;
+        let listen_addr = config.listen_addr.parse().map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "address_parse_error",
+                listen_addr = config.listen_addr,
+                error = %e,
+                "Failed to parse listen address"
+            );
+            AtomaP2pNodeError::ListenAddressParseError(e)
+        })?;
+
+        if let Err(e) = swarm.listen_on(listen_addr) {
+            error!(
+                target = "atoma-p2p",
+                event = "listen_on_error",
+                listen_addr = config.listen_addr,
+                error = %e,
+                "Failed to listen on address"
+            );
+            return Err(AtomaP2pNodeError::SwarmListenOnError(e));
+        }
 
         for peer_id in config.bootstrap_nodes {
             match peer_id.parse::<PeerId>() {
