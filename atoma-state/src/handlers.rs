@@ -725,7 +725,7 @@ pub(crate) async fn handle_p2p_event(
         "Processing p2p event"
     );
     match event {
-        AtomaP2pEvent::NodePublicUrlRegistrationEvent { .. } => {
+        AtomaP2pEvent::NodeMetricsRegistrationEvent { .. } => {
             // NOTE: Atoma nodes do not need to register public URLs of other peer nodes, and this event is unreachable
             // from the Atoma state manager service
             unreachable!("Atoma nodes do not need to register public URLs of other peer nodes");
