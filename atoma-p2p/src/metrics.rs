@@ -1,6 +1,6 @@
 use nvml_wrapper::{
-    struct_wrappers::device::{MemoryInfo, Utilization},
     enum_wrappers::device::TemperatureSensor,
+    struct_wrappers::device::{MemoryInfo, Utilization},
     Nvml,
 };
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use tracing::instrument;
 ///
 /// This data is collected from the system and the GPU
 /// to be sent across the p2p network, for efficient request routing.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct NodeMetrics {
     // /// The uptime of the node
     // pub uptime: u64,
@@ -39,7 +39,7 @@ pub struct NodeMetrics {
 }
 
 /// Structure to store the usage metrics for each GPU
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GpuMetrics {
     /// The utilization of the GPU
     pub utilization: u32,
@@ -61,8 +61,7 @@ pub struct GpuMetrics {
 
 /// Returns the usage metrics for the node
 #[instrument(level = "info", target = "metrics")]
-pub fn compute_usage_metrics() -> Result<NodeMetrics, NodeMetricsError> {
-    let sys = System::new_all();
+pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetricsError> {
     let nvml = Nvml::init()?;
 
     let device_count = nvml.device_count()?;
@@ -98,6 +97,8 @@ pub fn compute_usage_metrics() -> Result<NodeMetrics, NodeMetricsError> {
         network_rx += data.received();
         network_tx += data.transmitted();
     }
+
+    sys.refresh_all();
 
     Ok(NodeMetrics {
         cpu_usage,

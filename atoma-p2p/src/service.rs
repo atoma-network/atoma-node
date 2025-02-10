@@ -1,7 +1,7 @@
 use crate::{
     config::AtomaP2pNodeConfig,
-    timer::{usage_metrics_timer_task, NodeUsageMetrics},
-    types::{AtomaP2pEvent, GossipMessage, UsageMetrics},
+    timer::usage_metrics_timer_task,
+    types::{AtomaP2pEvent, GossipMessage, NodeMessage, SignedNodeMessage},
 };
 use flume::Sender;
 use futures::StreamExt;
@@ -75,7 +75,7 @@ pub struct AtomaP2pNode {
     state_manager_sender: Sender<StateManagerEvent>,
 
     /// Receiver channel to receive usage metrics from the timer task
-    usage_metrics_rx: UnboundedReceiver<NodeUsageMetrics>,
+    usage_metrics_rx: UnboundedReceiver<NodeMessage>,
 
     /// Whether this peer is a client or a node in the Atoma network.
     /// In the case of a client, it will store the public URLs of the participating nodes
@@ -674,14 +674,14 @@ impl AtomaP2pNode {
         }
         let gossip_message: GossipMessage = ciborium::from_reader(message_data)?;
         match gossip_message {
-            GossipMessage::UsageMetrics(usage_metrics) => {
+            GossipMessage::SignedNodeMessage(signed_node_message) => {
                 debug!(
                     target = "atoma-p2p",
                     event = "gossipsub_message_data",
                     "Received gossipsub message data"
                 );
-                let message_acceptance = match utils::validate_usage_metrics_message(
-                    &usage_metrics,
+                let message_acceptance = match utils::validate_signed_node_message(
+                    &signed_node_message,
                     &self.state_manager_sender,
                 )
                 .await
@@ -729,11 +729,13 @@ impl AtomaP2pNode {
                 }
                 // If the current peer is a client, we need to store the public URL in the state manager
                 if self.is_client {
-                    let event = AtomaP2pEvent::NodePublicUrlRegistrationEvent {
-                        public_url: usage_metrics.node_public_url,
-                        node_small_id: usage_metrics.node_small_id,
-                        timestamp: usage_metrics.timestamp,
-                        country: usage_metrics.country,
+                    let node_message = signed_node_message.node_message;
+                    let event = AtomaP2pEvent::NodeMetricsRegistrationEvent {
+                        public_url: node_message.node_metadata.node_public_url,
+                        node_small_id: node_message.node_metadata.node_small_id,
+                        timestamp: node_message.node_metadata.timestamp,
+                        country: node_message.node_metadata.country,
+                        node_metrics: node_message.node_metrics,
                     };
                     self.state_manager_sender.send((event, None)).map_err(|e| {
                         error!(
@@ -803,34 +805,30 @@ impl AtomaP2pNode {
     #[instrument(
         level = "info",
         fields(
-            node_small_id = %usage_metrics.node_small_id,
-            node_public_url = %usage_metrics.node_public_url,
+            node_small_id = %usage_metrics.node_metadata.node_small_id,
+            node_public_url = %usage_metrics.node_metadata.node_public_url,
         ),
         skip_all
     )]
     fn handle_new_usage_metrics_event(
         &mut self,
-        usage_metrics: NodeUsageMetrics,
+        usage_metrics: NodeMessage,
     ) -> Result<(), AtomaP2pNodeError> {
-        let NodeUsageMetrics {
-            node_public_url,
-            node_small_id,
-            country,
-            timestamp,
-        } = usage_metrics;
-        let usage_metrics_hash = blake3::hash(
-            &[
-                node_public_url.as_bytes(),
-                &node_small_id.to_le_bytes(),
-                country.as_bytes(),
-                &timestamp.to_le_bytes(),
-            ]
-            .concat(),
-        );
+        let mut node_message_bytes = Vec::new();
+        ciborium::into_writer(&usage_metrics, &mut node_message_bytes).map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "serialize_usage_metrics_error",
+                error = %e,
+                "Failed to serialize usage metrics"
+            );
+            AtomaP2pNodeError::UsageMetricsSerializeError(e)
+        })?;
+        let node_message_hash = blake3::hash(&node_message_bytes);
         let active_sui_address = self.keystore.addresses()[0];
         let signature = self
             .keystore
-            .sign_hashed(&active_sui_address, usage_metrics_hash.as_bytes())
+            .sign_hashed(&active_sui_address, node_message_hash.as_bytes())
             .map_err(|e| {
                 error!(
                     target = "atoma-p2p",
@@ -840,15 +838,12 @@ impl AtomaP2pNode {
                 );
                 AtomaP2pNodeError::SignatureError(e.to_string())
             })?;
-        let usage_metrics = UsageMetrics {
-            node_public_url,
-            node_small_id,
-            country,
-            timestamp,
+        let signed_node_message = SignedNodeMessage {
+            node_message: usage_metrics,
             signature: signature.as_ref().to_vec(),
         };
         let mut serialized_message = Vec::new();
-        ciborium::into_writer(&usage_metrics, &mut serialized_message).map_err(|e| {
+        ciborium::into_writer(&signed_node_message, &mut serialized_message).map_err(|e| {
             error!(
                 target = "atoma-p2p",
                 event = "serialize_usage_metrics_error",
@@ -906,6 +901,8 @@ pub enum AtomaP2pNodeError {
     InvalidCountryCodeError(String),
     #[error("Validation error: `{0}`")]
     ValidationError(#[from] validator::ValidationError),
+    #[error("Failed to compute usage metrics: `{0}`")]
+    UsageMetricsComputeError(#[from] crate::metrics::NodeMetricsError),
 }
 
 mod utils {
@@ -924,7 +921,10 @@ mod utils {
     use tracing::{error, instrument};
     use url::Url;
 
-    use crate::{types::UsageMetrics, AtomaP2pEvent};
+    use crate::{
+        types::{NodeMessage, SignedNodeMessage},
+        AtomaP2pEvent,
+    };
 
     use super::{AtomaP2pNodeError, StateManagerEvent};
 
@@ -976,35 +976,36 @@ mod utils {
     /// * Replay attacks by enforcing timestamp freshness
     /// * Future timestamp manipulation attempts
     #[instrument(level = "debug", skip_all)]
-    pub fn validate_usage_metrics_country_url_and_timestamp(
-        usage_metrics: &UsageMetrics,
+    pub fn validate_node_message_country_url_timestamp(
+        node_message: &NodeMessage,
     ) -> Result<(), AtomaP2pNodeError> {
         let now = std::time::Instant::now().elapsed().as_secs();
 
-        let country = usage_metrics.country.as_str();
+        let country = node_message.node_metadata.country.as_str();
         validate_country_code(country)?;
 
         // Check if the URL is valid
-        let _usage_metrics_url = Url::parse(&usage_metrics.node_public_url).map_err(|e| {
-            error!(
-                target = "atoma-p2p",
-                event = "invalid_url_format",
-                error = %e,
-                "Invalid URL format, received address: {}",
-                usage_metrics.node_public_url
-            );
-            AtomaP2pNodeError::UrlParseError(e)
-        })?;
+        let _usage_metrics_url =
+            Url::parse(&node_message.node_metadata.node_public_url).map_err(|e| {
+                error!(
+                    target = "atoma-p2p",
+                    event = "invalid_url_format",
+                    error = %e,
+                    "Invalid URL format, received address: {}",
+                    node_message.node_metadata.node_public_url
+                );
+                AtomaP2pNodeError::UrlParseError(e)
+            })?;
 
         // Check if the timestamp is within a reasonable time frame
-        if now < usage_metrics.timestamp
-            || now > usage_metrics.timestamp + EXPIRED_TIMESTAMP_THRESHOLD
+        if now < node_message.node_metadata.timestamp
+            || now > node_message.node_metadata.timestamp + EXPIRED_TIMESTAMP_THRESHOLD
         {
             error!(
                 target = "atoma-p2p",
                 event = "invalid_timestamp",
                 "Timestamp is invalid, timestamp: {}, now: {}",
-                usage_metrics.timestamp,
+                node_message.node_metadata.timestamp,
                 now
             );
             return Err(AtomaP2pNodeError::InvalidPublicAddressError(
@@ -1228,40 +1229,46 @@ mod utils {
     ///
     /// Returns `Ok(())` if the message is valid, or a `AtomaP2pNodeError` if any step fails.
     #[instrument(level = "debug", skip_all)]
-    pub async fn validate_usage_metrics_message(
-        message: &UsageMetrics,
+    pub async fn validate_signed_node_message(
+        signed_node_message: &SignedNodeMessage,
         state_manager_sender: &Sender<StateManagerEvent>,
     ) -> Result<(), AtomaP2pNodeError> {
-        // Validate the message's node public URL and timestamp
-        validate_usage_metrics_country_url_and_timestamp(message)?;
-        // Check if the signature is valid
-        let UsageMetrics {
-            node_public_url,
-            country,
+        let SignedNodeMessage {
+            node_message,
             signature,
-            timestamp,
-            node_small_id,
-        } = message;
-        let message_hash = blake3::hash(
-            &[
-                node_public_url.as_bytes(),
-                &node_small_id.to_le_bytes(),
-                country.as_bytes(),
-                &timestamp.to_le_bytes(),
-            ]
-            .concat(),
-        );
+        } = signed_node_message;
+
+        // Validate the message's node public URL and timestamp
+        validate_node_message_country_url_timestamp(node_message)?;
+
+        let mut node_message_bytes = Vec::new();
+        ciborium::into_writer(&node_message, &mut node_message_bytes).map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "serialize_usage_metrics_error",
+                error = %e,
+                "Failed to serialize usage metrics"
+            );
+            AtomaP2pNodeError::UsageMetricsSerializeError(e)
+        })?;
+        let message_hash = blake3::hash(&node_message_bytes);
         // Verify the signature of the message
         verify_signature(signature.as_slice(), message_hash.as_bytes())?;
         // Verify the node small ID ownership
-        verify_node_small_id_ownership(*node_small_id, signature.as_slice(), state_manager_sender)
-            .await?;
+        verify_node_small_id_ownership(
+            node_message.node_metadata.node_small_id,
+            signature.as_slice(),
+            state_manager_sender,
+        )
+        .await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{metrics::NodeMetrics, types::NodeP2pMetadata};
+
     use super::*;
     use flume::unbounded;
     use sui_keys::keystore::InMemKeystore;
@@ -1275,7 +1282,7 @@ mod tests {
         keystore: &InMemKeystore,
         timestamp_offset: i64,
         node_small_id: u64,
-    ) -> UsageMetrics {
+    ) -> SignedNodeMessage {
         let now = std::time::Instant::now().elapsed().as_secs();
         #[allow(clippy::cast_sign_loss)]
         #[allow(clippy::cast_possible_wrap)]
@@ -1284,26 +1291,37 @@ mod tests {
         let node_public_url = "https://test.example.com".to_string();
         let country = "US".to_string();
 
-        let message_hash = blake3::hash(
-            &[
-                node_public_url.as_bytes(),
-                &node_small_id.to_le_bytes(),
-                country.as_bytes(),
-                &timestamp.to_le_bytes(),
-            ]
-            .concat(),
-        );
+        let node_message = NodeMessage {
+            node_metadata: NodeP2pMetadata {
+                node_public_url,
+                node_small_id,
+                country,
+                timestamp,
+            },
+            node_metrics: NodeMetrics::default(),
+        };
+
+        let mut node_message_bytes = Vec::new();
+        ciborium::into_writer(&node_message, &mut node_message_bytes)
+            .map_err(|e| {
+                error!(
+                    target = "atoma-p2p",
+                    event = "serialize_usage_metrics_error",
+                    error = %e,
+                    "Failed to serialize usage metrics"
+                );
+                AtomaP2pNodeError::UsageMetricsSerializeError(e)
+            })
+            .expect("Failed to serialize usage metrics");
+        let message_hash = blake3::hash(&node_message_bytes);
 
         let active_address = keystore.addresses()[0];
         let signature = keystore
             .sign_hashed(&active_address, message_hash.as_bytes())
             .unwrap();
 
-        UsageMetrics {
-            node_public_url,
-            node_small_id,
-            country,
-            timestamp,
+        SignedNodeMessage {
+            node_message,
             signature: signature.as_ref().to_vec(),
         }
     }
@@ -1332,7 +1350,7 @@ mod tests {
         });
 
         // Validation should succeed
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         result.unwrap();
         // assert!(result.is_ok());
     }
@@ -1344,9 +1362,9 @@ mod tests {
 
         // Create metrics with invalid URL
         let mut metrics = create_test_usage_metrics(&keystore, 0, 1);
-        metrics.node_public_url = "not_a_valid_url".to_string();
+        metrics.node_message.node_metadata.node_public_url = "not_a_valid_url".to_string();
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(result, Err(AtomaP2pNodeError::UrlParseError(_))));
     }
 
@@ -1358,7 +1376,7 @@ mod tests {
         // Create metrics with expired timestamp (11 minutes ago)
         let metrics = create_test_usage_metrics(&keystore, -(11 * 60), 1);
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::InvalidPublicAddressError(_))
@@ -1373,7 +1391,7 @@ mod tests {
         // Create metrics with future timestamp
         let metrics = create_test_usage_metrics(&keystore, 60, 1);
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::InvalidPublicAddressError(_))
@@ -1389,7 +1407,7 @@ mod tests {
         let mut metrics = create_test_usage_metrics(&keystore, 0, 1);
         metrics.signature = vec![0; 32]; // Invalid signature
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::SignatureParseError(_))
@@ -1416,7 +1434,7 @@ mod tests {
             }
         });
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
@@ -1434,7 +1452,7 @@ mod tests {
         // Mock state manager channel error by dropping the receiver
         drop(rx);
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::StateManagerError(_))
@@ -1463,7 +1481,7 @@ mod tests {
             }
         });
 
-        let result = utils::validate_usage_metrics_message(&metrics, &tx).await;
+        let result = utils::validate_signed_node_message(&metrics, &tx).await;
         assert!(matches!(
             result,
             Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
