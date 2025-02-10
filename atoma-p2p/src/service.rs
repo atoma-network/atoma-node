@@ -3,13 +3,14 @@ use crate::{
     timer::{usage_metrics_timer_task, NodeUsageMetrics},
     types::{AtomaP2pEvent, GossipMessage, UsageMetrics},
 };
+use config::ConfigError;
 use flume::Sender;
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{self, ConfigBuilderError},
-    identify, kad, mdns,
+    identify, kad, mdns, noise,
     swarm::{DialError, NetworkBehaviour, SwarmEvent},
-    Multiaddr, PeerId, Swarm, SwarmBuilder, TransportError,
+    tcp, yamux, PeerId, Swarm, SwarmBuilder, TransportError,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
@@ -134,13 +135,13 @@ impl AtomaP2pNode {
     ///     let config = AtomaP2pNodeConfig {
     ///         heartbeat_interval: std::time::Duration::from_secs(1),
     ///         idle_connection_timeout: std::time::Duration::from_secs(30),
-    ///         listen_addr: "/ip4/127.0.0.1/tcp/8080".to_string(),
+    ///         listen_addr: "/ip4/127.0.0.1/udp/8080/quic-v1/p2p/QmHash...".to_string(),
     ///         seed_nodes: vec![],
     ///         public_url: "node1.example.com".to_string(),
     ///         node_small_id: 1,
     ///     };
     ///     let keystore = Arc::new(FileBasedKeystore::new(&std::path::PathBuf::from("keys"))?);
-    ///     
+    ///
     ///     AtomaP2pNode::start(config, keystore, state_manager_sender, false)
     /// }
     /// ```
@@ -168,6 +169,11 @@ impl AtomaP2pNode {
     ) -> Result<Self, AtomaP2pNodeError> {
         let mut swarm = SwarmBuilder::with_new_identity()
             .with_tokio()
+            .with_tcp(
+                tcp::Config::default(),
+                noise::Config::new,
+                yamux::Config::default,
+            )?
             .with_quic()
             .with_behaviour(|key| {
                 // To content-address message, we can take the hash of message and use it as an ID.
@@ -244,7 +250,18 @@ impl AtomaP2pNode {
                 );
                 AtomaP2pNodeError::GossipsubSubscriptionError(e)
             })?;
-        swarm.listen_on(config.listen_addr.parse()?).map_err(|e| {
+        let listen_addr = config.listen_addr.parse().map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "address_parse_error",
+                listen_addr = config.listen_addr,
+                error = %e,
+                "Failed to parse listen address"
+            );
+            AtomaP2pNodeError::ListenAddressParseError(e)
+        })?;
+
+        if let Err(e) = swarm.listen_on(listen_addr) {
             error!(
                 target = "atoma-p2p",
                 event = "listen_on_error",
@@ -252,26 +269,20 @@ impl AtomaP2pNode {
                 error = %e,
                 "Failed to listen on address"
             );
-            AtomaP2pNodeError::SwarmListenOnError(e)
-        })?;
+            return Err(AtomaP2pNodeError::SwarmListenOnError(e));
+        }
 
-        for bootstrap_node_addr in config.bootstrap_nodes {
-            match bootstrap_node_addr.parse::<Multiaddr>() {
-                Ok(addr) => {
-                    swarm.dial(addr).map_err(|e| {
-                        error!(
-                            target = "atoma-p2p",
-                            event = "dial_bootstrap_node",
-                            bootstrap_node = bootstrap_node_addr,
-                            error = %e,
-                            "Failed to dial bootstrap node"
-                        );
-                        AtomaP2pNodeError::BootstrapNodeDialError(e)
-                    })?;
+        for peer_id in config.bootstrap_nodes {
+            match peer_id.parse::<PeerId>() {
+                Ok(peer_id) => {
+                    swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, "/dnsaddr/bootstrap.libp2p.io".parse()?);
                     debug!(
                         target = "atoma-p2p",
                         event = "dialed_bootstrap_node",
-                        bootstrap_node = bootstrap_node_addr,
+                        peer_id = %peer_id,
                         "Dialed bootstrap node"
                     );
                 }
@@ -279,7 +290,7 @@ impl AtomaP2pNode {
                     error!(
                         target = "atoma-p2p",
                         event = "bootstrap_node_parse_error",
-                        bootstrap_node = bootstrap_node_addr,
+                        peer_id = %peer_id,
                         error = %e,
                         "Failed to parse bootstrap node address"
                     );
@@ -348,13 +359,13 @@ impl AtomaP2pNode {
     ///
     /// async fn run_node(node: AtomaP2pNode) {
     ///     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    ///     
+    ///
     ///     // Run the node in the background
     ///     let node_handle = tokio::spawn(node.run(shutdown_rx));
-    ///     
+    ///
     ///     // Signal shutdown when needed
     ///     shutdown_tx.send(true).expect("Failed to send shutdown signal");
-    ///     
+    ///
     ///     // Wait for the node to shut down
     ///     node_handle.await.expect("Node failed to shut down cleanly");
     /// }
@@ -886,6 +897,10 @@ pub enum AtomaP2pNodeError {
     InvalidPublicAddressError(String),
     #[error("Failed to parse listen address: {0}")]
     ListenAddressParseError(#[from] libp2p::multiaddr::Error),
+    #[error("Failed to build TCP config: {0}")]
+    TcpConfigBuildError(#[from] ConfigError),
+    #[error("Failed to initialize noise encryption: {0}")]
+    NoiseError(#[from] libp2p::noise::Error),
     #[error("Failed to send event to state manager: {0}")]
     StateManagerError(#[from] flume::SendError<StateManagerEvent>),
     #[error("Failed to sign hashed message, with error: {0}")]
