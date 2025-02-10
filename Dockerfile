@@ -25,9 +25,9 @@ WORKDIR /usr/src/atoma-node
 COPY . .
 
 # Compile
-RUN if [ "$ENABLE_TDX" = "true" ]; then \
+RUN if [ "$ENABLE_TDX" = "true" ] && [ "$ENABLE_SEV_SNP" = "false" ]; then \
         RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
-    elif [ "$ENABLE_SEV_SNP" = "true" ]; then \
+    elif [ "$ENABLE_SEV_SNP" = "true" ] && [ "$ENABLE_TDX" = "false" ]; then \
         RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features sev-snp; \
     else \
         RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
