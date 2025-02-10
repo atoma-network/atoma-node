@@ -1,4 +1,3 @@
-use crate::ToBytes;
 use dcap_rs::types::quotes::{body::QuoteBody, version_4::QuoteV4};
 use tdx::{
     device::{Device, DeviceOptions},
@@ -51,7 +50,7 @@ pub fn get_compute_data_attestation(attested_data: &[u8]) -> Result<QuoteV4> {
     Ok(device.get_attestation_report()?)
 }
 
-impl ToBytes for QuoteV4 {
+impl crate::ToBytes for QuoteV4 {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.header.to_bytes());

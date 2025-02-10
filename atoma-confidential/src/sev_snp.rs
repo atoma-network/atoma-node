@@ -1,13 +1,9 @@
-use bincode::{deserialize, serialize};
-
-use crate::ToBytes;
-
-use sev::{
-    attestation::{AttestationReport, AttestationReportSignature, Chain},
-    firmware::guest::Firmware,
-};
-
 use thiserror::Error;
+use bincode::{deserialize, serialize};
+use sev::{
+    certs::sev::Chain,
+    firmware::guest::{Firmware, AttestationReport},
+};
 
 pub const SEV_SNP_REPORT_DATA_SIZE: usize = 64;
 
@@ -80,7 +76,7 @@ pub struct SNPAttestationReport {
     pub report: AttestationReport,
 }
 
-impl ToBytes for SNPAttestationReport {
+impl crate::ToBytes for SNPAttestationReport {
     fn to_bytes(&self) -> Vec<u8> {
         bincode::serialize(&self).unwrap()
     }

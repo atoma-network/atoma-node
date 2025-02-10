@@ -7,15 +7,9 @@ use crate::{
     },
 };
 #[cfg(feature = "sev-snp")]
-use crate::{
-    sev_snp::{get_compute_data_attestation as snp_attestation, SnpError},
-    ToBytes,
-};
+use crate::sev_snp::{get_compute_data_attestation as snp_attestation, SnpError};
 #[cfg(feature = "tdx")]
-use crate::{
-    tdx::{get_compute_data_attestation as tdx_attestation, TdxError},
-    ToBytes,
-};
+use crate::tdx::{get_compute_data_attestation as tdx_attestation, TdxError};
 use atoma_sui::client::Client;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
 use atoma_utils::constants::NONCE_SIZE;
