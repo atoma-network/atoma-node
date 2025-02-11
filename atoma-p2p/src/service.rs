@@ -170,6 +170,20 @@ impl AtomaP2pNode {
         state_manager_sender: Sender<StateManagerEvent>,
         is_client: bool,
     ) -> Result<Self, AtomaP2pNodeError> {
+        if !is_client
+            && (config.public_url.is_none()
+                || config.node_small_id.is_none()
+                || config.country.is_none())
+        {
+            error!(
+                target = "atoma-p2p",
+                event = "invalid_config",
+                "Invalid config, either public_url, node_small_id or country is not set, this should never happen"
+            );
+            return Err(AtomaP2pNodeError::InvalidConfig(
+                "Invalid config, either public_url, node_small_id or country is not set, this should never happen".to_string(),
+            ));
+        }
         let mut swarm = SwarmBuilder::with_new_identity()
             .with_tokio()
             .with_tcp(
@@ -302,6 +316,7 @@ impl AtomaP2pNode {
         }
 
         let (usage_metrics_tx, usage_metrics_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let timer_join_handle = usage_metrics_timer_task(
             is_client,
             config.public_url,
@@ -399,7 +414,7 @@ impl AtomaP2pNode {
     /// - Peer subscription/unsubscription events
     /// - Usage metrics processing errors
     /// - Shutdown events
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "info", skip_all)]
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
@@ -903,6 +918,8 @@ pub enum AtomaP2pNodeError {
     ValidationError(#[from] validator::ValidationError),
     #[error("Failed to compute usage metrics: `{0}`")]
     UsageMetricsComputeError(#[from] crate::metrics::NodeMetricsError),
+    #[error("Invalid config: `{0}`")]
+    InvalidConfig(String),
 }
 
 mod utils {

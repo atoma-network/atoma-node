@@ -11,9 +11,9 @@ use validator::{Validate, ValidationError};
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct AtomaP2pNodeConfig {
-    /// Country of origin of the node
+    /// Country of origin of the node (optional, as clients do not need to provide a country of origin)
     #[validate(custom(function = validate_country_code))]
-    pub country: String,
+    pub country: Option<String>,
 
     /// The interval at which heartbeat messages are sent to peers.
     ///
@@ -29,19 +29,19 @@ pub struct AtomaP2pNodeConfig {
 
     /// The address to listen on for incoming QUIC connections.
     ///
-    /// This is the address that the node will use to listen for incoming connections.
+    /// This is the address that the client/node will use to listen for incoming connections.
     /// It is a string in the format of "/ip4/x.x.x.x/udp/x/quic-v1".
     pub listen_addr: String,
 
-    /// The public URL of the node.
+    /// The public URL of the node (optional, as clients do not need to provide a public URL)
     ///
     /// This is the URL that the node will use to send requests to the network.
     /// It is a string in the format of "https://x.x.x.x:x".
     #[validate(custom(function = validate_public_url))]
-    pub public_url: String,
+    pub public_url: Option<String>,
 
     /// The node's small id (assigned by the Atoma smart contract)
-    pub node_small_id: u64,
+    pub node_small_id: Option<u64>,
 
     /// The list of bootstrap nodes to connect to.
     ///
