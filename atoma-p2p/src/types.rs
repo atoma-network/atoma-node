@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use sui_sdk::types::crypto::{Signature, ToFromBytes};
 
 use crate::{metrics::NodeMetrics, service::AtomaP2pNodeError};
 
-type Result<T> = std::result::Result<T, AtomaP2pNodeError>;
+type Result<T, E = AtomaP2pNodeError> = std::result::Result<T, E>;
 
 pub enum AtomaP2pEvent {
     /// An event emitted when a node joins the Atoma network and registers its public URL,
@@ -141,6 +142,7 @@ pub struct SignedNodeMessage {
     pub node_message: NodeMessage,
 
     /// The signature of the node message
+    #[serde(skip)]
     pub signature: Vec<u8>,
 }
 
@@ -149,19 +151,44 @@ pub struct SignedNodeMessage {
 /// This trait is used to serialize a message and return the serialized message
 /// as a vector of bytes.
 pub trait SerializeWithSignature {
-    /// Serialize the message
+    /// Serialize the message and return the serialized message
+    /// as a vector of bytes.
     ///
     /// # Errors
     ///
     /// Returns an error if the message cannot be serialized
-    fn serialize_with_signature(&self) -> Result<Vec<u8>>;
+    fn serialize_with_signature(&self) -> Result<Vec<u8>, AtomaP2pNodeError>;
+
+    /// Deserialize the message from a vector of bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the message cannot be deserialized
+    fn deserialize_with_signature(data: &[u8]) -> Result<Self, AtomaP2pNodeError>
+    where
+        Self: Sized;
 }
 
 impl SerializeWithSignature for SignedNodeMessage {
-    fn serialize_with_signature(&self) -> Result<Vec<u8>> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(self, &mut bytes)
+    fn serialize_with_signature(&self) -> Result<Vec<u8>, AtomaP2pNodeError> {
+        let mut serialized = self.signature.clone();
+        ciborium::into_writer(&self.node_message, &mut serialized)
             .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
-        Ok(bytes)
+        Ok(serialized)
+    }
+
+    fn deserialize_with_signature(data: &[u8]) -> Result<Self, AtomaP2pNodeError> {
+        let signature = Signature::from_bytes(data)
+            .map_err(|e| AtomaP2pNodeError::SignatureParseError(e.to_string()))?;
+
+        let sig_bytes = signature.as_ref();
+        let remainder = &data[sig_bytes.len()..];
+
+        let node_message = ciborium::from_reader(remainder)?;
+
+        Ok(Self {
+            node_message,
+            signature: sig_bytes.to_vec(),
+        })
     }
 }
