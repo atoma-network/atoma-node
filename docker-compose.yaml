@@ -118,11 +118,16 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./loki.yaml:/etc/loki/local.yaml
+      - ./loki.yaml:/etc/loki/loki.yaml
       - loki-data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/loki.yaml
     networks:
       - atoma-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   tempo:
     image: grafana/tempo:2.7.0
@@ -135,9 +140,14 @@ services:
     networks:
       - atoma-network
     user: "0"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3200/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   otel-collector:
-    image: otel/opentelemetry-collector:0.119.0
+    image: otel/opentelemetry-collector-contrib:0.119.0
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
@@ -148,10 +158,23 @@ services:
     networks:
       - atoma-network
     depends_on:
-      - prometheus
-      - grafana
-      - loki
-      - tempo
+      prometheus:
+        condition: service_healthy
+        required: true
+      grafana:
+        condition: service_healthy
+        required: true
+      loki:
+        condition: service_healthy
+        required: true
+      tempo:
+        condition: service_healthy
+        required: true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:13133"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   atoma-node-confidential:
     <<: *atoma-node-confidential
@@ -182,6 +205,9 @@ services:
       mistralrs:
         condition: service_started
         required: false
+      otel-collector:
+        condition: service_healthy
+        required: true
 
   atoma-node-non-confidential:
     <<: *atoma-node-non-confidential
@@ -211,7 +237,9 @@ services:
         required: false
       mistralrs:
         condition: service_started
-        required: false
+      otel-collector:
+        condition: service_healthy
+        required: true
 
   vllm:
     <<: *inference-service-cuda
