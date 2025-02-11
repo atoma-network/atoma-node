@@ -48,14 +48,27 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 )]
 pub fn usage_metrics_timer_task(
     is_client: bool,
-    node_public_url: String,
-    node_small_id: u64,
-    country: String,
+    node_public_url: Option<String>,
+    node_small_id: Option<u64>,
+    country: Option<String>,
     usage_metrics_tx: UnboundedSender<NodeMessage>,
 ) -> JoinHandle<Result<(), AtomaP2pNodeError>> {
     tokio::spawn(async move {
         // NOTE: We only publish usage metrics for nodes, clients do not need to publish any usage metrics
         if !is_client {
+            if node_public_url.is_none() || node_small_id.is_none() || country.is_none() {
+                error!(
+                    target = "atoma-p2p",
+                    event = "invalid_config",
+                    "Invalid config, either public_url, node_small_id or country is not set, this should never happen"
+                );
+                return Err(AtomaP2pNodeError::InvalidConfig(
+                    "Invalid config, either public_url, node_small_id or country is not set, this should never happen".to_string(),
+                ));
+            }
+            let node_public_url = node_public_url.unwrap();
+            let node_small_id = node_small_id.unwrap();
+            let country = country.unwrap();
             loop {
                 let sys = System::new_all();
                 tokio::time::sleep(USAGE_METRICS_HEARTBEAT_INTERVAL).await;
