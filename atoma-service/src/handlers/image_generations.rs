@@ -1,7 +1,9 @@
+use std::time::Instant;
+
 use crate::{
     error::AtomaServiceError,
     handlers::{
-        prometheus::{
+        metrics::{
             IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
             TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS,
@@ -13,7 +15,7 @@ use crate::{
     types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
-use prometheus::HistogramTimer;
+use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, instrument};
@@ -87,10 +89,8 @@ pub async fn image_generations_handler(
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
-    IMAGE_GEN_NUM_REQUESTS.with_label_values(&[model]).inc();
-    let timer = IMAGE_GEN_LATENCY_METRICS
-        .with_label_values(&[model])
-        .start_timer();
+    IMAGE_GEN_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    let timer = Instant::now();
 
     let RequestMetadata {
         stack_small_id,
@@ -115,18 +115,18 @@ pub async fn image_generations_handler(
         client_encryption_metadata,
         &endpoint,
         timer,
+        model.to_string(),
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
-                .with_label_values(&[model])
-                .inc();
+                .add(1, &[KeyValue::new("model", model.to_owned())]);
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -206,14 +206,12 @@ pub async fn confidential_image_generations_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or("unknown")
+        .to_string();
 
     IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
-    let timer = IMAGE_GEN_LATENCY_METRICS
-        .with_label_values(&[model])
-        .start_timer();
+        .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+    let timer = Instant::now();
 
     let RequestMetadata {
         stack_small_id,
@@ -233,18 +231,18 @@ pub async fn confidential_image_generations_handler(
         client_encryption_metadata,
         &endpoint,
         timer,
+        model.to_string(),
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
             TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
-                .with_label_values(&[model])
-                .inc();
+                .add(1, &[KeyValue::new("model", model.clone())]);
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -306,7 +304,8 @@ async fn handle_image_generations_response(
     estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
-    timer: HistogramTimer,
+    timer: Instant,
+    model: String,
 ) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
     let response = client
@@ -366,7 +365,10 @@ async fn handle_image_generations_response(
     {
         Ok(response_body) => {
             // Stop the timer before returning the valid response
-            timer.observe_duration();
+            IMAGE_GEN_LATENCY_METRICS.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", model.clone())],
+            );
             Ok(Json(response_body))
         }
         Err(e) => {

@@ -29,6 +29,20 @@ hyper = { workspace = true }
 isocountry = { workspace = true }
 lazy_static = { workspace = true }
 once_cell = { workspace = true }
+opentelemetry = { version = "0.27.0", features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { version = "0.27.0", features = [
+  "rt-tokio",
+  "trace",
+  "metrics",
+  "logs",
+] }
+opentelemetry-otlp = { version = "0.27.0", features = [
+  "metrics",
+  "grpc-tonic",
+  "trace",
+  "tls",
+  "logs",
+] }
 prometheus = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
@@ -49,6 +63,7 @@ tracing-subscriber = { workspace = true, features = [
   "json",
   "local-time",
 ] }
+tracing-opentelemetry = "0.28.0"
 url = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }

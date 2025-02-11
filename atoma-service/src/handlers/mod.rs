@@ -1,7 +1,7 @@
 pub mod chat_completions;
 pub mod embeddings;
 pub mod image_generations;
-pub mod prometheus;
+pub mod metrics;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
