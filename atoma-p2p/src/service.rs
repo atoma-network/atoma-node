@@ -175,6 +175,11 @@ impl AtomaP2pNode {
                 || config.node_small_id.is_none()
                 || config.country.is_none())
         {
+            error!(
+                target = "atoma-p2p",
+                event = "invalid_config",
+                "Invalid config, either public_url, node_small_id or country is not set, this should never happen"
+            );
             return Err(AtomaP2pNodeError::InvalidConfig(
                 "Invalid config, either public_url, node_small_id or country is not set, this should never happen".to_string(),
             ));
