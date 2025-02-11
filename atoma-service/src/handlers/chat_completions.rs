@@ -1,8 +1,8 @@
 use crate::{
     handlers::{
-        prometheus::{
-            CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS,
-            TOTAL_FAILED_CHAT_REQUESTS,
+        metrics::{
+            CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
+            TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_stack_num_compute_units,
     },
@@ -21,21 +21,24 @@ use axum::{
     response::{IntoResponse, Response, Sse},
     Extension, Json,
 };
+use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use utoipa::ToSchema;
 
 use crate::{
     error::AtomaServiceError,
-    handlers::prometheus::{
-        CHAT_COMPLETIONS_INPUT_TOKENS_METRICS, CHAT_COMPLETIONS_LATENCY_METRICS,
-        CHAT_COMPLETIONS_NUM_REQUESTS, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
-        CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
+    handlers::metrics::{
+        CHAT_COMPLETIONS_INPUT_TOKENS_METRICS, CHAT_COMPLETIONS_NUM_REQUESTS,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
     },
     middleware::RequestMetadata,
 };
@@ -194,12 +197,16 @@ pub async fn chat_completions_handler(
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
+                estimated_total_compute_units,
+                &[KeyValue::new("model", model.to_owned())],
+            );
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_CHAT_REQUESTS.with_label_values(&[model]).inc();
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+            TOTAL_FAILED_CHAT_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -342,9 +349,7 @@ pub async fn confidential_chat_completions_handler(
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
-    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
+    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
 
     let endpoint = request_metadata.endpoint_path.clone();
 
@@ -361,14 +366,17 @@ pub async fn confidential_chat_completions_handler(
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
+                estimated_total_compute_units,
+                &[KeyValue::new("model", model.to_owned())],
+            );
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
-                .with_label_values(&[model])
-                .inc();
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+                .add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -561,12 +569,8 @@ async fn handle_non_streaming_response(
         .and_then(|m| m.as_str())
         .unwrap_or("unknown");
 
-    CHAT_COMPLETIONS_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
-    let timer = CHAT_COMPLETIONS_LATENCY_METRICS
-        .with_label_values(&[model])
-        .start_timer();
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    let timer = Instant::now();
 
     let response_body = utils::send_request_to_inference_service(
         state,
@@ -589,6 +593,7 @@ async fn handle_non_streaming_response(
         client_encryption_metadata,
         endpoint,
         timer,
+        model,
     )
     .await
 }
@@ -660,12 +665,8 @@ async fn handle_streaming_response(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or(UNKNOWN_MODEL);
-    CHAT_COMPLETIONS_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
-    let timer = CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN
-        .with_label_values(&[model])
-        .start_timer();
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    let timer = Instant::now();
 
     let chat_completions_service_url = state
         .chat_completions_service_urls
@@ -1086,10 +1087,12 @@ pub struct Usage {
 }
 
 pub mod utils {
-    use atoma_utils::constants::PAYLOAD_HASH_SIZE;
-    use prometheus::HistogramTimer;
+    use std::time::Instant;
 
-    use crate::handlers::handle_status_code_error;
+    use atoma_utils::constants::PAYLOAD_HASH_SIZE;
+    use opentelemetry::KeyValue;
+
+    use crate::handlers::{handle_status_code_error, metrics::CHAT_COMPLETIONS_LATENCY_METRICS};
 
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
@@ -1371,15 +1374,15 @@ pub mod utils {
             if let Some(prompt_tokens) = usage.get("prompt_tokens") {
                 let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
                 CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                    .with_label_values(&[model])
-                    .inc_by(prompt_tokens as f64);
+                    .add(prompt_tokens, &[KeyValue::new("model", model.to_owned())]);
                 total_compute_units += prompt_tokens;
             }
             if let Some(completion_tokens) = usage.get("completion_tokens") {
                 let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
-                CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
-                    .with_label_values(&[model])
-                    .inc_by(completion_tokens as f64);
+                CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS.add(
+                    completion_tokens,
+                    &[KeyValue::new("model", model.to_owned())],
+                );
                 total_compute_units += completion_tokens;
             }
         }
@@ -1458,7 +1461,8 @@ pub mod utils {
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         client_encryption_metadata: Option<EncryptionMetadata>,
         endpoint: String,
-        timer: HistogramTimer,
+        timer: Instant,
+        model: &str,
     ) -> Result<Response<Body>, AtomaServiceError> {
         info!(
             target = "atoma-service",
@@ -1502,7 +1506,10 @@ pub mod utils {
         {
             Ok(response_body) => {
                 // Stop the timer before returning the valid response
-                timer.observe_duration();
+                CHAT_COMPLETIONS_LATENCY_METRICS.record(
+                    timer.elapsed().as_secs_f64(),
+                    &[KeyValue::new("model", model.to_owned())],
+                );
                 Json(response_body).into_response()
             }
             Err(e) => {

@@ -2,6 +2,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Instant,
 };
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
@@ -15,7 +16,7 @@ use axum::{response::sse::Event, Error};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flume::Sender as FlumeSender;
 use futures::Stream;
-use prometheus::HistogramTimer;
+use opentelemetry::KeyValue;
 use serde_json::{json, Value};
 use sui_keys::keystore::FileBasedKeystore;
 use tracing::{error, info, instrument};
@@ -23,9 +24,10 @@ use x25519_dalek::SharedSecret;
 
 use crate::{
     handlers::{
-        prometheus::{
+        metrics::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
+            CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -95,9 +97,9 @@ pub struct Streamer {
     /// The first token generation (prefill phase) timer for the request.
     /// We need store it as an option because we need to consume its value
     /// once the first token is generated
-    first_token_generation_timer: Option<HistogramTimer>,
+    first_token_generation_timer: Option<Instant>,
     /// The decoding phase timer for the request.
-    decoding_phase_timer: Option<HistogramTimer>,
+    decoding_phase_timer: Option<Instant>,
     /// The client encryption metadata for the request
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
     /// The endpoint for the request
@@ -105,7 +107,7 @@ pub struct Streamer {
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
     /// Timer for measuring time between token generations
-    inter_stream_token_latency_timer: Option<HistogramTimer>,
+    inter_stream_token_latency_timer: Option<Instant>,
 }
 
 /// Represents the various states of a streaming process
@@ -135,7 +137,7 @@ impl Streamer {
         model: String,
         streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
         endpoint: String,
-        first_token_generation_timer: HistogramTimer,
+        first_token_generation_timer: Instant,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -203,7 +205,10 @@ impl Streamer {
     ) -> Result<(), Error> {
         // Record the decoding phase timer
         if let Some(timer) = self.decoding_phase_timer.take() {
-            timer.observe_duration();
+            CHAT_COMPLETIONS_DECODING_TIME.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", self.model.clone())],
+            );
         }
 
         // Get total tokens
@@ -211,8 +216,7 @@ impl Streamer {
         if let Some(prompt_tokens) = usage.get("prompt_tokens") {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                .with_label_values(&[&self.model])
-                .inc_by(prompt_tokens as f64);
+                .add(prompt_tokens, &[KeyValue::new("model", self.model.clone())]);
             total_compute_units += prompt_tokens;
         } else {
             error!(
@@ -224,9 +228,10 @@ impl Streamer {
         }
         if let Some(completion_tokens) = usage.get("completion_tokens") {
             let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
-            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS
-                .with_label_values(&[&self.model])
-                .inc_by(completion_tokens as f64);
+            CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS.add(
+                completion_tokens,
+                &[KeyValue::new("model", self.model.clone())],
+            );
             total_compute_units += completion_tokens;
         } else {
             error!(
@@ -543,10 +548,10 @@ impl Streamer {
 
         // Observe the first token generation timer
         if let Some(timer) = self.first_token_generation_timer.take() {
-            timer.observe_duration();
-            let timer = CHAT_COMPLETIONS_DECODING_TIME
-                .with_label_values(&[&self.model])
-                .start_timer();
+            CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", self.model.clone())],
+            );
             self.decoding_phase_timer = Some(timer);
         }
 
@@ -637,14 +642,14 @@ impl Streamer {
     fn handle_successful_event(&mut self, event: Event) -> Poll<Option<Result<Event, Error>>> {
         // Observe the previous timer if it exists
         if let Some(timer) = self.inter_stream_token_latency_timer.take() {
-            timer.observe_duration();
+            let elapsed = timer.elapsed();
+            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME.record(
+                elapsed.as_secs_f64(),
+                &[KeyValue::new("model", self.model.clone())],
+            );
         }
         // Start the timer after we've processed this chunk
-        self.inter_stream_token_latency_timer = Some(
-            CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME
-                .with_label_values(&[&self.model])
-                .start_timer(),
-        );
+        self.inter_stream_token_latency_timer = Some(Instant::now());
 
         Poll::Ready(Some(Ok(event)))
     }

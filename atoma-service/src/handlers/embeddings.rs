@@ -1,8 +1,10 @@
+use std::time::Instant;
+
 use crate::{
     error::AtomaServiceError,
     handlers::{
         handle_confidential_compute_encryption_response,
-        prometheus::{
+        metrics::{
             TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS,
             TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS,
@@ -15,7 +17,7 @@ use crate::{
     types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
-use prometheus::HistogramTimer;
+use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, instrument};
@@ -84,7 +86,9 @@ pub async fn embeddings_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or("unknown")
+        .to_string();
+
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units,
@@ -94,17 +98,9 @@ pub async fn embeddings_handler(
         request_type: _,
     } = request_metadata;
 
-    TEXT_EMBEDDINGS_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
-    let timer = TEXT_EMBEDDINGS_LATENCY_METRICS
-        .with_label_values(&[model])
-        .start_timer();
+    let timer = Instant::now();
 
-    let model = payload
-        .get(MODEL_KEY)
-        .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+    TEXT_EMBEDDINGS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
 
     match handle_embeddings_response(
         &state,
@@ -114,19 +110,22 @@ pub async fn embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         &endpoint,
-        timer,
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            TEXT_EMBEDDINGS_LATENCY_METRICS.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", model.as_str().to_owned())],
+            );
+
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
-                .with_label_values(&[model])
-                .inc();
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+                .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -205,7 +204,11 @@ pub async fn confidential_embeddings_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or("unknown")
+        .to_string();
+
+    TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS
+        .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
 
     let RequestMetadata {
         stack_small_id,
@@ -216,12 +219,7 @@ pub async fn confidential_embeddings_handler(
         request_type: _,
     } = request_metadata;
 
-    TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS
-        .with_label_values(&[model])
-        .inc();
-    let timer = TEXT_EMBEDDINGS_LATENCY_METRICS
-        .with_label_values(&[model])
-        .start_timer();
+    let timer = Instant::now();
 
     match handle_embeddings_response(
         &state,
@@ -231,19 +229,21 @@ pub async fn confidential_embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         &endpoint,
-        timer,
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.with_label_values(&[model]).inc();
+            TEXT_EMBEDDINGS_LATENCY_METRICS.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", model.as_str().to_owned())],
+            );
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
-                .with_label_values(&[model])
-                .inc();
-            TOTAL_FAILED_REQUESTS.with_label_values(&[model]).inc();
+                .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
@@ -319,7 +319,6 @@ async fn handle_embeddings_response(
     payload_hash: [u8; 32],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
-    timer: HistogramTimer,
 ) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
     let response = client
@@ -377,11 +376,7 @@ async fn handle_embeddings_response(
     )
     .await
     {
-        Ok(response_body) => {
-            // Stop the timer before returning the valid response
-            timer.observe_duration();
-            Ok(Json(response_body))
-        }
+        Ok(response_body) => Ok(Json(response_body)),
         Err(e) => Err(AtomaServiceError::InternalError {
             message: format!(
                 "Error handling confidential compute encryption response: {}",
