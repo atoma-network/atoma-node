@@ -414,7 +414,7 @@ impl AtomaP2pNode {
     /// - Peer subscription/unsubscription events
     /// - Usage metrics processing errors
     /// - Shutdown events
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "info", skip_all)]
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
