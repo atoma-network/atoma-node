@@ -20,10 +20,11 @@ use axum::{extract::State, Extension, Json};
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
+use tokenizers::Tokenizer;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
-use super::handle_status_code_error;
+use super::{handle_status_code_error, request_model::RequestModel};
 
 /// The path for confidential embeddings requests
 pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
@@ -33,6 +34,9 @@ pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
 /// The key for the model parameter in the request body
 pub const MODEL_KEY: &str = "model";
+
+/// The key for the input parameter in the request body
+pub const INPUT_KEY: &str = "input";
 
 /// OpenAPI documentation structure for the embeddings endpoint.
 ///
@@ -384,5 +388,73 @@ async fn handle_embeddings_response(
             ),
             endpoint: endpoint.to_string(),
         }),
+    }
+}
+
+// A model representing an embeddings request payload.
+///
+/// This struct encapsulates the necessary fields for processing an embeddings request
+/// following the OpenAI API format.
+pub struct RequestModelEmbeddings {
+    /// The input text to generate embeddings for
+    input: Value,
+}
+
+impl RequestModel for RequestModelEmbeddings {
+    fn new(request: &Value) -> Result<Self, AtomaServiceError> {
+        let input = request
+            .get(INPUT_KEY)
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Input field is required".to_string(),
+                endpoint: EMBEDDINGS_PATH.to_string(),
+            })?;
+
+        Ok(Self {
+            input: input.clone(),
+        })
+    }
+
+    fn get_compute_units_estimate(
+        &self,
+        tokenizer: Option<&Tokenizer>,
+    ) -> Result<u64, AtomaServiceError> {
+        let Some(tokenizer) = tokenizer else {
+            return Err(AtomaServiceError::InternalError {
+                message: "Tokenizer is required for current model, but is not currently available"
+                    .to_string(),
+                endpoint: EMBEDDINGS_PATH.to_string(),
+            });
+        };
+
+        // input can be a string or an array of strings
+        let total_units = match &self.input {
+            Value::String(text) => tokenizer
+                .encode(text.as_str(), true)
+                .map_err(|_| AtomaServiceError::InvalidBody {
+                    message: "Failed to encode input text".to_string(),
+                    endpoint: EMBEDDINGS_PATH.to_string(),
+                })?
+                .get_ids()
+                .len() as u64,
+            Value::Array(texts) => texts
+                .iter()
+                .map(|v| {
+                    v.as_str().map_or(0, |s| {
+                        tokenizer
+                            .encode(s, true)
+                            .map(|tokens| tokens.get_ids().len() as u64)
+                            .unwrap_or(0)
+                    })
+                })
+                .sum(),
+            _ => {
+                return Err(AtomaServiceError::InvalidBody {
+                    message: "Invalid input format".to_string(),
+                    endpoint: EMBEDDINGS_PATH.to_string(),
+                });
+            }
+        };
+
+        Ok(total_units)
     }
 }

@@ -24,6 +24,7 @@ use axum::{
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::{json, Value};
+use tokenizers::Tokenizer;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
@@ -43,10 +44,16 @@ use crate::{
     middleware::RequestMetadata,
 };
 
-use super::{handle_confidential_compute_encryption_response, handle_status_code_error};
+use super::{
+    handle_confidential_compute_encryption_response, handle_status_code_error,
+    request_model::RequestModel, DEFAULT_MAX_TOKENS,
+};
 
 /// The path for confidential chat completions requests
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
+
+/// The key for the content parameter in the request body
+pub const CONTENT_KEY: &str = "content";
 
 /// The path for chat completions requests
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
@@ -54,8 +61,17 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The keep-alive interval in seconds
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
+/// The key for the max_completion_tokens parameter in the request body
+const MAX_COMPLETION_TOKENS_KEY: &str = "max_completion_tokens";
+
+/// The key for the max_tokens parameter in the request body
+const MAX_TOKENS_KEY: &str = "max_tokens";
+
 /// The key for the model parameter in the request body
 const MODEL_KEY: &str = "model";
+
+/// The key for the messages parameter in the request body
+const MESSAGES_KEY: &str = "messages";
 
 /// The key for the stream parameter in the request body
 const STREAM_KEY: &str = "stream";
@@ -732,6 +748,119 @@ async fn handle_streaming_response(
     );
 
     Ok(stream.into_response())
+}
+
+/// Represents a chat completion request model following the OpenAI API format
+pub struct RequestModelChatCompletions {
+    /// Array of message objects that represent the conversation history
+    /// Each message should contain a "role" (system/user/assistant) and "content"
+    /// The content can be a string or an array of content parts.
+    messages: Vec<Value>,
+
+    /// The maximum number of tokens to generate in the completion
+    /// This limits the length of the model's response
+    max_completion_tokens: u64,
+}
+
+impl RequestModel for RequestModelChatCompletions {
+    fn new(request: &Value) -> Result<Self, AtomaServiceError> {
+        let messages = request
+            .get(MESSAGES_KEY)
+            .and_then(|m| m.as_array())
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Missing or invalid 'messages' field".to_string(),
+                endpoint: CHAT_COMPLETIONS_PATH.to_string(),
+            })?;
+
+        let max_completion_tokens = request
+            .get(MAX_COMPLETION_TOKENS_KEY)
+            .or_else(|| request.get(MAX_TOKENS_KEY))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(DEFAULT_MAX_TOKENS);
+
+        Ok(Self {
+            messages: messages.clone(),
+            max_completion_tokens,
+        })
+    }
+
+    /// Computes the total number of tokens for the chat completion request.
+    ///
+    /// This is used to estimate the cost of the chat completion request, on the proxy side.
+    /// We support either string or array of content parts. We further assume that all content messages
+    /// share the same previous messages. That said, we further assume that content parts formatted into arrays
+    /// are to be concatenated and treated as a single message, by the model and from the estimate point of view.
+    fn get_compute_units_estimate(
+        &self,
+        tokenizer: Option<&Tokenizer>,
+    ) -> Result<u64, AtomaServiceError> {
+        // In order to account for the possibility of not taking into account possible additional special tokens,
+        // which might not be considered by the tokenizer, we add a small overhead to the total number of tokens, per message.
+        const MESSAGE_OVERHEAD_TOKENS: u64 = 3;
+        let Some(tokenizer) = tokenizer else {
+            return Err(AtomaServiceError::InternalError {
+                message: "Tokenizer is required for current model, but is not currently available"
+                    .to_string(),
+                endpoint: CHAT_COMPLETIONS_PATH.to_string(),
+            });
+        };
+        // Helper function to count tokens for a text string
+        let count_text_tokens = |text: &str| -> Result<u64, AtomaServiceError> {
+            Ok(tokenizer
+                .encode(text, true)
+                .map_err(|err| AtomaServiceError::InternalError {
+                    message: format!("Failed to encode message: {err:?}"),
+                    endpoint: CHAT_COMPLETIONS_PATH.to_string(),
+                })?
+                .get_ids()
+                .len() as u64)
+        };
+
+        let mut total_num_tokens = 0;
+
+        for message in &self.messages {
+            let content = message
+                .get(CONTENT_KEY)
+                .and_then(|content| MessageContent::deserialize(content).ok())
+                .ok_or_else(|| AtomaServiceError::InvalidBody {
+                    message: "Missing or invalid message content".to_string(),
+                    endpoint: CHAT_COMPLETIONS_PATH.to_string(),
+                })?;
+
+            match content {
+                MessageContent::Text(text) => {
+                    let num_tokens = count_text_tokens(&text)?;
+                    total_num_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
+                }
+                MessageContent::Array(parts) => {
+                    if parts.is_empty() {
+                        tracing::error!(
+                            "Received empty array of message parts for chat completion request"
+                        );
+                        return Err(AtomaServiceError::InvalidBody {
+                            message: "Missing or invalid message content".to_string(),
+                            endpoint: CHAT_COMPLETIONS_PATH.to_string(),
+                        });
+                    }
+                    for part in parts {
+                        match part {
+                            MessageContentPart::Text { text, .. } => {
+                                let num_tokens = count_text_tokens(&text)?;
+                                total_num_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
+                            }
+                            MessageContentPart::Image { .. } => {
+                                // TODO: Ensure that for image content parts, we have a way to estimate the number of tokens,
+                                // which can depend on the size of the image and the output description.
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // add the max completion tokens, to account for the response
+        Ok(total_num_tokens + self.max_completion_tokens)
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -18,12 +18,13 @@ use axum::{extract::State, Extension, Json};
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
+use tokenizers::Tokenizer;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
-    sign_response_and_update_stack_hash,
+    request_model::RequestModel, sign_response_and_update_stack_hash,
 };
 
 /// The path for confidential image generations requests
@@ -34,6 +35,12 @@ pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
 /// The key for the model parameter in the request body
 pub const MODEL_KEY: &str = "model";
+
+/// The key for the n parameter in the request body
+pub const N_KEY: &str = "n";
+
+/// The key for the size parameter in the request body
+pub const SIZE_KEY: &str = "size";
 
 /// OpenAPI documentation structure for the image generations endpoint.
 ///
@@ -382,5 +389,69 @@ async fn handle_image_generations_response(
                 endpoint: endpoint.to_string(),
             })
         }
+    }
+}
+
+/// A model representing the parameters for an image generation request.
+///
+/// This struct encapsulates the required parameters for generating images through
+/// the API endpoint.
+pub struct RequestModelImageGenerations {
+    /// The number of sampling generation to be performed for this request
+    n: u64,
+    /// The desired dimensions of the generated images in the format "WIDTHxHEIGHT"
+    /// (e.g., "1024x1024")
+    size: String,
+}
+
+impl RequestModel for RequestModelImageGenerations {
+    fn new(request: &Value) -> Result<Self, AtomaServiceError> {
+        let n = request
+            .get(N_KEY)
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "N field is required".to_string(),
+                endpoint: IMAGE_GENERATIONS_PATH.to_string(),
+            })?;
+        let size = request
+            .get(SIZE_KEY)
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| AtomaServiceError::InvalidBody {
+                message: "Size field is required".to_string(),
+                endpoint: IMAGE_GENERATIONS_PATH.to_string(),
+            })?;
+
+        Ok(Self {
+            n,
+            size: size.to_string(),
+        })
+    }
+
+    fn get_compute_units_estimate(
+        &self,
+        _tokenizer: Option<&Tokenizer>,
+    ) -> Result<u64, AtomaServiceError> {
+        // Parse dimensions from size string (e.g., "1024x1024")
+        let dimensions: Vec<u64> = self
+            .size
+            .split('x')
+            .filter_map(|s| s.parse().ok())
+            .collect();
+
+        if dimensions.len() != 2 {
+            return Err(AtomaServiceError::InvalidBody {
+                message: format!(
+                    "Invalid size format, expected two dimensional image, but got: {}",
+                    self.size
+                ),
+                endpoint: IMAGE_GENERATIONS_PATH.to_string(),
+            });
+        }
+
+        let width = dimensions[0];
+        let height = dimensions[1];
+
+        // Calculate compute units based on number of images and pixel count
+        Ok(self.n * width * height)
     }
 }

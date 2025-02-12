@@ -2,6 +2,7 @@ pub mod chat_completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
+pub mod request_model;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
@@ -23,6 +24,9 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 
 /// Key for the ciphertext in the response body
 const CIPHERTEXT_KEY: &str = "ciphertext";
+
+/// The default max tokens for a chat completion request
+const DEFAULT_MAX_TOKENS: u64 = 8_192;
 
 /// Key for the nonce in the response body
 const NONCE_KEY: &str = "nonce";
