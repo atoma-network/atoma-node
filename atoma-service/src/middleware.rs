@@ -39,27 +39,6 @@ const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
 /// The key for the model in the request body
 const MODEL: &str = "model";
 
-/// The key for the max tokens in the request body (currently deprecated, as per OpenAI API spec)
-const MAX_TOKENS: &str = "max_tokens";
-
-/// The key for max completion tokens in the request body
-const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
-
-/// The default value for the max tokens for chat completions
-const DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS: i64 = 8192;
-
-/// The key for the messages in the request body
-const MESSAGES: &str = "messages";
-
-/// The key for the input tokens in the request body
-const INPUT: &str = "input";
-
-/// The key for the image size in the request body
-const IMAGE_SIZE: &str = "size";
-
-/// The key for the number of images in the request body
-const IMAGE_N: &str = "n";
-
 /// Metadata for confidential compute decryption requests
 pub struct DecryptionMetadata {
     /// The plaintext body
@@ -438,7 +417,7 @@ pub async fn verify_stack_permissions(
     }
 
     let total_num_compute_units =
-        utils::calculate_compute_units(&body_json, request_type, &state, model, endpoint.clone())?;
+        utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -647,16 +626,32 @@ pub async fn confidential_compute_middleware(
     }
 }
 
-pub(crate) mod utils {
+pub mod utils {
     use hyper::HeaderMap;
+
+    use crate::handlers::{
+        chat_completions::RequestModelChatCompletions, embeddings::RequestModelEmbeddings,
+        image_generations::RequestModelImageGenerations, request_model::RequestModel,
+    };
 
     use super::{
         blake2b_hash, instrument, oneshot, verify_signature, AppState, AtomaServiceError,
         ConfidentialComputeDecryptionRequest, ConfidentialComputeRequest, DecryptionMetadata,
-        Engine, RequestType, TransactionDigest, Value, DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS,
-        DH_PUBLIC_KEY_SIZE, IMAGE_N, IMAGE_SIZE, INPUT, MAX_COMPLETION_TOKENS, MAX_TOKENS,
-        MESSAGES, NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE, STANDARD,
+        Engine, RequestType, TransactionDigest, Value, DH_PUBLIC_KEY_SIZE, NONCE_SIZE,
+        PAYLOAD_HASH_SIZE, SALT_SIZE, STANDARD,
     };
+
+    /// Default max completion tokens for chat completions
+    const DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS: i64 = 8192;
+
+    /// The key for the max tokens in the request body (currently deprecated, as per OpenAI API spec)
+    const MAX_TOKENS: &str = "max_tokens";
+
+    /// The key for max completion tokens in the request body
+    const MAX_COMPLETION_TOKENS: &str = "max_completion_tokens";
+
+    /// The key for the messages in the request body
+    const MESSAGES: &str = "messages";
 
     /// Requests and verifies stack information from the blockchain for a given transaction.
     ///
@@ -766,6 +761,11 @@ pub(crate) mod utils {
     /// * `Ok(i64)` - The total number of compute units required
     /// * `Err(AtomaServiceError)` - If there's an error calculating the units, returns an appropriate HTTP status code
     ///
+    /// # Errors
+    /// - `InvalidBody` - If the request body is invalid
+    /// - `InvalidHeader` - If the request headers are invalid
+    /// - `InternalError` - If there's an error calculating the units
+    ///
     /// # Compute Unit Calculation
     /// The calculation varies by request type:
     /// - ChatCompletions: Based on input tokens + max output tokens
@@ -774,25 +774,52 @@ pub(crate) mod utils {
     /// - NonInference: Returns 0 (no compute units required)
     ///
     /// This function delegates to specific calculators based on the request type:
-    /// - `calculate_chat_completion_compute_units`
-    /// - `calculate_embedding_compute_units`
-    /// - `calculate_image_generation_compute_units`
+    /// - `RequestModelChatCompletions`
+    /// - `RequestModelEmbeddings`
+    /// - `RequestModelImageGenerations`
     pub fn calculate_compute_units(
         body_json: &Value,
         request_type: RequestType,
         state: &AppState,
         model: &str,
-        endpoint: String,
+        endpoint: &str,
     ) -> Result<i64, AtomaServiceError> {
         match request_type {
             RequestType::ChatCompletions => {
-                calculate_chat_completion_compute_units(body_json, state, model, endpoint)
+                let request_model = RequestModelChatCompletions::new(body_json)?;
+                let tokenizer_index =
+                    state
+                        .models
+                        .iter()
+                        .position(|m| m == model)
+                        .ok_or_else(|| AtomaServiceError::InvalidBody {
+                            message: "Model not supported".to_string(),
+                            endpoint: endpoint.to_string(),
+                        })?;
+                request_model
+                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+                    .map(|i| i as i64)
             }
             RequestType::Embeddings => {
-                calculate_embedding_compute_units(body_json, state, model, endpoint)
+                let request_model = RequestModelEmbeddings::new(body_json)?;
+                let tokenizer_index =
+                    state
+                        .models
+                        .iter()
+                        .position(|m| m == model)
+                        .ok_or_else(|| AtomaServiceError::InvalidBody {
+                            message: "Model not supported".to_string(),
+                            endpoint: endpoint.to_string(),
+                        })?;
+                request_model
+                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+                    .map(|i| i as i64)
             }
             RequestType::ImageGenerations => {
-                calculate_image_generation_compute_units(body_json, endpoint)
+                let request_model = RequestModelImageGenerations::new(body_json)?;
+                request_model
+                    .get_compute_units_estimate(None)
+                    .map(|i| i as i64)
             }
             RequestType::NonInference => Ok(0),
         }
@@ -901,167 +928,6 @@ pub(crate) mod utils {
             .unwrap_or(DEFAULT_MAX_TOKENS_CHAT_COMPLETIONS);
 
         Ok(total_num_compute_units)
-    }
-
-    /// Calculates the total number of compute units required for an embedding request.
-    ///
-    /// This function analyzes the request body to determine the computational cost by counting
-    /// the number of tokens in the input text(s) that will be embedded.
-    ///
-    /// # Arguments
-    /// * `body_json` - The parsed JSON body of the request containing:
-    ///   - `input`: Either a single string or an array of strings to be embedded
-    /// * `state` - Application state containing model configurations and tokenizers
-    /// * `model` - The name of the AI model being used
-    ///
-    /// # Returns
-    /// * `Ok(i64)` - The total number of compute units required
-    /// * `Err(AtomaServiceError)` - AtomaServiceError::InvalidBody if:
-    ///   - The model is not supported
-    ///   - The input field is missing
-    ///   - The input format is invalid
-    ///   - Tokenization fails
-    ///
-    /// # Input Formats
-    /// The function supports two input formats:
-    /// 1. Single string:
-    /// ```json
-    /// {
-    ///     "input": "text to embed"
-    /// }
-    /// ```
-    ///
-    /// 2. Array of strings:
-    /// ```json
-    /// {
-    ///     "input": ["text one", "text two"]
-    /// }
-    /// ```
-    ///
-    /// # Computation
-    /// The total compute units is calculated as the sum of tokens across all input texts.
-    /// For array inputs, each string is tokenized separately and the results are summed.
-    #[instrument(level = "trace", skip_all)]
-    fn calculate_embedding_compute_units(
-        body_json: &Value,
-        state: &AppState,
-        model: &str,
-        endpoint: String,
-    ) -> Result<i64, AtomaServiceError> {
-        let tokenizer_index = state
-            .models
-            .iter()
-            .position(|m| m == model)
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Model not supported".to_string(),
-                endpoint: endpoint.clone(),
-            })?;
-
-        let input = body_json
-            .get(INPUT)
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Input not found in body".to_string(),
-                endpoint: endpoint.clone(),
-            })?;
-
-        // input can be a string or an array of strings
-        let total_units = match input {
-            Value::String(text) => state.tokenizers[tokenizer_index]
-                .encode(text.as_str(), true)
-                .map_err(|_| AtomaServiceError::InvalidBody {
-                    message: "Failed to encode input text".to_string(),
-                    endpoint: endpoint.clone(),
-                })?
-                .get_ids()
-                .len() as i64,
-            Value::Array(texts) => texts
-                .iter()
-                .map(|v| {
-                    v.as_str().map_or(0, |s| {
-                        state.tokenizers[tokenizer_index]
-                            .encode(s, true)
-                            .map(|tokens| tokens.get_ids().len() as i64)
-                            .unwrap_or(0)
-                    })
-                })
-                .sum(),
-            _ => {
-                return Err(AtomaServiceError::InvalidBody {
-                    message: "Invalid input format".to_string(),
-                    endpoint: endpoint.clone(),
-                });
-            }
-        };
-
-        Ok(total_units)
-    }
-
-    /// Calculates the total number of compute units required for an image generation request.
-    ///
-    /// This function analyzes the request body to determine the computational cost based on:
-    /// - The dimensions of the requested image(s)
-    /// - The number of images to generate
-    ///
-    /// # Arguments
-    /// * `body_json` - The parsed JSON body of the request containing:
-    ///   - `size`: String in format "WxH" (e.g., "1024x1024")
-    ///   - `n`: Number of images to generate
-    ///
-    /// # Returns
-    /// * `Ok(i64)` - The total number of compute units required (width * height * n)
-    /// * `Err(AtomaServiceError)` - AtomaServiceError::InvalidBody if:
-    ///   - The size field is missing or invalid
-    ///   - The dimensions cannot be parsed
-    ///   - The number of images is missing or invalid
-    ///
-    /// # Example JSON Structure
-    /// ```json
-    /// {
-    ///     "size": "1024x1024",
-    ///     "n": 1
-    /// }
-    /// ```
-    #[instrument(level = "trace", skip_all)]
-    fn calculate_image_generation_compute_units(
-        body_json: &Value,
-        endpoint: String,
-    ) -> Result<i64, AtomaServiceError> {
-        let size = body_json
-            .get(IMAGE_SIZE)
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Image size not found in body".to_string(),
-                endpoint: endpoint.clone(),
-            })?
-            .as_str()
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Image size is not a string".to_string(),
-                endpoint: endpoint.clone(),
-            })?;
-
-        // width and height are the dimensions of the image to generate
-        let (width, height) = size
-            .split_once('x')
-            .and_then(|(w, h)| {
-                let width = w.parse::<i64>().ok()?;
-                let height = h.parse::<i64>().ok()?;
-                Some((width, height))
-            })
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Invalid image size format".to_string(),
-                endpoint: endpoint.clone(),
-            })?;
-
-        // n is the number of images to generate
-        let n = body_json
-            .get(IMAGE_N)
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| AtomaServiceError::InvalidBody {
-                message: "Invalid or missing image count (n)".to_string(),
-                endpoint: endpoint.clone(),
-            })? as i64;
-
-        // Calculate total pixels
-        Ok(width * height * n)
     }
 
     /// Verifies a plaintext body hash against a provided signature.
