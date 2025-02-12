@@ -1,11 +1,20 @@
-use serde::{Deserialize, Serialize};
-use sui_sdk::types::crypto::{Signature, ToFromBytes};
-
 use crate::{metrics::NodeMetrics, service::AtomaP2pNodeError};
+use serde::{Deserialize, Serialize};
+use sui_sdk::types::crypto::{
+    Ed25519SuiSignature, Secp256k1SuiSignature, Secp256r1SuiSignature, SuiSignatureInner,
+};
 
-/// The length of Sui's SDK `Signature` type in bytes
+/// The length of Sui's SDK ed25519 `Signature` type in bytes
 /// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L809>
-const SIGNATURE_LENGTH: usize = 97;
+const ED25519_SIGNATURE_LENGTH: usize = 97;
+
+/// The length of Sui's SDK secp256k1 `Signature` type in bytes
+/// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L843>
+const SECP256K1_SIGNATURE_LENGTH: usize = 98;
+
+/// The length of Sui's SDK secp256r1 `Signature` type in bytes
+/// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L891>
+const SECP256R1_SIGNATURE_LENGTH: usize = 98;
 
 type Result<T, E = AtomaP2pNodeError> = std::result::Result<T, E>;
 
@@ -185,29 +194,44 @@ impl SerializeWithSignature for SignedNodeMessage {
     }
 
     fn deserialize_with_signature(data: &[u8]) -> Result<Self, AtomaP2pNodeError> {
-        let signature = Signature::from_bytes(&data[..SIGNATURE_LENGTH])
-            .map_err(|e| AtomaP2pNodeError::SignatureParseError(e.to_string()))?;
-
-        let sig_bytes = signature.as_ref();
-        let remainder = &data[SIGNATURE_LENGTH..];
-
-        let node_message = ciborium::from_reader(remainder)?;
-
+        let signature_len = data
+            .first()
+            .map(|&flag| match flag {
+                f if f == Ed25519SuiSignature::SCHEME.flag() => Ok(ED25519_SIGNATURE_LENGTH),
+                f if f == Secp256k1SuiSignature::SCHEME.flag() => Ok(SECP256K1_SIGNATURE_LENGTH),
+                f if f == Secp256r1SuiSignature::SCHEME.flag() => Ok(SECP256R1_SIGNATURE_LENGTH),
+                f => Err(AtomaP2pNodeError::SignatureParseError(format!(
+                    "Invalid signature scheme, expected 0x00, 0x01 or 0x02, received {f:#04x}",
+                ))),
+            })
+            .ok_or_else(|| {
+                AtomaP2pNodeError::SignatureParseError(
+                    "Invalid signature scheme: the data is empty".to_string(),
+                )
+            })??;
+        let node_message = ciborium::from_reader(&data[signature_len..])?;
         Ok(Self {
             node_message,
-            signature: sig_bytes.to_vec(),
+            signature: data[..signature_len].to_vec(),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use fastcrypto::{
+        hash::{Digest, HashFunction},
+        secp256k1::Secp256k1KeyPair,
+        secp256r1::Secp256r1KeyPair,
+        traits::KeyPair,
+    };
     use sui_keys::keystore::{AccountKeystore, InMemKeystore};
+    use sui_sdk::types::crypto::{Signature, ToFromBytes};
 
     use super::*;
 
     #[test]
-    fn test_serialization_and_deserialization() {
+    fn test_serialization_and_deserialization_with_ed25519_signature() {
         let node_message = NodeMessage {
             node_metadata: NodeP2pMetadata {
                 node_public_url: "https://example.com".to_string(),
@@ -223,6 +247,103 @@ mod tests {
         let signature = keystore
             .sign_hashed(&active_address, serialized_node_message.hash.as_bytes())
             .expect("Failed to sign message");
+        let should_be_signed_node_message = SignedNodeMessage {
+            node_message,
+            signature: signature.as_ref().to_vec(),
+        };
+        let serialized = should_be_signed_node_message
+            .serialize_with_signature()
+            .unwrap();
+        let deserialized = SignedNodeMessage::deserialize_with_signature(&serialized).unwrap();
+        assert_eq!(deserialized, should_be_signed_node_message);
+    }
+
+    #[derive(Default)]
+    struct Blake3Hash {
+        hasher: blake3::Hasher,
+    }
+
+    impl HashFunction<32> for Blake3Hash {
+        fn new() -> Self {
+            Self {
+                hasher: blake3::Hasher::new(),
+            }
+        }
+
+        fn update<Data: AsRef<[u8]>>(&mut self, data: Data) {
+            self.hasher.update(data.as_ref());
+        }
+
+        fn finalize(self) -> Digest<32> {
+            let hash = self.hasher.finalize();
+            Digest {
+                digest: *hash.as_bytes(),
+            }
+        }
+
+        /// Compute the digest of the given data and consume the hash function.
+        fn digest<Data: AsRef<[u8]>>(data: Data) -> Digest<32> {
+            let mut hasher = Self::new();
+            hasher.update(data);
+            hasher.finalize()
+        }
+    }
+
+    #[test]
+    fn test_serialization_and_deserialization_with_secp256k1_signature() {
+        let node_message = NodeMessage {
+            node_metadata: NodeP2pMetadata {
+                node_public_url: "https://example.com".to_string(),
+                node_small_id: 1,
+                country: "US".to_string(),
+                timestamp: 1_718_275_200,
+            },
+            node_metrics: NodeMetrics::default(),
+        };
+        let serialized_node_message = node_message.serialize_with_hash().unwrap();
+        let keypair = Secp256k1KeyPair::generate(&mut rand::thread_rng());
+        let public_key = keypair.public();
+        let signature =
+            keypair.sign_with_hash::<Blake3Hash>(serialized_node_message.hash.as_bytes());
+        let mut signature_bytes = Vec::with_capacity(SECP256K1_SIGNATURE_LENGTH);
+        signature_bytes.push(Secp256k1SuiSignature::SCHEME.flag());
+        signature_bytes.extend_from_slice(signature.as_ref());
+        signature_bytes.extend_from_slice(public_key.as_ref());
+        let signature = Secp256k1SuiSignature::from_bytes(&signature_bytes).unwrap();
+        let signature = Signature::Secp256k1SuiSignature(signature);
+        let should_be_signed_node_message = SignedNodeMessage {
+            node_message,
+            signature: signature.as_ref().to_vec(),
+        };
+        let serialized = should_be_signed_node_message
+            .serialize_with_signature()
+            .unwrap();
+        let deserialized = SignedNodeMessage::deserialize_with_signature(&serialized).unwrap();
+        assert_eq!(deserialized, should_be_signed_node_message);
+    }
+
+    #[test]
+    fn test_serialization_and_deserialization_with_secp256r1_signature() {
+        let node_message = NodeMessage {
+            node_metadata: NodeP2pMetadata {
+                node_public_url: "https://example.com".to_string(),
+                node_small_id: 1,
+                country: "US".to_string(),
+                timestamp: 1_718_275_200,
+            },
+            node_metrics: NodeMetrics::default(),
+        };
+        let serialized_node_message = node_message.serialize_with_hash().unwrap();
+        let keypair = Secp256r1KeyPair::generate(&mut rand::thread_rng());
+        let public_key = keypair.public();
+        let signature =
+            keypair.sign_with_hash::<Blake3Hash>(serialized_node_message.hash.as_bytes());
+        let mut signature_bytes = Vec::with_capacity(SECP256K1_SIGNATURE_LENGTH);
+        signature_bytes.push(Secp256r1SuiSignature::SCHEME.flag());
+        signature_bytes.extend_from_slice(signature.as_ref());
+        signature_bytes.extend_from_slice(public_key.as_ref());
+        let signature = Secp256r1SuiSignature::from_bytes(&signature_bytes).unwrap();
+        let signature = Signature::Secp256r1SuiSignature(signature);
         let should_be_signed_node_message = SignedNodeMessage {
             node_message,
             signature: signature.as_ref().to_vec(),
