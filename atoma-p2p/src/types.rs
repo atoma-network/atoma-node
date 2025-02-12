@@ -6,15 +6,15 @@ use sui_sdk::types::crypto::{
 
 /// The length of Sui's SDK ed25519 `Signature` type in bytes
 /// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L809>
-const ED25519_SIGNATURE_LENGTH: usize = 97;
+pub const ED25519_SIGNATURE_LENGTH: usize = 97;
 
 /// The length of Sui's SDK secp256k1 `Signature` type in bytes
 /// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L843>
-const SECP256K1_SIGNATURE_LENGTH: usize = 98;
+pub const SECP256K1_SIGNATURE_LENGTH: usize = 98;
 
 /// The length of Sui's SDK secp256r1 `Signature` type in bytes
 /// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L891>
-const SECP256R1_SIGNATURE_LENGTH: usize = 98;
+pub const SECP256R1_SIGNATURE_LENGTH: usize = 98;
 
 type Result<T, E = AtomaP2pNodeError> = std::result::Result<T, E>;
 
