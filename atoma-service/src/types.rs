@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::handlers::chat_completions::Usage;
+use crate::handlers::chat_completions::openai_api::usage::CompletionUsage as Usage;
 
 /// A request for confidential computation that includes encrypted data and associated cryptographic parameters
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
