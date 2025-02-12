@@ -12,7 +12,7 @@ use tracing::instrument;
 ///
 /// This data is collected from the system and the GPU
 /// to be sent across the p2p network, for efficient request routing.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct NodeMetrics {
     /// The CPU usage of the node
     pub cpu_usage: f32,
@@ -37,7 +37,7 @@ pub struct NodeMetrics {
 }
 
 /// Structure to store the usage metrics for each GPU
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct GpuMetrics {
     /// The amount of memory used by the GPU
     pub memory_used: u64,
@@ -49,9 +49,9 @@ pub struct GpuMetrics {
     pub percentage_time_read_write: u32,
     /// The percentage of time the GPU was executing
     pub percentage_time_gpu_execution: u32,
-    /// The temperature of the GPU
+    /// The temperature of the GPU in Celsius
     pub temperature: u32,
-    /// The power usage of the GPU
+    /// The power usage of the GPU in milliwatts
     pub power_usage: u32,
 }
 
