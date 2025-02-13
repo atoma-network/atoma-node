@@ -303,6 +303,7 @@ services:
 networks:
   atoma-network:
     driver: bridge
+    name: atoma-network
 
 volumes:
   postgres-data:
