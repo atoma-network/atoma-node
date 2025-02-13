@@ -94,6 +94,11 @@ services:
     env_file: .env
     networks:
       - atoma-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   grafana:
     image: grafana/grafana:11.5.1
@@ -170,11 +175,6 @@ services:
       tempo:
         condition: service_healthy
         required: true
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:13133"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   atoma-node-confidential:
     <<: *atoma-node-confidential
@@ -206,7 +206,7 @@ services:
         condition: service_started
         required: false
       otel-collector:
-        condition: service_healthy
+        condition: service_started
         required: true
 
   atoma-node-non-confidential:
@@ -237,8 +237,9 @@ services:
         required: false
       mistralrs:
         condition: service_started
+        required: false
       otel-collector:
-        condition: service_healthy
+        condition: service_started
         required: true
 
   vllm:
@@ -281,7 +282,7 @@ services:
     container_name: chat-completions
     profiles: [chat_completions_mistralrs_cpu]
     build:
-      context: https://github.com/EricLBuehler/mistral.rs.git
+      context: https://github.com/EricLBuehler/mistral.rs.git#v0.4.0
       dockerfile: Dockerfile
     command: plain -m ${CHAT_COMPLETIONS_MODEL}
 
