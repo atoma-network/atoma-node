@@ -13,6 +13,7 @@ x-atoma-node-confidential: &atoma-node-confidential
 
 x-atoma-node-non-confidential: &atoma-node-non-confidential
   image: ghcr.io/atoma-network/atoma-node:default
+  platform: linux/amd64
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -81,6 +82,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.1.0
+    platform: linux/amd64
     restart: always
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -281,9 +283,8 @@ services:
     <<: *inference-service-cpu
     container_name: chat-completions
     profiles: [chat_completions_mistralrs_cpu]
-    build:
-      context: https://github.com/EricLBuehler/mistral.rs.git#v0.4.0
-      dockerfile: Dockerfile
+    image: ghcr.io/ericlbuehler/mistral.rs:cpu-0.4
+    platform: linux/amd64
     command: plain -m ${CHAT_COMPLETIONS_MODEL}
 
   tei:
@@ -297,7 +298,8 @@ services:
     <<: *inference-service-cuda
     container_name: image-generations
     profiles: [image_generations_mistralrs]
-    image: ${MISTRALRS_IMAGE}
+    image: ghcr.io/ericlbuehler/mistral.rs:cpu-0.4
+    platform: linux/amd64
     command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
 
 networks:
