@@ -16,6 +16,8 @@ use tracing::instrument;
 pub struct NodeMetrics {
     /// The CPU usage of the node
     pub cpu_usage: f32,
+    /// The average frequency of the CPUs in the system
+    pub cpu_frequency: u64,
     /// The amount of RAM used
     pub ram_used: u64,
     /// The total amount of RAM in the system
@@ -82,6 +84,8 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
     // Refresh the system information so we can get the latest metrics
     sys.refresh_all();
     let cpu_usage = sys.global_cpu_usage();
+    let cpu_frequency =
+        sys.cpus().iter().map(sysinfo::Cpu::frequency).sum::<u64>() / sys.cpus().len() as u64;
     let ram_used = sys.used_memory();
     let ram_total = sys.total_memory();
     let ram_swap_used = sys.used_swap();
@@ -97,6 +101,7 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
 
     Ok(NodeMetrics {
         cpu_usage,
+        cpu_frequency,
         ram_used,
         ram_total,
         ram_swap_used,
