@@ -1,6 +1,7 @@
 # Base configuration for Atoma services
 x-atoma-node-confidential: &atoma-node-confidential
   image: ghcr.io/atoma-network/atoma-node:latest
+  platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -13,7 +14,7 @@ x-atoma-node-confidential: &atoma-node-confidential
 
 x-atoma-node-non-confidential: &atoma-node-non-confidential
   image: ghcr.io/atoma-network/atoma-node:default
-  platform: linux/amd64
+  platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -62,6 +63,7 @@ x-inference-service-rocm: &inference-service-rocm
 services:
   postgres-db:
     image: postgres:13
+    platform: ${PLATFORM:-} # Will be empty if not set
     restart: always
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
@@ -82,7 +84,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.1.0
-    platform: linux/amd64
+    platform: ${PLATFORM:-}
     restart: always
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -104,6 +106,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.5.1
+    platform: ${PLATFORM:-}
     restart: always
     ports:
       - "${GRAFANA_PORT:-30001}:3000"
@@ -122,6 +125,7 @@ services:
 
   loki:
     image: grafana/loki:2.9.4
+    platform: ${PLATFORM:-}
     ports:
       - "3100:3100"
     volumes:
@@ -138,6 +142,7 @@ services:
 
   tempo:
     image: grafana/tempo:2.7.0
+    platform: ${PLATFORM:-}
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml
@@ -155,6 +160,7 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.119.0
+    platform: ${PLATFORM:-}
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
@@ -298,8 +304,8 @@ services:
     <<: *inference-service-cuda
     container_name: image-generations
     profiles: [image_generations_mistralrs]
-    image: ghcr.io/ericlbuehler/mistral.rs:cpu-0.4
-    platform: linux/amd64
+    image: ${MISTRALRS_IMAGE}
+    platform: ${PLATFORM:-}
     command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
 
 networks:
