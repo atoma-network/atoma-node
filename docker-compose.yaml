@@ -1,6 +1,7 @@
 # Base configuration for Atoma services
 x-atoma-node-confidential: &atoma-node-confidential
   image: ghcr.io/atoma-network/atoma-node:latest
+  platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -13,6 +14,7 @@ x-atoma-node-confidential: &atoma-node-confidential
 
 x-atoma-node-non-confidential: &atoma-node-non-confidential
   image: ghcr.io/atoma-network/atoma-node:default
+  platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -61,6 +63,7 @@ x-inference-service-rocm: &inference-service-rocm
 services:
   postgres-db:
     image: postgres:13
+    platform: ${PLATFORM:-} # Will be empty if not set
     restart: always
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
@@ -81,6 +84,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.1.0
+    platform: ${PLATFORM:-}
     restart: always
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -102,6 +106,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.5.1
+    platform: ${PLATFORM:-}
     restart: always
     ports:
       - "${GRAFANA_PORT:-30001}:3000"
@@ -120,6 +125,7 @@ services:
 
   loki:
     image: grafana/loki:2.9.4
+    platform: ${PLATFORM:-}
     ports:
       - "3100:3100"
     volumes:
@@ -136,6 +142,7 @@ services:
 
   tempo:
     image: grafana/tempo:2.7.0
+    platform: ${PLATFORM:-}
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml
@@ -153,6 +160,7 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.119.0
+    platform: ${PLATFORM:-}
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
@@ -181,6 +189,7 @@ services:
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
     profiles:
       - confidential
     depends_on:
@@ -214,6 +223,7 @@ services:
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
     profiles:
       - non-confidential
     depends_on:
@@ -282,6 +292,7 @@ services:
     container_name: chat-completions
     profiles: [chat_completions_mistralrs_cpu]
     image: ghcr.io/ericlbuehler/mistral.rs:cpu-0.4
+    platform: linux/amd64
     command: plain -m ${CHAT_COMPLETIONS_MODEL}
 
   tei:
@@ -296,6 +307,7 @@ services:
     container_name: image-generations
     profiles: [image_generations_mistralrs]
     image: ${MISTRALRS_IMAGE}
+    platform: ${PLATFORM:-}
     command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
 
 networks:
