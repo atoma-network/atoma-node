@@ -3,10 +3,13 @@ use nvml_wrapper::{
     struct_wrappers::device::{MemoryInfo, Utilization},
     Nvml,
 };
+use reqwest;
 use serde::{Deserialize, Serialize};
 use sysinfo::{Networks, System};
 use thiserror::Error;
 use tracing::instrument;
+
+use crate::constants::{PROMETHEUS_URL, QUERIES};
 
 /// Structure to store the usage metrics for the node
 ///
@@ -39,7 +42,7 @@ pub struct NodeMetrics {
 }
 
 /// Structure to store the usage metrics for each GPU
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct GpuMetrics {
     /// The amount of memory used by the GPU
     pub memory_used: u64,
@@ -63,15 +66,125 @@ pub struct GpuMetrics {
     pub max_temperature: u32,
     /// Target operating temperature in Celsius
     pub energy_consumption: u64,
+    /// Chat completion latency
+    pub chat_completion_latency: f64,
+    /// Time to first token
+    pub time_to_first_token: f64,
+    /// Inter token generation time
+    pub inter_token_generation_time: f64,
+    /// Decoding time
+    pub decoding_time: f64,
+    /// Image generation latency
+    pub image_generation_latency: f64,
+    /// Text embeddings latency
+    pub text_embeddings_latency: f64,
+    /// Total requests
+    pub total_requests: u64,
+    /// Failed requests
+    pub failed_requests: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrometheusResponse {
+    status: String,
+    data: PrometheusData,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrometheusData {
+    result: Vec<PrometheusResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrometheusResult {
+    value: (i64, String), // timestamp and value
+}
+
+#[derive(Debug, Default)]
+pub struct MetricsResponse {
+    pub chat_latency: f64,
+    pub first_token_time: f64,
+    pub inter_token_time: f64,
+    pub decoding_time: f64,
+    pub image_gen_latency: f64,
+    pub text_emb_latency: f64,
+    pub total_requests: u64,
+    pub failed_requests: u64,
+}
+
+async fn get_prometheus_metrics() -> Result<MetricsResponse, NodeMetricsError> {
+    async fn query_metric(client: &reqwest::Client, query: &str) -> Result<f64, NodeMetricsError> {
+        let timeout = std::time::Duration::from_secs(5);
+        let response: PrometheusResponse = client
+            .get(format!("{PROMETHEUS_URL}/api/v1/query"))
+            .query(&[("query", query)])
+            .timeout(timeout)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if response.status != "success" {
+            return Err(NodeMetricsError::PrometheusError(format!(
+                "Query failed with status: {}",
+                response.status
+            )));
+        }
+
+        // Get the first result's value, or default to 0.0
+        let value = response
+            .data
+            .result
+            .first()
+            .and_then(|r| r.value.1.parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        Ok(value)
+    }
+
+    let client = reqwest::Client::new();
+    let mut metrics = MetricsResponse::default();
+
+    // Execute queries concurrently using futures
+    let results = futures::future::join_all(
+        QUERIES
+            .iter()
+            .map(|(_, query)| query_metric(&client, query)),
+    )
+    .await;
+
+    // Assign results to the appropriate fields
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    for ((name, _), result) in QUERIES.iter().zip(results.into_iter()) {
+        match (*name, result) {
+            ("chat_latency", Ok(val)) => metrics.chat_latency = val,
+            ("first_token_time", Ok(val)) => metrics.first_token_time = val,
+            ("inter_token_time", Ok(val)) => metrics.inter_token_time = val,
+            ("decoding_time", Ok(val)) => metrics.decoding_time = val,
+            ("image_gen_latency", Ok(val)) => metrics.image_gen_latency = val,
+            ("text_emb_latency", Ok(val)) => metrics.text_emb_latency = val,
+            ("total_requests", Ok(val)) => metrics.total_requests = val as u64,
+            ("failed_requests", Ok(val)) => metrics.failed_requests = val as u64,
+            (_, Err(e)) => {
+                tracing::warn!("Failed to fetch metric {}: {}", name, e);
+            }
+            (_, Ok(_)) => {} // Add this catch-all for unmatched metric names
+        }
+    }
+
+    Ok(metrics)
 }
 
 /// Returns the usage metrics for the node
 #[instrument(level = "info", target = "metrics")]
-pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetricsError> {
+pub async fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetricsError> {
     let nvml = Nvml::init()?;
-
     let device_count = nvml.device_count()?;
     let mut gpus = Vec::new();
+
+    // Get metrics from Prometheus
+    let metrics = get_prometheus_metrics().await?;
+
     for i in 0..device_count {
         let device = nvml.device_by_index(i)?;
         let Utilization { gpu, memory } = device.utilization_rates()?;
@@ -101,6 +214,14 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
             default_power_limit,
             max_temperature,
             energy_consumption,
+            chat_completion_latency: metrics.chat_latency,
+            time_to_first_token: metrics.first_token_time,
+            inter_token_generation_time: metrics.inter_token_time,
+            decoding_time: metrics.decoding_time,
+            image_generation_latency: metrics.image_gen_latency,
+            text_embeddings_latency: metrics.text_emb_latency,
+            total_requests: metrics.total_requests,
+            failed_requests: metrics.failed_requests,
         });
     }
 
@@ -143,4 +264,16 @@ pub enum NodeMetricsError {
     NvmlError(#[from] nvml_wrapper::error::NvmlError),
     #[error("Failed to convert number of CPUs to u32: {0}")]
     TryFromIntError(#[from] std::num::TryFromIntError),
+    #[error("Failed to fetch telemetry metrics: {0}")]
+    PrometheusMetricsError(#[from] PrometheusMetricsError),
+    #[error("Failed to fetch Prometheus metrics: {0}")]
+    PrometheusError(String),
+    #[error("Request failed: {0}")]
+    RequestError(#[from] reqwest::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum PrometheusMetricsError {
+    #[error("Failed to parse Prometheus response: {0}")]
+    ParseError(#[from] serde_json::Error),
 }
