@@ -55,6 +55,14 @@ pub struct GpuMetrics {
     pub temperature: u32,
     /// The power usage of the GPU in milliwatts
     pub power_usage: u32,
+    /// Maximum power limit in milliwatts
+    pub max_power_limit: u32,
+    /// Default power limit in milliwatts
+    pub default_power_limit: u32,
+    /// Maximum operating temperature in Celsius
+    pub max_temperature: u32,
+    /// Target operating temperature in Celsius
+    pub energy_consumption: u64,
 }
 
 /// Returns the usage metrics for the node
@@ -70,6 +78,17 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
         let MemoryInfo { used, total, free } = device.memory_info()?;
         let temperature = device.temperature(TemperatureSensor::Gpu)?;
         let power_usage = device.power_usage()?;
+
+        // Get power limits
+        let max_power_limit = device.power_management_limit()?;
+        let default_power_limit = device.enforced_power_limit()?;
+
+        // Get temperature thresholds
+        let max_temperature = device.temperature_threshold(
+            nvml_wrapper::enum_wrappers::device::TemperatureThreshold::GpuMax,
+        )?;
+        let energy_consumption = device.total_energy_consumption()?;
+
         gpus.push(GpuMetrics {
             memory_used: used,
             memory_total: total,
@@ -78,6 +97,10 @@ pub fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetrics
             percentage_time_gpu_execution: gpu,
             temperature,
             power_usage,
+            max_power_limit,
+            default_power_limit,
+            max_temperature,
+            energy_consumption,
         });
     }
 
