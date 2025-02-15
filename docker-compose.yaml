@@ -189,6 +189,7 @@ services:
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
     profiles:
       - confidential
     depends_on:
@@ -222,6 +223,7 @@ services:
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
     profiles:
       - non-confidential
     depends_on:
