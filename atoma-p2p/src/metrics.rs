@@ -178,29 +178,91 @@ async fn get_prometheus_metrics() -> Result<MetricsResponse, NodeMetricsError> {
 /// Returns the usage metrics for the node
 #[instrument(level = "info", target = "metrics")]
 pub async fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeMetricsError> {
+    // Start Prometheus metrics collection concurrently
+    let prometheus_metrics_future = get_prometheus_metrics();
+
     let nvml = Nvml::init()?;
     let device_count = nvml.device_count()?;
-    let mut gpus = Vec::new();
 
-    // Get metrics from Prometheus
-    let metrics = get_prometheus_metrics().await?;
+    // Refresh system metrics
+    sys.refresh_all();
+    let system_metrics = collect_system_metrics(&sys);
+
+    // Collect GPU metrics
+    let gpu_metrics = collect_gpu_metrics(&nvml, device_count)?;
+
+    // Now await the Prometheus metrics
+    let metrics = match prometheus_metrics_future.await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!("Failed to fetch Prometheus metrics: {}", e);
+            MetricsResponse::default()
+        }
+    };
+
+    // Combine GPU metrics with Prometheus metrics
+    let gpus = gpu_metrics
+        .into_iter()
+        .map(|mut gpu| {
+            // Add Prometheus metrics to each GPU
+            gpu.chat_completion_latency = metrics.chat_latency;
+            gpu.time_to_first_token = metrics.first_token_time;
+            gpu.inter_token_generation_time = metrics.inter_token_time;
+            gpu.decoding_time = metrics.decoding_time;
+            gpu.image_generation_latency = metrics.image_gen_latency;
+            gpu.text_embeddings_latency = metrics.text_emb_latency;
+            gpu.total_requests = metrics.total_requests;
+            gpu.failed_requests = metrics.failed_requests;
+            gpu
+        })
+        .collect();
+
+    Ok(NodeMetrics {
+        gpus,
+        num_gpus: device_count,
+        ..system_metrics
+    })
+}
+
+// Helper function to collect system metrics
+fn collect_system_metrics(sys: &System) -> NodeMetrics {
+    let cpu_usage = sys.global_cpu_usage();
+    let cpu_frequency =
+        sys.cpus().iter().map(sysinfo::Cpu::frequency).sum::<u64>() / sys.cpus().len() as u64;
+
+    let networks = Networks::new_with_refreshed_list();
+    let (network_rx, network_tx) = networks
+        .iter()
+        .fold((0, 0), |(rx, tx), (_interface, data)| {
+            (rx + data.received(), tx + data.transmitted())
+        });
+
+    NodeMetrics {
+        cpu_usage,
+        cpu_frequency,
+        ram_used: sys.used_memory(),
+        ram_total: sys.total_memory(),
+        ram_swap_used: sys.used_swap(),
+        ram_swap_total: sys.total_swap(),
+        num_cpus: u32::try_from(sys.cpus().len()).unwrap_or(0),
+        network_rx,
+        network_tx,
+        num_gpus: 0,  // This will be set later
+        gpus: vec![], // This will be set later
+    }
+}
+
+// Helper function to collect GPU metrics
+fn collect_gpu_metrics(
+    nvml: &Nvml,
+    device_count: u32,
+) -> Result<Vec<GpuMetrics>, NodeMetricsError> {
+    let mut gpus = Vec::new();
 
     for i in 0..device_count {
         let device = nvml.device_by_index(i)?;
         let Utilization { gpu, memory } = device.utilization_rates()?;
         let MemoryInfo { used, total, free } = device.memory_info()?;
-        let temperature = device.temperature(TemperatureSensor::Gpu)?;
-        let power_usage = device.power_usage()?;
-
-        // Get power limits
-        let max_power_limit = device.power_management_limit()?;
-        let default_power_limit = device.enforced_power_limit()?;
-
-        // Get temperature thresholds
-        let max_temperature = device.temperature_threshold(
-            nvml_wrapper::enum_wrappers::device::TemperatureThreshold::GpuMax,
-        )?;
-        let energy_consumption = device.total_energy_consumption()?;
 
         gpus.push(GpuMetrics {
             memory_used: used,
@@ -208,54 +270,19 @@ pub async fn compute_usage_metrics(mut sys: System) -> Result<NodeMetrics, NodeM
             memory_free: free,
             percentage_time_read_write: memory,
             percentage_time_gpu_execution: gpu,
-            temperature,
-            power_usage,
-            max_power_limit,
-            default_power_limit,
-            max_temperature,
-            energy_consumption,
-            chat_completion_latency: metrics.chat_latency,
-            time_to_first_token: metrics.first_token_time,
-            inter_token_generation_time: metrics.inter_token_time,
-            decoding_time: metrics.decoding_time,
-            image_generation_latency: metrics.image_gen_latency,
-            text_embeddings_latency: metrics.text_emb_latency,
-            total_requests: metrics.total_requests,
-            failed_requests: metrics.failed_requests,
+            temperature: device.temperature(TemperatureSensor::Gpu)?,
+            power_usage: device.power_usage()?,
+            max_power_limit: device.power_management_limit()?,
+            default_power_limit: device.enforced_power_limit()?,
+            max_temperature: device.temperature_threshold(
+                nvml_wrapper::enum_wrappers::device::TemperatureThreshold::GpuMax,
+            )?,
+            energy_consumption: device.total_energy_consumption()?,
+            ..GpuMetrics::default() // Initialize Prometheus metrics to 0
         });
     }
 
-    // Refresh the system information so we can get the latest metrics
-    sys.refresh_all();
-    let cpu_usage = sys.global_cpu_usage();
-    let cpu_frequency =
-        sys.cpus().iter().map(sysinfo::Cpu::frequency).sum::<u64>() / sys.cpus().len() as u64;
-    let ram_used = sys.used_memory();
-    let ram_total = sys.total_memory();
-    let ram_swap_used = sys.used_swap();
-    let ram_swap_total = sys.total_swap();
-    let num_cpus = sys.cpus().len();
-    let networks = Networks::new_with_refreshed_list();
-    let mut network_rx = 0;
-    let mut network_tx = 0;
-    for (_interface, data) in &networks {
-        network_rx += data.received();
-        network_tx += data.transmitted();
-    }
-
-    Ok(NodeMetrics {
-        cpu_usage,
-        cpu_frequency,
-        ram_used,
-        ram_total,
-        ram_swap_used,
-        ram_swap_total,
-        num_cpus: u32::try_from(num_cpus)?,
-        network_rx,
-        network_tx,
-        num_gpus: device_count,
-        gpus,
-    })
+    Ok(gpus)
 }
 
 #[derive(Debug, Error)]
