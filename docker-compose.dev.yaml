@@ -1,0 +1,206 @@
+# Base configuration for Atoma services
+x-atoma-node-confidential: &atoma-node-confidential
+  image: ghcr.io/atoma-network/atoma-node:latest
+  platform: ${PLATFORM:-} # Will be empty if not set
+  volumes:
+    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
+    - ./logs:/app/logs
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
+    - ./data:/app/data
+  env_file: .env
+  networks:
+    - atoma-network
+
+x-atoma-node-non-confidential: &atoma-node-non-confidential
+  image: ghcr.io/atoma-network/atoma-node:default
+  platform: ${PLATFORM:-} # Will be empty if not set
+  volumes:
+    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
+    - ./logs:/app/logs
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
+    - ./data:/app/data
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for cuda inference services
+x-inference-service-cuda: &inference-service-cuda
+  runtime: nvidia
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for cpu inference services
+x-inference-service-cpu: &inference-service-cpu
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+# Base configuration for ROCm inference services
+x-inference-service-rocm: &inference-service-rocm
+  runtime: rocm
+  devices:
+    - all
+  volumes:
+    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+  env_file: .env
+  networks:
+    - atoma-network
+
+services:
+  postgres-db:
+    image: postgres:13
+    platform: ${PLATFORM:-} # Will be empty if not set
+    restart: always
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    env_file: .env
+    networks:
+      - atoma-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p ${POSTGRES_PORT} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  atoma-node-confidential:
+    <<: *atoma-node-confidential
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
+    profiles:
+      - confidential
+    depends_on:
+      postgres-db:
+        condition: service_started
+        required: true
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
+
+  atoma-node-non-confidential:
+    <<: *atoma-node-non-confidential
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
+    profiles:
+      - non-confidential
+    depends_on:
+      postgres-db:
+        condition: service_started
+        required: true
+      vllm:
+        condition: service_started
+        required: false
+      vllm-cpu:
+        condition: service_started
+        required: false
+      vllm-rocm:
+        condition: service_started
+        required: false
+      mistralrs-cpu:
+        condition: service_started
+        required: false
+      tei:
+        condition: service_started
+        required: false
+      mistralrs:
+        condition: service_started
+        required: false
+
+  vllm:
+    <<: *inference-service-cuda
+    container_name: chat-completions
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.7.2
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_cpu]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.cpu
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN}
+
+  vllm-rocm:
+    <<: *inference-service-rocm
+    container_name: chat-completions
+    profiles: [chat_completions_vllm_rocm]
+    build:
+      context: https://github.com/atoma-network/vllm.git#main
+      dockerfile: Dockerfile.rocm
+    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+
+  mistralrs-cpu:
+    <<: *inference-service-cpu
+    container_name: chat-completions
+    profiles: [chat_completions_mistralrs_cpu]
+    image: ghcr.io/ericlbuehler/mistral.rs:cpu-0.4
+    platform: linux/amd64
+    command: plain -m ${CHAT_COMPLETIONS_MODEL}
+
+  tei:
+    <<: *inference-service-cuda
+    container_name: embeddings
+    profiles: [embeddings_tei]
+    image: ${TEI_IMAGE}
+    command: --model-id ${EMBEDDINGS_MODEL} --huggingface-hub-cache /root/.cache/huggingface/hub
+
+  mistralrs:
+    <<: *inference-service-cuda
+    container_name: image-generations
+    profiles: [image_generations_mistralrs]
+    image: ${MISTRALRS_IMAGE}
+    platform: ${PLATFORM:-}
+    command: diffusion-plain -m ${IMAGE_GENERATIONS_MODEL} --arch ${IMAGE_GENERATIONS_ARCHITECTURE}
+
+networks:
+  atoma-network:
+    driver: bridge
+    name: atoma-network
