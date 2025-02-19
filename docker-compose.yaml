@@ -116,7 +116,7 @@ services:
       - grafana_data:/var/lib/grafana
     env_file: .env
     environment:
-      - GF_SERVER_ROOT_URL=http://${GRAFANA_DOMAIN:-149.7.4.141}:${GRAFANA_PORT:-30001}/
+      - GF_SERVER_ROOT_URL=http://${GRAFANA_DOMAIN}:${GRAFANA_PORT:-30001}/
     networks:
       - atoma-network
     healthcheck:
