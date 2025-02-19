@@ -2,11 +2,6 @@
 x-atoma-node-confidential: &atoma-node-confidential
   image: ghcr.io/atoma-network/atoma-node:latest
   platform: ${PLATFORM:-} # Will be empty if not set
-  volumes:
-    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
-    - ./logs:/app/logs
-    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
-    - ./data:/app/data
   env_file: .env
   networks:
     - atoma-network
@@ -14,11 +9,6 @@ x-atoma-node-confidential: &atoma-node-confidential
 x-atoma-node-non-confidential: &atoma-node-non-confidential
   image: ghcr.io/atoma-network/atoma-node:default
   platform: ${PLATFORM:-} # Will be empty if not set
-  volumes:
-    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
-    - ./logs:/app/logs
-    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
-    - ./data:/app/data
   env_file: .env
   networks:
     - atoma-network
@@ -33,16 +23,13 @@ x-inference-service-cuda: &inference-service-cuda
           - driver: nvidia
             count: all
             capabilities: [gpu]
-  volumes:
-    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
+
   env_file: .env
   networks:
     - atoma-network
 
 # Base configuration for cpu inference services
 x-inference-service-cpu: &inference-service-cpu
-  volumes:
-    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
   env_file: .env
   networks:
     - atoma-network
@@ -52,8 +39,6 @@ x-inference-service-rocm: &inference-service-rocm
   runtime: rocm
   devices:
     - all
-  volumes:
-    - ${HF_CACHE_PATH:-~/.cache/huggingface}:/root/.cache/huggingface
   env_file: .env
   networks:
     - atoma-network
@@ -69,8 +54,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
     env_file: .env
     networks:
       - atoma-network
