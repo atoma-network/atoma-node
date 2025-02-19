@@ -69,6 +69,8 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_INTERNAL_PORT}"
     env_file: .env
