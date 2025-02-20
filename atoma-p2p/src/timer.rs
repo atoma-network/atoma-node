@@ -42,7 +42,7 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
     fields(
         is_client = %is_client,
         event = "usage_metrics_timer_task",
-        name = "atoma-p2p", 
+        name = "atoma-p2p",
     ),
     skip_all
 )]
@@ -74,7 +74,7 @@ pub fn usage_metrics_timer_task(
                 tokio::time::sleep(USAGE_METRICS_HEARTBEAT_INTERVAL).await;
                 let node_metadata =
                     get_node_metadata(node_public_url.clone(), node_small_id, country.clone());
-                let node_metrics = compute_usage_metrics(sys)?;
+                let node_metrics = compute_usage_metrics(sys).await?;
                 let node_message = NodeMessage {
                     node_metadata,
                     node_metrics,

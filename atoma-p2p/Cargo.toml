@@ -27,9 +27,11 @@ fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 nvml-wrapper = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
+serde_json = { workspace = true }
 sysinfo = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
