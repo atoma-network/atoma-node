@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     curl \
     libssl-dev \
-    libssl1.1 \
+    libssl3 \
     && if [ "$ENABLE_TDX" = "true" ]; then \
        apt-get install -y libtss2-dev; \
     fi \
