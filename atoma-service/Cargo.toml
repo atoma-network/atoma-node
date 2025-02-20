@@ -30,7 +30,7 @@ isocountry = { workspace = true }
 lazy_static = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { version = "0.27.0", features = ["trace", "metrics", "logs"] }
-opentelemetry_sdk = { version = "0.27.0", features = [
+opentelemetry_sdk = { version = "0.28.0", features = [
   "rt-tokio",
   "trace",
   "metrics",
