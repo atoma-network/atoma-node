@@ -1,5 +1,5 @@
 # Builder stage
-FROM --platform=$BUILDPLATFORM rust:1.83-slim-bullseye AS builder
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder
 
 # Add platform-specific arguments
 ARG TARGETPLATFORM
@@ -13,11 +13,19 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     curl \
     libssl-dev \
-    libssl1.1 \
+    libssl3 \
+    ca-certificates \
     && if [ "$ENABLE_TDX" = "true" ]; then \
     apt-get install -y libtss2-dev; \
     fi \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.84.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.0 \
+    && . "$HOME/.cargo/env"
+
+# Add cargo to PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /usr/src/atoma-node
 
