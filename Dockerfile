@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libssl1.1 \
     && if [ "$ENABLE_TDX" = "true" ]; then \
-       apt-get install -y libtss2-dev; \
+    apt-get install -y libtss2-dev; \
     fi \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,18 +25,18 @@ COPY . .
 
 # Compile
 RUN if [ "$ENABLE_TDX" = "true" ]; then \
-        RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
+    RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
     else \
-        RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
+    RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
     fi
 
 # Final stage
-FROM --platform=$TARGETPLATFORM debian:bullseye-slim
+FROM --platform=$TARGETPLATFORM ubuntu:24.04
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
-    libssl1.1 \
+    libssl3 \
     libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
