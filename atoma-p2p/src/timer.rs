@@ -5,8 +5,8 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tracing::{error, instrument};
 
 use crate::{
+    errors::AtomaP2pNodeError,
     metrics::compute_usage_metrics,
-    service::AtomaP2pNodeError,
     types::{NodeMessage, NodeP2pMetadata},
 };
 
@@ -42,7 +42,7 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
     fields(
         is_client = %is_client,
         event = "usage_metrics_timer_task",
-        name = "atoma-p2p", 
+        name = "atoma-p2p",
     ),
     skip_all
 )]

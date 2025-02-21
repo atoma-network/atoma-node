@@ -155,14 +155,6 @@ pub static TOTAL_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
         .build()
 });
 
-pub static TOTAL_STREAMS: Lazy<Gauge<i64>> = Lazy::new(|| {
-    GLOBAL_METER
-        .i64_gauge("total_streams")
-        .with_description("The total number of streams")
-        .with_unit("streams")
-        .build()
-});
-
 pub static PEERS_CONNECTED: Lazy<Gauge<i64>> = Lazy::new(|| {
     GLOBAL_METER
         .i64_gauge("peers_connected")
@@ -200,6 +192,30 @@ pub static TOTAL_FAILED_GOSSIPSUB_MESSAGES: Lazy<Counter<u64>> = Lazy::new(|| {
         .u64_counter("total_failed_gossipsub_messages")
         .with_description("The total number of failed gossipsub messages")
         .with_unit("messages")
+        .build()
+});
+
+pub static TOTAL_INCOMING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_gauge("total_incoming_connections")
+        .with_description("The total number of incoming connections")
+        .with_unit("connections")
+        .build()
+});
+
+pub static TOTAL_STREAM_INCOMING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_gauge("total_stream_bandwidth")
+        .with_description("The total number of stream bandwidth")
+        .with_unit("bytes")
+        .build()
+});
+
+pub static TOTAL_STREAM_OUTGOING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_gauge("total_stream_outgoing_bandwidth")
+        .with_description("The total number of stream outgoing bandwidth")
+        .with_unit("bytes")
         .build()
 });
 
