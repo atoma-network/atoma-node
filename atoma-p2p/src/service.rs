@@ -315,10 +315,11 @@ impl AtomaP2pNode {
         let (usage_metrics_tx, usage_metrics_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let timer_join_handle = usage_metrics_timer_task(
+            config.country,
+            config.metrics_endpoints.clone(),
             is_client,
             config.public_url,
             config.node_small_id,
-            config.country,
             usage_metrics_tx,
         );
 
