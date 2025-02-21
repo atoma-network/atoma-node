@@ -57,7 +57,8 @@ type ModelQueriesCache = HashMap<String, Vec<(String, String)>>;
 /// to be sent across the p2p network, for efficient request routing.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct NodeMetrics {
-    /// A map of model name to model metrics
+    /// A map with key as the model name (e.g. "meta-llama/Llama-3.3-70B-Instruct")
+    /// and value as the model metrics.
     pub model_metrics: HashMap<String, ModelMetrics>,
 }
 
@@ -86,10 +87,6 @@ pub struct ChatCompletionsMetrics {
     /// computed as the average over the previous \Delta time
     pub cpu_kv_cache_usage_perc: f64,
 
-    /// The model name for which the metrics are collected
-    /// (e.g. "meta-llama/Llama-3.3-70B-Instruct")
-    pub model: String,
-
     /// Time to first token (prefill phase), in seconds,
     /// computed as the percentille 95 over the previous \Delta time
     pub time_to_first_token: f64,
@@ -117,10 +114,6 @@ pub struct EmbeddingsMetrics {
     /// computed as the percentille 95 over the previous \Delta time
     pub embeddings_latency: f64,
 
-    /// The model name for which the metrics are collected
-    /// (e.g. "meta-llama/Llama-3.3-70B-Instruct")
-    pub model: String,
-
     /// Number of requests running on the model,
     /// counted over the previous \Delta time
     pub num_running_requests: u32,
@@ -136,10 +129,6 @@ pub struct ImageGenerationMetrics {
     /// computed as the percentille 95 over the previous \Delta time
     pub image_generation_latency: f64,
 
-    /// The model name for which the metrics are collected
-    /// (e.g. "meta-llama/Llama-3.3-70B-Instruct")
-    pub model: String,
-
     /// Number of requests running on the model,
     /// counted over the previous \Delta time
     pub num_running_requests: u32,
@@ -147,9 +136,6 @@ pub struct ImageGenerationMetrics {
 
 /// Trait for setting metrics values for a specific model
 trait MetricsCollector {
-    /// Set the model name
-    fn set_model(&mut self, model: String);
-
     /// Set the metrics value
     fn set_metrics_value(&mut self, query: &str, value: f64);
 }
@@ -158,10 +144,6 @@ trait MetricsCollector {
 macro_rules! impl_metrics_collector {
     ($metrics_type:ty, { $($query:expr => $setter:expr),+ $(,)? }) => {
         impl MetricsCollector for $metrics_type {
-            fn set_model(&mut self, model: String) {
-                self.model = model;
-            }
-
             #[instrument(
                 level = "trace",
                 target = "metrics",
@@ -184,7 +166,6 @@ macro_rules! impl_metrics_collector {
     };
 }
 
-// Use the macro for ChatCompletionsMetrics.
 impl_metrics_collector!(ChatCompletionsMetrics, {
     VLLM_TIME_TO_FIRST_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_to_first_token = value,
     VLLM_TIME_PER_OUTPUT_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_per_output_token = value,
@@ -194,13 +175,11 @@ impl_metrics_collector!(ChatCompletionsMetrics, {
     VLLM_WAITING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_waiting_requests = u32::try_from(value as i64).unwrap_or(0),
 });
 
-// Use the macro for EmbeddingsMetrics.
 impl_metrics_collector!(EmbeddingsMetrics, {
     TEI_EMBEDDINGS_LATENCY_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_latency = value,
     TEI_NUM_RUNNING_REQUESTS_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
 });
 
-// Use the macro for ImageGenerationMetrics.
 impl_metrics_collector!(ImageGenerationMetrics, {
     IMAGE_GENERATION_LATENCY_QUERY => |s: &mut ImageGenerationMetrics, value: f64| s.image_generation_latency = value,
     IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY => |s: &mut ImageGenerationMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
@@ -307,7 +286,6 @@ pub async fn collect_metrics<T: Default + MetricsCollector + Send>(
     endpoint: &str,
 ) -> Result<T, NodeMetricsError> {
     let mut metrics = T::default();
-    metrics.set_model(model_name.to_string());
     let mut futures: FuturesUnordered<_> = queries
         .iter()
         .map(|(_, query)| get_metrics(&HTTP_CLIENT, query, endpoint))
@@ -497,20 +475,56 @@ fn get_cached_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
     queries
 }
 
+/// Generates Prometheus queries for vLLM metrics for a specific model
+///
+/// This function creates a vector of Prometheus query strings to fetch metrics related to
+/// vLLM performance and resource usage. The queries include measurements for:
+/// - Time to first token (prefill phase latency)
+/// - Time per output token (excluding first token)
+/// - GPU KV cache usage percentage
+/// - CPU KV cache usage percentage
+/// - Number of currently running requests
+/// - Number of waiting requests
+///
+/// The metrics are averaged over a time window defined by `METRICS_DELTA_TIME`.
+/// Each query includes an "or 0" fallback to handle cases where no data is available.
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model for which to generate metrics queries
+///
+/// # Returns
+///
+/// Returns a vector of tuples, where each tuple contains:
+/// - A query identifier string (defined in constants)
+/// - The corresponding Prometheus query string
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let model_name = "llama-7b";
+/// let queries = get_vllm_metrics_queries(model_name);
+/// // Returns queries like:
+/// // rate(vllm:time_to_first_token_seconds_sum{model_name="llama-7b"}[30m]) /
+/// // rate(vllm:time_to_first_token_seconds_count{model_name="llama-7b"}[30m])
+/// ```
 fn get_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.;
+    let delta = format!("[{delta_minutes}m]");
+
     vec![
         (VLLM_TIME_TO_FIRST_TOKEN_QUERY.to_string(),
-         format!("(rate(vllm:time_to_first_token_seconds_sum{{model_name=\"{model_name}\"}}[5m]) / rate(vllm:time_to_first_token_seconds_count{{model_name=\"{model_name}\"}}[5m])) or 0")),
+         format!("(rate(vllm:time_to_first_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(vllm:time_to_first_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
         (VLLM_TIME_PER_OUTPUT_TOKEN_QUERY.to_string(),
-         format!("(rate(vllm:time_per_output_token_seconds_sum{{model_name=\"{model_name}\"}}[5m]) / rate(vllm:time_per_output_token_seconds_count{{model_name=\"{model_name}\"}}[5m])) or 0")),
+         format!("(rate(vllm:time_per_output_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(vllm:time_per_output_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
         (VLLM_GPU_CACHE_USAGE_PERC_QUERY.to_string(),
-         format!("avg_over_time(vllm:gpu_cache_usage_perc{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(vllm:gpu_cache_usage_perc{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (VLLM_CPU_CACHE_USAGE_PERC_QUERY.to_string(),
-         format!("avg_over_time(vllm:cpu_cache_usage_perc{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(vllm:cpu_cache_usage_perc{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (VLLM_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(vllm:running_requests{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(vllm:running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (VLLM_WAITING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(vllm:waiting_requests{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(vllm:waiting_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
     ]
 }
 
@@ -533,12 +547,43 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
     queries
 }
 
+/// Generates Prometheus queries for TEI (Text Embeddings Interface) metrics for a specific model
+///
+/// This function creates a vector of Prometheus query strings to fetch metrics related to
+/// text embeddings performance and usage. The queries include measurements for:
+/// - Embeddings latency (average time to generate embeddings)
+/// - Number of currently running requests
+///
+/// The metrics are averaged over a time window defined by `METRICS_DELTA_TIME`.
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model for which to generate metrics queries
+///
+/// # Returns
+///
+/// Returns a vector of tuples, where each tuple contains:
+/// - A query identifier string (defined in constants)
+/// - The corresponding Prometheus query string
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let model_name = "all-MiniLM-L6-v2";
+/// let queries = get_tei_metrics_queries(model_name);
+/// // Returns queries like:
+/// // rate(atoma_text_embeddings_latency{model_name="all-MiniLM-L6-v2"}[30m]) /
+/// // rate(atoma_text_embeddings_latency_count{model_name="all-MiniLM-L6-v2"}[30m])
+/// ```
 fn get_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
+    let delta = format!("{delta_minutes}m");
+
     vec![
         (TEI_EMBEDDINGS_LATENCY_QUERY.to_string(),
-         format!("rate(atoma_text_embeddings_latency{{model_name=\"{model_name}\"}}[5m]) / rate(atoma_text_embeddings_latency_count{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("rate(atoma_text_embeddings_latency{{model_name=\"{model_name}\"}}{delta}) / rate(atoma_text_embeddings_latency_count{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (TEI_NUM_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(atoma_text_embeddings_running_requests{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(atoma_text_embeddings_running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
     ]
 }
 
@@ -561,12 +606,43 @@ fn get_cached_image_generation_metrics_queries(model_name: &str) -> Vec<(String,
     queries
 }
 
+/// Generates Prometheus queries for image generation metrics for a specific model
+///
+/// This function creates a vector of Prometheus query strings to fetch metrics related to
+/// image generation performance and usage. The queries include measurements for:
+/// - Image generation latency (average time to generate an image)
+/// - Number of currently running requests
+///
+/// The metrics are averaged over a time window defined by `METRICS_DELTA_TIME`.
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model for which to generate metrics queries
+///
+/// # Returns
+///
+/// Returns a vector of tuples, where each tuple contains:
+/// - A query identifier string (defined in constants)
+/// - The corresponding Prometheus query string
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let model_name = "stable-diffusion-xl";
+/// let queries = get_image_generation_metrics_queries(model_name);
+/// // Returns queries like:
+/// // rate(mistral:image_generation_latency_seconds_sum{model_name="stable-diffusion-xl"}[30m]) /
+/// // rate(mistral:image_generation_latency_seconds_count{model_name="stable-diffusion-xl"}[30m])
+/// ```
 fn get_image_generation_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
+    let delta = format!("{delta_minutes}m");
+
     vec![
         (IMAGE_GENERATION_LATENCY_QUERY.to_string(),
-         format!("rate(mistral:image_generation_latency_seconds_sum{{model_name=\"{model_name}\"}}[5m]) / rate(mistral:image_generation_latency_seconds_count{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("rate(mistral:image_generation_latency_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(mistral:image_generation_latency_seconds_count{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(mistral:running_requests{{model_name=\"{model_name}\"}}[5m]) or 0")),
+         format!("avg_over_time(mistral:running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
     ]
 }
 
