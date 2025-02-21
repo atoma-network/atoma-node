@@ -8,6 +8,15 @@ use sysinfo::{Networks, System};
 use thiserror::Error;
 use tracing::instrument;
 
+use once_cell::sync::Lazy;
+use opentelemetry::{
+    global,
+    metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
+};
+
+// Add global metrics
+static GLOBAL_METER: Lazy<Meter> = Lazy::new(|| global::meter("atoma-node"));
+
 /// Structure to store the usage metrics for the node
 ///
 /// This data is collected from the system and the GPU
@@ -120,4 +129,135 @@ pub enum NodeMetricsError {
     NvmlError(#[from] nvml_wrapper::error::NvmlError),
     #[error("Failed to convert number of CPUs to u32: {0}")]
     TryFromIntError(#[from] std::num::TryFromIntError),
+}
+
+pub static TOTAL_DIALS_ATTEMPTED: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_dials")
+        .with_description("The total number of dials attempted")
+        .with_unit("dials")
+        .build()
+});
+
+pub static TOTAL_DIALS_FAILED: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_dials_failed")
+        .with_description("The total number of dials failed")
+        .with_unit("dials")
+        .build()
+});
+
+pub static TOTAL_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_gauge("total_connections")
+        .with_description("The total number of connections")
+        .with_unit("connections")
+        .build()
+});
+
+pub static TOTAL_STREAMS: Lazy<Gauge<i64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .i64_gauge("total_streams")
+        .with_description("The total number of streams")
+        .with_unit("streams")
+        .build()
+});
+
+pub static PEERS_CONNECTED: Lazy<Gauge<i64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .i64_gauge("peers_connected")
+        .with_description("The number of peers connected")
+        .with_unit("peers")
+        .build()
+});
+
+pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: Lazy<UpDownCounter<i64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .i64_up_down_counter("total_gossipsub_subscriptions")
+        .with_description("The total number of gossipsub subscriptions")
+        .with_unit("subscriptions")
+        .build()
+});
+
+pub static TOTAL_VALID_GOSSIPSUB_MESSAGES_RECEIVED: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_valid_gossipsub_messages_received")
+        .with_description("The total number of valid gossipsub messages received")
+        .with_unit("messages")
+        .build()
+});
+
+pub static TOTAL_GOSSIPSUB_MESSAGES_FORWARDED: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_gossipsub_messages_forwarded")
+        .with_description("The total number of gossipsub messages forwarded")
+        .with_unit("messages")
+        .build()
+});
+
+pub static TOTAL_FAILED_GOSSIPSUB_MESSAGES: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_failed_gossipsub_messages")
+        .with_description("The total number of failed gossipsub messages")
+        .with_unit("messages")
+        .build()
+});
+
+pub static GOSSIP_SCORE_HISTOGRAM: Lazy<Histogram<f64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .f64_histogram("gossip_score_histogram")
+        .with_description("The histogram of gossip scores")
+        .with_unit("score")
+        .build()
+});
+
+pub struct NetworkMetrics {
+    networks: Networks,
+    bytes_received: Gauge<u64>,
+    bytes_transmitted: Gauge<u64>,
+}
+
+impl Default for NetworkMetrics {
+    fn default() -> Self {
+        let networks = Networks::new_with_refreshed_list();
+
+        let bytes_received = GLOBAL_METER
+            .u64_gauge("total_bytes_received")
+            .with_description("The total number of bytes received")
+            .with_unit("bytes")
+            .build();
+
+        let bytes_transmitted = GLOBAL_METER
+            .u64_gauge("total_bytes_transmitted")
+            .with_description("The total number of bytes transmitted")
+            .with_unit("bytes")
+            .build();
+
+        Self {
+            networks,
+            bytes_received,
+            bytes_transmitted,
+        }
+    }
+}
+
+impl NetworkMetrics {
+    pub fn update_metrics(&mut self) {
+        self.networks.refresh(true);
+
+        let total_received = self
+            .networks
+            .values()
+            .map(sysinfo::NetworkData::total_received)
+            .sum();
+
+        let total_transmitted = self
+            .networks
+            .values()
+            .map(sysinfo::NetworkData::total_transmitted)
+            .sum();
+
+        self.bytes_received.record(total_received, &[]); // Empty attributes array is fine since we're just recording a global metric
+        self.bytes_transmitted.record(total_transmitted, &[]);
+    }
 }
