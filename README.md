@@ -172,6 +172,8 @@ Additionally, we offer the flexibility to run Atoma's node in two different mode
 
 To run the Atoma node in a confidential mode, you need to pass the `confidential` profile to the `docker compose up` command:
 
+Also please note that if you are on an ARM64 architecture, you need to set the `PLATFORM=linux/arm64` environment variable and then run the `docker compose up` command.
+
 ```bash
 # Build and start all services
 COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,confidential docker compose up --build
