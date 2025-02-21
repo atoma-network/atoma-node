@@ -39,7 +39,7 @@ RUN if [ "$ENABLE_TDX" = "true" ]; then \
     fi
 
 # Final stage
-FROM --platform=$TARGETPLATFORM ubuntu:24.04
+FROM ubuntu:24.04
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

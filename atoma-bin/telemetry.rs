@@ -30,8 +30,8 @@ const NODE_LOG_FILE: &str = "atoma-node.log";
 const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 
 // Default Grafana OTLP endpoint if not specified in environment
-
-const DEFAULT_OTLP_ENDPOINT: &str = "http://localhost:4317";
+// Override this to be the localhost for local development if not using Docker
+const DEFAULT_OTLP_ENDPOINT: &str = "http://otel-collector:4317";
 
 static RESOURCE: Lazy<Resource> =
     Lazy::new(|| Resource::new(vec![KeyValue::new("service.name", "atoma-node")]));
@@ -83,6 +83,7 @@ fn init_traces(otlp_endpoint: &str) -> Result<sdktrace::Tracer> {
 pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
     let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| DEFAULT_OTLP_ENDPOINT.to_string());
+
     // Create logs directory if it doesn't exist
     std::fs::create_dir_all(LOGS).context("Failed to create logs directory")?;
 
@@ -112,7 +113,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_resource(RESOURCE.clone())
         .build();
 
-    // Create JSON formatter for node service
+    // Create all layers
     let node_layer = fmt::layer()
         .json()
         .with_timer(UtcTime::rfc_3339())
@@ -126,7 +127,6 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_writer(node_non_blocking)
         .with_filter(EnvFilter::new("atoma_node=info"));
 
-    // Create JSON formatter for daemon service
     let daemon_layer = fmt::layer()
         .json()
         .with_timer(UtcTime::rfc_3339())
@@ -140,7 +140,6 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_writer(daemon_non_blocking)
         .with_filter(EnvFilter::new("atoma_daemon=info"));
 
-    // Create console formatter for development
     let console_layer = fmt::layer()
         .pretty()
         .with_target(true)
@@ -153,16 +152,16 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,atoma_daemon=debug"));
 
-    // Combine layers with filter
+    // Set up the subscriber ONCE with all layers
     Registry::default()
         .with(env_filter)
         .with(console_layer)
         .with(node_layer)
         .with(daemon_layer)
         .with(opentelemetry_layer)
-        .init();
+        .try_init()
+        .context("Failed to set global default subscriber")?;
 
-    // Return the guards so they can be stored in main
     Ok((node_guard, daemon_guard))
 }
 
