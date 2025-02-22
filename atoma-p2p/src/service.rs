@@ -449,12 +449,15 @@ impl AtomaP2pNode {
 
                     let network_info = self.swarm.network_info();
 
+                    let peer_id_kv = KeyValue::new("peerId", peer_id.clone());
+                    let peer_id_kv_slice = &[peer_id_kv];
+
                     #[allow(clippy::cast_possible_wrap, clippy::cast_lossless)]
                     {
-                        PEERS_CONNECTED.record(network_info.num_peers() as i64, &[KeyValue::new("peerId", peer_id.clone())]);
-                        TOTAL_INCOMING_CONNECTIONS.record(network_info.connection_counters().num_established_incoming() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
-                        TOTAL_OUTGOING_CONNECTIONS.record(network_info.connection_counters().num_established_outgoing() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
-                        TOTAL_CONNECTIONS.record(network_info.connection_counters().num_connections() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
+                        PEERS_CONNECTED.record(network_info.num_peers() as i64, peer_id_kv_slice);
+                        TOTAL_INCOMING_CONNECTIONS.record(network_info.connection_counters().num_established_incoming() as u64, peer_id_kv_slice);
+                        TOTAL_OUTGOING_CONNECTIONS.record(network_info.connection_counters().num_established_outgoing() as u64, peer_id_kv_slice);
+                        TOTAL_CONNECTIONS.record(network_info.connection_counters().num_connections() as u64, peer_id_kv_slice);
                     }
                 }
 
