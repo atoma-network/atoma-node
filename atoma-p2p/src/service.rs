@@ -1,5 +1,8 @@
 use crate::errors::AtomaP2pNodeError;
-use crate::metrics::{PEERS_CONNECTED, TOTAL_GOSSIPSUB_SUBSCRIPTIONS};
+use crate::metrics::{
+    PEERS_CONNECTED, TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
+    TOTAL_OUTGOING_CONNECTIONS,
+};
 use crate::utils::validate_signed_node_message;
 use crate::{
     config::AtomaP2pNodeConfig,
@@ -9,6 +12,7 @@ use crate::{
 };
 use flume::Sender;
 use futures::StreamExt;
+use libp2p::metrics::{Metrics, Recorder, Registry};
 use libp2p::{
     gossipsub::{self},
     identify, kad, mdns, noise,
@@ -92,8 +96,7 @@ pub struct AtomaP2pNode {
     network_metrics: NetworkMetrics,
 
     /// Add registry field
-    #[allow(dead_code)]
-    metrics_registry: libp2p::metrics::Registry,
+    metrics_registry: Registry,
 }
 
 impl AtomaP2pNode {
@@ -435,6 +438,8 @@ impl AtomaP2pNode {
     ) -> Result<(), AtomaP2pNodeError> {
         // Create a metrics update interval
         let mut metrics_interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        let metrics = Metrics::new(&mut self.metrics_registry);
+        let peer_id = self.swarm.local_peer_id().to_base58();
 
         loop {
             tokio::select! {
@@ -442,10 +447,15 @@ impl AtomaP2pNode {
                 _ = metrics_interval.tick() => {
                     self.network_metrics.update_metrics();
 
+                    let network_info = self.swarm.network_info();
 
-                    #[allow(clippy::cast_possible_wrap)]
-                    let connected_peers = self.swarm.connected_peers().count() as i64;
-                    PEERS_CONNECTED.record(connected_peers, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
+                    #[allow(clippy::cast_possible_wrap, clippy::cast_lossless)]
+                    {
+                        PEERS_CONNECTED.record(network_info.num_peers() as i64, &[KeyValue::new("peerId", peer_id.clone())]);
+                        TOTAL_INCOMING_CONNECTIONS.record(network_info.connection_counters().num_established_incoming() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
+                        TOTAL_OUTGOING_CONNECTIONS.record(network_info.connection_counters().num_established_outgoing() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
+                        TOTAL_CONNECTIONS.record(network_info.connection_counters().num_connections() as u64, &[KeyValue::new("peerId", peer_id.clone())]);
+                    }
                 }
 
                 event = self.swarm.select_next_some() => {
@@ -475,6 +485,10 @@ impl AtomaP2pNode {
                             topic,
                         })) => {
                             TOTAL_GOSSIPSUB_SUBSCRIPTIONS.add(1, &[KeyValue::new("topic", topic.to_string())]);
+                            metrics.record(&gossipsub::Event::Subscribed {
+                                peer_id,
+                                topic: topic.clone(),
+                            });
                             debug!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_subscribed",
@@ -539,7 +553,6 @@ impl AtomaP2pNode {
                             connection_id,
                             ..
                         } => {
-                            TOTAL_CONNECTIONS.record(u64::from(num_established.get()), &[KeyValue::new("peerId", peer_id.to_string())]);
                             debug!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_established",
@@ -556,12 +569,12 @@ impl AtomaP2pNode {
                             num_established,
                             ..
                         } => {
-                            TOTAL_CONNECTIONS.record(u64::from(num_established), &[]);
                             debug!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_closed",
                                 peer_id = %peer_id,
                                 connection_id = %connection_id,
+                                num_established = %num_established,
                                 "Peer connection closed"
                             );
                         }
@@ -610,7 +623,24 @@ impl AtomaP2pNode {
                         } => {
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
                         }
-                        _ => {}
+                        SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Identify(identify_event)) => {
+                            tracing::debug!(
+                                target = "atoma-p2p",
+                                event = "identify",
+                                identify_event = ?identify_event,
+                                "Identify event"
+                            );
+                            metrics.record(&identify_event);
+                        }
+                        swarm_event => {
+                            tracing::debug!(
+                                target = "atoma-p2p",
+                                event = "swarm_event",
+                                swarm_event = ?swarm_event,
+                                "Swarm event"
+                            );
+                            metrics.record(&swarm_event);
+                        }
                     }
                 }
                 Some(usage_metrics) = self.usage_metrics_rx.recv() => {

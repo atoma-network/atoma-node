@@ -203,6 +203,14 @@ pub static TOTAL_INCOMING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
         .build()
 });
 
+pub static TOTAL_OUTGOING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_gauge("total_outgoing_connections")
+        .with_description("The total number of outgoing connections")
+        .with_unit("connections")
+        .build()
+});
+
 pub static TOTAL_STREAM_INCOMING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
     GLOBAL_METER
         .u64_gauge("total_stream_bandwidth")
