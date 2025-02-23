@@ -120,8 +120,7 @@ async fn test_validate_usage_metrics_message_success() {
         &tx,
     )
     .await;
-    result.unwrap();
-    // assert!(result.is_ok());
+    assert!(result.is_ok());
 }
 
 #[tokio::test]

@@ -1,8 +1,8 @@
 use crate::errors::AtomaP2pNodeError;
 use crate::metrics::{
-    PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_MESSAGES_FORWARDED,
-    TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
-    TOTAL_OUTGOING_CONNECTIONS,
+    KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
+    TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_SUBSCRIPTIONS,
+    TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
 };
 use crate::utils::{extract_gossipsub_metrics, validate_signed_node_message};
 use crate::{
@@ -26,6 +26,7 @@ use libp2p::{
 use opentelemetry::KeyValue;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
+use std::time::Duration;
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
@@ -35,6 +36,9 @@ use tracing::{debug, error, instrument};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
+
+/// The interval at which the metrics are updated
+const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
@@ -444,7 +448,7 @@ impl AtomaP2pNode {
         mut shutdown_signal: watch::Receiver<bool>,
     ) -> Result<(), AtomaP2pNodeError> {
         // Create a metrics update interval
-        let mut metrics_interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        let mut metrics_interval = tokio::time::interval(METRICS_UPDATE_INTERVAL);
         let metrics = Metrics::new(&mut self.metrics_registry);
         let peer_id = self.swarm.local_peer_id().to_base58();
 
@@ -532,6 +536,12 @@ impl AtomaP2pNode {
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Mdns(mdns::Event::Discovered(discovered_peers))) => {
                             let peer_count = discovered_peers.len() as u64;
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "mdns_discovered",
+                                peer_count = %peer_count,
+                                "Mdns discovered peers"
+                            );
                             for (peer_id, multiaddr) in discovered_peers {
                                 debug!(
                                     target = "atoma-p2p",
@@ -562,6 +572,32 @@ impl AtomaP2pNode {
                                 );
                                 self.swarm.behaviour_mut().kademlia.remove_address(&peer_id, &multiaddr);
                             }
+                        }
+                        SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
+                            peer,
+                            is_new_peer,
+                            addresses,
+                            bucket_range,
+                            old_peer,
+                        })) => {
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "kademlia_routing_updated",
+                                peer = %peer,
+                                is_new_peer = %is_new_peer,
+                                addresses = ?addresses,
+                                bucket_range = ?bucket_range,
+                                old_peer = ?old_peer,
+                                "Kademlia routing updated"
+                            );
+                            KAD_ROUTING_TABLE_SIZE.record(addresses.len() as u64, &[KeyValue::new("peerId", peer.to_base58())]);
+                            metrics.record(&kad::Event::RoutingUpdated {
+                                peer,
+                                is_new_peer,
+                                addresses,
+                                bucket_range,
+                                old_peer,
+                            });
                         }
                         SwarmEvent::ConnectionEstablished {
                             peer_id,
