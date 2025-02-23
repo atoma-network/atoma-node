@@ -171,7 +171,7 @@ pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: Lazy<UpDownCounter<i64>> = Lazy::new(|
         .build()
 });
 
-pub static TOTAL_VALID_GOSSIPSUB_MESSAGES_RECEIVED: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: Lazy<Counter<u64>> = Lazy::new(|| {
     GLOBAL_METER
         .u64_counter("total_valid_gossipsub_messages_received")
         .with_description("The total number of valid gossipsub messages received")
@@ -187,7 +187,15 @@ pub static TOTAL_GOSSIPSUB_MESSAGES_FORWARDED: Lazy<Counter<u64>> = Lazy::new(||
         .build()
 });
 
-pub static TOTAL_FAILED_GOSSIPSUB_MESSAGES: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_gossipsub_publishes")
+        .with_description("The total number of gossipsub publishes")
+        .with_unit("messages")
+        .build()
+});
+
+pub static TOTAL_FAILED_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
     GLOBAL_METER
         .u64_counter("total_failed_gossipsub_messages")
         .with_description("The total number of failed gossipsub messages")
@@ -208,6 +216,14 @@ pub static TOTAL_OUTGOING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
         .u64_gauge("total_outgoing_connections")
         .with_description("The total number of outgoing connections")
         .with_unit("connections")
+        .build()
+});
+
+pub static TOTAL_MDNS_DISCOVERIES: Lazy<Counter<u64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .u64_counter("total_mdns_discoveries")
+        .with_description("The total number of mDNS discoveries")
+        .with_unit("discoveries")
         .build()
 });
 

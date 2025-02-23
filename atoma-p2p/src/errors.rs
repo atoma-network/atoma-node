@@ -58,4 +58,6 @@ pub enum AtomaP2pNodeError {
     InvalidConfig(String),
     #[error("Invalid message length")]
     InvalidMessageLengthError,
+    #[error("Failed to publish Message: `{0}`")]
+    PublishError(String),
 }

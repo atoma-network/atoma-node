@@ -5,6 +5,8 @@ use fastcrypto::{
     traits::{ToFromBytes as FastCryptoToFromBytes, VerifyingKey},
 };
 use flume::Sender;
+use libp2p::gossipsub;
+use opentelemetry::KeyValue;
 use sui_sdk::types::{
     base_types::SuiAddress,
     crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
@@ -14,7 +16,11 @@ use tracing::{error, instrument};
 use url::Url;
 
 use crate::{
-    errors::AtomaP2pNodeError, service::StateManagerEvent, types::NodeMessage, AtomaP2pEvent,
+    errors::AtomaP2pNodeError,
+    metrics::{GOSSIP_SCORE_HISTOGRAM, TOTAL_GOSSIPSUB_SUBSCRIPTIONS},
+    service::StateManagerEvent,
+    types::NodeMessage,
+    AtomaP2pEvent,
 };
 
 /// The threshold for considering a timestamp as expired
@@ -336,4 +342,20 @@ pub async fn validate_signed_node_message(
     )
     .await?;
     Ok(())
+}
+
+#[instrument(level = "debug", skip_all)]
+pub fn extract_gossipsub_metrics(gossipsub: &gossipsub::Behaviour) {
+    for topic in gossipsub.topics() {
+        #[allow(clippy::cast_possible_wrap)]
+        let peer_count = gossipsub.mesh_peers(topic).count() as i64;
+        TOTAL_GOSSIPSUB_SUBSCRIPTIONS.add(peer_count, &[KeyValue::new("topic", topic.to_string())]);
+
+        // Process peer scores in the same iteration
+        gossipsub.mesh_peers(topic).for_each(|peer| {
+            if let Some(score) = gossipsub.peer_score(peer) {
+                GOSSIP_SCORE_HISTOGRAM.record(score, &[KeyValue::new("peerId", peer.to_string())]);
+            }
+        });
+    }
 }

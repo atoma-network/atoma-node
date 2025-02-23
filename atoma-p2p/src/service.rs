@@ -1,12 +1,16 @@
 use crate::errors::AtomaP2pNodeError;
 use crate::metrics::{
-    PEERS_CONNECTED, TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
+    PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_MESSAGES_FORWARDED,
+    TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
     TOTAL_OUTGOING_CONNECTIONS,
 };
-use crate::utils::validate_signed_node_message;
+use crate::utils::{extract_gossipsub_metrics, validate_signed_node_message};
 use crate::{
     config::AtomaP2pNodeConfig,
-    metrics::{NetworkMetrics, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED},
+    metrics::{
+        NetworkMetrics, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED,
+        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
+    },
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
 };
@@ -229,10 +233,13 @@ impl AtomaP2pNode {
                         AtomaP2pNodeError::GossipsubConfigError(e)
                     })?;
 
-                let gossipsub = gossipsub::Behaviour::new(
+                let gossipsub = gossipsub::Behaviour::new_with_metrics(
                     gossipsub::MessageAuthenticity::Signed(key.clone()),
                     gossipsub_config,
-                )?;
+                    &mut metrics_registry,
+                    gossipsub::MetricsConfig::default(),
+                )
+                .map_err(|e| AtomaP2pNodeError::InvalidConfig(e.to_string()))?;
 
                 let store = kad::store::MemoryStore::new(key.public().to_peer_id());
                 let kademlia = kad::Behaviour::new(key.public().to_peer_id(), store);
@@ -449,6 +456,8 @@ impl AtomaP2pNode {
 
                     let network_info = self.swarm.network_info();
 
+                    extract_gossipsub_metrics(&self.swarm.behaviour_mut().gossipsub);
+
                     let peer_id_kv = KeyValue::new("peerId", peer_id.clone());
                     let peer_id_kv_slice = &[peer_id_kv];
 
@@ -470,10 +479,10 @@ impl AtomaP2pNode {
                         })) => {
                             match self.handle_gossipsub_message(&message.data, &message_id, &propagation_source).await {
                                 Ok(()) => {
-
+                                    TOTAL_GOSSIPSUB_MESSAGES_FORWARDED.add(1, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
                                 }
                                 Err(e) => {
-
+                                    TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED.add(1, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
                                     error!(
                                         target = "atoma-p2p",
                                         event = "gossipsub_message_error",
@@ -487,11 +496,13 @@ impl AtomaP2pNode {
                             peer_id,
                             topic,
                         })) => {
+                            // Record subscript metrics
                             TOTAL_GOSSIPSUB_SUBSCRIPTIONS.add(1, &[KeyValue::new("topic", topic.to_string())]);
                             metrics.record(&gossipsub::Event::Subscribed {
                                 peer_id,
                                 topic: topic.clone(),
                             });
+
                             debug!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_subscribed",
@@ -504,7 +515,13 @@ impl AtomaP2pNode {
                             peer_id,
                             topic,
                         })) => {
+                            // Record unsubscription metrics
                             TOTAL_GOSSIPSUB_SUBSCRIPTIONS.add(-1, &[KeyValue::new("topic", topic.to_string())]);
+                            metrics.record(&gossipsub::Event::Unsubscribed {
+                                peer_id,
+                                topic: topic.clone(),
+                            });
+
                             debug!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_unsubscribed",
@@ -514,12 +531,7 @@ impl AtomaP2pNode {
                             );
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Mdns(mdns::Event::Discovered(discovered_peers))) => {
-                            debug!(
-                                target = "atoma-p2p",
-                                event = "mdns_discovered",
-                                num_discovered_peers = %discovered_peers.len(),
-                                "Mdns discovered"
-                            );
+                            let peer_count = discovered_peers.len() as u64;
                             for (peer_id, multiaddr) in discovered_peers {
                                 debug!(
                                     target = "atoma-p2p",
@@ -530,6 +542,8 @@ impl AtomaP2pNode {
                                 );
                                 self.swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr);
                             }
+                            // Record discovery metrics
+                            TOTAL_MDNS_DISCOVERIES.add(peer_count, &[KeyValue::new("peerId", peer_id.clone())]);
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Mdns(mdns::Event::Expired(expired_peers))) => {
                             debug!(
@@ -634,6 +648,15 @@ impl AtomaP2pNode {
                                 "Identify event"
                             );
                             metrics.record(&identify_event);
+                        }
+                        SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Kademlia(kad_event)) => {
+                            tracing::debug!(
+                                target = "atoma-p2p",
+                                event = "kad",
+                                kad_event = ?kad_event,
+                                "Kad event"
+                            );
+                            metrics.record(&kad_event);
                         }
                         swarm_event => {
                             tracing::debug!(
@@ -942,7 +965,32 @@ impl AtomaP2pNode {
         self.swarm
             .behaviour_mut()
             .gossipsub
-            .publish(topic, serialized_signed_node_message)?;
+            .publish(topic, serialized_signed_node_message)
+            .map_err(|e| {
+                error!(
+                    target = "atoma-p2p",
+                    event = "publish_metrics_error",
+                    error = %e,
+                    "Failed to publish metrics"
+                );
+                TOTAL_FAILED_GOSSIPSUB_PUBLISHES.add(
+                    1,
+                    &[KeyValue::new(
+                        "peerId",
+                        self.swarm.local_peer_id().to_base58(),
+                    )],
+                );
+                AtomaP2pNodeError::PublishError(e.to_string())
+            })?;
+
+        TOTAL_GOSSIPSUB_PUBLISHES.add(
+            1,
+            &[KeyValue::new(
+                "peerId",
+                self.swarm.local_peer_id().to_base58(),
+            )],
+        );
+
         Ok(())
     }
 }
