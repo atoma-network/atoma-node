@@ -73,7 +73,7 @@ fn init_traces(otlp_endpoint: &str) -> Result<sdktrace::Tracer> {
         .with_resource(RESOURCE.clone())
         .build();
 
-    let tracer = tracer_provider.tracer("atoma-proxy");
+    let tracer = tracer_provider.tracer("atoma-node");
     global::set_tracer_provider(tracer_provider);
 
     Ok(tracer)
