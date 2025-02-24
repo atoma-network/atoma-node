@@ -150,7 +150,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
 
     // Create filter from environment variable or default to info
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,atoma_daemon=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("info,atoma_daemon=debug,atoma-p2p=debug"));
 
     // Set up the subscriber ONCE with all layers
     Registry::default()
