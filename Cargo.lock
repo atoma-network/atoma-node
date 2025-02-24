@@ -868,7 +868,7 @@ dependencies = [
  "atoma-utils",
  "axum",
  "blake2",
- "clap 4.5.29",
+ "clap 4.5.31",
  "config",
  "once_cell",
  "opentelemetry",
@@ -931,7 +931,7 @@ dependencies = [
  "atoma-utils",
  "axum",
  "base64 0.22.1",
- "clap 4.5.29",
+ "clap 4.5.31",
  "config",
  "dotenvy",
  "flume",
@@ -1751,9 +1751,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.29"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8acebd8ad879283633b343856142139f2da2317c96b05b4dd6181c61e2480184"
+checksum = "027bb0d98429ae334a8698531da7077bdf906419543a35a55c2cb1b66437d767"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1761,9 +1761,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.29"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ba32cbda51c7e1dfd49acc1457ba1a7dec5b64fe360e828acb13ca8dc9c2f9"
+checksum = "5589e0cba072e0f3d23791efac0fd8627b49c829c196a492e88168e6a669d863"
 dependencies = [
  "anstream",
  "anstyle",
@@ -5443,7 +5443,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "codespan-reporting",
  "dunce",
  "hex",
@@ -5502,7 +5502,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "codespan",
  "colored",
  "indexmap 2.7.1",
@@ -5523,7 +5523,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "hex",
  "inline_colorization",
  "move-abstract-interpreter",
@@ -9073,7 +9073,7 @@ dependencies = [
  "anemo",
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "consensus-config",
  "csv",
  "dirs 4.0.0",
@@ -9283,7 +9283,7 @@ name = "sui-protocol-config"
 version = "0.1.0"
 source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f805b728ce1570cb66d27f0a95648"
 dependencies = [
- "clap 4.5.29",
+ "clap 4.5.31",
  "insta",
  "move-vm-config",
  "schemars",
@@ -9356,7 +9356,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "colored",
  "fastcrypto 0.1.8",
  "futures",
