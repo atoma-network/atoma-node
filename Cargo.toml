@@ -31,7 +31,7 @@ blake2 = "0.10.6"
 blake3 = "1.5.5"
 ciborium = "0.2.2"
 chrono = "0.4.39"
-clap = "4.5.29"
+clap = "4.5.30"
 config = "0.14.0"
 dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
 dotenvy = "0.15.7"
