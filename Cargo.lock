@@ -868,7 +868,7 @@ dependencies = [
  "atoma-utils",
  "axum",
  "blake2",
- "clap 4.5.29",
+ "clap 4.5.31",
  "config",
  "once_cell",
  "opentelemetry",
@@ -931,7 +931,7 @@ dependencies = [
  "atoma-utils",
  "axum",
  "base64 0.22.1",
- "clap 4.5.29",
+ "clap 4.5.31",
  "config",
  "dotenvy",
  "flume",
@@ -1449,15 +1449,16 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.5.5"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8ee0c1824c4dea5b5f81736aff91bae041d2c07ee1192bec91054e10e3e601e"
+checksum = "1230237285e3e10cde447185e8975408ae24deaa67205ce684805c25bc0c7937"
 dependencies = [
  "arrayref",
  "arrayvec",
  "cc",
  "cfg-if",
  "constant_time_eq",
+ "memmap2",
 ]
 
 [[package]]
@@ -1750,9 +1751,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.29"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8acebd8ad879283633b343856142139f2da2317c96b05b4dd6181c61e2480184"
+checksum = "027bb0d98429ae334a8698531da7077bdf906419543a35a55c2cb1b66437d767"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1760,9 +1761,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.29"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ba32cbda51c7e1dfd49acc1457ba1a7dec5b64fe360e828acb13ca8dc9c2f9"
+checksum = "5589e0cba072e0f3d23791efac0fd8627b49c829c196a492e88168e6a669d863"
 dependencies = [
  "anstream",
  "anstyle",
@@ -5238,6 +5239,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
+name = "memmap2"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5433,7 +5443,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "codespan-reporting",
  "dunce",
  "hex",
@@ -5492,7 +5502,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "codespan",
  "colored",
  "indexmap 2.7.1",
@@ -5513,7 +5523,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f
 dependencies = [
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "hex",
  "inline_colorization",
  "move-abstract-interpreter",
@@ -8226,9 +8236,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.217"
+version = "1.0.218"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02fc4265df13d6fa1d00ecff087228cc0a2b5f3c0e87e258d8b94a156e984c70"
+checksum = "e8dfc9d19bdbf6d17e22319da49161d5d0108e4188e8b680aef6299eed22df60"
 dependencies = [
  "serde_derive",
 ]
@@ -8286,9 +8296,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.217"
+version = "1.0.218"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a9bf7cf98d04a2b28aead066b7496853d4779c9cc183c440dbac457641e19a0"
+checksum = "f09503e191f4e797cb8aac08e9a4a4695c5edf6a2e70e376d961ddd5c969f82b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8308,9 +8318,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.138"
+version = "1.0.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d434192e7da787e94a6ea7e9670b26a036d0ca41e0b7efb2676dd32bae872949"
+checksum = "44f86c3acccc9c65b153fe1b85a3be07fe5515274ec9f0653b4a0875731c72a6"
 dependencies = [
  "indexmap 2.7.1",
  "itoa",
@@ -9063,7 +9073,7 @@ dependencies = [
  "anemo",
  "anyhow",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "consensus-config",
  "csv",
  "dirs 4.0.0",
@@ -9273,7 +9283,7 @@ name = "sui-protocol-config"
 version = "0.1.0"
 source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.43.1#2f52a7283e5f805b728ce1570cb66d27f0a95648"
 dependencies = [
- "clap 4.5.29",
+ "clap 4.5.31",
  "insta",
  "move-vm-config",
  "schemars",
@@ -9346,7 +9356,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bcs",
- "clap 4.5.29",
+ "clap 4.5.31",
  "colored",
  "fastcrypto 0.1.8",
  "futures",
@@ -9687,9 +9697,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.17.0"
+version = "3.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a40f762a77d2afa88c2d919489e390a12bdd261ed568e60cfa7e48d4e20f0d33"
+checksum = "22e5a0acb1f3f55f65cc4a866c361b2fb2a0ff6366785ae6fbb5f85df07ba230"
 dependencies = [
  "cfg-if",
  "fastrand",
