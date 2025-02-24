@@ -1,12 +1,11 @@
 use chrono::Utc;
-use std::time::Duration;
-use sysinfo::System;
+use std::{collections::HashMap, time::Duration};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tracing::{error, instrument};
 
 use crate::{
+    broadcast_metrics::compute_node_metrics,
     errors::AtomaP2pNodeError,
-    metrics::compute_usage_metrics,
     types::{NodeMessage, NodeP2pMetadata},
 };
 
@@ -47,10 +46,11 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
     skip_all
 )]
 pub fn usage_metrics_timer_task(
+    country: Option<String>,
+    metrics_endpoints: HashMap<String, (String, String)>,
     is_client: bool,
     node_public_url: Option<String>,
     node_small_id: Option<u64>,
-    country: Option<String>,
     usage_metrics_tx: UnboundedSender<NodeMessage>,
 ) -> JoinHandle<Result<(), AtomaP2pNodeError>> {
     tokio::spawn(async move {
@@ -70,11 +70,10 @@ pub fn usage_metrics_timer_task(
             let node_small_id = node_small_id.unwrap();
             let country = country.unwrap();
             loop {
-                let sys = System::new_all();
                 tokio::time::sleep(USAGE_METRICS_HEARTBEAT_INTERVAL).await;
                 let node_metadata =
                     get_node_metadata(node_public_url.clone(), node_small_id, country.clone());
-                let node_metrics = compute_usage_metrics(sys)?;
+                let node_metrics = compute_node_metrics(&metrics_endpoints).await?;
                 let node_message = NodeMessage {
                     node_metadata,
                     node_metrics,

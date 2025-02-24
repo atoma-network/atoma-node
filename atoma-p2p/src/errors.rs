@@ -53,7 +53,7 @@ pub enum AtomaP2pNodeError {
     #[error("Validation error: `{0}`")]
     ValidationError(#[from] validator::ValidationError),
     #[error("Failed to compute usage metrics: `{0}`")]
-    UsageMetricsComputeError(#[from] crate::metrics::NodeMetricsError),
+    UsageMetricsComputeError(#[from] crate::broadcast_metrics::NodeMetricsError),
     #[error("Invalid config: `{0}`")]
     InvalidConfig(String),
     #[error("Invalid message length")]

@@ -1,6 +1,6 @@
 use crate::{
+    broadcast_metrics::NodeMetrics,
     errors::AtomaP2pNodeError,
-    metrics::NodeMetrics,
     types::{NodeMessage, NodeP2pMetadata, SignedNodeMessage},
     utils::validate_signed_node_message,
     AtomaP2pEvent,

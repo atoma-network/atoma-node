@@ -1,7 +1,7 @@
 use config::{Config, File};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::time::Duration;
+use std::{collections::HashMap, path::Path};
 use validator::{Validate, ValidationError};
 
 /// Configuration settings for a P2P Atoma Node.
@@ -48,6 +48,11 @@ pub struct AtomaP2pNodeConfig {
     /// Bootstrap nodes are nodes that the node will use to bootstrap its network connection.
     /// They are a list of strings in the format of "/ip4/x.x.x.x/udp/x/quic-v1/p2p/QmHash...".
     pub bootstrap_nodes: Vec<String>,
+
+    /// The list of endpoints serving metrics to collect, displayed as a map of model name to a tuple
+    /// of the form (`serving_engine`, `metrics_endpoint`)
+    /// (e.g. `"meta-llama/Llama-3.2-3B-Instruct" => ("vllm", "http://chat-completions:8000/metrics")`)
+    pub metrics_endpoints: HashMap<String, (String, String)>,
 }
 
 impl AtomaP2pNodeConfig {
