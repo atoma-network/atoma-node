@@ -4,8 +4,8 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tracing::{error, instrument};
 
 use crate::{
+    errors::AtomaP2pNodeError,
     metrics::compute_node_metrics,
-    service::AtomaP2pNodeError,
     types::{NodeMessage, NodeP2pMetadata},
 };
 

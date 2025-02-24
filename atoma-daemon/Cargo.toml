@@ -24,14 +24,14 @@ serde_yaml = { workspace = true }
 sui-sdk = { workspace = true }
 tokio = { workspace = true }
 once_cell = "1.20"
-opentelemetry = { version = "0.27.1", features = ["trace", "metrics", "logs"] }
-opentelemetry_sdk = { version = "0.27.1", features = [
+opentelemetry = { workspace = true, features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { workspace = true, features = [
   "rt-tokio",
   "trace",
   "metrics",
   "logs",
 ] }
-opentelemetry-otlp = { version = "0.27.0", features = [
+opentelemetry-otlp = { workspace = true, features = [
   "metrics",
   "grpc-tonic",
   "trace",
@@ -45,7 +45,7 @@ tracing-subscriber = { workspace = true, features = [
   "json",
   "local-time",
 ] }
-tracing-opentelemetry = "0.28.0"
+tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 
