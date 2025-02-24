@@ -351,6 +351,13 @@ impl AtomaP2pNode {
 
         let network_metrics = NetworkMetrics::default();
 
+        debug!(
+            target = "atoma-p2p",
+            event = "node_started",
+            peer_id = %swarm.local_peer_id(),
+            "Libp2p node started"
+        );
+
         Ok(Self {
             keystore,
             swarm,
@@ -672,9 +679,17 @@ impl AtomaP2pNode {
                         }
                         SwarmEvent::OutgoingConnectionError {
                             peer_id,
+                            error,
                             ..
                         } => {
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
+                            error!(
+                                target = "atoma-p2p",
+                                event = "outgoing_connection_error",
+                                peer_id = ?peer_id,
+                                error = %error,
+                                "Outgoing connection error"
+                            );
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Identify(identify_event)) => {
                             tracing::debug!(
@@ -841,6 +856,8 @@ impl AtomaP2pNode {
         debug!(
             target = "atoma-p2p",
             event = "gossipsub_message_data",
+            message_id = %message_id,
+            propagation_source = %propagation_source,
             "Received gossipsub message data"
         );
         let node_message = &signed_node_message.node_message;
