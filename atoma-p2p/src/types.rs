@@ -1,4 +1,4 @@
-use crate::{errors::AtomaP2pNodeError, metrics::NodeMetrics};
+use crate::{errors::AtomaP2pNodeError, broadcast_metrics::NodeMetrics};
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::crypto::{
     Ed25519SuiSignature, Secp256k1SuiSignature, Secp256r1SuiSignature, SuiSignatureInner,
