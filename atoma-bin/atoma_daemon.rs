@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use atoma_daemon::{
     config::AtomaDaemonConfig,
     server::{run_server, DaemonState},
+    telemetry,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState};
 use atoma_sui::client::Client;
@@ -16,8 +17,6 @@ use tokio::{
     try_join,
 };
 use tracing::info;
-
-mod telemetry;
 
 #[derive(Parser)]
 struct DaemonArgs {

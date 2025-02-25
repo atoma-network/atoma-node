@@ -921,6 +921,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoma-p2p-tester"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atoma-daemon",
+ "atoma-p2p",
+ "atoma-sui",
+ "clap 4.5.31",
+ "config",
+ "flume",
+ "serde",
+ "serde_json",
+ "sui-keys",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "atoma-service"
 version = "0.1.0"
 dependencies = [

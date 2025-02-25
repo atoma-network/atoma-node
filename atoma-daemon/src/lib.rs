@@ -10,6 +10,7 @@ pub(crate) mod components;
 pub mod config;
 pub(crate) mod handlers;
 pub mod server;
+pub mod telemetry;
 pub mod types;
 
 pub use crate::{config::AtomaDaemonConfig, server::DaemonState};

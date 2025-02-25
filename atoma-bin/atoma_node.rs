@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
-use atoma_daemon::{AtomaDaemonConfig, DaemonState};
+use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
@@ -20,8 +20,6 @@ use tokio::{
     try_join,
 };
 use tracing::{error, info, instrument, warn};
-
-mod telemetry;
 
 /// The name of the environment variable for the Hugging Face token
 const HF_TOKEN: &str = "HF_TOKEN";

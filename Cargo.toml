@@ -9,6 +9,7 @@ members = [
     "atoma-state",
     "atoma-sui",
     "atoma-utils",
+    "atoma-p2p-tester",
 ]
 
 [workspace.package]
