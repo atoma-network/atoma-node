@@ -894,6 +894,7 @@ name = "atoma-p2p"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "bytes",
  "chrono",
  "ciborium",
  "config",

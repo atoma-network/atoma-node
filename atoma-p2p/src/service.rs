@@ -1,19 +1,20 @@
-use crate::errors::AtomaP2pNodeError;
-use crate::metrics::{
-    KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
-    TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_SUBSCRIPTIONS,
-    TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
-};
-use crate::utils::{extract_gossipsub_metrics, validate_signed_node_message};
 use crate::{
     config::AtomaP2pNodeConfig,
+    errors::AtomaP2pNodeError,
     metrics::{
         NetworkMetrics, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED,
         TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
     },
+    metrics::{
+        KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
+        TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES,
+        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
+    },
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
+    utils::{extract_gossipsub_metrics, validate_signed_node_message},
 };
+use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
 use futures::StreamExt;
 use libp2p::metrics::{Metrics, Recorder, Registry};
@@ -489,7 +490,7 @@ impl AtomaP2pNode {
                             message,
                             propagation_source,
                         })) => {
-                            match self.handle_gossipsub_message(&message.data, &message_id, &propagation_source).await {
+                            match self.handle_gossipsub_message(message.data.into(), &message_id, &propagation_source).await {
                                 Ok(()) => {
                                     TOTAL_GOSSIPSUB_MESSAGES_FORWARDED.add(1, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
                                 }
@@ -831,7 +832,7 @@ impl AtomaP2pNode {
     #[instrument(level = "debug", skip_all)]
     pub async fn handle_gossipsub_message(
         &mut self,
-        message_data: &[u8],
+        message_data: Bytes,
         message_id: &gossipsub::MessageId,
         propagation_source: &PeerId,
     ) -> Result<(), AtomaP2pNodeError> {
@@ -852,7 +853,7 @@ impl AtomaP2pNode {
             return Ok(());
         }
         // Directly deserialize SignedNodeMessage using new method
-        let signed_node_message = SignedNodeMessage::deserialize_with_signature(message_data)?;
+        let signed_node_message = SignedNodeMessage::deserialize_with_signature(&message_data)?;
         let signature_len = signed_node_message.signature.len();
         debug!(
             target = "atoma-p2p",
@@ -994,8 +995,9 @@ impl AtomaP2pNode {
         &mut self,
         node_message: NodeMessage,
     ) -> Result<(), AtomaP2pNodeError> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&node_message, &mut bytes).unwrap();
+        let mut buffer = BytesMut::new();
+        ciborium::into_writer(&node_message, (&mut buffer).writer())?;
+        let bytes = buffer.freeze();
         let hash = blake3::hash(&bytes);
 
         let signature = self
@@ -1012,7 +1014,7 @@ impl AtomaP2pNode {
             })?;
         let signed_node_message = SignedNodeMessage {
             node_message,
-            signature: signature.as_ref().to_vec(),
+            signature: Bytes::copy_from_slice(signature.as_ref()),
         };
         let serialized_signed_node_message = signed_node_message.serialize_with_signature()?;
         let topic = gossipsub::IdentTopic::new(METRICS_GOSPUBSUB_TOPIC);
