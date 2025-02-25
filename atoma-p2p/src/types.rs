@@ -1,4 +1,5 @@
 use crate::{broadcast_metrics::NodeMetrics, errors::AtomaP2pNodeError};
+use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use sui_sdk::types::crypto::{
     Ed25519SuiSignature, Secp256k1SuiSignature, Secp256r1SuiSignature, SuiSignatureInner,
@@ -72,7 +73,7 @@ pub struct UsageMetrics {
     pub country: String,
 
     /// A cryptographic signature of the usage metrics
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
 
     /// The timestamp of the usage metrics
     pub timestamp: u64,
@@ -104,7 +105,7 @@ pub struct NodeP2pMetadata {
 /// A struct containing a serialized message and its hash
 pub struct SerializedMessage {
     /// The serialized message
-    pub message: Vec<u8>,
+    pub message: Bytes,
 
     /// The hash of the serialized message
     pub hash: blake3::Hash,
@@ -136,12 +137,12 @@ pub struct NodeMessage {
 
 impl SerializeWithHash for NodeMessage {
     fn serialize_with_hash(&self) -> Result<SerializedMessage> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(self, &mut bytes)
+        let mut buffer = BytesMut::new();
+        ciborium::into_writer(self, (&mut buffer).writer())
             .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
         Ok(SerializedMessage {
-            hash: blake3::hash(&bytes),
-            message: bytes,
+            hash: blake3::hash(buffer.as_ref()),
+            message: buffer.freeze(),
         })
     }
 }
@@ -157,7 +158,7 @@ pub struct SignedNodeMessage {
 
     /// The signature of the node message
     #[serde(skip)]
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
 }
 
 /// A trait for serializing a message (with ciborium)
@@ -171,7 +172,7 @@ pub trait SerializeWithSignature {
     /// # Errors
     ///
     /// Returns an error if the message cannot be serialized
-    fn serialize_with_signature(&self) -> Result<Vec<u8>>;
+    fn serialize_with_signature(&self) -> Result<Bytes>;
 
     /// Deserialize the message from a vector of bytes.
     ///
@@ -184,13 +185,15 @@ pub trait SerializeWithSignature {
 }
 
 impl SerializeWithSignature for SignedNodeMessage {
-    fn serialize_with_signature(&self) -> Result<Vec<u8>, AtomaP2pNodeError> {
-        let mut serialized = self.signature.clone();
-        let mut serialized_node_message = Vec::new();
-        ciborium::into_writer(&self.node_message, &mut serialized_node_message)
+    fn serialize_with_signature(&self) -> Result<Bytes, AtomaP2pNodeError> {
+        let mut buffer = BytesMut::with_capacity(1024);
+        buffer.extend_from_slice(&self.signature);
+
+        // Serialize node message
+        ciborium::into_writer(&self.node_message, (&mut buffer).writer())
             .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
-        serialized.extend(serialized_node_message);
-        Ok(serialized)
+
+        Ok(buffer.freeze())
     }
 
     fn deserialize_with_signature(data: &[u8]) -> Result<Self, AtomaP2pNodeError> {
@@ -209,10 +212,11 @@ impl SerializeWithSignature for SignedNodeMessage {
                     "Invalid signature scheme: the data is empty".to_string(),
                 )
             })??;
+        let signature = Bytes::copy_from_slice(&data[0..signature_len]);
         let node_message = ciborium::from_reader(&data[signature_len..])?;
         Ok(Self {
             node_message,
-            signature: data[..signature_len].to_vec(),
+            signature,
         })
     }
 }
@@ -249,7 +253,7 @@ mod tests {
             .expect("Failed to sign message");
         let should_be_signed_node_message = SignedNodeMessage {
             node_message,
-            signature: signature.as_ref().to_vec(),
+            signature: Bytes::copy_from_slice(signature.as_ref()),
         };
         let serialized = should_be_signed_node_message
             .serialize_with_signature()
@@ -313,7 +317,7 @@ mod tests {
         let signature = Signature::Secp256k1SuiSignature(signature);
         let should_be_signed_node_message = SignedNodeMessage {
             node_message,
-            signature: signature.as_ref().to_vec(),
+            signature: Bytes::copy_from_slice(signature.as_ref()),
         };
         let serialized = should_be_signed_node_message
             .serialize_with_signature()
@@ -346,7 +350,7 @@ mod tests {
         let signature = Signature::Secp256r1SuiSignature(signature);
         let should_be_signed_node_message = SignedNodeMessage {
             node_message,
-            signature: signature.as_ref().to_vec(),
+            signature: Bytes::copy_from_slice(signature.as_ref()),
         };
         let serialized = should_be_signed_node_message
             .serialize_with_signature()

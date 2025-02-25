@@ -6,6 +6,7 @@ use crate::{
     AtomaP2pEvent,
 };
 
+use bytes::Bytes;
 use flume::unbounded;
 use sui_keys::keystore::{AccountKeystore, InMemKeystore};
 use tokio::sync::oneshot;
@@ -82,7 +83,7 @@ pub fn create_test_signed_node_message(
 
     SignedNodeMessage {
         node_message,
-        signature: signature.as_ref().to_vec(),
+        signature: Bytes::copy_from_slice(signature.as_ref()),
     }
 }
 
@@ -150,7 +151,7 @@ async fn test_validate_usage_metrics_message_invalid_url() {
 
     let bad_metrics = SignedNodeMessage {
         node_message,
-        signature: signature.as_ref().to_vec(),
+        signature: Bytes::copy_from_slice(signature.as_ref()),
     };
 
     let result = validate_signed_node_message(
@@ -224,10 +225,11 @@ async fn test_validate_usage_metrics_message_invalid_signature() {
     // Corrupt the signature part after scheme byte
     let scheme_length = 1; // Ed25519 scheme byte
     let sig_start = scheme_length;
-    let mut signature = signed_node_message.signature.clone();
+    let mut signature = signed_node_message.signature.as_ref().to_vec();
     for byte in &mut signature[sig_start..sig_start + 64] {
         *byte = 0xff;
     }
+    let signature = Bytes::copy_from_slice(&signature);
 
     let mut node_message_bytes = Vec::new();
     ciborium::into_writer(&node_message, &mut node_message_bytes).unwrap();
