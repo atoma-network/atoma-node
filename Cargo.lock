@@ -928,6 +928,7 @@ dependencies = [
  "atoma-daemon",
  "atoma-p2p",
  "atoma-sui",
+ "atoma-utils",
  "clap 4.5.31",
  "config",
  "flume",

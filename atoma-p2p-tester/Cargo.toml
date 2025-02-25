@@ -8,6 +8,7 @@ license.workspace = true
 atoma-p2p = { path = "../atoma-p2p" }
 atoma-sui = { path = "../atoma-sui" }
 atoma-daemon = { path = "../atoma-daemon" }
+atoma-utils = { path = "../atoma-utils" }
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
