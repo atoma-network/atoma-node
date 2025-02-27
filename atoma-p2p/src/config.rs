@@ -31,7 +31,7 @@ pub struct AtomaP2pNodeConfig {
     ///
     /// This is the address that the client/node will use to listen for incoming connections.
     /// It is a string in the format of "/ip4/x.x.x.x/udp/x/quic-v1".
-    pub listen_addr: String,
+    pub listen_addrs: Vec<String>,
 
     /// The public URL of the node (optional, as clients do not need to provide a public URL)
     ///

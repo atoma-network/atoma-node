@@ -17,12 +17,15 @@ use crate::{
 use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
 use futures::StreamExt;
-use libp2p::metrics::{Metrics, Recorder, Registry};
 use libp2p::{
     gossipsub::{self},
     identify, kad, mdns, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, PeerId, Swarm, SwarmBuilder,
+};
+use libp2p::{
+    metrics::{Metrics, Recorder, Registry},
+    Multiaddr,
 };
 use opentelemetry::KeyValue;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -292,24 +295,49 @@ impl AtomaP2pNode {
                 );
                 AtomaP2pNodeError::GossipsubSubscriptionError(e)
             })?;
-        let listen_addr = config.listen_addr.parse().map_err(|e| {
+
+        // Parse TCP address from the first element in listen_addrs
+        let tcp_addr: Multiaddr = config.listen_addrs[0].parse().map_err(|e| {
             error!(
                 target = "atoma-p2p",
                 event = "address_parse_error",
-                listen_addr = config.listen_addr,
+                listen_addr = %config.listen_addrs[0],
                 error = %e,
-                "Failed to parse listen address"
+                "Failed to parse TCP listen address"
             );
             AtomaP2pNodeError::ListenAddressParseError(e)
         })?;
 
-        if let Err(e) = swarm.listen_on(listen_addr) {
+        // Parse QUIC address from the second element in listen_addrs
+        let quic_addr: Multiaddr = config.listen_addrs[1].parse().map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "address_parse_error",
+                listen_addr = %config.listen_addrs[1],
+                error = %e,
+                "Failed to parse QUIC listen address"
+            );
+            AtomaP2pNodeError::ListenAddressParseError(e)
+        })?;
+
+        if let Err(e) = swarm.listen_on(quic_addr.clone()) {
             error!(
                 target = "atoma-p2p",
                 event = "listen_on_error",
-                listen_addr = config.listen_addr,
+                listen_addr = quic_addr.to_string(),
                 error = %e,
-                "Failed to listen on address"
+                "Failed to listen on QUIC address"
+            );
+            return Err(AtomaP2pNodeError::SwarmListenOnError(e));
+        }
+
+        if let Err(e) = swarm.listen_on(tcp_addr.clone()) {
+            error!(
+                target = "atoma-p2p",
+                event = "listen_on_error",
+                listen_addr = tcp_addr.to_string(),
+                error = %e,
+                "Failed to listen on TCP address"
             );
             return Err(AtomaP2pNodeError::SwarmListenOnError(e));
         }
@@ -358,6 +386,13 @@ impl AtomaP2pNode {
             event = "node_started",
             peer_id = %swarm.local_peer_id(),
             "Libp2p node started"
+        );
+
+        debug!(
+            target = "atoma-p2p",
+            event = "listening_addresses",
+            listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
+            "Listening on addresses"
         );
 
         Ok(Self {
