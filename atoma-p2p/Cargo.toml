@@ -19,6 +19,7 @@ libp2p = { workspace = true, features = [
 	"mdns",
 	"kad",
 	"macros",
+	"request-response",
 	"quic",
 	"tcp",
 	"yamux",
