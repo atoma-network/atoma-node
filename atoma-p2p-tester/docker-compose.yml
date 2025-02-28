@@ -1,12 +1,43 @@
+# Base configurations that are common between environments
+x-atoma-p2p-base: &atoma-p2p-base
+  build: &atoma-p2p-base-build
+    context: .
+    dockerfile: Dockerfile
+    args: &atoma-p2p-base-build-args
+      TRACE_LEVEL: ${TRACE_LEVEL:-info}
+  volumes:
+    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
+    - ./logs:/app/logs
+    - sui-config-volume:/root/.sui/sui_config
+    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
+  env_file:
+    - .env
+  environment:
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+  depends_on:
+    prometheus:
+      condition: service_healthy
+    grafana:
+      condition: service_healthy
+    loki:
+      condition: service_healthy
+    tempo:
+      condition: service_healthy
+  networks:
+    - atoma-network
+
 services:
-  postgres:
-    image: postgres:latest
-    environment:
-      POSTGRES_DB: atoma
-      POSTGRES_USER: atoma
-      POSTGRES_PASSWORD: atoma
+  atoma-p2p-tester-local:
+    profiles: ["local"]
+    <<: *atoma-p2p-base
+    image: ghcr.io/atoma-network/atoma-p2p-tester:local-latest
+    build:
+      <<: *atoma-p2p-base-build
+      args:
+        <<: *atoma-p2p-base-build-args
+        PROFILE: local
     ports:
-      - 5432:5432
+      - "${ATOMA_P2P_TESTER_SERVICE_PORT:-8080}:8080"
 
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -111,15 +142,14 @@ services:
       tempo:
         condition: service_healthy
         required: true
+
+volumes:
+  sui-config-volume:
+  grafana_data:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+
 networks:
   atoma-network:
     driver: bridge
-    name: atoma-network
-
-volumes:
-  postgres-data:
-  prometheus-data:
-  grafana_data:
-  loki-data:
-  tempo-data:
-  otel-collector-data:
