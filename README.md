@@ -88,7 +88,7 @@ ATOMA_SERVICE_PORT=3000       # External port for Atoma service
 
 ```toml
 [atoma_service]
-chat_completions_service_url = "http://chat-completions:8000" # Internal Docker network URL
+chat_completions_service_urls = { "meta-llama/Llama-3.2-3B-Instruct" = "http://chat-completions:8000"}
 embeddings_service_url = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
 # List of models to be used by the service, the current value here is just a placeholder, please change it to the models you want to deploy
@@ -120,18 +120,31 @@ service_bind_address = "0.0.0.0:3001"
 # Replace the placeholder values with the actual node badge and small ID assigned by the Atoma's smart contract, upon node registration
 node_badges = [
     [
-        "0x268e6af9502dcdcaf514bb699c880b37fa1e8d339293bc4f331f2dde54180600",
-        1,
+        "<NODE_BADGE_ID>",
+        <NODE_SMALL_ID>,
     ],
 ] # List of node badges, where each badge is a tuple of (badge_id, small_id), both values are assigned once the node registers itself
 
-[proxy_server]
-# replace this with the public url address of the Atoma proxy server (currently https://api.atomacloud.com)
-proxy_address = "https://api.atomacloud.com"
-# replace this with the public url address of this node
-node_public_address = ""
-# replace this with the country code (ISO 3166-1 alpha-2) of the node
+[atoma_p2p]
+# Interval for sending heartbeat messages to peers (in seconds)
+heartbeat_interval = { secs = 30, nanos = 0 }
+# Maximum duration a connection can remain idle before closing (in seconds)
+idle_connection_timeout = { secs = 60, nanos = 0 }
+# Address to listen for incoming QUIC connections (format: "/ip4/x.x.x.x/udp/x")
+# Address to listen for incoming QUIC connections (format: "/ip4/x.x.x.x/udp/x")
+listen_addrs = [
+    "/ip4/0.0.0.0/tcp/4001",
+    "/ip4/0.0.0.0/udp/4001/quic-v1",
+]
+# Node's small ID (assigned by Atoma smart contract)
+node_small_id = 1
+# The HTTP(s) public URL of the node, that it can be reached to perform LLM inference,
+public_url = "https://<PUBLIC_URL>"
+# required, replace this with the country (ISO 3166-1 alpha-2) of the node (https://www.iso.org/obp/ui/#search/code/
 country = ""
+# List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)
+# (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ("vllm", "http://chat-completions:8000/metrics")`)
+metrics_endpoints = { "meta-llama/Llama-3.2-3B-Instruct" = ["vllm", "http://chat-completions:8000/metrics"] }
 ```
 
 1. Create required directories
@@ -286,9 +299,12 @@ docker network inspect atoma-network
 # Allow Atoma service port
 sudo ufw allow 3000/tcp
 
-# Allow vLLM service port
-sudo ufw allow 50000/tcp
+# Allow Atoma p2p service port
+sudo ufw allow 4001/tcp
 ```
+
+We suggest to not expose the underlying inference backend service (e.g. vLLM, TEI, etc) to the exterior, as it could lead
+to serve AI inference requests without being authorized directly via the Atoma node middleware (which will lead to possible serving non-paid requests).
 
 1. HuggingFace Token
 
