@@ -43,12 +43,6 @@ pub struct AtomaP2pNodeConfig {
     /// The node's small id (assigned by the Atoma smart contract)
     pub node_small_id: Option<u64>,
 
-    /// The list of bootstrap nodes to connect to.
-    ///
-    /// Bootstrap nodes are nodes that the node will use to bootstrap its network connection.
-    /// They are a list of strings in the format of "/ip4/x.x.x.x/udp/x/quic-v1/p2p/QmHash...".
-    pub bootstrap_nodes: Vec<String>,
-
     /// The list of endpoints serving metrics to collect, displayed as a map of model name to a tuple
     /// of the form (`serving_engine`, `metrics_endpoint`)
     /// (e.g. `"meta-llama/Llama-3.2-3B-Instruct" => ("vllm", "http://chat-completions:8000/metrics")`)

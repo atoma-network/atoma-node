@@ -194,7 +194,7 @@ impl AtomaP2pNode {
     /// - Messages are signed using the node's private key
     /// - Peer connections are authenticated
     /// - The node validates all incoming messages
-    #[instrument(level = "info", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     pub fn start(
         config: AtomaP2pNodeConfig,
         keystore: Arc<FileBasedKeystore>,
@@ -502,7 +502,7 @@ impl AtomaP2pNode {
     /// - Peer subscription/unsubscription events
     /// - Usage metrics processing errors
     /// - Shutdown events
-    #[instrument(level = "info", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
