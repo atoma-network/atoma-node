@@ -47,14 +47,6 @@ listen_addr = "/ip4/0.0.0.0/udp/4001/quic-v1"
 node_small_id = 1
 # The HTTP(s) public URL of the node
 public_url = "https://<PUBLIC_URL>"
-# List of bootstrap nodes to connect to
-bootstrap_nodes = [
-    "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-    "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-    "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-    "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-    "12D3KooWKnDdG3iXw9eTFijk3EWSunZcFi54Zka4wmtqtt6rPxc8",
-]
 # required, replace this with the country (ISO 3166-1 alpha-2) of the node (https://www.iso.org/obp/ui/#search/code/
 country = ""
 # List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)

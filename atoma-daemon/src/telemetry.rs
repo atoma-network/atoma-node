@@ -80,6 +80,13 @@ fn init_traces(otlp_endpoint: &str) -> Result<sdktrace::Tracer> {
 }
 
 /// Configure logging with JSON formatting, file output, and console output
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Failed to create logs directory
+/// - Failed to initialize OpenTelemetry tracing
+/// - Failed to set global default subscriber
 pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
     let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| DEFAULT_OTLP_ENDPOINT.to_string());

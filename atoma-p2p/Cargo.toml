@@ -24,6 +24,7 @@ libp2p = { workspace = true, features = [
 	"yamux",
 	"noise",
 	"metrics",
+	"rsa",
 ] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
