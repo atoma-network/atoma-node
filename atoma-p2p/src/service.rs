@@ -44,9 +44,11 @@ const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
 /// The interval at which the metrics are updated
 const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 
+/// The protocol name for the Kademlia DHT
 const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
 
-const BOOTNODES: [&str; 4] = [
+// Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
+const BOOTSTRAP_NODES: [&str; 4] = [
     "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
     "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
     "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
@@ -217,7 +219,6 @@ impl AtomaP2pNode {
         }
         let mut metrics_registry = libp2p::metrics::Registry::default();
 
-        // Create a random key for ourselves.
         let local_key = identity::Keypair::generate_ed25519();
 
         let mut swarm = SwarmBuilder::with_existing_identity(local_key)
@@ -385,7 +386,7 @@ impl AtomaP2pNode {
         );
 
         // Initialize Kademlia's bootstrap process
-        for peer_id in BOOTNODES {
+        for peer_id in BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
                 Ok(peer_id) => {
                     swarm
