@@ -716,6 +716,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "asn1_der"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "155a5a185e42c6b77ac7b88a15143d930a9e9727a5b7b77eed417404ab15c247"
+
+[[package]]
 name = "async-channel"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -918,6 +924,26 @@ dependencies = [
  "tracing",
  "url",
  "validator",
+]
+
+[[package]]
+name = "atoma-p2p-tester"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atoma-daemon",
+ "atoma-p2p",
+ "atoma-sui",
+ "atoma-utils",
+ "clap 4.5.31",
+ "config",
+ "flume",
+ "serde",
+ "serde_json",
+ "sui-keys",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4852,12 +4878,14 @@ version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "257b5621d159b32282eac446bed6670c39c7dc68a200a992d8f056afa0066f6d"
 dependencies = [
+ "asn1_der",
  "bs58 0.5.1",
  "ed25519-dalek",
  "hkdf",
  "multihash 0.19.3",
  "quick-protobuf",
  "rand 0.8.5",
+ "ring 0.17.11",
  "sha2 0.10.8",
  "thiserror 1.0.69",
  "tracing",

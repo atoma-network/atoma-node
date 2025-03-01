@@ -60,4 +60,6 @@ pub enum AtomaP2pNodeError {
     InvalidMessageLengthError,
     #[error("Failed to publish Message: `{0}`")]
     PublishError(String),
+    #[error("DNS resolver error: `{0}`")]
+    DnsError(#[from] std::io::Error),
 }

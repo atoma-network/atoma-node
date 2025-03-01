@@ -17,12 +17,15 @@ use crate::{
 use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
 use futures::StreamExt;
-use libp2p::metrics::{Metrics, Recorder, Registry};
 use libp2p::{
     gossipsub::{self},
-    identify, kad, mdns, noise,
+    identify, identity, kad, mdns, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    tcp, yamux, PeerId, Swarm, SwarmBuilder,
+    tcp, yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
+};
+use libp2p::{
+    metrics::{Metrics, Recorder, Registry},
+    Multiaddr,
 };
 use opentelemetry::KeyValue;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -40,6 +43,17 @@ const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
 
 /// The interval at which the metrics are updated
 const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
+
+/// The protocol name for the Kademlia DHT
+const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
+
+// Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
+const BOOTSTRAP_NODES: [&str; 4] = [
+    "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+    "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+    "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+    "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
@@ -182,7 +196,7 @@ impl AtomaP2pNode {
     /// - Messages are signed using the node's private key
     /// - Peer connections are authenticated
     /// - The node validates all incoming messages
-    #[instrument(level = "info", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     pub fn start(
         config: AtomaP2pNodeConfig,
         keystore: Arc<FileBasedKeystore>,
@@ -205,7 +219,9 @@ impl AtomaP2pNode {
         }
         let mut metrics_registry = libp2p::metrics::Registry::default();
 
-        let mut swarm = SwarmBuilder::with_new_identity()
+        let local_key = identity::Keypair::generate_ed25519();
+
+        let mut swarm = SwarmBuilder::with_existing_identity(local_key)
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -213,6 +229,7 @@ impl AtomaP2pNode {
                 yamux::Config::default,
             )?
             .with_quic()
+            .with_dns()?
             .with_bandwidth_metrics(&mut metrics_registry)
             .with_behaviour(|key| {
                 // To content-address message, we can take the hash of message and use it as an ID.
@@ -246,8 +263,10 @@ impl AtomaP2pNode {
                 )
                 .map_err(|e| AtomaP2pNodeError::InvalidConfig(e.to_string()))?;
 
+                let mut cfg = kad::Config::new(IPFS_PROTO_NAME);
+                cfg.set_query_timeout(Duration::from_secs(5 * 60));
                 let store = kad::store::MemoryStore::new(key.public().to_peer_id());
-                let kademlia = kad::Behaviour::new(key.public().to_peer_id(), store);
+                let kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
 
                 let mdns = mdns::tokio::Behaviour::new(
                     mdns::Config::default(),
@@ -292,29 +311,82 @@ impl AtomaP2pNode {
                 );
                 AtomaP2pNodeError::GossipsubSubscriptionError(e)
             })?;
-        let listen_addr = config.listen_addr.parse().map_err(|e| {
+
+        // Parse TCP address from the first element in listen_addrs
+        let tcp_addr: Multiaddr = config.listen_addrs[0].parse().map_err(|e| {
             error!(
                 target = "atoma-p2p",
                 event = "address_parse_error",
-                listen_addr = config.listen_addr,
+                listen_addr = %config.listen_addrs[0],
                 error = %e,
-                "Failed to parse listen address"
+                "Failed to parse TCP listen address"
             );
             AtomaP2pNodeError::ListenAddressParseError(e)
         })?;
 
-        if let Err(e) = swarm.listen_on(listen_addr) {
+        // Parse QUIC address from the second element in listen_addrs
+        let quic_addr: Multiaddr = config.listen_addrs[1].parse().map_err(|e| {
+            error!(
+                target = "atoma-p2p",
+                event = "address_parse_error",
+                listen_addr = %config.listen_addrs[1],
+                error = %e,
+                "Failed to parse QUIC listen address"
+            );
+            AtomaP2pNodeError::ListenAddressParseError(e)
+        })?;
+
+        if let Err(e) = swarm.listen_on(quic_addr.clone()) {
             error!(
                 target = "atoma-p2p",
                 event = "listen_on_error",
-                listen_addr = config.listen_addr,
+                listen_addr = quic_addr.to_string(),
                 error = %e,
-                "Failed to listen on address"
+                "Failed to listen on QUIC address"
             );
             return Err(AtomaP2pNodeError::SwarmListenOnError(e));
         }
 
-        for peer_id in config.bootstrap_nodes {
+        if let Err(e) = swarm.listen_on(tcp_addr.clone()) {
+            error!(
+                target = "atoma-p2p",
+                event = "listen_on_error",
+                listen_addr = tcp_addr.to_string(),
+                error = %e,
+                "Failed to listen on TCP address"
+            );
+            return Err(AtomaP2pNodeError::SwarmListenOnError(e));
+        }
+
+        let (usage_metrics_tx, usage_metrics_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let timer_join_handle = usage_metrics_timer_task(
+            config.country,
+            config.metrics_endpoints.clone(),
+            is_client,
+            config.public_url,
+            config.node_small_id,
+            usage_metrics_tx,
+        );
+
+        let network_metrics = NetworkMetrics::default();
+
+        debug!(
+            target = "atoma-p2p",
+            event = "node_started",
+            peer_id = %swarm.local_peer_id(),
+            "Libp2p node started"
+        );
+
+        debug!(
+            target = "atoma-p2p",
+            event = "listening_addresses",
+            listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
+            "Listening on addresses"
+        );
+
+        // Initialize Kademlia's bootstrap process
+        for peer_id in BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
                 Ok(peer_id) => {
                     swarm
@@ -339,26 +411,6 @@ impl AtomaP2pNode {
                 }
             }
         }
-
-        let (usage_metrics_tx, usage_metrics_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let timer_join_handle = usage_metrics_timer_task(
-            config.country,
-            config.metrics_endpoints.clone(),
-            is_client,
-            config.public_url,
-            config.node_small_id,
-            usage_metrics_tx,
-        );
-
-        let network_metrics = NetworkMetrics::default();
-
-        debug!(
-            target = "atoma-p2p",
-            event = "node_started",
-            peer_id = %swarm.local_peer_id(),
-            "Libp2p node started"
-        );
 
         Ok(Self {
             keystore,
@@ -451,7 +503,7 @@ impl AtomaP2pNode {
     /// - Peer subscription/unsubscription events
     /// - Usage metrics processing errors
     /// - Shutdown events
-    #[instrument(level = "info", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
