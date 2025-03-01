@@ -367,32 +367,47 @@ cd atoma-node
 
 The application uses a TOML configuration file with the following sections:
 
-##### `[atoma-service]`
+##### `[atoma_service]`
 
-- `chat_completions_service_url` (optional): Endpoint URL for the inference service. At least one of the service URLs must be provided.
-- `embeddings_service_url` (optional): Endpoint URL for the embeddings service. At least one of the service URLs must be provided.
-- `image_generations_service_url` (optional): Endpoint URL for the image generations service. At least one of the service URLs must be provided.
+- `chat_completions_service_urls`: Map of model names to endpoint URLs for the inference service (e.g., `{ "meta-llama/Llama-3.2-3B-Instruct" = "http://chat-completions:8000"}`)
+- `embeddings_service_url` (optional): Endpoint URL for the embeddings service
+- `image_generations_service_url` (optional): Endpoint URL for the image generations service
 - `models`: List of model names deployed by the Atoma Service
 - `revisions`: List of model revisions supported by the service
 - `service_bind_address`: Address and port for the Atoma Service to bind to
 
-##### `[atoma-sui]`
+##### `[atoma_sui]`
 
-- `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
+- `http_rpc_node_addr`: HTTP URL for a Sui RPC node
 - `atoma_db`: ObjectID for Atoma's DB on the Sui network
 - `atoma_package_id`: ObjectID for Atoma's package on the Sui network
 - `usdc_package_id`: ObjectID for USDC token package
 - `request_timeout` (optional): Duration for request timeouts
 - `max_concurrent_requests` (optional): Maximum number of concurrent Sui client requests
 - `limit` (optional): Limit for dynamic fields retrieval per event subscriber loop
-- `node_small_ids`: List of node small IDs controlled by the current Sui wallet. Node small IDs are assigned to each node upon registration on the Atoma's smart contract.
-- `task_small_ids`: List of task small IDs controlled by the current Sui wallet. Recommended to be an empty list.
+- `node_small_ids`: List of node small IDs controlled by the current Sui wallet
 - `sui_config_path`: Path to the Sui configuration file
-- `sui_keystore_path`: Path to the Sui keystore file, it should be at the same directory level as the Sui configuration file.
+- `sui_keystore_path`: Path to the Sui keystore file
+- `cursor_path`: Path to the Sui events cursor file
 
-##### `[atoma-state]`
+##### `[atoma_state]`
 
 - `database_url`: PostgreSQL database connection URL
+
+##### `[atoma_daemon]`
+
+- `service_bind_address`: Address and port for the Atoma Daemon to bind to
+- `node_badges`: List of node badges, where each badge is a tuple of (badge_id, small_id)
+
+##### `[atoma_p2p]`
+
+- `heartbeat_interval`: Interval for sending heartbeat messages to peers (in seconds)
+- `idle_connection_timeout`: Maximum duration a connection can remain idle before closing (in seconds)
+- `listen_addrs`: Address to listen for incoming connections
+- `node_small_id`: Node's small ID (assigned by Atoma smart contract, upon registration)
+- `public_url`: The HTTP(s) public URL of the node
+- `country`: Country code of the node (ISO 3166-1 alpha-2)
+- `metrics_endpoints`: Map of model names to tuples of (serving_engine, metrics_endpoint)
 
 ##### Example Configuration
 
