@@ -4,6 +4,7 @@ pub mod constants;
 pub mod errors;
 pub mod metrics;
 pub mod service;
+pub mod stack_leader;
 pub mod timer;
 pub mod types;
 pub mod utils;

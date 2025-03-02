@@ -2,14 +2,14 @@ use crate::{
     config::AtomaP2pNodeConfig,
     errors::AtomaP2pNodeError,
     metrics::{
-        NetworkMetrics, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED,
-        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
-    },
-    metrics::{
-        KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
+        NetworkMetrics, KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_CONNECTIONS,
+        TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
         TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES,
-        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
+        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
+        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
+        TOTAL_OUTGOING_CONNECTIONS,
     },
+    stack_leader::{StackLeaderCodec, StackLeaderProtocol},
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
     utils::{extract_gossipsub_metrics, validate_signed_node_message},
@@ -20,6 +20,7 @@ use futures::StreamExt;
 use libp2p::{
     gossipsub::{self},
     identify, identity, kad, mdns, noise,
+    request_response::{self, ProtocolSupport},
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
@@ -82,6 +83,10 @@ struct AtomaP2pBehaviour {
     /// Particularly useful for development and local testing environments where nodes
     /// need to find each other without explicit configuration.
     mdns: mdns::tokio::Behaviour,
+
+    /// Provides a way to request-response messages across the P2P network.
+    /// Used for requesting compute units from the stack leader.
+    stack_leader_request_response: request_response::Behaviour<StackLeaderCodec>,
 }
 
 /// A P2P node implementation for the Atoma network that handles peer discovery,
@@ -278,11 +283,17 @@ impl AtomaP2pNode {
                     key.public(),
                 ));
 
+                let stack_leader_request_response = request_response::Behaviour::new(
+                    vec![(StackLeaderProtocol::default(), ProtocolSupport::Full)],
+                    request_response::Config::default(),
+                );
+
                 Ok(AtomaP2pBehaviour {
                     gossipsub,
                     identify,
                     kademlia,
                     mdns,
+                    stack_leader_request_response,
                 })
             })
             .map_err(|e| {
