@@ -385,7 +385,7 @@ The application uses a TOML configuration file with the following sections:
 - `request_timeout` (optional): Duration for request timeouts
 - `max_concurrent_requests` (optional): Maximum number of concurrent Sui client requests
 - `limit` (optional): Limit for dynamic fields retrieval per event subscriber loop
-- `node_small_ids`: List of node small IDs controlled by the current Sui wallet
+- `node_small_ids`: List of node small IDs controlled by the current Sui wallet. Node small IDs are assigned to each node upon registration on the Atoma's smart contract.
 - `task_small_ids`: List of task small IDs to which the current node is subscribed to. By default, it should be empty
 - `sui_config_path`: Path to the Sui configuration file
 - `sui_keystore_path`: Path to the Sui keystore file
