@@ -378,7 +378,7 @@ The application uses a TOML configuration file with the following sections:
 
 ##### `[atoma_sui]`
 
-- `http_rpc_node_addr`: HTTP URL for a Sui RPC node
+- `http_rpc_node_addr`: HTTP URL for a Sui RPC node, that the Atoma Sui's subscriber will use to listen to events on the Sui network.
 - `atoma_db`: ObjectID for Atoma's DB on the Sui network
 - `atoma_package_id`: ObjectID for Atoma's package on the Sui network
 - `usdc_package_id`: ObjectID for USDC token package
@@ -386,6 +386,7 @@ The application uses a TOML configuration file with the following sections:
 - `max_concurrent_requests` (optional): Maximum number of concurrent Sui client requests
 - `limit` (optional): Limit for dynamic fields retrieval per event subscriber loop
 - `node_small_ids`: List of node small IDs controlled by the current Sui wallet
+- `task_small_ids`: List of task small IDs to which the current node is subscribed to. By default, it should be empty
 - `sui_config_path`: Path to the Sui configuration file
 - `sui_keystore_path`: Path to the Sui keystore file
 - `cursor_path`: Path to the Sui events cursor file
@@ -403,7 +404,7 @@ The application uses a TOML configuration file with the following sections:
 
 - `heartbeat_interval`: Interval for sending heartbeat messages to peers (in seconds)
 - `idle_connection_timeout`: Maximum duration a connection can remain idle before closing (in seconds)
-- `listen_addrs`: Address to listen for incoming connections
+- `listen_addrs`: Addresses to listen for incoming connections
 - `node_small_id`: Node's small ID (assigned by Atoma smart contract, upon registration)
 - `public_url`: The HTTP(s) public URL of the node
 - `country`: Country code of the node (ISO 3166-1 alpha-2)
