@@ -32,7 +32,7 @@ blake2 = "0.10.6"
 blake3 = "1.6.1"
 bytes = "1.10.0"
 ciborium = "0.2.2"
-chrono = "0.4.39"
+chrono = "0.4.40"
 clap = "4.5.31"
 config = "0.14.0"
 dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
