@@ -14,6 +14,7 @@ x-atoma-p2p-base: &atoma-p2p-base
     - .env
   environment:
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    - RUST_LOG=${ATOMA_P2P_LOG_LEVEL:-atoma_p2p=info,libp2p=info}
   depends_on:
     prometheus:
       condition: service_healthy
