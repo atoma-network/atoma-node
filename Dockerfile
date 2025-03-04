@@ -46,6 +46,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     libsqlite3-0 \
+    libtss2-esys0 \
+    libtss2-mu0 \
+    libtss2-rc0 \
+    libtss2-tcti-tabrmd0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
