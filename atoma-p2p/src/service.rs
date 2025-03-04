@@ -38,7 +38,7 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
     task::JoinHandle,
 };
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, warn};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";

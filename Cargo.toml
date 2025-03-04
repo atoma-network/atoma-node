@@ -19,8 +19,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 aes-gcm = "0.10.3"
-anyhow = "1.0.81"
 async-trait = "0.1.86"
+anyhow = "1.0.97"
 atoma-confidential = { path = "./atoma-confidential" }
 atoma-daemon = { path = "./atoma-daemon" }
 atoma-p2p = { path = "./atoma-p2p" }
@@ -30,10 +30,10 @@ atoma-utils = { path = "./atoma-utils" }
 axum = "0.7.5"
 base64 = "0.22.1"
 blake2 = "0.10.6"
-blake3 = "1.6.0"
+blake3 = "1.6.1"
 bytes = "1.10.0"
 ciborium = "0.2.2"
-chrono = "0.4.39"
+chrono = "0.4.40"
 clap = "4.5.31"
 config = "0.14.0"
 dcap-rs = { git = "https://github.com/automata-network/dcap-rs.git" }
@@ -61,7 +61,7 @@ rand = "0.8.5"
 reqwest = "0.12.12"
 rs_merkle = "1.4.2"
 serde = "1.0.218"
-serde_json = "1.0.139"
+serde_json = "1.0.140"
 serde_yaml = "0.9.34"
 serial_test = "3.1.1"
 sha2 = "0.10.8"
@@ -71,7 +71,7 @@ sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag 
 sysinfo = "0.33.1"
 tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", branch = "main" }
 tempfile = "3.17.1"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 tokenizers = "0.21.0"
 tokio = "1.36.0"
 toml = "0.8.12"
