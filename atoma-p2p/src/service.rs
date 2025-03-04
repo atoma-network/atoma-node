@@ -36,7 +36,7 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
     task::JoinHandle,
 };
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
@@ -371,14 +371,14 @@ impl AtomaP2pNode {
 
         let network_metrics = NetworkMetrics::default();
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "node_started",
             peer_id = %swarm.local_peer_id(),
             "Libp2p node started"
         );
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "listening_addresses",
             listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
@@ -568,7 +568,7 @@ impl AtomaP2pNode {
                                 topic: topic.clone(),
                             });
 
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_subscribed",
                                 peer_id = %peer_id,
@@ -642,7 +642,7 @@ impl AtomaP2pNode {
                             bucket_range,
                             old_peer,
                         })) => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "kademlia_routing_updated",
                                 peer = %peer,
@@ -668,7 +668,7 @@ impl AtomaP2pNode {
                             connection_id,
                             ..
                         } => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_established",
                                 peer_id = %peer_id,
@@ -684,7 +684,7 @@ impl AtomaP2pNode {
                             num_established,
                             ..
                         } => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_closed",
                                 peer_id = %peer_id,
@@ -736,6 +736,12 @@ impl AtomaP2pNode {
                             peer_id,
                             ..
                         } => {
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "outgoing_connection_error",
+                                peer_id = ?peer_id,
+                                "Outgoing connection error"
+                            );
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Identify(identify_event)) => {
