@@ -632,6 +632,7 @@ impl AtomaP2pNode {
                                     "Mdns expired peer"
                                 );
                                 self.swarm.behaviour_mut().kademlia.remove_address(&peer_id, &multiaddr);
+                                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                             }
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
