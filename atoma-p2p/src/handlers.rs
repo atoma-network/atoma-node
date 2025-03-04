@@ -152,6 +152,10 @@ pub async fn handle_p2p_event(
                     .behaviour_mut()
                     .kademlia
                     .remove_address(&peer_id, &multiaddr);
+                swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .remove_explicit_peer(&peer_id);
             }
         }
         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {

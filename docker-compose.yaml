@@ -8,6 +8,7 @@ x-atoma-node-confidential: &atoma-node-confidential
     - sui-config-volume:/root/.sui/sui_config
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
+    - ${CURSOR_PATH:-./cursor.toml}:/app/cursor.toml
   env_file: .env
   networks:
     - atoma-network
@@ -21,6 +22,7 @@ x-atoma-node-non-confidential: &atoma-node-non-confidential
     - sui-config-volume:/root/.sui/sui_config
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
+    - ${CURSOR_PATH:-./cursor.toml}:/app/cursor.toml
   env_file: .env
   networks:
     - atoma-network
