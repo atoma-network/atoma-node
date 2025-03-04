@@ -2,6 +2,7 @@ pub mod broadcast_metrics;
 pub mod config;
 pub mod constants;
 pub mod errors;
+pub mod handlers;
 pub mod metrics;
 pub mod service;
 pub mod stack_leader;
