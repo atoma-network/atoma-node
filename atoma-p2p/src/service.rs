@@ -36,7 +36,7 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
     task::JoinHandle,
 };
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, warn};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
@@ -733,17 +733,9 @@ impl AtomaP2pNode {
                         }
                         SwarmEvent::OutgoingConnectionError {
                             peer_id,
-                            error,
                             ..
                         } => {
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
-                            error!(
-                                target = "atoma-p2p",
-                                event = "outgoing_connection_error",
-                                peer_id = ?peer_id,
-                                error = %error,
-                                "Outgoing connection error"
-                            );
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Identify(identify_event)) => {
                             tracing::debug!(
