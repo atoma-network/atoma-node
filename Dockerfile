@@ -20,6 +20,12 @@ RUN apt-get update && apt-get install -y \
     fi \
     && rm -rf /var/lib/apt/lists/*
 
+# Increase system limits for the build
+RUN echo "* soft nofile 65535" >> /etc/security/limits.conf && \
+    echo "* hard nofile 65535" >> /etc/security/limits.conf && \
+    echo "* soft nproc 65535" >> /etc/security/limits.conf && \
+    echo "* hard nproc 65535" >> /etc/security/limits.conf
+
 # Install Rust 1.84.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.0 \
     && . "$HOME/.cargo/env"
@@ -31,8 +37,9 @@ WORKDIR /usr/src/atoma-node
 
 COPY . .
 
-# Compile
-RUN if [ "$ENABLE_TDX" = "true" ]; then \
+# Compile with increased limits
+RUN ulimit -n 65535 && \
+    if [ "$ENABLE_TDX" = "true" ]; then \
     RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
     else \
     RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
@@ -46,10 +53,13 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     libsqlite3-0 \
-    libtss2-esys0 \
-    libtss2-mu0 \
-    libtss2-rc0 \
-    libtss2-tcti-tabrmd0 \
+    && if [ "$ENABLE_TDX" = "true" ]; then \
+    apt-get install -y \
+    libtss2-esys-3.0.2-0t64 \
+    libtss2-mu-4.0.1-0t64 \
+    libtss2-rc0t64 \
+    libtss2-sys1t64; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
