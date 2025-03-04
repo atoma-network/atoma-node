@@ -1,39 +1,61 @@
+use crate::errors::AtomaP2pNodeError;
 use crate::metrics::{
-    KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED,
-    TOTAL_DIALS_FAILED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_MESSAGES_FORWARDED,
-    TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
-    TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES, TOTAL_OUTGOING_CONNECTIONS,
+    KAD_ROUTING_TABLE_SIZE, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED,
+    TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_SUBSCRIPTIONS,
+    TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
 };
+use crate::service::{AtomaP2pBehaviour, AtomaP2pBehaviourEvent, StateManagerEvent};
+use crate::types::SerializeWithSignature;
+use crate::types::SignedNodeMessage;
+use crate::utils::validate_signed_node_message;
+use crate::AtomaP2pEvent;
+use bytes::Bytes;
+use flume::Sender;
+use libp2p::metrics::Metrics;
+use libp2p::metrics::Recorder;
 use libp2p::{gossipsub, swarm::SwarmEvent};
+use libp2p::{kad, mdns, PeerId, Swarm};
 use opentelemetry::KeyValue;
+use tracing::{debug, error, instrument};
 
-pub fn handle_p2p_event(event: SwarmEvent<AtomaP2pBehaviourEvent>) {
+/// # Panics
+///
+/// This function will panic if:
+/// - `peer_id` is `None` when unwrapping in the `Dialing` and `OutgoingConnectionError` events
+#[allow(clippy::too_many_lines)]
+pub async fn handle_p2p_event(
+    swarm: &mut Swarm<AtomaP2pBehaviour>,
+    state_manager_sender: &Sender<StateManagerEvent>,
+    event: SwarmEvent<AtomaP2pBehaviourEvent>,
+    metrics: &mut Metrics,
+    is_client: bool,
+) {
     match event {
         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Gossipsub(gossipsub::Event::Message {
             message_id,
             message,
             propagation_source,
         })) => {
-            match self
-                .handle_gossipsub_message(message.data.into(), &message_id, &propagation_source)
-                .await
+            match handle_gossipsub_message(
+                swarm,
+                state_manager_sender,
+                message.data.into(),
+                &message_id,
+                &propagation_source,
+                is_client,
+            )
+            .await
             {
                 Ok(()) => {
                     TOTAL_GOSSIPSUB_MESSAGES_FORWARDED.add(
                         1,
-                        &[KeyValue::new(
-                            "peerId",
-                            self.swarm.local_peer_id().to_base58(),
-                        )],
+                        &[KeyValue::new("peerId", swarm.local_peer_id().to_base58())],
                     );
                 }
                 Err(e) => {
                     TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED.add(
                         1,
-                        &[KeyValue::new(
-                            "peerId",
-                            self.swarm.local_peer_id().to_base58(),
-                        )],
+                        &[KeyValue::new("peerId", swarm.local_peer_id().to_base58())],
                     );
                     error!(
                         target = "atoma-p2p",
@@ -98,13 +120,16 @@ pub fn handle_p2p_event(event: SwarmEvent<AtomaP2pBehaviourEvent>) {
                     multiaddr = %multiaddr,
                     "Mdns discovered peer"
                 );
-                self.swarm
+                swarm
                     .behaviour_mut()
                     .kademlia
                     .add_address(&peer_id, multiaddr);
             }
             // Record discovery metrics
-            TOTAL_MDNS_DISCOVERIES.add(peer_count, &[KeyValue::new("peerId", peer_id.clone())]);
+            TOTAL_MDNS_DISCOVERIES.add(
+                peer_count,
+                &[KeyValue::new("peerId", swarm.local_peer_id().to_base58())],
+            );
         }
         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Mdns(mdns::Event::Expired(
             expired_peers,
@@ -123,7 +148,7 @@ pub fn handle_p2p_event(event: SwarmEvent<AtomaP2pBehaviourEvent>) {
                     multiaddr = %multiaddr,
                     "Mdns expired peer"
                 );
-                self.swarm
+                swarm
                     .behaviour_mut()
                     .kademlia
                     .remove_address(&peer_id, &multiaddr);
@@ -337,10 +362,12 @@ pub fn handle_p2p_event(event: SwarmEvent<AtomaP2pBehaviourEvent>) {
 /// Invalid messages are rejected and not propagated further in the network.
 #[instrument(level = "debug", skip_all)]
 pub async fn handle_gossipsub_message(
-    &mut self,
+    swarm: &mut Swarm<AtomaP2pBehaviour>,
+    state_manager_sender: &Sender<StateManagerEvent>,
     message_data: Bytes,
     message_id: &gossipsub::MessageId,
     propagation_source: &PeerId,
+    is_client: bool,
 ) -> Result<(), AtomaP2pNodeError> {
     debug!(
         target = "atoma-p2p",
@@ -349,7 +376,7 @@ pub async fn handle_gossipsub_message(
         propagation_source = %propagation_source,
         "Received gossipsub message"
     );
-    if propagation_source == self.swarm.local_peer_id() {
+    if propagation_source == swarm.local_peer_id() {
         debug!(
             target = "atoma-p2p",
             event = "gossipsub_message_from_self",
@@ -374,7 +401,7 @@ pub async fn handle_gossipsub_message(
         node_message,
         node_message_hash.as_bytes(),
         &signed_node_message.signature,
-        &self.state_manager_sender,
+        state_manager_sender,
     )
     .await
     {
@@ -391,7 +418,7 @@ pub async fn handle_gossipsub_message(
             if let AtomaP2pNodeError::UrlParseError(_) = e {
                 // We remove the peer from the gossipsub topic, because it is not a valid URL and therefore cannot be reached
                 // by clients for processing OpenAI api compatible AI requests, so these peers are not useful for the network
-                self.swarm
+                swarm
                     .behaviour_mut()
                     .gossipsub
                     .remove_explicit_peer(propagation_source);
@@ -400,8 +427,7 @@ pub async fn handle_gossipsub_message(
         }
     };
     // Report the message validation result to the gossipsub protocol
-    let is_in_mempool = self
-        .swarm
+    let is_in_mempool = swarm
         .behaviour_mut()
         .gossipsub
         .report_message_validation_result(message_id, propagation_source, message_acceptance);
@@ -416,7 +442,7 @@ pub async fn handle_gossipsub_message(
         return Ok(());
     }
     // If the current peer is a client, we need to store the public URL in the state manager
-    if self.is_client {
+    if is_client {
         let node_message = signed_node_message.node_message;
         let event = AtomaP2pEvent::NodeMetricsRegistrationEvent {
             public_url: node_message.node_metadata.node_public_url,
@@ -425,7 +451,7 @@ pub async fn handle_gossipsub_message(
             country: node_message.node_metadata.country,
             node_metrics: node_message.node_metrics,
         };
-        self.state_manager_sender.send((event, None)).map_err(|e| {
+        state_manager_sender.send((event, None)).map_err(|e| {
             error!(
                 target = "atoma-p2p",
                 event = "gossipsub_message_state_manager_error",

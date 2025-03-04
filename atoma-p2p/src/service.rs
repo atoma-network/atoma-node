@@ -3,17 +3,13 @@ use crate::{
     errors::AtomaP2pNodeError,
     handlers::handle_p2p_event,
     metrics::{
-        NetworkMetrics, KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_CONNECTIONS,
-        TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
-        TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES,
-        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
-        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
-        TOTAL_OUTGOING_CONNECTIONS,
+        NetworkMetrics, PEERS_CONNECTED, TOTAL_CONNECTIONS, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
+        TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
     },
     stack_leader::{StackLeaderCodec, StackLeaderProtocol},
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
-    utils::{extract_gossipsub_metrics, validate_signed_node_message},
+    utils::extract_gossipsub_metrics,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
@@ -22,11 +18,11 @@ use libp2p::{
     gossipsub::{self},
     identify, identity, kad, mdns, noise,
     request_response::{self, ProtocolSupport},
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::NetworkBehaviour,
     tcp, yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
 use libp2p::{
-    metrics::{Metrics, Recorder, Registry},
+    metrics::{Metrics, Registry},
     Multiaddr,
 };
 use opentelemetry::KeyValue;
@@ -64,11 +60,11 @@ pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 /// This struct implements the `NetworkBehaviour` trait and coordinates three main networking components
 /// for peer discovery, message broadcasting, and distributed routing.
 #[derive(NetworkBehaviour)]
-struct AtomaP2pBehaviour {
+pub struct AtomaP2pBehaviour {
     /// Handles publish-subscribe messaging across the P2P network.
     /// Used for broadcasting node addresses and other network messages using a gossip protocol
     /// that ensures efficient message propagation.
-    gossipsub: gossipsub::Behaviour,
+    pub gossipsub: gossipsub::Behaviour,
 
     /// Provides a way to identify the node and its capabilities.
     /// Used to discover nodes in the network and to share information about the node,
@@ -78,7 +74,7 @@ struct AtomaP2pBehaviour {
     /// Provides distributed hash table (DHT) functionality for peer discovery and routing.
     /// Helps maintain network connectivity in larger, distributed deployments by implementing
     /// the Kademlia protocol with a memory-based storage backend.
-    kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
 
     /// Enables automatic peer discovery on local networks using multicast DNS.
     /// Particularly useful for development and local testing environments where nodes
@@ -522,7 +518,7 @@ impl AtomaP2pNode {
     ) -> Result<(), AtomaP2pNodeError> {
         // Create a metrics update interval
         let mut metrics_interval = tokio::time::interval(METRICS_UPDATE_INTERVAL);
-        let metrics = Metrics::new(&mut self.metrics_registry);
+        let mut metrics = Metrics::new(&mut self.metrics_registry);
         let peer_id = self.swarm.local_peer_id().to_base58();
 
         loop {
@@ -548,7 +544,7 @@ impl AtomaP2pNode {
                 }
 
                 event = self.swarm.select_next_some() => {
-                    handle_p2p_event(event);
+                    handle_p2p_event(&mut self.swarm, &self.state_manager_sender, event, &mut metrics, self.is_client).await;
                 }
                 Some(usage_metrics) = self.usage_metrics_rx.recv() => {
                     if let Err(e) = self.handle_new_usage_metrics_event(usage_metrics) {
