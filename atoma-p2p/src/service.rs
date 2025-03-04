@@ -36,7 +36,7 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
     task::JoinHandle,
 };
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
@@ -371,14 +371,14 @@ impl AtomaP2pNode {
 
         let network_metrics = NetworkMetrics::default();
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "node_started",
             peer_id = %swarm.local_peer_id(),
             "Libp2p node started"
         );
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "listening_addresses",
             listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
@@ -544,6 +544,11 @@ impl AtomaP2pNode {
                         })) => {
                             match self.handle_gossipsub_message(message.data.into(), &message_id, &propagation_source).await {
                                 Ok(()) => {
+                                    info!(
+                                        target = "atoma-p2p",
+                                        event = "gossipsub_message_forwarded",
+                                        "Gossipsub message forwarded"
+                                    );
                                     TOTAL_GOSSIPSUB_MESSAGES_FORWARDED.add(1, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
                                 }
                                 Err(e) => {
@@ -568,7 +573,7 @@ impl AtomaP2pNode {
                                 topic: topic.clone(),
                             });
 
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_subscribed",
                                 peer_id = %peer_id,
@@ -642,7 +647,7 @@ impl AtomaP2pNode {
                             bucket_range,
                             old_peer,
                         })) => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "kademlia_routing_updated",
                                 peer = %peer,
@@ -668,7 +673,7 @@ impl AtomaP2pNode {
                             connection_id,
                             ..
                         } => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_established",
                                 peer_id = %peer_id,
@@ -684,7 +689,7 @@ impl AtomaP2pNode {
                             num_established,
                             ..
                         } => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "peer_connection_closed",
                                 peer_id = %peer_id,
@@ -736,6 +741,12 @@ impl AtomaP2pNode {
                             peer_id,
                             ..
                         } => {
+                            debug!(
+                                target = "atoma-p2p",
+                                event = "outgoing_connection_error",
+                                peer_id = ?peer_id,
+                                "Outgoing connection error"
+                            );
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Identify(identify_event)) => {
@@ -881,7 +892,7 @@ impl AtomaP2pNode {
         message_id: &gossipsub::MessageId,
         propagation_source: &PeerId,
     ) -> Result<(), AtomaP2pNodeError> {
-        debug!(
+        trace!(
             target = "atoma-p2p",
             event = "gossipsub_message",
             message_id = %message_id,
@@ -889,7 +900,7 @@ impl AtomaP2pNode {
             "Received gossipsub message"
         );
         if propagation_source == self.swarm.local_peer_id() {
-            debug!(
+            trace!(
                 target = "atoma-p2p",
                 event = "gossipsub_message_from_self",
                 "Gossipsub message from self"
@@ -900,7 +911,7 @@ impl AtomaP2pNode {
         // Directly deserialize SignedNodeMessage using new method
         let signed_node_message = SignedNodeMessage::deserialize_with_signature(&message_data)?;
         let signature_len = signed_node_message.signature.len();
-        debug!(
+        trace!(
             target = "atoma-p2p",
             event = "gossipsub_message_data",
             message_id = %message_id,
@@ -945,7 +956,7 @@ impl AtomaP2pNode {
             .gossipsub
             .report_message_validation_result(message_id, propagation_source, message_acceptance);
         if is_in_mempool {
-            debug!(
+            trace!(
                 target = "atoma-p2p",
                 event = "gossipsub_message_in_mempool",
                 message_id = %message_id,

@@ -132,7 +132,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_current_span(true)
         .with_span_list(true)
         .with_writer(node_non_blocking)
-        .with_filter(EnvFilter::new("atoma_node=info,atoma-p2p=info"));
+        .with_filter(EnvFilter::new("info,atoma_node=info,atoma_p2p=info"));
 
     let daemon_layer = fmt::layer()
         .json()
@@ -145,7 +145,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_current_span(true)
         .with_span_list(true)
         .with_writer(daemon_non_blocking)
-        .with_filter(EnvFilter::new("atoma_daemon=info,atoma-p2p=info"));
+        .with_filter(EnvFilter::new("info,atoma_daemon=info,atoma_p2p=info"));
 
     let console_layer = fmt::layer()
         .pretty()
@@ -157,7 +157,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
 
     // Use a single env_filter for everything
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,atoma_daemon=info,atoma-p2p=info"));
+        .unwrap_or_else(|_| EnvFilter::new("info,atoma_daemon=info,atoma_p2p=info"));
 
     // Apply the filter at the registry level only
     Registry::default()

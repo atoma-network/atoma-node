@@ -10,3 +10,5 @@ data/
 
 ./cursor.toml
 ./keys/
+
+atoma_p2p_debug.log
