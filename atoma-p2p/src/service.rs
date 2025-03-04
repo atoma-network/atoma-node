@@ -544,6 +544,11 @@ impl AtomaP2pNode {
                         })) => {
                             match self.handle_gossipsub_message(message.data.into(), &message_id, &propagation_source).await {
                                 Ok(()) => {
+                                    info!(
+                                        target = "atoma-p2p",
+                                        event = "gossipsub_message_forwarded",
+                                        "Gossipsub message forwarded"
+                                    );
                                     TOTAL_GOSSIPSUB_MESSAGES_FORWARDED.add(1, &[KeyValue::new("peerId", self.swarm.local_peer_id().to_base58())]);
                                 }
                                 Err(e) => {
@@ -887,7 +892,7 @@ impl AtomaP2pNode {
         message_id: &gossipsub::MessageId,
         propagation_source: &PeerId,
     ) -> Result<(), AtomaP2pNodeError> {
-        debug!(
+        trace!(
             target = "atoma-p2p",
             event = "gossipsub_message",
             message_id = %message_id,
@@ -895,7 +900,7 @@ impl AtomaP2pNode {
             "Received gossipsub message"
         );
         if propagation_source == self.swarm.local_peer_id() {
-            debug!(
+            trace!(
                 target = "atoma-p2p",
                 event = "gossipsub_message_from_self",
                 "Gossipsub message from self"
@@ -906,7 +911,7 @@ impl AtomaP2pNode {
         // Directly deserialize SignedNodeMessage using new method
         let signed_node_message = SignedNodeMessage::deserialize_with_signature(&message_data)?;
         let signature_len = signed_node_message.signature.len();
-        debug!(
+        trace!(
             target = "atoma-p2p",
             event = "gossipsub_message_data",
             message_id = %message_id,
@@ -951,7 +956,7 @@ impl AtomaP2pNode {
             .gossipsub
             .report_message_validation_result(message_id, propagation_source, message_acceptance);
         if is_in_mempool {
-            debug!(
+            trace!(
                 target = "atoma-p2p",
                 event = "gossipsub_message_in_mempool",
                 message_id = %message_id,
