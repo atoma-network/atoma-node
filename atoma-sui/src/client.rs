@@ -1030,17 +1030,17 @@ impl Client {
 
     /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
     ///
-    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
+    /// This method creates and submits a transaction that rotates a node's key using remote
     /// attestation. The node must have a valid node badge to perform this operation. The method requires
-    /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
+    /// the new public key bytes and attestation report bytes.
     ///
     /// # Arguments
     ///
     /// * `public_key_bytes` - A 32-byte array containing the new public key
     /// * `attestation_report_bytes` - A vector of bytes containing the attestation report
-    /// * `key_rotation_counter` - The key rotation counter
-    /// * `device_type` - The device type
-    /// * `task_small_id` - The small ID of the task (optional)
+    /// * `key_rotation_counter` - The key rotation counter value
+    /// * `device_type` - The device type identifier (as a u16)
+    /// * `task_small_id` - Optional small ID of the task
     /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
     ///           automatically select a gas object
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
@@ -1048,7 +1048,8 @@ impl Client {
     ///
     /// # Returns
     ///
-    /// Returns `Result<String>` where the String is the transaction digest if successful.
+    /// Returns `Result<(String, u64)>` where the String is the transaction digest and the u64 is
+    /// the key rotation counter if successful.
     ///
     /// # Errors
     ///
@@ -1056,27 +1057,31 @@ impl Client {
     /// - The node badge is not found
     /// - The wallet context operations fail
     /// - The transaction submission fails
-    /// - The TDX quote or public key data cannot be properly encoded
+    /// - Failed to find the key rotation event in the transaction response
+    /// - Failed to parse the event data
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use sui_sdk::types::base_types::ObjectID;
-    ///
-    /// async fn example(client: &mut AtomaSuiClient) -> Result<()> {
-    ///     let tdx_quote = vec![1, 2, 3, 4]; // Your TDX quote bytes
+    /// async fn example(client: &mut Client) -> Result<()> {
     ///     let public_key = [0u8; 32];       // Your new public key
+    ///     let attestation_report = vec![1, 2, 3, 4]; // Your attestation report bytes
+    ///     let key_rotation_counter = 1;
+    ///     let device_type = 1;
     ///
     ///     // Submit with default gas settings
-    ///     let tx_digest = client.submit_key_rotation_remote_attestation(
-    ///         tdx_quote,
+    ///     let (tx_digest, new_counter) = client.submit_key_rotation_remote_attestation(
     ///         public_key,
+    ///         attestation_report,
+    ///         key_rotation_counter,
+    ///         device_type,
+    ///         None,    // task_small_id
     ///         None,    // default gas
     ///         None,    // default gas budget
     ///         None,    // default gas price
     ///     ).await?;
     ///
-    ///     println!("Key rotation submitted: {}", tx_digest);
+    ///     println!("Key rotation submitted: {}, new counter: {}", tx_digest, new_counter);
     ///     Ok(())
     /// }
     /// ```
