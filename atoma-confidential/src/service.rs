@@ -335,7 +335,7 @@ impl AtomaConfidentialCompute {
             let public_key = self.key_manager.get_public_key();
             let public_key_bytes = public_key.to_bytes();
             let nonce = blake3::hash(&[&_nonce.to_le_bytes()[..], &public_key_bytes].concat());
-            let tdx_quote = get_compute_data_attestation(&nonce)?;
+            let tdx_quote = get_compute_data_attestation(nonce.as_bytes())?;
             let tdx_quote_bytes = tdx_quote.to_bytes();
             match self
                 .sui_client
