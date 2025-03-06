@@ -46,8 +46,10 @@ tracing-subscriber = { workspace = true, features = [
   "local-time",
 ] }
 tracing-opentelemetry = { workspace = true }
+tracing-loki = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+url = { workspace = true }
 
 
 [dev-dependencies]
