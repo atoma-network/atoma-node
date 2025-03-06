@@ -5,7 +5,7 @@ FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETARCH
-ARG ENABLE_TDX
+ARG ENABLE_CC
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libssl3 \
     ca-certificates \
-    && if [ "$ENABLE_TDX" = "true" ]; then \
+    && if [ "$ENABLE_CC" = "true" ]; then \
     apt-get install -y libtss2-dev; \
     fi \
     && rm -rf /var/lib/apt/lists/*
@@ -39,7 +39,7 @@ COPY . .
 
 # Compile with increased limits
 RUN ulimit -n 65535 && \
-    if [ "$ENABLE_TDX" = "true" ]; then \
+    if [ "$ENABLE_CC" = "true" ]; then \
     RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node --features tdx; \
     else \
     RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node; \
@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     libsqlite3-0 \
-    && if [ "$ENABLE_TDX" = "true" ]; then \
+    && if [ "$ENABLE_CC" = "true" ]; then \
     apt-get install -y \
     libtss2-esys-3.0.2-0t64 \
     libtss2-mu-4.0.1-0t64 \

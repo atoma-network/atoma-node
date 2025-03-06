@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use crate::{
     config::AtomaConfidentialComputeConfig,
     key_management::{KeyManagementError, X25519KeyPairManager},
@@ -9,7 +10,7 @@ use crate::{
     },
     utils::{compress_attestation_report_bytes, CompressionError},
 };
-#[cfg(feature = "tdx")]
+#[cfg(feature = "cc")]
 use crate::{
     tdx::{get_compute_data_attestation, TdxError},
     ToBytes,
@@ -53,6 +54,7 @@ const AMD_CC_CPU_DEVICE_SLOT: u16 = 100;
 const ARM_CC_CPU_DEVICE_SLOT: u16 = 200;
 
 /// NVIDIA CC GPU device slot [300, 10_000)
+#[allow(dead_code)]
 const NVIDIA_CC_GPU_DEVICE_SLOT: u16 = 300;
 
 /// NVIDIA CC NVSwitch device slot [10_000, 16_000)
@@ -69,17 +71,19 @@ const NVIDIA_CC_NVSWITCH_DEVICE_SLOT: u16 = 10_000;
 pub struct AtomaConfidentialCompute {
     /// Client for interacting with the Sui blockchain to submit attestations and transactions
     /// NOTE: We disable clippy's `dead_code` lint warning here, as the `sui_client` is used
-    /// in the `submit_node_key_rotation_tdx_attestation` method, when the tdx feature is enabled.
+    /// in the `submit_node_key_rotation_tdx_attestation` and `submit_nvidia_cc_attestation` methods,
+    /// when the cc feature is enabled.
     #[allow(dead_code)]
     sui_client: Arc<RwLock<Client>>,
 
     /// Configuration for the confidential compute service
+    #[allow(dead_code)]
     config: AtomaConfidentialComputeConfig,
 
     /// Current key rotation counter
     key_rotation_counter: u64,
 
-    /// Manages TDX key operations including key rotation and attestation generation
+    /// Manages CC key operations including key rotation and attestation generation
     key_manager: X25519KeyPairManager,
 
     /// Channel receiver for incoming Atoma events that need to be processed
@@ -244,7 +248,7 @@ impl AtomaConfidentialCompute {
             .compute_shared_secret(client_x25519_public_key)
     }
 
-    /// Starts the TDX service event loop that processes Atoma events and handles graceful shutdown.
+    /// Starts the Confidential Compute service event loop that processes Atoma events and handles graceful shutdown.
     ///
     /// This method runs continuously until a shutdown signal is received, processing two types of events:
     /// 1. Atoma events from the event receiver:
@@ -294,7 +298,7 @@ impl AtomaConfidentialCompute {
                         }
                         Err(e) => {
                             tracing::error!(
-                                target = "atoma-tdx-service",
+                                target = "atoma-confidential-compute-service",
                                 event = "shutdown_signal_error",
                                 error = %e,
                                 "Shutdown signal channel closed"
@@ -330,7 +334,7 @@ impl AtomaConfidentialCompute {
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self, _nonce: u64) -> Result<()> {
-        #[cfg(feature = "tdx")]
+        #[cfg(feature = "cc")]
         {
             let public_key = self.key_manager.get_public_key();
             let public_key_bytes = public_key.to_bytes();
@@ -355,7 +359,7 @@ impl AtomaConfidentialCompute {
             {
                 Ok((digest, key_rotation_counter)) => {
                     tracing::info!(
-                        target = "atoma-tdx-service",
+                        target = "atoma-confidential-compute-service",
                         digest = digest,
                         key_rotation_counter = key_rotation_counter,
                         "Submitted node key rotation attestation successfully"
@@ -364,7 +368,7 @@ impl AtomaConfidentialCompute {
                 }
                 Err(e) => {
                     tracing::error!(
-                        target = "atoma-tdx-service",
+                        target = "atoma-confidential-compute-service",
                         error = %e,
                         "Failed to submit node key rotation attestation"
                     );
@@ -372,7 +376,7 @@ impl AtomaConfidentialCompute {
                 }
             }
         }
-        #[cfg(not(feature = "tdx"))]
+        #[cfg(not(feature = "cc"))]
         {
             Ok(())
         }
@@ -403,62 +407,69 @@ impl AtomaConfidentialCompute {
     /// * `AtomaConfidentialComputeError::CompressionError` if compressing the report fails
     /// * `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
-    async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
-        let public_key_bytes = self.key_manager.get_public_key().to_bytes();
-
-        for (device_index, task_small_id) in self
-            .config
-            .device_indices
-            .iter()
-            .zip(self.config.task_small_ids.iter())
+    async fn submit_nvidia_cc_attestation(&mut self, _nonce: u64) -> Result<()> {
+        #[cfg(feature = "cc")]
         {
-            let task_small_id_bytes = task_small_id.to_le_bytes();
-            let nonce_le_bytes = nonce.to_le_bytes();
-            let nonce_blake3_hash = blake3::hash(
-                &[&nonce_le_bytes[..], &public_key_bytes, &task_small_id_bytes].concat(),
-            );
-            let report = fetch_attestation_report_async(
-                *device_index as usize,
-                *nonce_blake3_hash.as_bytes(),
-            )
-            .await?;
-            let compressed_report = compress_attestation_report_bytes(&report)?;
-            let response = {
-                self.sui_client
-                    .write()
-                    .await
-                    .submit_key_rotation_remote_attestation(
-                        public_key_bytes,
-                        compressed_report,
-                        self.key_rotation_counter,
-                        *device_index + NVIDIA_CC_GPU_DEVICE_SLOT,
-                        Some(*task_small_id),
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-            };
-            match response {
-                Ok((digest, key_rotation_counter)) => {
-                    tracing::info!(
-                        target = "atoma-nvidia-cc-service",
-                        digest = digest,
-                        key_rotation_counter = key_rotation_counter,
-                        "Submitted NVIDIA CC attestation successfully for device index: {device_index}",
-                    );
-                }
-                Err(e) => {
-                    tracing::error!(
-                        target = "atoma-nvidia-cc-service",
-                        error = %e,
-                        "Failed to submit NVIDIA CC attestation"
-                    );
-                    return Err(AtomaConfidentialComputeError::SuiClientError(e));
+            let public_key_bytes = self.key_manager.get_public_key().to_bytes();
+
+            for (device_index, task_small_id) in self
+                .config
+                .device_indices
+                .iter()
+                .zip(self.config.task_small_ids.iter())
+            {
+                let task_small_id_bytes = task_small_id.to_le_bytes();
+                let nonce_le_bytes = _nonce.to_le_bytes();
+                let nonce_blake3_hash = blake3::hash(
+                    &[&nonce_le_bytes[..], &public_key_bytes, &task_small_id_bytes].concat(),
+                );
+                let report = fetch_attestation_report_async(
+                    *device_index as usize,
+                    *nonce_blake3_hash.as_bytes(),
+                )
+                .await?;
+                let compressed_report = compress_attestation_report_bytes(&report)?;
+                let response = {
+                    self.sui_client
+                        .write()
+                        .await
+                        .submit_key_rotation_remote_attestation(
+                            public_key_bytes,
+                            compressed_report,
+                            self.key_rotation_counter,
+                            *device_index + NVIDIA_CC_GPU_DEVICE_SLOT,
+                            Some(*task_small_id),
+                            None,
+                            None,
+                            None,
+                        )
+                        .await
+                };
+                match response {
+                    Ok((digest, key_rotation_counter)) => {
+                        tracing::info!(
+                            target = "atoma-nvidia-cc-service",
+                            digest = digest,
+                            key_rotation_counter = key_rotation_counter,
+                            "Submitted NVIDIA CC attestation successfully for device index: {device_index}",
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target = "atoma-nvidia-cc-service",
+                            error = %e,
+                            "Failed to submit NVIDIA CC attestation"
+                        );
+                        return Err(AtomaConfidentialComputeError::SuiClientError(e));
+                    }
                 }
             }
+            Ok(())
         }
-        Ok(())
+        #[cfg(not(feature = "cc"))]
+        {
+            Ok(())
+        }
     }
 
     /// Handles a decryption request from a client by validating the node's public key and decrypting the ciphertext.
@@ -666,7 +677,7 @@ impl AtomaConfidentialCompute {
         match event {
             AtomaEvent::NewKeyRotationEvent(event) => {
                 tracing::trace!(
-                    target = "atoma-tdx-service",
+                    target = "atoma-confidential-compute-service",
                     event = "new_key_rotation_event",
                     "New key rotation event received from event receiver"
                 );
@@ -686,7 +697,7 @@ impl AtomaConfidentialCompute {
             }
             _ => {
                 tracing::warn!(
-                    target = "atoma-tdx-service",
+                    target = "atoma-confidential-compute-service",
                     event = "unhandled_event",
                     "Unhandled event received from event receiver"
                 );
@@ -704,7 +715,7 @@ pub enum AtomaConfidentialComputeError {
     KeyManagementError(#[from] KeyManagementError),
     #[error("Sender error")]
     SenderError,
-    #[cfg(feature = "tdx")]
+    #[cfg(feature = "cc")]
     #[error("TDX device error: {0}")]
     TdxDeviceError(#[from] TdxError),
     #[error("Attestation error: {0}")]

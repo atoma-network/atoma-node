@@ -34,16 +34,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push TDX-enabled Docker image
+      - name: Build and push CC-enabled Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64
           build-args:
-            ENABLE_TDX=true
+            ENABLE_CC=true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:confidential
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
 
       - name: Build and push default Docker image
@@ -53,7 +53,7 @@ jobs:
           push: true
           platforms: linux/amd64, linux/arm64
           build-args:
-            ENABLE_TDX=false
+            ENABLE_CC=false
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:default
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}-default
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:non-confidential
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}-non-confidential

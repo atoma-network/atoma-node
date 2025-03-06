@@ -76,4 +76,4 @@ sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 tempfile = { workspace = true }
 
 [features]
-tdx = ["atoma-confidential/tdx"]
+cc = ["atoma-confidential/cc"]

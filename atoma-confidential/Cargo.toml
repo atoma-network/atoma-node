@@ -25,4 +25,4 @@ x25519-dalek = { workspace = true, features = ["static_secrets"] }
 
 [features]
 default = []
-tdx = ["dep:dcap-rs", "dep:tdx" ]
+cc = ["dep:dcap-rs", "dep:tdx" ]

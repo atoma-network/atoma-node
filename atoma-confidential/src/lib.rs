@@ -5,7 +5,7 @@ pub mod config;
 pub mod key_management;
 pub mod nvml_cc;
 pub mod service;
-#[cfg(feature = "tdx")]
+#[cfg(feature = "cc")]
 pub mod tdx;
 pub mod types;
 pub mod utils;
