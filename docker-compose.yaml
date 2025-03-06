@@ -1,6 +1,6 @@
 # Base configuration for Atoma services
 x-atoma-node-confidential: &atoma-node-confidential
-  image: ghcr.io/atoma-network/atoma-node:latest
+  image: ghcr.io/atoma-network/atoma-node:confidential
   platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
@@ -14,7 +14,7 @@ x-atoma-node-confidential: &atoma-node-confidential
     - atoma-network
 
 x-atoma-node-non-confidential: &atoma-node-non-confidential
-  image: ghcr.io/atoma-network/atoma-node:default
+  image: ghcr.io/atoma-network/atoma-node:non-confidential
   platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
