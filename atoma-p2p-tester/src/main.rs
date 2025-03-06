@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use atoma_daemon::telemetry;
 use atoma_p2p::{config::AtomaP2pNodeConfig, service::AtomaP2pNode, types::AtomaP2pEvent};
 use atoma_sui::config::Config as AtomaSuiConfig;
 use atoma_utils::spawn_with_shutdown;
@@ -10,6 +9,7 @@ use sui_keys::keystore::FileBasedKeystore;
 use tokio::signal;
 use tokio::sync::watch;
 use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,9 +43,9 @@ impl Config {
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::redundant_pub_crate)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Store both guards to keep logging active for the duration of the program
-    let (_file_guard, _stdout_guard) =
-        telemetry::setup_logging().context("Failed to setup logging")?;
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
 
     info!(event = "startup", "Starting Atoma Proxy Service...");
 

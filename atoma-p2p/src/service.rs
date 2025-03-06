@@ -34,7 +34,7 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
     task::JoinHandle,
 };
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 /// The topic that the P2P network will use to gossip messages
 const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
@@ -379,14 +379,14 @@ impl AtomaP2pNode {
 
         let network_metrics = NetworkMetrics::default();
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "node_started",
             peer_id = %swarm.local_peer_id(),
             "Libp2p node started"
         );
 
-        debug!(
+        info!(
             target = "atoma-p2p",
             event = "listening_addresses",
             listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
