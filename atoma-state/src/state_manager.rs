@@ -4899,7 +4899,7 @@ mod tests {
                 node_small_id,
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
-                1,
+                0,
                 Some(1),
             )
             .await?;
@@ -4965,7 +4965,7 @@ mod tests {
                     *node_id,
                     pub_key.clone(),
                     tee_bytes.clone(),
-                    0,
+                    u16::try_from(*node_id).unwrap(),
                     Some(1),
                 )
                 .await?;
@@ -4985,7 +4985,10 @@ mod tests {
                 row.get::<Vec<u8>, _>("remote_attestation_bytes"),
                 *tee_bytes
             );
-            assert_eq!(row.get::<i32, _>("device_type"), 0);
+            assert_eq!(
+                row.get::<i32, _>("device_type"),
+                i32::try_from(*node_id).unwrap()
+            );
             assert_eq!(row.get::<Option<i64>, _>("task_small_id"), Some(1));
         }
 
