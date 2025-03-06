@@ -1,5 +1,5 @@
 mod middleware {
-    use atoma_confidential::AtomaConfidentialCompute;
+    use atoma_confidential::{AtomaConfidentialCompute, AtomaConfidentialComputeConfig};
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
@@ -283,6 +283,8 @@ mod middleware {
                         .await
                         .expect("Failed to create Sui client"),
                 )),
+                AtomaConfidentialComputeConfig::default(),
+                0,
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,

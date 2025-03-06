@@ -853,10 +853,14 @@ dependencies = [
  "anyhow",
  "atoma-sui",
  "atoma-utils",
- "blake2",
+ "blake3",
+ "config",
  "dcap-rs",
+ "flate2",
  "flume",
+ "nvml-wrapper",
  "rand 0.8.5",
+ "serde",
  "tdx",
  "thiserror 2.0.12",
  "tokio",
@@ -4716,6 +4720,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "875b3680cb2f8f71bdcf9a30f38d48282f5d3c95cbf9b3fa57269bb5d5c06828"
 
 [[package]]
+name = "libloading"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
+dependencies = [
+ "cfg-if",
+ "windows-targets 0.48.5",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6198,6 +6212,27 @@ name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
+name = "nvml-wrapper"
+version = "0.10.0"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#42b2d70233573c657dc7c39d2bdac0c2be331342"
+dependencies = [
+ "bitflags 2.8.0",
+ "libloading",
+ "nvml-wrapper-sys",
+ "static_assertions",
+ "thiserror 1.0.69",
+ "wrapcenum-derive",
+]
+
+[[package]]
+name = "nvml-wrapper-sys"
+version = "0.8.0"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#42b2d70233573c657dc7c39d2bdac0c2be331342"
+dependencies = [
+ "libloading",
+]
 
 [[package]]
 name = "object"
@@ -11329,6 +11364,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3268f3d866458b787f390cf61f4bbb563b922d091359f9608842999eaee3943c"
 dependencies = [
  "bitflags 2.8.0",
+]
+
+[[package]]
+name = "wrapcenum-derive"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76ff259533532054cfbaefb115c613203c73707017459206380f03b3b3f266e"
+dependencies = [
+ "darling 0.20.10",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
 ]
 
 [[package]]
