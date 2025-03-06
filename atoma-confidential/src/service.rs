@@ -191,6 +191,7 @@ impl AtomaConfidentialCompute {
                 service_shared_secret_receiver,
                 shutdown_signal,
             )?;
+            service.key_manager.rotate_keys();
             service
                 .submit_node_key_rotation_tdx_attestation(nonce)
                 .await?;
@@ -329,7 +330,6 @@ impl AtomaConfidentialCompute {
     /// - `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
     async fn submit_node_key_rotation_tdx_attestation(&mut self, _nonce: u64) -> Result<()> {
-        self.key_manager.rotate_keys();
         #[cfg(feature = "tdx")]
         {
             let public_key = self.key_manager.get_public_key();
@@ -378,9 +378,32 @@ impl AtomaConfidentialCompute {
         }
     }
 
+    /// Submits NVIDIA confidential computing attestation reports to the Sui blockchain.
+    ///
+    /// This method performs the following steps for each configured GPU device:
+    /// 1. Generates a unique nonce hash using the provided nonce, public key, and task ID
+    /// 2. Fetches an attestation report from the NVIDIA GPU device
+    /// 3. Compresses the attestation report to reduce size
+    /// 4. Submits the attestation to the Sui blockchain with device-specific information
+    ///
+    /// The method processes all configured GPU devices sequentially, submitting a separate
+    /// attestation for each device. This allows the system to verify the integrity and
+    /// confidentiality capabilities of each NVIDIA GPU in the node.
+    ///
+    /// # Arguments
+    /// * `nonce` - A unique value provided by the Atoma contract to prevent replay attacks
+    ///
+    /// # Returns
+    /// * `Ok(())` if all attestations were successfully submitted
+    /// * `Err(AtomaConfidentialComputeError)` if any step fails for any device
+    ///
+    /// # Errors
+    /// This function can return:
+    /// * `AtomaConfidentialComputeError::AttestationError` if fetching the attestation report fails
+    /// * `AtomaConfidentialComputeError::CompressionError` if compressing the report fails
+    /// * `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     #[instrument(level = "debug", skip_all)]
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
-        self.key_manager.rotate_keys();
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
 
         for (device_index, task_small_id) in self
@@ -424,7 +447,6 @@ impl AtomaConfidentialCompute {
                         key_rotation_counter = key_rotation_counter,
                         "Submitted NVIDIA CC attestation successfully for device index: {device_index}",
                     );
-                    self.key_rotation_counter = key_rotation_counter;
                 }
                 Err(e) => {
                     tracing::error!(
@@ -656,6 +678,7 @@ impl AtomaConfidentialCompute {
                 // for a previous key rotation counter and not for the current one).
                 if self.key_rotation_counter < event.key_rotation_counter {
                     self.key_rotation_counter = event.key_rotation_counter;
+                    self.key_manager.rotate_keys();
                     self.submit_node_key_rotation_tdx_attestation(event.nonce)
                         .await?;
                     self.submit_nvidia_cc_attestation(event.nonce).await?;

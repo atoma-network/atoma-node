@@ -882,7 +882,7 @@ pub struct NodePublicKeyCommittmentEvent {
     pub device_type: u16,
 
     /// The small ID of the task that requested the key rotation.
-    /// It is `Some` if the the device type is `Nvidia GPU`.
+    /// It is `Some` if the the device type is `Nvidia GPU` or `Nvidia NVSwitch`.
     pub task_small_id: Option<TaskSmallId>,
 
     /// The TEE remote attestation report attesting for
