@@ -431,7 +431,8 @@ impl AtomaP2pNode {
 
         for peer_id in PROXY_BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
-                Ok(peer_id) => {
+                // We don't need bootstrap nodes to dial themselves
+                Ok(peer_id) if peer_id != *swarm.local_peer_id() => {
                     // add quic multiaddr
                     swarm
                         .behaviour_mut()
@@ -452,6 +453,7 @@ impl AtomaP2pNode {
                         "Failed to parse proxy bootstrap node address"
                     );
                 }
+                _ => {}
             }
         }
 
