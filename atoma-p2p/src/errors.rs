@@ -62,4 +62,12 @@ pub enum AtomaP2pNodeError {
     PublishError(String),
     #[error("DNS resolver error: `{0}`")]
     DnsError(#[from] std::io::Error),
+    #[error("Identity decoding error: `{0}`")]
+    IdentityDecodingError(String),
+}
+
+impl From<libp2p::identity::DecodingError> for AtomaP2pNodeError {
+    fn from(err: libp2p::identity::DecodingError) -> Self {
+        Self::IdentityDecodingError(err.to_string())
+    }
 }

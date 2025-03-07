@@ -47,6 +47,9 @@ pub struct AtomaP2pNodeConfig {
     /// of the form (`serving_engine`, `metrics_endpoint`)
     /// (e.g. `"meta-llama/Llama-3.2-3B-Instruct" => ("vllm", "http://chat-completions:8000/metrics")`)
     pub metrics_endpoints: HashMap<String, (String, String)>,
+
+    /// The list of bootstrap nodes to dial
+    pub bootstrap_node_addrs: Vec<String>,
 }
 
 impl AtomaP2pNodeConfig {
