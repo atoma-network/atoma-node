@@ -62,10 +62,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and start the P2P node
     let keystore: FileBasedKeystore =
         FileBasedKeystore::new(&PathBuf::from(&config.sui.sui_keystore_path()))
-            .context("Failed to create keystore")?;
+            .with_context(|| "Failed to create keystore")?;
 
     let node = AtomaP2pNode::start(config.p2p, Arc::new(keystore), atoma_p2p_sender, false)
-        .context("Failed to start P2P node")?;
+        .await
+        .with_context(|| "Failed to start P2P node")?;
 
     let atoma_p2p_node_handle =
         spawn_with_shutdown(node.run(shutdown_receiver.clone()), shutdown_sender.clone());

@@ -196,7 +196,9 @@ async fn main() -> Result<()> {
     let p2p_node_service_handle = spawn_with_shutdown(
         async move {
             let p2p_node =
-                AtomaP2pNode::start(config.p2p, Arc::new(keystore), p2p_event_sender, false)?;
+                AtomaP2pNode::start(config.p2p, Arc::new(keystore), p2p_event_sender, false)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to start P2P node: {}", e))?;
             let pinned_future = Box::pin(p2p_node.run(p2p_node_service_shutdown_receiver));
             pinned_future.await
         },
