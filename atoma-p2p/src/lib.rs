@@ -5,7 +5,7 @@ pub mod errors;
 pub mod handlers;
 pub mod metrics;
 pub mod service;
-pub mod stack_leader;
+pub mod stack_request_response;
 pub mod timer;
 pub mod types;
 pub mod utils;

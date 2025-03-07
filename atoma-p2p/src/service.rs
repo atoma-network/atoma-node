@@ -6,7 +6,7 @@ use crate::{
         NetworkMetrics, PEERS_CONNECTED, TOTAL_CONNECTIONS, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
         TOTAL_GOSSIPSUB_PUBLISHES, TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
     },
-    stack_leader::{StackLeaderCodec, StackLeaderProtocol},
+    stack_request_response::{NodeComputeRequest, StackLeader, StackLeaderResponse},
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
     utils::extract_gossipsub_metrics,
@@ -26,6 +26,7 @@ use libp2p::{
     Multiaddr,
 };
 use opentelemetry::KeyValue;
+use sqlx::PgPool;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,6 +45,9 @@ const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// The protocol name for the Kademlia DHT
 const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
+
+/// The protocol name for the Stack Leader
+const STACK_LEADER_PROTO_NAME: StreamProtocol = StreamProtocol::new("/atoma/stack-leader/0.0.1");
 
 // Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
 const BOOTSTRAP_NODES: [&str; 4] = [
@@ -83,7 +87,8 @@ pub struct AtomaP2pBehaviour {
 
     /// Provides a way to request-response messages across the P2P network.
     /// Used for requesting compute units from the stack leader.
-    stack_leader_request_response: request_response::Behaviour<StackLeaderCodec>,
+    pub stack_leader_request_response:
+        request_response::cbor::Behaviour<NodeComputeRequest, StackLeaderResponse>,
 }
 
 /// A P2P node implementation for the Atoma network that handles peer discovery,
@@ -122,6 +127,9 @@ pub struct AtomaP2pNode {
 
     /// Add registry field
     metrics_registry: Registry,
+
+    /// Add stack leader
+    stack_leader: StackLeader,
 }
 
 impl AtomaP2pNode {
@@ -199,7 +207,7 @@ impl AtomaP2pNode {
     /// - Peer connections are authenticated
     /// - The node validates all incoming messages
     #[instrument(level = "debug", skip_all)]
-    pub fn start(
+    pub async fn start(
         config: AtomaP2pNodeConfig,
         keystore: Arc<FileBasedKeystore>,
         state_manager_sender: Sender<StateManagerEvent>,
@@ -280,8 +288,8 @@ impl AtomaP2pNode {
                     key.public(),
                 ));
 
-                let stack_leader_request_response = request_response::Behaviour::new(
-                    vec![(StackLeaderProtocol::default(), ProtocolSupport::Full)],
+                let stack_leader_request_response = request_response::cbor::Behaviour::new(
+                    [(STACK_LEADER_PROTO_NAME, ProtocolSupport::Full)],
                     request_response::Config::default(),
                 );
 
@@ -397,10 +405,10 @@ impl AtomaP2pNode {
         for peer_id in BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
                 Ok(peer_id) => {
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, "/dnsaddr/bootstrap.libp2p.io".parse()?);
+                    swarm.behaviour_mut().kademlia.add_address(
+                        &peer_id,
+                        "/213.130.147.75/config.port_listening_port".parse()?,
+                    );
                     debug!(
                         target = "atoma-p2p",
                         event = "dialed_bootstrap_node",
@@ -420,6 +428,20 @@ impl AtomaP2pNode {
             }
         }
 
+        // Initialize the StackLeader with database connection
+        let stack_leader = {
+            let db_pool = PgPool::connect(&config.database_url).await.map_err(|e| {
+                error!(
+                    target = "atoma-p2p",
+                    event = "database_connection_error",
+                    error = %e,
+                    "Failed to connect to database"
+                );
+                AtomaP2pNodeError::DatabaseConnectionError(e)
+            })?;
+            StackLeader::new(db_pool)
+        };
+
         Ok(Self {
             keystore,
             swarm,
@@ -429,6 +451,7 @@ impl AtomaP2pNode {
             is_client,
             network_metrics,
             metrics_registry,
+            stack_leader,
         })
     }
 
@@ -544,7 +567,7 @@ impl AtomaP2pNode {
                 }
 
                 event = self.swarm.select_next_some() => {
-                    handle_p2p_event(&mut self.swarm, &self.state_manager_sender, event, &mut metrics, self.is_client).await;
+                    handle_p2p_event(&mut self.swarm, &self.state_manager_sender, event, &mut metrics, self.is_client, &self.stack_leader).await;
                 }
                 Some(usage_metrics) = self.usage_metrics_rx.recv() => {
                     if let Err(e) = self.handle_new_usage_metrics_event(usage_metrics) {

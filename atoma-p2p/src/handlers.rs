@@ -5,6 +5,7 @@ use crate::metrics::{
     TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
 };
 use crate::service::{AtomaP2pBehaviour, AtomaP2pBehaviourEvent, StateManagerEvent};
+use crate::stack_request_response::StackLeader;
 use crate::types::SerializeWithSignature;
 use crate::types::SignedNodeMessage;
 use crate::utils::validate_signed_node_message;
@@ -14,9 +15,9 @@ use flume::Sender;
 use libp2p::metrics::Metrics;
 use libp2p::metrics::Recorder;
 use libp2p::{gossipsub, swarm::SwarmEvent};
-use libp2p::{kad, mdns, PeerId, Swarm};
+use libp2p::{kad, mdns, request_response, PeerId, Swarm};
 use opentelemetry::KeyValue;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, trace};
 
 /// # Panics
 ///
@@ -29,6 +30,7 @@ pub async fn handle_p2p_event(
     event: SwarmEvent<AtomaP2pBehaviourEvent>,
     metrics: &mut Metrics,
     is_client: bool,
+    stack_leader: &StackLeader,
 ) {
     match event {
         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Gossipsub(gossipsub::Event::Message {
@@ -286,8 +288,50 @@ pub async fn handle_p2p_event(
             );
             metrics.record(&kad_event);
         }
+        SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::StackLeaderRequestResponse(
+            request_response::Event::Message { message, .. },
+        )) => match message {
+            request_response::Message::Request {
+                request, channel, ..
+            } => {
+                trace!(
+                    target = "atoma-p2p",
+                    event = "stack_leader_request",
+                    "Stack leader request"
+                );
+                let stack_leader_response = stack_leader.can_proceed(&request).await;
+                if let Err(e) = swarm
+                    .behaviour_mut()
+                    .stack_leader_request_response
+                    .send_response(channel, stack_leader_response)
+                {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "stack_leader_response_error",
+                        error = ?e,
+                        "Failed to send stack leader response"
+                    );
+                }
+            }
+            request_response::Message::Response { .. } => {
+                trace!(
+                    target = "atoma-p2p",
+                    event = "stack_leader_response",
+                    "Stack leader response"
+                );
+            }
+        },
+        SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::StackLeaderRequestResponse(
+            request_response::Event::ResponseSent { .. },
+        )) => {
+            trace!(
+                target = "atoma-p2p",
+                event = "stack_leader_response_sent",
+                "Stack leader response sent"
+            );
+        }
         swarm_event => {
-            tracing::debug!(
+            debug!(
                 target = "atoma-p2p",
                 event = "swarm_event",
                 swarm_event = ?swarm_event,
