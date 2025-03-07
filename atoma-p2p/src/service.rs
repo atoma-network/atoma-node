@@ -2,24 +2,23 @@ use crate::{
     config::AtomaP2pNodeConfig,
     errors::AtomaP2pNodeError,
     metrics::{
-        NetworkMetrics, TOTAL_CONNECTIONS, TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED,
-        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
-    },
-    metrics::{
-        KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
+        NetworkMetrics, KAD_ROUTING_TABLE_SIZE, PEERS_CONNECTED, TOTAL_CONNECTIONS,
+        TOTAL_DIALS_ATTEMPTED, TOTAL_DIALS_FAILED, TOTAL_FAILED_GOSSIPSUB_PUBLISHES,
         TOTAL_GOSSIPSUB_MESSAGES_FORWARDED, TOTAL_GOSSIPSUB_PUBLISHES,
-        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS, TOTAL_OUTGOING_CONNECTIONS,
+        TOTAL_GOSSIPSUB_SUBSCRIPTIONS, TOTAL_INCOMING_CONNECTIONS,
+        TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED, TOTAL_MDNS_DISCOVERIES,
+        TOTAL_OUTGOING_CONNECTIONS,
     },
     timer::usage_metrics_timer_task,
     types::{AtomaP2pEvent, NodeMessage, SerializeWithSignature, SignedNodeMessage},
-    utils::{extract_gossipsub_metrics, validate_signed_node_message},
+    utils::{extract_gossipsub_metrics, read_or_create_identity, validate_signed_node_message},
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
 use futures::StreamExt;
 use libp2p::{
     gossipsub::{self},
-    identify, identity, kad, mdns, noise,
+    identify, kad, mdns, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
@@ -28,9 +27,12 @@ use libp2p::{
     Multiaddr,
 };
 use opentelemetry::KeyValue;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    path::Path,
+};
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
@@ -47,13 +49,19 @@ const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 /// The protocol name for the Kademlia DHT
 const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
 
+// The path to the local key
+const LOCAL_KEY_PATH: &str = "./local_key";
+
 // Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
-const BOOTSTRAP_NODES: [&str; 4] = [
+const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
     "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
     "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
     "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
     "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
 ];
+
+// The proxy bootstrap nodes
+const PROXY_BOOTSTRAP_NODES: [&str; 1] = [" add the bootrap peerID here QmHash..."];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
@@ -219,9 +227,19 @@ impl AtomaP2pNode {
         }
         let mut metrics_registry = libp2p::metrics::Registry::default();
 
-        let local_key = identity::Keypair::generate_ed25519();
+        let local_key = tokio::runtime::Handle::current()
+            .block_on(read_or_create_identity(Path::new(LOCAL_KEY_PATH)))?;
 
-        let mut swarm = SwarmBuilder::with_existing_identity(local_key)
+        let local_peer_id = PeerId::from(local_key.public());
+
+        info!(
+            target = "atoma-p2p",
+            event = "local_peer_id",
+            peer_id = %local_peer_id,
+            "Local peer ID"
+        );
+
+        let mut swarm = SwarmBuilder::with_existing_identity(local_key.clone())
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -231,7 +249,7 @@ impl AtomaP2pNode {
             .with_quic()
             .with_dns()?
             .with_bandwidth_metrics(&mut metrics_registry)
-            .with_behaviour(|key| {
+            .with_behaviour(|_| {
                 // To content-address message, we can take the hash of message and use it as an ID.
                 let message_id_fn = |message: &gossipsub::Message| {
                     let mut s = DefaultHasher::new();
@@ -256,7 +274,7 @@ impl AtomaP2pNode {
                     })?;
 
                 let gossipsub = gossipsub::Behaviour::new_with_metrics(
-                    gossipsub::MessageAuthenticity::Signed(key.clone()),
+                    gossipsub::MessageAuthenticity::Signed(local_key.clone()),
                     gossipsub_config,
                     &mut metrics_registry,
                     gossipsub::MetricsConfig::default(),
@@ -265,17 +283,14 @@ impl AtomaP2pNode {
 
                 let mut cfg = kad::Config::new(IPFS_PROTO_NAME);
                 cfg.set_query_timeout(Duration::from_secs(5 * 60));
-                let store = kad::store::MemoryStore::new(key.public().to_peer_id());
-                let kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
+                let store = kad::store::MemoryStore::new(local_peer_id);
+                let kademlia = kad::Behaviour::with_config(local_peer_id, store, cfg);
 
-                let mdns = mdns::tokio::Behaviour::new(
-                    mdns::Config::default(),
-                    key.public().to_peer_id(),
-                )?;
+                let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
                 let identify = identify::Behaviour::new(identify::Config::new(
                     "atoma-p2p/0.1.0".to_string(),
-                    key.public(),
+                    local_key.public(),
                 ));
 
                 Ok(AtomaP2pBehaviour {
@@ -386,7 +401,7 @@ impl AtomaP2pNode {
         );
 
         // Initialize Kademlia's bootstrap process
-        for peer_id in BOOTSTRAP_NODES {
+        for peer_id in IPFS_BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
                 Ok(peer_id) => {
                     swarm
@@ -406,7 +421,35 @@ impl AtomaP2pNode {
                         event = "bootstrap_node_parse_error",
                         peer_id = %peer_id,
                         error = %e,
-                        "Failed to parse bootstrap node address"
+                        "Failed to parse IPFS bootstrap node address"
+                    );
+                }
+            }
+        }
+
+        // Dial the proxy bootstrap nodes
+
+        for peer_id in PROXY_BOOTSTRAP_NODES {
+            match peer_id.parse::<PeerId>() {
+                Ok(peer_id) => {
+                    // add quic multiaddr
+                    swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, config.bootstrap_node_addrs[0].parse()?);
+                    // add tcp multiaddr
+                    swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, config.bootstrap_node_addrs[1].parse()?);
+                }
+                Err(e) => {
+                    error!(
+                        target = "atoma-p2p",
+                        event = "bootstrap_node_parse_error",
+                        peer_id = %peer_id,
+                        error = %e,
+                        "Failed to parse proxy bootstrap node address"
                     );
                 }
             }
