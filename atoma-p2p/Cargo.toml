@@ -12,6 +12,7 @@ chrono = { workspace = true }
 config = { workspace = true }
 isocountry = { workspace = true }
 libp2p = { workspace = true, features = [
+	"autonat",
 	"tokio",
 	"dns",
 	"identify",
@@ -32,6 +33,7 @@ futures = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 reqwest = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
