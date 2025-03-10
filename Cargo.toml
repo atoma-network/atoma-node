@@ -72,7 +72,7 @@ tdx = { git = "https://github.com/automata-network/tdx-attestation-sdk.git", bra
 tempfile = "3.18.0"
 thiserror = "2.0.12"
 tokenizers = "0.21.0"
-tokio = "1.36.0"
+tokio = "1.44.0"
 toml = "0.8.12"
 tower = "0.5.1"
 tower-http = "0.6.2"
