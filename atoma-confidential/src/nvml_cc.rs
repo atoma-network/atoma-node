@@ -12,6 +12,29 @@ use nvml_wrapper::Nvml;
 
 type Result<T> = std::result::Result<T, AttestationError>;
 
+/// Checks if confidential computing is supported on the specified GPU device
+///
+/// This function queries the NVML library to determine whether the GPU at the given
+/// device index supports confidential computing features. This is useful for
+/// determining if attestation reports can be generated from this device.
+///
+/// # Arguments
+///
+/// * `device_index` - The index of the NVIDIA GPU device to check
+///
+/// # Returns
+///
+/// * `bool` - `true` if confidential computing is supported, `false` otherwise
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+pub fn check_confidential_compute_status(device_index: u32) -> Result<bool> {
+    let nvml = Nvml::init()?;
+    let device = nvml.device_by_index(device_index)?;
+    Ok(device.check_confidential_compute_status()?)
+}
+
 /// Fetch the attestation report for a given device index and nonce
 ///
 /// This function performs a blocking call to the NVML library to retrieve an

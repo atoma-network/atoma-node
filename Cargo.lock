@@ -5796,7 +5796,7 @@ checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 [[package]]
 name = "nvml-wrapper"
 version = "0.10.0"
-source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#42b2d70233573c657dc7c39d2bdac0c2be331342"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=ja-add-checks-for-confidential-compute#757046ae39b7f0e7abd03e8bf046e6f735b8e2af"
 dependencies = [
  "bitflags 2.9.0",
  "libloading",
@@ -5809,7 +5809,7 @@ dependencies = [
 [[package]]
 name = "nvml-wrapper-sys"
 version = "0.8.0"
-source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#42b2d70233573c657dc7c39d2bdac0c2be331342"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=ja-add-checks-for-confidential-compute#757046ae39b7f0e7abd03e8bf046e6f735b8e2af"
 dependencies = [
  "libloading",
 ]
@@ -5875,9 +5875,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.20.3"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "945462a4b81e43c4e3ba96bd7b49d834c6f61198356aa858733bc4acf3cbe62e"
+checksum = "cde51589ab56b20a6f686b2c68f7a0bd6add753d697abf720d63f8db3ab7b1ad"
 
 [[package]]
 name = "onig"

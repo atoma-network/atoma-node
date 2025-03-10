@@ -1,7 +1,9 @@
 use crate::{
     config::AtomaConfidentialComputeConfig,
     key_management::{KeyManagementError, X25519KeyPairManager},
-    nvml_cc::{fetch_attestation_report_async, AttestationError},
+    nvml_cc::{
+        check_confidential_compute_status, fetch_attestation_report_async, AttestationError,
+    },
     types::{
         ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
@@ -72,6 +74,9 @@ pub struct AtomaConfidentialCompute {
     /// Configuration for the confidential compute service
     config: AtomaConfidentialComputeConfig,
 
+    /// Whether confidential computing is supported on the node
+    is_cc_supported: bool,
+
     /// Current key rotation counter
     key_rotation_counter: u64,
 
@@ -125,9 +130,14 @@ impl AtomaConfidentialCompute {
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
+        let mut is_cc_supported = false;
+        for index in &config.device_indices {
+            is_cc_supported &= check_confidential_compute_status(u32::from(*index))?;
+        }
         Ok(Self {
             sui_client,
             config,
+            is_cc_supported,
             key_rotation_counter,
             key_manager,
             event_receiver,
@@ -187,8 +197,10 @@ impl AtomaConfidentialCompute {
                 service_shared_secret_receiver,
                 shutdown_signal,
             )?;
-            service.key_manager.rotate_keys();
-            service.submit_nvidia_cc_attestation(nonce).await?;
+            if service.is_cc_supported {
+                service.key_manager.rotate_keys();
+                service.submit_nvidia_cc_attestation(nonce).await?;
+            }
             service
         } else {
             Self::new(
@@ -590,6 +602,11 @@ impl AtomaConfidentialCompute {
         )
     )]
     async fn handle_atoma_event(&mut self, event: AtomaEvent) -> Result<()> {
+        // NOTE: If confidential computing is not supported on the node, we skip the key rotations
+        // and attestation submissions
+        if !self.is_cc_supported {
+            return Ok(());
+        }
         match event {
             AtomaEvent::NewKeyRotationEvent(event) => {
                 tracing::trace!(
