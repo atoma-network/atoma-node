@@ -16,11 +16,20 @@ pub const VLLM_RUNNING_REQUESTS_QUERY: &str = "vllm:running_requests";
 /// Waiting requests query
 pub const VLLM_WAITING_REQUESTS_QUERY: &str = "vllm:waiting_requests";
 
-/// Embeddings latency query
-pub const TEI_EMBEDDINGS_LATENCY_QUERY: &str = "tei:embeddings_latency";
+/// Embeddings queue duration query
+pub const TEI_EMBEDDINGS_QUEUE_DURATION_QUERY: &str = "tei:embeddings_queue_duration";
 
-/// Number of running requests query
-pub const TEI_NUM_RUNNING_REQUESTS_QUERY: &str = "tei:running_requests";
+/// Embeddings inference duration query
+pub const TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY: &str = "tei:embeddings_inference_duration";
+
+/// Embeddings input length query
+pub const TEI_EMBEDDINGS_INPUT_LENGTH_QUERY: &str = "tei:embeddings_input_length";
+
+/// Embeddings batch size query
+pub const TEI_EMBEDDINGS_BATCH_SIZE_QUERY: &str = "tei:embeddings_batch_size";
+
+/// Embeddings batch tokens query
+pub const TEI_EMBEDDINGS_BATCH_TOKENS_QUERY: &str = "tei:embeddings_batch_tokens";
 
 /// Image generation latency query
 pub const IMAGE_GENERATION_LATENCY_QUERY: &str = "mistral:image_generation_latency";

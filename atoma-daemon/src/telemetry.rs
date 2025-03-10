@@ -1,3 +1,5 @@
+use std::process;
+
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use opentelemetry::{global, trace::TracerProvider, KeyValue};
@@ -21,6 +23,7 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
     EnvFilter, Registry,
 };
+use url::Url;
 
 /// The directory where the logs are stored.
 const LOGS: &str = "./logs";
@@ -32,9 +35,10 @@ const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 // Default Grafana OTLP endpoint if not specified in environment
 // Override this to be the localhost for local development if not using Docker
 const DEFAULT_OTLP_ENDPOINT: &str = "http://otel-collector:4317";
+const DEFAULT_LOKI_ENDPOINT: &str = "http://loki:3100";
 
 static RESOURCE: Lazy<Resource> =
-    Lazy::new(|| Resource::new(vec![KeyValue::new("service.name", "atoma-node")]));
+    Lazy::new(|| Resource::new(vec![KeyValue::new("service_name", "atoma-node")]));
 
 /// Initialize metrics with OpenTelemetry SDK
 fn init_metrics(otlp_endpoint: &str) -> sdkmetrics::SdkMeterProvider {
@@ -87,9 +91,27 @@ fn init_traces(otlp_endpoint: &str) -> Result<sdktrace::Tracer> {
 /// - Failed to create logs directory
 /// - Failed to initialize OpenTelemetry tracing
 /// - Failed to set global default subscriber
+///
+/// # Panics
+///
+/// This function may panic if:
+/// - LOKI_ENDPOINT is set but contains an invalid URL
+/// - Failed to parse process ID
 pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
     let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| DEFAULT_OTLP_ENDPOINT.to_string());
+
+    let loki_endpoint =
+        std::env::var("LOKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_LOKI_ENDPOINT.to_string());
+
+    let (layer, task) = tracing_loki::builder()
+        .label("service_name", "atoma-proxy")?
+        .extra_field("pid", format!("{}", process::id()))?
+        .build_url(Url::parse(&loki_endpoint).unwrap())?;
+
+    // The background task needs to be spawned so the logs actually get
+    // delivered.
+    tokio::spawn(task);
 
     // Create logs directory if it doesn't exist
     std::fs::create_dir_all(LOGS).context("Failed to create logs directory")?;
@@ -115,7 +137,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with_endpoint(otlp_endpoint)
         .build()?;
 
-    let _ = opentelemetry_sdk::logs::LoggerProvider::builder()
+    let _logger_provider = opentelemetry_sdk::logs::LoggerProvider::builder()
         .with_batch_exporter(logs_exporter, opentelemetry_sdk::runtime::Tokio)
         .with_resource(RESOURCE.clone())
         .build();
@@ -166,6 +188,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with(node_layer)
         .with(daemon_layer)
         .with(opentelemetry_layer)
+        .with(layer)
         .try_init()
         .context("Failed to set global default subscriber")?;
 
