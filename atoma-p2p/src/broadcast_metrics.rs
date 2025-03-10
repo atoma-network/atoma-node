@@ -9,7 +9,9 @@ use tracing::instrument;
 
 use crate::constants::{
     IMAGE_GENERATION_LATENCY_QUERY, IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY,
-    TEI_EMBEDDINGS_LATENCY_QUERY, TEI_NUM_RUNNING_REQUESTS_QUERY, VLLM_CPU_CACHE_USAGE_PERC_QUERY,
+    TEI_EMBEDDINGS_BATCH_SIZE_QUERY, TEI_EMBEDDINGS_BATCH_TOKENS_QUERY,
+    TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY, TEI_EMBEDDINGS_INPUT_LENGTH_QUERY,
+    TEI_EMBEDDINGS_QUEUE_DURATION_QUERY, VLLM_CPU_CACHE_USAGE_PERC_QUERY,
     VLLM_GPU_CACHE_USAGE_PERC_QUERY, VLLM_RUNNING_REQUESTS_QUERY, VLLM_TIME_PER_OUTPUT_TOKEN_QUERY,
     VLLM_TIME_TO_FIRST_TOKEN_QUERY, VLLM_WAITING_REQUESTS_QUERY,
 };
@@ -110,13 +112,25 @@ pub struct ChatCompletionsMetrics {
 /// to be sent across the p2p network, for efficient request routing.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct EmbeddingsMetrics {
-    /// Embeddings latency, in seconds,
+    /// Embeddings queue duration, in seconds,
     /// computed as the percentille 95 over the previous \Delta time
-    pub embeddings_latency: f64,
+    pub embeddings_queue_duration: f64,
 
-    /// Number of requests running on the model,
-    /// counted over the previous \Delta time
-    pub num_running_requests: u32,
+    /// Embeddings inference duration, in seconds,
+    /// computed as the percentille 95 over the previous \Delta time
+    pub embeddings_inference_duration: f64,
+
+    /// Embeddings input length, in tokens,
+    /// computed as the percentille 95 over the previous \Delta time
+    pub embeddings_input_length: f64,
+
+    /// Embeddings batch size, in tokens,
+    /// computed as the percentille 95 over the previous \Delta time
+    pub embeddings_batch_size: f64,
+
+    /// Embeddings batch tokens, in tokens,
+    /// computed as the percentille 95 over the previous \Delta time
+    pub embeddings_batch_tokens: f64,
 }
 
 /// Structure to store the usage metrics for the node
@@ -176,8 +190,11 @@ impl_metrics_collector!(ChatCompletionsMetrics, {
 });
 
 impl_metrics_collector!(EmbeddingsMetrics, {
-    TEI_EMBEDDINGS_LATENCY_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_latency = value,
-    TEI_NUM_RUNNING_REQUESTS_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
+    TEI_EMBEDDINGS_QUEUE_DURATION_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_queue_duration = value,
+    TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_inference_duration = value,
+    TEI_EMBEDDINGS_INPUT_LENGTH_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_input_length = value,
+    TEI_EMBEDDINGS_BATCH_SIZE_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_batch_size = value,
+    TEI_EMBEDDINGS_BATCH_TOKENS_QUERY => |s: &mut EmbeddingsMetrics, value: f64| s.embeddings_batch_tokens = value,
 });
 
 impl_metrics_collector!(ImageGenerationMetrics, {
@@ -575,15 +592,21 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 /// // rate(atoma_text_embeddings_latency{model_name="all-MiniLM-L6-v2"}[30m]) /
 /// // rate(atoma_text_embeddings_latency_count{model_name="all-MiniLM-L6-v2"}[30m])
 /// ```
-fn get_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+fn get_tei_metrics_queries(_model_name: &str) -> Vec<(String, String)> {
     let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
     let delta = format!("{delta_minutes}m");
 
     vec![
-        (TEI_EMBEDDINGS_LATENCY_QUERY.to_string(),
-         format!("rate(atoma_text_embeddings_latency{{model_name=\"{model_name}\"}}{delta}) / rate(atoma_text_embeddings_latency_count{{model_name=\"{model_name}\"}}{delta}) or 0")),
-        (TEI_NUM_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(atoma_text_embeddings_running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
+        (TEI_EMBEDDINGS_QUEUE_DURATION_QUERY.to_string(),
+         format!("histogram_quantile(0.95, sum(rate(te_queue_duration_bucket{delta})) by (le)) or 0")),
+        (TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY.to_string(),
+         format!("histogram_quantile(0.95, sum(rate(te_inference_duration_bucket{delta})) by (le)) or 0")),
+        (TEI_EMBEDDINGS_INPUT_LENGTH_QUERY.to_string(),
+         format!("histogram_quantile(0.95, sum(rate(te_request_input_length_bucket{delta})) by (le)) or 0")),
+        (TEI_EMBEDDINGS_BATCH_SIZE_QUERY.to_string(),
+         format!("histogram_quantile(0.95, sum(rate(te_batch_next_size_bucket{delta})) by (le)) or 0")),
+        (TEI_EMBEDDINGS_BATCH_TOKENS_QUERY.to_string(),
+         format!("histogram_quantile(0.95, sum(rate(te_batch_next_tokens_bucket{delta})) by (le)) or 0")),
     ]
 }
 
