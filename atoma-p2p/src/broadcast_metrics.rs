@@ -90,11 +90,11 @@ pub struct ChatCompletionsMetrics {
     pub cpu_kv_cache_usage_perc: f64,
 
     /// Time to first token (prefill phase), in seconds,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub time_to_first_token: f64,
 
     /// Time per output token (excluding the first token generation)
-    /// in seconds, computed as the percentille 95 over the previous \Delta time
+    /// in seconds, computed as the percentile 95 over the previous \Delta time
     pub time_per_output_token: f64,
 
     /// Number of requests running on the model,
@@ -113,23 +113,23 @@ pub struct ChatCompletionsMetrics {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct EmbeddingsMetrics {
     /// Embeddings queue duration, in seconds,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub embeddings_queue_duration: f64,
 
     /// Embeddings inference duration, in seconds,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub embeddings_inference_duration: f64,
 
     /// Embeddings input length, in tokens,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub embeddings_input_length: f64,
 
     /// Embeddings batch size, in tokens,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub embeddings_batch_size: f64,
 
     /// Embeddings batch tokens, in tokens,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub embeddings_batch_tokens: f64,
 }
 
@@ -140,7 +140,7 @@ pub struct EmbeddingsMetrics {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct ImageGenerationMetrics {
     /// Image generation latency, in seconds,
-    /// computed as the percentille 95 over the previous \Delta time
+    /// computed as the percentile 95 over the previous \Delta time
     pub image_generation_latency: f64,
 
     /// Number of requests running on the model,
@@ -559,7 +559,7 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
     if let Some(queries) = cache.get(model_name) {
         return queries.clone();
     }
-    let queries = get_tei_metrics_queries(model_name);
+    let queries = get_tei_metrics_queries();
     cache.insert(model_name.to_string(), queries.clone());
     queries
 }
@@ -568,8 +568,16 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 ///
 /// This function creates a vector of Prometheus query strings to fetch metrics related to
 /// text embeddings performance and usage. The queries include measurements for:
-/// - Embeddings latency (average time to generate embeddings)
-/// - Number of currently running requests
+/// - Embeddings queue duration, in seconds,
+///   computed as the percentile 95 over the previous \Delta time
+/// - Embeddings inference duration, in seconds,
+///   computed as the percentile 95 over the previous \Delta time
+/// - Embeddings input length, in tokens,
+///   computed as the percentile 95 over the previous \Delta time
+/// - Embeddings batch size, in tokens,
+///   computed as the percentile 95 over the previous \Delta time
+/// - Embeddings batch tokens, in tokens,
+///   computed as the percentile 95 over the previous \Delta time
 ///
 /// The metrics are averaged over a time window defined by `METRICS_DELTA_TIME`.
 ///
@@ -592,7 +600,7 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 /// // rate(atoma_text_embeddings_latency{model_name="all-MiniLM-L6-v2"}[30m]) /
 /// // rate(atoma_text_embeddings_latency_count{model_name="all-MiniLM-L6-v2"}[30m])
 /// ```
-fn get_tei_metrics_queries(_model_name: &str) -> Vec<(String, String)> {
+fn get_tei_metrics_queries() -> Vec<(String, String)> {
     let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
     let delta = format!("{delta_minutes}m");
 
