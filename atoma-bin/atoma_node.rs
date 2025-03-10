@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
-use atoma_confidential::AtomaConfidentialCompute;
+use atoma_confidential::{AtomaConfidentialCompute, AtomaConfidentialComputeConfig};
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{config::AtomaServiceConfig, server::AppState};
@@ -45,6 +45,9 @@ struct NodeConfig {
     /// Configuration for the Sui component.
     sui: Config,
 
+    /// Configuration for the confidential compute component.
+    confidential_compute: AtomaConfidentialComputeConfig,
+
     /// Configuration for the p2p component.
     p2p: AtomaP2pNodeConfig,
 
@@ -61,12 +64,14 @@ struct NodeConfig {
 impl NodeConfig {
     fn load(path: &str) -> Self {
         let sui = Config::from_file_path(path);
+        let confidential_compute = AtomaConfidentialComputeConfig::from_file_path(path);
         let p2p = AtomaP2pNodeConfig::from_file_path(path);
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
         let daemon = AtomaDaemonConfig::from_file_path(path);
         Self {
             sui,
+            confidential_compute,
             p2p,
             service,
             state,
@@ -248,6 +253,7 @@ async fn main() -> Result<()> {
     let confidential_compute_service_handle = spawn_with_shutdown(
         AtomaConfidentialCompute::start_confidential_compute_service(
             client.clone(),
+            config.confidential_compute,
             subscriber_confidential_compute_receiver,
             app_state_decryption_receiver,
             app_state_encryption_receiver,
