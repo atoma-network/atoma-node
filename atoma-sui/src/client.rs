@@ -40,13 +40,13 @@ const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 /// The Atoma's contract method name for updating a node task subscription
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
-/// The Atoma's contract method name for submitting a node key rotation attestation
+/// The Atoma's contract method name for rotating the protocol's nodes public key
 const ROTATE_NODE_PUBLIC_KEY: &str = "rotate_node_public_key";
 
-/// The Atoma's contract method name for submitting a node key rotation attestation
+/// The key rotation counter field name for the `NewKeyRotationEvent` event
 const KEY_ROTATION_COUNTER_FIELD: &str = "key_rotation_counter";
 
-/// The Atoma's contract method name for submitting a node key rotation attestation
+/// The nonce field name for the `NewKeyRotationEvent` event
 const NONCE_FIELD: &str = "nonce";
 
 /// Client for interacting with Atoma's Sui blockchain functionality
