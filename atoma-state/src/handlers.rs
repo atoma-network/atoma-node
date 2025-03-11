@@ -789,7 +789,6 @@ async fn handle_node_key_rotation_event(
         new_public_key,
         remote_attestation_bytes,
         device_type,
-        task_small_id,
     } = event;
     state_manager
         .state
@@ -800,7 +799,6 @@ async fn handle_node_key_rotation_event(
             new_public_key,
             remote_attestation_bytes,
             device_type,
-            task_small_id.map(|t| t.inner),
         )
         .await?;
     Ok(())

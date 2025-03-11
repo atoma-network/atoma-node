@@ -345,19 +345,17 @@ impl AtomaConfidentialCompute {
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
 
-        for (device_index, task_small_id) in self
+        for device_index in &self
             .config
             .device_indices
-            .iter()
-            .zip(self.config.task_small_ids.iter())
         {
-            let task_small_id_bytes = task_small_id.to_le_bytes();
+            let device_index_bytes = device_index.to_le_bytes();
             let nonce_le_bytes = nonce.to_le_bytes();
             let nonce_blake3_hash = blake3::hash(
-                &[&nonce_le_bytes[..], &public_key_bytes, &task_small_id_bytes].concat(),
+                &[&nonce_le_bytes[..], &public_key_bytes, &device_index_bytes].concat(),
             );
             let report = fetch_attestation_report_async(
-                *device_index as usize,
+                *device_index as usize + NVIDIA_CC_GPU_DEVICE_SLOT as usize,
                 *nonce_blake3_hash.as_bytes(),
             )
             .await?;
@@ -371,7 +369,6 @@ impl AtomaConfidentialCompute {
                         compressed_report,
                         self.key_rotation_counter,
                         *device_index + NVIDIA_CC_GPU_DEVICE_SLOT,
-                        Some(*task_small_id),
                         None,
                         None,
                         None,
