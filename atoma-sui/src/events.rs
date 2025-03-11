@@ -902,6 +902,7 @@ pub struct NewKeyRotationEvent {
     pub key_rotation_counter: u64,
 
     /// A random nonce used to generate the attestation report.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub nonce: u64,
 }
 
