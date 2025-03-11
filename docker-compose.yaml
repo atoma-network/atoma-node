@@ -1,20 +1,9 @@
 # Base configuration for Atoma services
-x-atoma-node-confidential: &atoma-node-confidential
+x-atoma-node-non-confidential: &atoma-node
   image: ghcr.io/atoma-network/atoma-node:latest
-  platform: ${PLATFORM:-} # Will be empty if not set
-  volumes:
-    - ${CONFIG_PATH:-./config.toml}:/app/config.toml
-    - ./logs:/app/logs
-    - sui-config-volume:/root/.sui/sui_config
-    - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
-    - ./data:/app/data
-    - ${CURSOR_PATH:-./cursor.toml}:/app/cursor.toml
-  env_file: .env
-  networks:
-    - atoma-network
-
-x-atoma-node-non-confidential: &atoma-node-non-confidential
-  image: ghcr.io/atoma-network/atoma-node:default
+  build:
+    context: .
+    dockerfile: Dockerfile
   platform: ${PLATFORM:-} # Will be empty if not set
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
@@ -188,50 +177,13 @@ services:
         condition: service_healthy
         required: true
 
-  atoma-node-confidential:
-    <<: *atoma-node-confidential
+  atoma-node:
+    <<: *atoma-node
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
       - "${ATOMA_P2P_PORT:-4001}:4001/udp"
       - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
-    profiles:
-      - confidential
-    depends_on:
-      postgres-db:
-        condition: service_started
-        required: true
-      vllm:
-        condition: service_started
-        required: false
-      vllm-cpu:
-        condition: service_started
-        required: false
-      vllm-rocm:
-        condition: service_started
-        required: false
-      mistralrs-cpu:
-        condition: service_started
-        required: false
-      tei:
-        condition: service_started
-        required: false
-      mistralrs:
-        condition: service_started
-        required: false
-      otel-collector:
-        condition: service_started
-        required: true
-
-  atoma-node-non-confidential:
-    <<: *atoma-node-non-confidential
-    ports:
-      - "${ATOMA_SERVICE_PORT:-3000}:3000"
-      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
-      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
-      - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
-    profiles:
-      - non-confidential
     depends_on:
       postgres-db:
         condition: service_started
