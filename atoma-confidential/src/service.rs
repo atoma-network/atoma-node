@@ -14,28 +14,18 @@ use crate::{
 use atoma_sui::client::Client;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
 use atoma_utils::constants::NONCE_SIZE;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
 use x25519_dalek::PublicKey;
 
-type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
+/// The key for the certificate in the evidence data
+const CERTIFICATE_KEY: &str = "certificate";
 
-type ServiceDecryptionRequest = (
-    ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
-);
-
-type ServiceEncryptionRequest = (
-    ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
-);
-
-type ServiceSharedSecretRequest = (
-    ConfidentialComputeSharedSecretRequest,
-    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
-);
+/// The key for the evidence in the evidence data
+const EVIDENCE_KEY: &str = "evidence";
 
 /// Intel CC CPU device slot [0, 100)
 #[allow(dead_code)]
@@ -56,6 +46,23 @@ const NVIDIA_CC_GPU_DEVICE_SLOT: u16 = 300;
 /// NVIDIA CC NVSwitch device slot [10_000, 16_000)
 #[allow(dead_code)]
 const NVIDIA_CC_NVSWITCH_DEVICE_SLOT: u16 = 10_000;
+
+type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
+
+type ServiceDecryptionRequest = (
+    ConfidentialComputeDecryptionRequest,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
+);
+
+type ServiceEncryptionRequest = (
+    ConfidentialComputeEncryptionRequest,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
+);
+
+type ServiceSharedSecretRequest = (
+    ConfidentialComputeSharedSecretRequest,
+    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
+);
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
@@ -317,76 +324,88 @@ impl AtomaConfidentialCompute {
 
     /// Submits NVIDIA confidential computing attestation reports to the Sui blockchain.
     ///
-    /// This method performs the following steps for each configured GPU device:
-    /// 1. Generates a unique nonce hash using the provided nonce, public key, and task ID
-    /// 2. Fetches an attestation report from the NVIDIA GPU device
-    /// 3. Compresses the attestation report to reduce size
-    /// 4. Submits the attestation to the Sui blockchain with device-specific information
+    /// This method performs the following steps:
+    /// 1. Collects evidence data from all configured GPU devices:
+    ///    - Generates a unique nonce hash using the provided nonce, public key, and device index
+    ///    - Fetches an attestation report from each NVIDIA GPU device
+    ///    - Fetches the certificate chain from each NVIDIA GPU device
+    ///    - Encodes both the attestation report and certificate chain in base64
+    ///    - Combines them into a JSON structure for each device
+    /// 2. Serializes all evidence data into a single JSON array
+    /// 3. Compresses the combined evidence data to reduce size
+    /// 4. Submits the compressed evidence to the Sui blockchain with device-specific information
     ///
-    /// The method processes all configured GPU devices sequentially, submitting a separate
-    /// attestation for each device. This allows the system to verify the integrity and
-    /// confidentiality capabilities of each NVIDIA GPU in the node.
+    /// Unlike the previous implementation that submitted separate attestations for each device,
+    /// this method now collects evidence from all devices and submits them in a single transaction.
+    /// This approach is more efficient and ensures atomic verification of all GPU devices.
     ///
     /// # Arguments
     /// * `nonce` - A unique value provided by the Atoma contract to prevent replay attacks
     ///
     /// # Returns
-    /// * `Ok(())` if all attestations were successfully submitted
-    /// * `Err(AtomaConfidentialComputeError)` if any step fails for any device
+    /// * `Ok(())` if the attestation was successfully submitted
+    /// * `Err(AtomaConfidentialComputeError)` if any step fails
     ///
     /// # Errors
     /// This function can return:
-    /// * `AtomaConfidentialComputeError::AttestationError` if fetching the attestation report fails
-    /// * `AtomaConfidentialComputeError::CompressionError` if compressing the report fails
+    /// * `AtomaConfidentialComputeError::AttestationError` if fetching attestation reports or certificate chains fails
+    /// * `AtomaConfidentialComputeError::CompressionError` if compressing the evidence data fails
+    /// * `AtomaConfidentialComputeError::SerializationError` if serializing the evidence data fails
     /// * `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
+    /// * `AtomaConfidentialComputeError::InvalidDeviceIndex` if a device index cannot be converted to u16
     #[instrument(level = "debug", skip_all)]
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
+        let mut evidence_data = Vec::with_capacity(self.num_devices as usize);
         for device_index in 0..self.num_devices {
             let device_index_bytes = device_index.to_le_bytes();
             let nonce_le_bytes = nonce.to_le_bytes();
             let nonce_blake3_hash = blake3::hash(
                 &[&nonce_le_bytes[..], &public_key_bytes, &device_index_bytes].concat(),
             );
-            let report =
+            let attestation_report =
                 fetch_attestation_report_async(device_index, *nonce_blake3_hash.as_bytes()).await?;
             let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
-            let compressed_report = compress_attestation_report_bytes(&report)?;
-            let compressed_certificate_chain =
-                compress_attestation_report_bytes(&certificate_chain)?;
-            let response = {
-                self.sui_client
-                    .write()
-                    .await
-                    .submit_key_rotation_remote_attestation(
-                        public_key_bytes,
-                        compressed_report,
-                        compressed_certificate_chain,
-                        self.key_rotation_counter,
-                        u16::try_from(device_index)? + NVIDIA_CC_GPU_DEVICE_SLOT,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-            };
-            match response {
-                Ok((digest, key_rotation_counter)) => {
-                    tracing::info!(
-                            target = "atoma-nvidia-cc-service",
-                            digest = digest,
-                            key_rotation_counter = key_rotation_counter,
-                            "Submitted NVIDIA CC attestation successfully for device index: {device_index}",
-                        );
-                }
-                Err(e) => {
-                    tracing::error!(
-                        target = "atoma-nvidia-cc-service",
-                        error = %e,
-                        "Failed to submit NVIDIA CC attestation"
-                    );
-                    return Err(AtomaConfidentialComputeError::SuiClientError(e));
-                }
+            let attestation_report_base64 = STANDARD.encode(attestation_report);
+            let certificate_chain_base64 = STANDARD.encode(certificate_chain);
+            evidence_data.push(serde_json::json!({
+                CERTIFICATE_KEY: certificate_chain_base64,
+                EVIDENCE_KEY: attestation_report_base64,
+            }));
+        }
+        let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
+        let compressed_evidence_data = compress_attestation_report_bytes(&evidence_data_bytes)?;
+        let response = {
+            self.sui_client
+                .write()
+                .await
+                .submit_key_rotation_remote_attestation(
+                    public_key_bytes,
+                    compressed_evidence_data,
+                    self.key_rotation_counter,
+                    NVIDIA_CC_GPU_DEVICE_SLOT,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+        };
+        match response {
+            Ok((digest, key_rotation_counter)) => {
+                tracing::info!(
+                    target = "atoma-nvidia-cc-service",
+                    digest = digest,
+                    key_rotation_counter = key_rotation_counter,
+                    "Submitted NVIDIA CC attestation successfully for node, with nonce: {nonce}",
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    target = "atoma-nvidia-cc-service",
+                    error = %e,
+                    "Failed to submit NVIDIA CC attestation"
+                );
+                return Err(AtomaConfidentialComputeError::SuiClientError(e));
             }
         }
         Ok(())
@@ -644,4 +663,6 @@ pub enum AtomaConfidentialComputeError {
     CompressionError(#[from] CompressionError),
     #[error("Invalid device index: {0}")]
     InvalidDeviceIndex(#[from] std::num::TryFromIntError),
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] serde_json::Error),
 }

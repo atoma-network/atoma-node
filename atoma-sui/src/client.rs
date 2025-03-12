@@ -1089,13 +1089,13 @@ impl Client {
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
-        remote_attestation_report = %hex::encode(&attestation_report_bytes)
+        device_type = %device_type,
+        key_rotation_counter = %key_rotation_counter,
     ))]
     pub async fn submit_key_rotation_remote_attestation(
         &mut self,
         public_key_bytes: [u8; 32],
-        attestation_report_bytes: Vec<u8>,
-        certificate_chain_bytes: Vec<u8>,
+        evidence_data_bytes: Vec<u8>,
         key_rotation_counter: u64,
         device_type: u16,
         gas: Option<ObjectID>,
@@ -1122,8 +1122,7 @@ impl Client {
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(public_key_bytes.to_vec().into())?,
-                    SuiJsonValue::new(attestation_report_bytes.into())?,
-                    SuiJsonValue::new(certificate_chain_bytes.into())?,
+                    SuiJsonValue::new(evidence_data_bytes.into())?,
                     SuiJsonValue::new(key_rotation_counter.to_string().into())?,
                     SuiJsonValue::new(device_type.into())?,
                 ],
