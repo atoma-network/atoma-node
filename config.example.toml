@@ -25,10 +25,6 @@ cursor_path = "./cursor.toml"                                                   
 # Replace the placeholder values with the ones for your local environment (in the .env file)
 database_url = "postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@postgres-db:5432/<POSTGRES_DB>"
 
-[atoma_confidential_compute]
-device_indices = [1]
-task_small_ids = [1]
-
 [atoma_daemon]
 # WARN: Do not expose this port to the public internet, as it is used only for internal communication between the Atoma Node and the Atoma Network
 service_bind_address = "0.0.0.0:3001"

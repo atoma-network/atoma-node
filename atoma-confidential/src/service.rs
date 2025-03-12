@@ -1,8 +1,8 @@
 use crate::{
-    config::AtomaConfidentialComputeConfig,
     key_management::{KeyManagementError, X25519KeyPairManager},
     nvml_cc::{
-        check_confidential_compute_status, fetch_attestation_report_async, AttestationError,
+        check_confidential_compute_status, fetch_attestation_report_async,
+        fetch_device_certificate_chain_async, num_devices, AttestationError,
     },
     types::{
         ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -71,9 +71,6 @@ pub struct AtomaConfidentialCompute {
     /// when the cc feature is enabled.
     sui_client: Arc<RwLock<Client>>,
 
-    /// Configuration for the confidential compute service
-    config: AtomaConfidentialComputeConfig,
-
     /// Whether confidential computing is supported on the node
     is_cc_supported: bool,
 
@@ -85,6 +82,9 @@ pub struct AtomaConfidentialCompute {
 
     /// Channel receiver for incoming Atoma events that need to be processed
     event_receiver: UnboundedReceiver<AtomaEvent>,
+
+    /// The number of devices supported by the NVML library
+    num_devices: u32,
 
     /// Channel receiver for incoming Atoma service requests for decryption and processing
     service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
@@ -121,7 +121,6 @@ impl AtomaConfidentialCompute {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sui_client: Arc<RwLock<Client>>,
-        config: AtomaConfidentialComputeConfig,
         key_rotation_counter: u64,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
@@ -131,16 +130,17 @@ impl AtomaConfidentialCompute {
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
         let mut is_cc_supported = false;
-        for index in &config.device_indices {
-            is_cc_supported &= check_confidential_compute_status(u32::from(*index))?;
+        let num_devices = num_devices()?;
+        for index in 0..num_devices {
+            is_cc_supported &= check_confidential_compute_status(index)?;
         }
         Ok(Self {
             sui_client,
-            config,
             is_cc_supported,
             key_rotation_counter,
             key_manager,
             event_receiver,
+            num_devices,
             service_decryption_receiver,
             service_encryption_receiver,
             service_shared_secret_receiver,
@@ -174,7 +174,6 @@ impl AtomaConfidentialCompute {
     #[instrument(level = "info", skip_all)]
     pub async fn start_confidential_compute_service(
         sui_client: Arc<RwLock<Client>>,
-        config: AtomaConfidentialComputeConfig,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
@@ -189,7 +188,6 @@ impl AtomaConfidentialCompute {
         let service = if let Some((key_rotation_counter, nonce)) = last_key_rotation_data {
             let mut service = Self::new(
                 sui_client,
-                config,
                 key_rotation_counter,
                 event_receiver,
                 service_decryption_receiver,
@@ -205,7 +203,6 @@ impl AtomaConfidentialCompute {
         } else {
             Self::new(
                 sui_client,
-                config,
                 0,
                 event_receiver,
                 service_decryption_receiver,
@@ -344,22 +341,18 @@ impl AtomaConfidentialCompute {
     #[instrument(level = "debug", skip_all)]
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
-
-        for device_index in &self
-            .config
-            .device_indices
-        {
+        for device_index in 0..self.num_devices {
             let device_index_bytes = device_index.to_le_bytes();
             let nonce_le_bytes = nonce.to_le_bytes();
             let nonce_blake3_hash = blake3::hash(
                 &[&nonce_le_bytes[..], &public_key_bytes, &device_index_bytes].concat(),
             );
-            let report = fetch_attestation_report_async(
-                *device_index as usize + NVIDIA_CC_GPU_DEVICE_SLOT as usize,
-                *nonce_blake3_hash.as_bytes(),
-            )
-            .await?;
+            let report =
+                fetch_attestation_report_async(device_index, *nonce_blake3_hash.as_bytes()).await?;
+            let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
             let compressed_report = compress_attestation_report_bytes(&report)?;
+            let compressed_certificate_chain =
+                compress_attestation_report_bytes(&certificate_chain)?;
             let response = {
                 self.sui_client
                     .write()
@@ -367,8 +360,9 @@ impl AtomaConfidentialCompute {
                     .submit_key_rotation_remote_attestation(
                         public_key_bytes,
                         compressed_report,
+                        compressed_certificate_chain,
                         self.key_rotation_counter,
-                        *device_index + NVIDIA_CC_GPU_DEVICE_SLOT,
+                        u16::try_from(device_index)? + NVIDIA_CC_GPU_DEVICE_SLOT,
                         None,
                         None,
                         None,
@@ -647,4 +641,6 @@ pub enum AtomaConfidentialComputeError {
     AttestationError(#[from] AttestationError),
     #[error("Compression error: {0}")]
     CompressionError(#[from] CompressionError),
+    #[error("Invalid device index: {0}")]
+    InvalidDeviceIndex(#[from] std::num::TryFromIntError),
 }
