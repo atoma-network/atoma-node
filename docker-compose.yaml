@@ -1,5 +1,5 @@
 # Base configuration for Atoma services
-x-atoma-node-non-confidential: &atoma-node
+x-atoma-node: &atoma-node
   image: ghcr.io/atoma-network/atoma-node:latest
   build:
     context: .
