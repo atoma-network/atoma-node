@@ -990,7 +990,7 @@ impl AtomaState {
                 evidence_data_bytes,
                 device_type
             ) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (node_small_id, device_type)
             DO UPDATE SET
                 epoch = EXCLUDED.epoch,
@@ -4848,7 +4848,6 @@ mod tests {
         let node_small_id = 789u64;
         let public_key_bytes = vec![1, 2, 3, 4];
         let tee_remote_attestation_bytes = vec![5, 6, 7, 8];
-        let tee_certificate_chain_bytes = vec![9, 10, 11, 12];
         // Insert initial rotation
         state_manager
             .insert_node_public_key_rotation(
@@ -4875,14 +4874,10 @@ mod tests {
         assert_eq!(row.get::<i64, _>("node_small_id"), node_small_id as i64);
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), public_key_bytes);
         assert_eq!(
-            row.get::<Vec<u8>, _>("remote_attestation_bytes"),
+            row.get::<Vec<u8>, _>("evidence_data_bytes"),
             tee_remote_attestation_bytes
         );
         assert_eq!(row.get::<i32, _>("device_type"), 0);
-        assert_eq!(
-            row.get::<Vec<u8>, _>("certificate_chain_bytes"),
-            tee_certificate_chain_bytes
-        );
 
         // Test update with new values
         let new_epoch = 999u64;

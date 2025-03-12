@@ -12,7 +12,6 @@ atoma-utils = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
 config = { workspace = true }
-flate2 = { workspace = true }
 flume = { workspace = true }
 nvml-wrapper = { workspace = true }
 rand = { workspace = true }

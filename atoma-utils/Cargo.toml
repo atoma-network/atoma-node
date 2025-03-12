@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 axum = { workspace = true }
 blake2 = { workspace = true }
 fastcrypto = { workspace = true }
+flate2 = { workspace = true }
 hkdf = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }

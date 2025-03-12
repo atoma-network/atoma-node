@@ -9,11 +9,13 @@ use crate::{
         ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
         ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
     },
-    utils::{compress_attestation_report_bytes, CompressionError},
 };
 use atoma_sui::client::Client;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
-use atoma_utils::constants::NONCE_SIZE;
+use atoma_utils::{
+    compression::{compress_bytes, CompressionError},
+    constants::NONCE_SIZE,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::sync::Arc;
 use thiserror::Error;
@@ -374,7 +376,7 @@ impl AtomaConfidentialCompute {
             }));
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
-        let compressed_evidence_data = compress_attestation_report_bytes(&evidence_data_bytes)?;
+        let compressed_evidence_data = compress_bytes(&evidence_data_bytes)?;
         let response = {
             self.sui_client
                 .write()
