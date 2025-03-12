@@ -5,6 +5,5 @@ pub mod key_management;
 pub mod nvml_cc;
 pub mod service;
 pub mod types;
-pub mod utils;
 
 pub use service::AtomaConfidentialCompute;
