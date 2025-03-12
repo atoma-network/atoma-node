@@ -108,7 +108,7 @@ pub async fn fetch_attestation_report_async(
 ///
 /// # Returns
 ///
-/// * `Vec<u8>` - The raw certificate chain data for the given device
+/// * `Result<Vec<u8>>` - The raw certificate chain data for the given device
 ///
 /// # Errors
 ///
@@ -137,7 +137,7 @@ pub fn fetch_device_certificate_chain(index: u32) -> Result<Vec<u8>> {
 ///
 /// # Returns
 ///
-/// * `Vec<u8>` - The raw certificate chain data for the given device
+/// * `Result<Vec<u8>>` - The raw certificate chain data for the given device
 ///
 /// # Errors
 ///
@@ -156,7 +156,7 @@ pub async fn fetch_device_certificate_chain_async(index: u32) -> Result<Vec<u8>>
 ///
 /// # Returns
 ///
-/// * `usize` - The number of devices supported by the NVML library
+/// * `Result<usize>` - The number of devices supported by the NVML library
 ///
 /// # Errors
 ///

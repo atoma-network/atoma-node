@@ -129,11 +129,11 @@ impl AtomaConfidentialCompute {
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
-        let mut is_cc_supported = false;
         // NOTE: If the NVML library is not available, we return 0 devices
         let num_devices = num_devices().unwrap_or(0);
+        let mut is_cc_supported = num_devices > 0;
         for index in 0..num_devices {
-            is_cc_supported &= check_confidential_compute_status(index)?;
+            is_cc_supported &= check_confidential_compute_status(index).unwrap_or(false);
         }
         Ok(Self {
             sui_client,

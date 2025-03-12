@@ -995,11 +995,11 @@ impl AtomaState {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (node_small_id, device_type)
             DO UPDATE SET
-                epoch = $1,
-                key_rotation_counter = $2,
-                public_key_bytes = $4,
-                remote_attestation_bytes = $5,
-                certificate_chain_bytes = $6
+                epoch = EXCLUDED.epoch,
+                key_rotation_counter = EXCLUDED.key_rotation_counter,
+                public_key_bytes = EXCLUDED.public_key_bytes,
+                remote_attestation_bytes = EXCLUDED.remote_attestation_bytes,
+                certificate_chain_bytes = EXCLUDED.certificate_chain_bytes
             ",
         )
         .bind(epoch as i64)
