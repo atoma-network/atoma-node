@@ -6,6 +6,10 @@ ALTER TABLE node_public_key_rotations
 ALTER TABLE node_public_key_rotations
     ADD COLUMN device_type INTEGER NOT NULL DEFAULT 0;
 
+-- Add `certificate_chain_bytes` column
+ALTER TABLE node_public_key_rotations
+    ADD COLUMN certificate_chain_bytes BYTEA;
+
 -- Drop the existing primary key constraint
 ALTER TABLE node_public_key_rotations
     DROP CONSTRAINT node_public_key_rotations_pkey;
