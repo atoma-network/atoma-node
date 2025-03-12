@@ -787,7 +787,7 @@ async fn handle_node_key_rotation_event(
         key_rotation_counter,
         node_id,
         new_public_key,
-        evidence_data_bytes,
+        evidence_bytes,
         device_type,
     } = event;
     state_manager
@@ -797,7 +797,7 @@ async fn handle_node_key_rotation_event(
             key_rotation_counter,
             node_id.inner,
             new_public_key,
-            evidence_data_bytes,
+            evidence_bytes,
             device_type,
         )
         .await?;

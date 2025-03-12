@@ -21,22 +21,11 @@ use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
 use x25519_dalek::PublicKey;
 
-type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
+/// The key for the certificate in the evidence data
+const CERTIFICATE_KEY: &str = "certificate";
 
-type ServiceDecryptionRequest = (
-    ConfidentialComputeDecryptionRequest,
-    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
-);
-
-type ServiceEncryptionRequest = (
-    ConfidentialComputeEncryptionRequest,
-    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
-);
-
-type ServiceSharedSecretRequest = (
-    ConfidentialComputeSharedSecretRequest,
-    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
-);
+/// The key for the evidence in the evidence data
+const EVIDENCE_KEY: &str = "evidence";
 
 /// Intel CC CPU device slot [0, 100)
 #[allow(dead_code)]
@@ -57,6 +46,23 @@ const NVIDIA_CC_GPU_DEVICE_SLOT: u16 = 300;
 /// NVIDIA CC NVSwitch device slot [10_000, 16_000)
 #[allow(dead_code)]
 const NVIDIA_CC_NVSWITCH_DEVICE_SLOT: u16 = 10_000;
+
+type Result<T> = std::result::Result<T, AtomaConfidentialComputeError>;
+
+type ServiceDecryptionRequest = (
+    ConfidentialComputeDecryptionRequest,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
+);
+
+type ServiceEncryptionRequest = (
+    ConfidentialComputeEncryptionRequest,
+    oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
+);
+
+type ServiceSharedSecretRequest = (
+    ConfidentialComputeSharedSecretRequest,
+    oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
+);
 
 /// A service that manages Intel's TDX (Trust Domain Extensions) operations and key rotations.
 ///
@@ -363,8 +369,8 @@ impl AtomaConfidentialCompute {
             let attestation_report_base64 = STANDARD.encode(attestation_report);
             let certificate_chain_base64 = STANDARD.encode(certificate_chain);
             evidence_data.push(serde_json::json!({
-                "certificate": certificate_chain_base64,
-                "evidence": attestation_report_base64,
+                CERTIFICATE_KEY: certificate_chain_base64,
+                EVIDENCE_KEY: attestation_report_base64,
             }));
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;

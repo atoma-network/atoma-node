@@ -883,7 +883,7 @@ pub struct NodePublicKeyCommittmentEvent {
 
     /// The TEE evidence data bytes. It includes the attestation report
     /// and the certificate chain (in the case of Nvidia GPU devices).
-    pub evidence_data_bytes: Vec<u8>,
+    pub evidence_bytes: Vec<u8>,
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.
