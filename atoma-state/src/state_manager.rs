@@ -979,6 +979,7 @@ impl AtomaState {
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
         remote_attestation_bytes: Vec<u8>,
+        certificate_chain_bytes: Vec<u8>,
         device_type: u16,
     ) -> Result<()> {
         sqlx::query(
@@ -987,16 +988,18 @@ impl AtomaState {
                 key_rotation_counter, 
                 node_small_id, 
                 public_key_bytes, 
-                remote_attestation_bytes, 
+                remote_attestation_bytes,
+                certificate_chain_bytes,
                 device_type
             ) 
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (node_small_id, device_type)
             DO UPDATE SET
                 epoch = $1,
                 key_rotation_counter = $2,
                 public_key_bytes = $4,
-                remote_attestation_bytes = $5
+                remote_attestation_bytes = $5,
+                certificate_chain_bytes = $6
             ",
         )
         .bind(epoch as i64)
@@ -1004,6 +1007,7 @@ impl AtomaState {
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
         .bind(remote_attestation_bytes)
+        .bind(certificate_chain_bytes)
         .bind(i32::from(device_type))
         .execute(&self.db)
         .await?;
@@ -4848,7 +4852,7 @@ mod tests {
         let node_small_id = 789u64;
         let public_key_bytes = vec![1, 2, 3, 4];
         let tee_remote_attestation_bytes = vec![5, 6, 7, 8];
-
+        let tee_certificate_chain_bytes = vec![9, 10, 11, 12];
         // Insert initial rotation
         state_manager
             .insert_node_public_key_rotation(
@@ -4857,6 +4861,7 @@ mod tests {
                 node_small_id,
                 public_key_bytes.clone(),
                 tee_remote_attestation_bytes.clone(),
+                tee_certificate_chain_bytes.clone(),
                 0,
             )
             .await?;
@@ -4879,13 +4884,17 @@ mod tests {
             tee_remote_attestation_bytes
         );
         assert_eq!(row.get::<i32, _>("device_type"), 0);
+        assert_eq!(
+            row.get::<Vec<u8>, _>("certificate_chain_bytes"),
+            tee_certificate_chain_bytes
+        );
 
         // Test update with new values
         let new_epoch = 999u64;
         let new_key_rotation_counter = 888u64;
         let new_public_key_bytes = vec![9, 10, 11, 12];
         let new_tee_remote_attestation_bytes = vec![13, 14, 15, 16];
-
+        let new_tee_certificate_chain_bytes = vec![17, 18, 19, 20];
         state_manager
             .insert_node_public_key_rotation(
                 new_epoch,
@@ -4893,6 +4902,7 @@ mod tests {
                 node_small_id,
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
+                new_tee_certificate_chain_bytes.clone(),
                 0,
             )
             .await?;
@@ -4920,6 +4930,10 @@ mod tests {
         assert_eq!(
             updated_row.get::<Vec<u8>, _>("remote_attestation_bytes"),
             new_tee_remote_attestation_bytes
+        );
+        assert_eq!(
+            updated_row.get::<Vec<u8>, _>("certificate_chain_bytes"),
+            new_tee_certificate_chain_bytes
         );
 
         // Verify only one row exists
@@ -4958,6 +4972,7 @@ mod tests {
                     *node_id,
                     pub_key.clone(),
                     tee_bytes.clone(),
+                    tee_bytes.clone(),
                     u16::try_from(*node_id).unwrap(),
                 )
                 .await?;
@@ -4981,6 +4996,7 @@ mod tests {
                 row.get::<i32, _>("device_type"),
                 i32::try_from(*node_id).unwrap()
             );
+            assert_eq!(row.get::<Vec<u8>, _>("certificate_chain_bytes"), *tee_bytes);
         }
 
         // Verify total count
@@ -5010,6 +5026,7 @@ mod tests {
                 node_small_id,
                 empty_bytes.clone(),
                 empty_bytes.clone(),
+                empty_bytes.clone(),
                 0,
             )
             .await?;
@@ -5022,6 +5039,10 @@ mod tests {
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
         assert_eq!(
             row.get::<Vec<u8>, _>("remote_attestation_bytes"),
+            empty_bytes
+        );
+        assert_eq!(
+            row.get::<Vec<u8>, _>("certificate_chain_bytes"),
             empty_bytes
         );
 

@@ -884,6 +884,10 @@ pub struct NodePublicKeyCommittmentEvent {
     /// The TEE remote attestation report attesting for
     /// the public key's generation integrity, in byte format.
     pub remote_attestation_bytes: Vec<u8>,
+
+    /// The Nvidia TEE certificate chain attesting for
+    /// the public key's generation integrity, in byte format.
+    pub certificate_chain_bytes: Vec<u8>,
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.
