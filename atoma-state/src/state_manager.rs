@@ -988,7 +988,7 @@ impl AtomaState {
                 node_small_id, 
                 public_key_bytes, 
                 remote_attestation_bytes, 
-                device_type, 
+                device_type
             ) 
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (node_small_id, device_type)
@@ -996,7 +996,7 @@ impl AtomaState {
                 epoch = $1,
                 key_rotation_counter = $2,
                 public_key_bytes = $4,
-                remote_attestation_bytes = $5,
+                remote_attestation_bytes = $5
             ",
         )
         .bind(epoch as i64)

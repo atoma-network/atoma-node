@@ -345,10 +345,7 @@ impl AtomaConfidentialCompute {
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
 
-        for device_index in &self
-            .config
-            .device_indices
-        {
+        for device_index in &self.config.device_indices {
             let device_index_bytes = device_index.to_le_bytes();
             let nonce_le_bytes = nonce.to_le_bytes();
             let nonce_blake3_hash = blake3::hash(
