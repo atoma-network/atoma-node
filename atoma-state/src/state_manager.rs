@@ -980,7 +980,6 @@ impl AtomaState {
         public_key_bytes: Vec<u8>,
         remote_attestation_bytes: Vec<u8>,
         device_type: u16,
-        task_small_id: Option<u64>,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_public_key_rotations (
@@ -989,17 +988,15 @@ impl AtomaState {
                 node_small_id, 
                 public_key_bytes, 
                 remote_attestation_bytes, 
-                device_type, 
-                task_small_id
+                device_type
             ) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (node_small_id, device_type)
             DO UPDATE SET
                 epoch = $1,
                 key_rotation_counter = $2,
                 public_key_bytes = $4,
-                remote_attestation_bytes = $5,
-                task_small_id = $7
+                remote_attestation_bytes = $5
             ",
         )
         .bind(epoch as i64)
@@ -1008,7 +1005,6 @@ impl AtomaState {
         .bind(public_key_bytes)
         .bind(remote_attestation_bytes)
         .bind(i32::from(device_type))
-        .bind(task_small_id.map(|t| t as i64))
         .execute(&self.db)
         .await?;
         Ok(())
@@ -4862,7 +4858,6 @@ mod tests {
                 public_key_bytes.clone(),
                 tee_remote_attestation_bytes.clone(),
                 0,
-                None,
             )
             .await?;
 
@@ -4884,7 +4879,6 @@ mod tests {
             tee_remote_attestation_bytes
         );
         assert_eq!(row.get::<i32, _>("device_type"), 0);
-        assert_eq!(row.get::<Option<i64>, _>("task_small_id"), None);
 
         // Test update with new values
         let new_epoch = 999u64;
@@ -4900,7 +4894,6 @@ mod tests {
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
                 0,
-                Some(1),
             )
             .await?;
 
@@ -4966,7 +4959,6 @@ mod tests {
                     pub_key.clone(),
                     tee_bytes.clone(),
                     u16::try_from(*node_id).unwrap(),
-                    Some(1),
                 )
                 .await?;
         }
@@ -4989,7 +4981,6 @@ mod tests {
                 row.get::<i32, _>("device_type"),
                 i32::try_from(*node_id).unwrap()
             );
-            assert_eq!(row.get::<Option<i64>, _>("task_small_id"), Some(1));
         }
 
         // Verify total count
@@ -5020,7 +5011,6 @@ mod tests {
                 empty_bytes.clone(),
                 empty_bytes.clone(),
                 0,
-                None,
             )
             .await?;
 
@@ -5034,7 +5024,6 @@ mod tests {
             row.get::<Vec<u8>, _>("remote_attestation_bytes"),
             empty_bytes
         );
-        assert_eq!(row.get::<Option<i64>, _>("task_small_id"), None);
 
         truncate_tables(&state_manager.db).await;
         Ok(())

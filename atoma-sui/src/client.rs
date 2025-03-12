@@ -1097,7 +1097,6 @@ impl Client {
         attestation_report_bytes: Vec<u8>,
         key_rotation_counter: u64,
         device_type: u16,
-        task_small_id: Option<u64>,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -1109,10 +1108,6 @@ impl Client {
             .as_ref()
             .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
             .0;
-
-        let task_small_id = task_small_id
-            .map(|v| vec![v.to_string()])
-            .unwrap_or_default();
 
         let tx = client
             .transaction_builder()
@@ -1129,7 +1124,6 @@ impl Client {
                     SuiJsonValue::new(attestation_report_bytes.into())?,
                     SuiJsonValue::new(key_rotation_counter.to_string().into())?,
                     SuiJsonValue::new(device_type.into())?,
-                    SuiJsonValue::new(task_small_id.into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
