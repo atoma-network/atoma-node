@@ -978,8 +978,7 @@ impl AtomaState {
         key_rotation_counter: u64,
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
-        remote_attestation_bytes: Vec<u8>,
-        certificate_chain_bytes: Vec<u8>,
+        evidence_data_bytes: Vec<u8>,
         device_type: u16,
     ) -> Result<()> {
         sqlx::query(
@@ -988,8 +987,7 @@ impl AtomaState {
                 key_rotation_counter, 
                 node_small_id, 
                 public_key_bytes, 
-                remote_attestation_bytes,
-                certificate_chain_bytes,
+                evidence_data_bytes,
                 device_type
             ) 
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -998,16 +996,14 @@ impl AtomaState {
                 epoch = EXCLUDED.epoch,
                 key_rotation_counter = EXCLUDED.key_rotation_counter,
                 public_key_bytes = EXCLUDED.public_key_bytes,
-                remote_attestation_bytes = EXCLUDED.remote_attestation_bytes,
-                certificate_chain_bytes = EXCLUDED.certificate_chain_bytes
+                evidence_data_bytes = EXCLUDED.evidence_data_bytes
             ",
         )
         .bind(epoch as i64)
         .bind(key_rotation_counter as i64)
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
-        .bind(remote_attestation_bytes)
-        .bind(certificate_chain_bytes)
+        .bind(evidence_data_bytes)
         .bind(i32::from(device_type))
         .execute(&self.db)
         .await?;
@@ -4861,7 +4857,6 @@ mod tests {
                 node_small_id,
                 public_key_bytes.clone(),
                 tee_remote_attestation_bytes.clone(),
-                tee_certificate_chain_bytes.clone(),
                 0,
             )
             .await?;
@@ -4894,7 +4889,6 @@ mod tests {
         let new_key_rotation_counter = 888u64;
         let new_public_key_bytes = vec![9, 10, 11, 12];
         let new_tee_remote_attestation_bytes = vec![13, 14, 15, 16];
-        let new_tee_certificate_chain_bytes = vec![17, 18, 19, 20];
         state_manager
             .insert_node_public_key_rotation(
                 new_epoch,
@@ -4902,7 +4896,6 @@ mod tests {
                 node_small_id,
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
-                new_tee_certificate_chain_bytes.clone(),
                 0,
             )
             .await?;
@@ -4928,12 +4921,8 @@ mod tests {
             new_public_key_bytes
         );
         assert_eq!(
-            updated_row.get::<Vec<u8>, _>("remote_attestation_bytes"),
+            updated_row.get::<Vec<u8>, _>("evidence_data_bytes"),
             new_tee_remote_attestation_bytes
-        );
-        assert_eq!(
-            updated_row.get::<Vec<u8>, _>("certificate_chain_bytes"),
-            new_tee_certificate_chain_bytes
         );
 
         // Verify only one row exists
@@ -4972,7 +4961,6 @@ mod tests {
                     *node_id,
                     pub_key.clone(),
                     tee_bytes.clone(),
-                    tee_bytes.clone(),
                     u16::try_from(*node_id).unwrap(),
                 )
                 .await?;
@@ -4988,15 +4976,11 @@ mod tests {
 
             assert_eq!(row.get::<i64, _>("node_small_id"), *node_id as i64);
             assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), *pub_key);
-            assert_eq!(
-                row.get::<Vec<u8>, _>("remote_attestation_bytes"),
-                *tee_bytes
-            );
+            assert_eq!(row.get::<Vec<u8>, _>("evidence_data_bytes"), *tee_bytes);
             assert_eq!(
                 row.get::<i32, _>("device_type"),
                 i32::try_from(*node_id).unwrap()
             );
-            assert_eq!(row.get::<Vec<u8>, _>("certificate_chain_bytes"), *tee_bytes);
         }
 
         // Verify total count
@@ -5026,7 +5010,6 @@ mod tests {
                 node_small_id,
                 empty_bytes.clone(),
                 empty_bytes.clone(),
-                empty_bytes.clone(),
                 0,
             )
             .await?;
@@ -5037,14 +5020,7 @@ mod tests {
             .await?;
 
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
-        assert_eq!(
-            row.get::<Vec<u8>, _>("remote_attestation_bytes"),
-            empty_bytes
-        );
-        assert_eq!(
-            row.get::<Vec<u8>, _>("certificate_chain_bytes"),
-            empty_bytes
-        );
+        assert_eq!(row.get::<Vec<u8>, _>("evidence_data_bytes"), empty_bytes);
 
         truncate_tables(&state_manager.db).await;
         Ok(())

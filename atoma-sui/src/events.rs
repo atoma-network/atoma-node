@@ -881,13 +881,9 @@ pub struct NodePublicKeyCommittmentEvent {
     /// represented as a 16-bit unsigned integer of [0, 1, 2, 3], respectively.
     pub device_type: u16,
 
-    /// The TEE remote attestation report attesting for
-    /// the public key's generation integrity, in byte format.
-    pub remote_attestation_bytes: Vec<u8>,
-
-    /// The Nvidia TEE certificate chain attesting for
-    /// the public key's generation integrity, in byte format.
-    pub certificate_chain_bytes: Vec<u8>,
+    /// The TEE evidence data bytes. It includes the attestation report
+    /// and the certificate chain (in the case of Nvidia GPU devices).
+    pub evidence_data_bytes: Vec<u8>,
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.
