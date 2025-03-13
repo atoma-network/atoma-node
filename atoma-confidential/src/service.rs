@@ -181,7 +181,13 @@ impl AtomaConfidentialCompute {
     /// This function can return:
     /// * `AtomaConfidentialComputeError::KeyManagementError` if key initialization fails
     /// * `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
-    #[instrument(level = "info", skip_all)]
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(
+            num_devices = num_devices().unwrap_or(0),
+        )
+    )]
     pub async fn start_confidential_compute_service(
         sui_client: Arc<RwLock<Client>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
@@ -355,7 +361,10 @@ impl AtomaConfidentialCompute {
     /// * `AtomaConfidentialComputeError::SerializationError` if serializing the evidence data fails
     /// * `AtomaConfidentialComputeError::SuiClientError` if the attestation submission to Sui fails
     /// * `AtomaConfidentialComputeError::InvalidDeviceIndex` if a device index cannot be converted to u16
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "info", skip_all, fields(
+        nonce = nonce,
+        num_devices = self.num_devices,
+    ))]
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
         let mut evidence_data = Vec::with_capacity(self.num_devices as usize);
@@ -607,7 +616,7 @@ impl AtomaConfidentialCompute {
     /// - `AtomaConfidentialComputeError::KeyManagerError` if key rotation fails
     /// - `AtomaConfidentialComputeError::SuiClientError` if attestation submission fails
     #[instrument(
-        level = "debug",
+        level = "info",
         name = "handle_atoma_event",
         skip_all,
         fields(
@@ -622,7 +631,7 @@ impl AtomaConfidentialCompute {
         }
         match event {
             AtomaEvent::NewKeyRotationEvent(event) => {
-                tracing::trace!(
+                tracing::info!(
                     target = "atoma-confidential-compute-service",
                     event = "new_key_rotation_event",
                     "New key rotation event received from event receiver"
