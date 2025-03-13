@@ -1,5 +1,5 @@
 # Base configuration for Atoma services
-x-atoma-node-non-confidential: &atoma-node
+x-atoma-node: &atoma-node
   image: ghcr.io/atoma-network/atoma-node:latest
   build:
     context: .
@@ -11,7 +11,6 @@ x-atoma-node-non-confidential: &atoma-node
     - sui-config-volume:/root/.sui/sui_config
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
-    - ${CURSOR_PATH:-./cursor.toml}:/app/cursor.toml
   env_file: .env
   networks:
     - atoma-network
