@@ -128,6 +128,9 @@ impl AtomaConfidentialCompute {
     /// Returns `AtomaConfidentialComputeError` if:
     /// - Key manager initialization fails
     #[allow(clippy::too_many_arguments)]
+    #[instrument(level = "info", skip_all, fields(
+        num_devices = num_devices().unwrap_or(0),
+    ))]
     pub fn new(
         sui_client: Arc<RwLock<Client>>,
         key_rotation_counter: u64,
@@ -144,6 +147,11 @@ impl AtomaConfidentialCompute {
         for index in 0..num_devices {
             is_cc_supported &= check_confidential_compute_status(index).unwrap_or(false);
         }
+        tracing::info!(
+            target = "atoma-confidential-compute-service",
+            event = "new_confidential_compute_service",
+            "New confidential compute service created, with num_devices: {num_devices} and is_cc_supported: {is_cc_supported}"
+        );
         Ok(Self {
             sui_client,
             is_cc_supported,
