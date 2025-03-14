@@ -16,8 +16,8 @@ ignore = [
 	# These are all related to the sui SDK, which is outside of our control
 	# derivative is not maintained
 	"RUSTSEC-2024-0388",
-	# difference 2.0.0 is unmaintained
-	"RUSTSEC-2020-0095",
+	"RUSTSEC-2024-0436",
+	"RUSTSEC-2024-0437",
 	# we don't do RSA signing on Sui (only verifying for zklogin)
 	"RUSTSEC-2023-0071",
 	# allow yaml-rust being unmaintained
@@ -25,7 +25,8 @@ ignore = [
 	# allow unmaintained proc-macro-error used in transitive dependencies
 	"RUSTSEC-2024-0370",
 	# ring is unmaintained but is a critical dependency through sui-sdk and libp2p
-	"RUSTSEC-2025-0007",
+	"RUSTSEC-2025-0009",
+	"RUSTSEC-2025-0010",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories

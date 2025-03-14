@@ -47,6 +47,12 @@ listen_addrs = [
     "/ip4/0.0.0.0/tcp/4001",
     "/ip4/0.0.0.0/udp/4001/quic-v1",
 ]
+# The list of bootstrap nodes to dial
+bootstrap_node_addrs = [
+    "/ip4/213.130.147.75/tcp/8083",
+    "/ip4/213.130.147.75/udp/8083/quic-v1",
+]
+
 # Node's small ID (assigned by Atoma smart contract)
 node_small_id = 1
 # The HTTP(s) public URL of the node

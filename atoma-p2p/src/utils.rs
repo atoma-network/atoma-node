@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use fastcrypto::{
     ed25519::{Ed25519PublicKey, Ed25519Signature},
     secp256k1::{Secp256k1PublicKey, Secp256k1Signature},
@@ -5,14 +7,14 @@ use fastcrypto::{
     traits::{ToFromBytes as FastCryptoToFromBytes, VerifyingKey},
 };
 use flume::Sender;
-use libp2p::gossipsub;
+use libp2p::{gossipsub, identity};
 use opentelemetry::KeyValue;
 use sui_sdk::types::{
     base_types::SuiAddress,
     crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
 };
-use tokio::sync::oneshot;
-use tracing::{error, instrument};
+use tokio::{fs, sync::oneshot};
+use tracing::{error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -358,4 +360,39 @@ pub fn extract_gossipsub_metrics(gossipsub: &gossipsub::Behaviour) {
             }
         });
     }
+}
+
+/// Reads or creates an identity for the node
+///
+/// This function checks if an identity file exists at the specified path. If it does, it reads the identity from the file.
+/// Otherwise, it generates a new identity and writes it to the file.
+///
+/// # Arguments
+/// * `path` - Path where the identity is stored or will be stored
+///
+/// # Returns
+/// The identity keypair for the node
+///
+/// # Errors
+/// * IO errors when reading from or writing to the file
+/// * Decoding errors when parsing the identity from the file
+/// * Encoding errors when serializing the identity to the file
+#[instrument(level = "info", skip_all)]
+pub async fn read_or_create_identity(
+    path: &Path,
+) -> Result<identity::Keypair, crate::errors::AtomaP2pNodeError> {
+    if path.exists() {
+        let metadata = fs::metadata(&path).await?;
+        if metadata.len() > 0 {
+            let bytes = fs::read(&path).await?;
+            info!("Using existing identity from {}", path.display());
+            return Ok(identity::Keypair::from_protobuf_encoding(&bytes)?);
+        }
+        // If file exists but is empty, continue to create new identity
+    }
+
+    let identity = identity::Keypair::generate_ed25519();
+    fs::write(&path, &identity.to_protobuf_encoding()?).await?;
+    info!("Generated new identity and wrote it to {}", path.display());
+    Ok(identity)
 }
