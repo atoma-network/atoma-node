@@ -283,6 +283,7 @@ mod middleware {
                         .await
                         .expect("Failed to create Sui client"),
                 )),
+                0,
                 event_receiver,
                 decryption_receiver,
                 encryption_receiver,

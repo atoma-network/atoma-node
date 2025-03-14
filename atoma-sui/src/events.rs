@@ -876,9 +876,14 @@ pub struct NodePublicKeyCommittmentEvent {
     /// The node's new registered public key.
     pub new_public_key: Vec<u8>,
 
-    /// The TEE remote attestation report attesting for
-    /// the public key's generation integrity, in byte format.
-    pub tee_remote_attestation_bytes: Vec<u8>,
+    /// Device type to which the remote attestation report where generated.
+    /// It can either be `Intel`, `AMD`, `Nvidia GPU` or `Nvidia NVSwitch`,
+    /// represented as a 16-bit unsigned integer of [0, 1, 2, 3], respectively.
+    pub device_type: u16,
+
+    /// The TEE evidence data bytes. It includes the attestation report
+    /// and the certificate chain (in the case of Nvidia GPU devices).
+    pub evidence_bytes: Vec<u8>,
 }
 
 /// Represents an event emitted when Atoma's smart contract requests new node key rotation.
@@ -891,6 +896,10 @@ pub struct NewKeyRotationEvent {
     /// The counter for the number of times the contract has requested nodes rotating their public keys.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub key_rotation_counter: u64,
+
+    /// A random nonce used to generate the attestation report.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub nonce: u64,
 }
 
 /// Represents an identifier for an echelon (performance tier) in the Atoma network.

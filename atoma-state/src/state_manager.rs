@@ -971,28 +971,40 @@ impl AtomaState {
         skip_all,
         fields(epoch = %epoch, node_small_id = %node_small_id)
     )]
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_node_public_key_rotation(
         &self,
         epoch: u64,
         key_rotation_counter: u64,
         node_small_id: u64,
         public_key_bytes: Vec<u8>,
-        tee_remote_attestation_bytes: Vec<u8>,
+        evidence_data_bytes: Vec<u8>,
+        device_type: u16,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_key_rotations (epoch, key_rotation_counter, node_small_id, public_key_bytes, tdx_quote_bytes) VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (node_small_id)
-                    DO UPDATE SET
-                        epoch = $1,
-                        key_rotation_counter = $2,
-                        public_key_bytes = $4,
-                        tdx_quote_bytes = $5",
+            "INSERT INTO node_public_key_rotations (
+                epoch, 
+                key_rotation_counter, 
+                node_small_id, 
+                public_key_bytes, 
+                evidence_data_bytes,
+                device_type
+            ) 
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (node_small_id, device_type)
+            DO UPDATE SET
+                epoch = EXCLUDED.epoch,
+                key_rotation_counter = EXCLUDED.key_rotation_counter,
+                public_key_bytes = EXCLUDED.public_key_bytes,
+                evidence_data_bytes = EXCLUDED.evidence_data_bytes
+            ",
         )
         .bind(epoch as i64)
         .bind(key_rotation_counter as i64)
         .bind(node_small_id as i64)
         .bind(public_key_bytes)
-        .bind(tee_remote_attestation_bytes)
+        .bind(evidence_data_bytes)
+        .bind(i32::from(device_type))
         .execute(&self.db)
         .await?;
         Ok(())
@@ -4836,7 +4848,6 @@ mod tests {
         let node_small_id = 789u64;
         let public_key_bytes = vec![1, 2, 3, 4];
         let tee_remote_attestation_bytes = vec![5, 6, 7, 8];
-
         // Insert initial rotation
         state_manager
             .insert_node_public_key_rotation(
@@ -4845,6 +4856,7 @@ mod tests {
                 node_small_id,
                 public_key_bytes.clone(),
                 tee_remote_attestation_bytes.clone(),
+                0,
             )
             .await?;
 
@@ -4862,16 +4874,16 @@ mod tests {
         assert_eq!(row.get::<i64, _>("node_small_id"), node_small_id as i64);
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), public_key_bytes);
         assert_eq!(
-            row.get::<Vec<u8>, _>("tdx_quote_bytes"),
+            row.get::<Vec<u8>, _>("evidence_data_bytes"),
             tee_remote_attestation_bytes
         );
+        assert_eq!(row.get::<i32, _>("device_type"), 0);
 
         // Test update with new values
         let new_epoch = 999u64;
         let new_key_rotation_counter = 888u64;
         let new_public_key_bytes = vec![9, 10, 11, 12];
         let new_tee_remote_attestation_bytes = vec![13, 14, 15, 16];
-
         state_manager
             .insert_node_public_key_rotation(
                 new_epoch,
@@ -4879,6 +4891,7 @@ mod tests {
                 node_small_id,
                 new_public_key_bytes.clone(),
                 new_tee_remote_attestation_bytes.clone(),
+                0,
             )
             .await?;
 
@@ -4903,7 +4916,7 @@ mod tests {
             new_public_key_bytes
         );
         assert_eq!(
-            updated_row.get::<Vec<u8>, _>("tdx_quote_bytes"),
+            updated_row.get::<Vec<u8>, _>("evidence_data_bytes"),
             new_tee_remote_attestation_bytes
         );
 
@@ -4943,6 +4956,7 @@ mod tests {
                     *node_id,
                     pub_key.clone(),
                     tee_bytes.clone(),
+                    u16::try_from(*node_id).unwrap(),
                 )
                 .await?;
         }
@@ -4957,7 +4971,11 @@ mod tests {
 
             assert_eq!(row.get::<i64, _>("node_small_id"), *node_id as i64);
             assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), *pub_key);
-            assert_eq!(row.get::<Vec<u8>, _>("tdx_quote_bytes"), *tee_bytes);
+            assert_eq!(row.get::<Vec<u8>, _>("evidence_data_bytes"), *tee_bytes);
+            assert_eq!(
+                row.get::<i32, _>("device_type"),
+                i32::try_from(*node_id).unwrap()
+            );
         }
 
         // Verify total count
@@ -4987,6 +5005,7 @@ mod tests {
                 node_small_id,
                 empty_bytes.clone(),
                 empty_bytes.clone(),
+                0,
             )
             .await?;
 
@@ -4996,7 +5015,7 @@ mod tests {
             .await?;
 
         assert_eq!(row.get::<Vec<u8>, _>("public_key_bytes"), empty_bytes);
-        assert_eq!(row.get::<Vec<u8>, _>("tdx_quote_bytes"), empty_bytes);
+        assert_eq!(row.get::<Vec<u8>, _>("evidence_data_bytes"), empty_bytes);
 
         truncate_tables(&state_manager.db).await;
         Ok(())
