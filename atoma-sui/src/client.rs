@@ -1252,10 +1252,12 @@ impl Client {
                 let object_fields = object.fields.to_json_value();
                 let key_rotation_counter = object_fields
                     .get(KEY_ROTATION_COUNTER_FIELD)
-                    .and_then(serde_json::Value::as_u64);
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.parse::<u64>().ok());
                 let nonce = object_fields
                     .get(NONCE_FIELD)
-                    .and_then(serde_json::Value::as_u64);
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.parse::<u64>().ok());
                 if let (Some(key_rotation_counter), Some(nonce)) = (key_rotation_counter, nonce) {
                     return Ok(Some((key_rotation_counter, nonce)));
                 }
