@@ -375,13 +375,10 @@ impl AtomaConfidentialCompute {
     ))]
     async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
+        let nonce_le_bytes = nonce.to_le_bytes();
+        let nonce_blake3_hash = blake3::hash(&[&nonce_le_bytes[..], &public_key_bytes].concat());
         let mut evidence_data = Vec::with_capacity(self.num_devices as usize);
         for device_index in 0..self.num_devices {
-            let device_index_bytes = device_index.to_le_bytes();
-            let nonce_le_bytes = nonce.to_le_bytes();
-            let nonce_blake3_hash = blake3::hash(
-                &[&nonce_le_bytes[..], &public_key_bytes, &device_index_bytes].concat(),
-            );
             let attestation_report =
                 fetch_attestation_report_async(device_index, *nonce_blake3_hash.as_bytes()).await?;
             let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
