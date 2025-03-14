@@ -382,18 +382,17 @@ pub async fn read_or_create_identity(
     path: &Path,
 ) -> Result<identity::Keypair, crate::errors::AtomaP2pNodeError> {
     if path.exists() {
-        let bytes = fs::read(&path).await?;
-
-        info!("Using existing identity from {}", path.display());
-
-        return Ok(identity::Keypair::from_protobuf_encoding(&bytes)?); // This only works for ed25519 but that is what we are using.
+        let metadata = fs::metadata(&path).await?;
+        if metadata.len() > 0 {
+            let bytes = fs::read(&path).await?;
+            info!("Using existing identity from {}", path.display());
+            return Ok(identity::Keypair::from_protobuf_encoding(&bytes)?);
+        }
+        // If file exists but is empty, continue to create new identity
     }
 
     let identity = identity::Keypair::generate_ed25519();
-
     fs::write(&path, &identity.to_protobuf_encoding()?).await?;
-
     info!("Generated new identity and wrote it to {}", path.display());
-
     Ok(identity)
 }
