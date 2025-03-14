@@ -14,7 +14,7 @@ use sui_sdk::types::{
     crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
 };
 use tokio::{fs, sync::oneshot};
-use tracing::{debug, error, instrument};
+use tracing::{error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -377,13 +377,14 @@ pub fn extract_gossipsub_metrics(gossipsub: &gossipsub::Behaviour) {
 /// * IO errors when reading from or writing to the file
 /// * Decoding errors when parsing the identity from the file
 /// * Encoding errors when serializing the identity to the file
+#[instrument(level = "info", skip_all)]
 pub async fn read_or_create_identity(
     path: &Path,
 ) -> Result<identity::Keypair, crate::errors::AtomaP2pNodeError> {
     if path.exists() {
         let bytes = fs::read(&path).await?;
 
-        debug!("Using existing identity from {}", path.display());
+        info!("Using existing identity from {}", path.display());
 
         return Ok(identity::Keypair::from_protobuf_encoding(&bytes)?); // This only works for ed25519 but that is what we are using.
     }
@@ -392,7 +393,7 @@ pub async fn read_or_create_identity(
 
     fs::write(&path, &identity.to_protobuf_encoding()?).await?;
 
-    debug!("Generated new identity and wrote it to {}", path.display());
+    info!("Generated new identity and wrote it to {}", path.display());
 
     Ok(identity)
 }
