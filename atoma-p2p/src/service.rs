@@ -61,7 +61,7 @@ const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
 ];
 
 // The proxy bootstrap nodes
-const PROXY_BOOTSTRAP_NODES: [&str; 1] = [" add the bootrap peerID here QmHash..."];
+const PROXY_BOOTSTRAP_NODES: [&str; 1] = ["12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ"];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
@@ -230,8 +230,16 @@ impl AtomaP2pNode {
         }
         let mut metrics_registry = libp2p::metrics::Registry::default();
 
-        let local_key = tokio::runtime::Handle::current()
-            .block_on(read_or_create_identity(Path::new(LOCAL_KEY_PATH)))?;
+        let local_key = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build runtime");
+
+            rt.block_on(read_or_create_identity(Path::new(LOCAL_KEY_PATH)))
+        })
+        .join()
+        .expect("Thread panicked")?;
 
         let local_peer_id = PeerId::from(local_key.public());
 
@@ -431,7 +439,6 @@ impl AtomaP2pNode {
         }
 
         // Dial the proxy bootstrap nodes
-
         for peer_id in PROXY_BOOTSTRAP_NODES {
             match peer_id.parse::<PeerId>() {
                 // We don't need bootstrap nodes to dial themselves
