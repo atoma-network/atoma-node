@@ -9,16 +9,15 @@ aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 atoma-sui = { workspace = true }
 atoma-utils = { workspace = true }
-blake2 = { workspace = true }
-dcap-rs = { workspace = true, optional = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+config = { workspace = true }
 flume = { workspace = true }
+nvml-wrapper = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
-tdx = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
-
-[features]
-default = []
-tdx = ["dep:dcap-rs", "dep:tdx" ]

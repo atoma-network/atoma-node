@@ -40,8 +40,14 @@ const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 /// The Atoma's contract method name for updating a node task subscription
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
-/// The Atoma's contract method name for submitting a node key rotation attestation
+/// The Atoma's contract method name for rotating the protocol's nodes public key
 const ROTATE_NODE_PUBLIC_KEY: &str = "rotate_node_public_key";
+
+/// The key rotation counter field name for the `NewKeyRotationEvent` event
+const KEY_ROTATION_COUNTER_FIELD: &str = "key_rotation_counter";
+
+/// The nonce field name for the `NewKeyRotationEvent` event
+const NONCE_FIELD: &str = "nonce";
 
 /// Client for interacting with Atoma's Sui blockchain functionality
 pub struct Client {
@@ -1024,14 +1030,17 @@ impl Client {
 
     /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
     ///
-    /// This method creates and submits a transaction that rotates a node's key using Intel TDX remote
+    /// This method creates and submits a transaction that rotates a node's key using remote
     /// attestation. The node must have a valid node badge to perform this operation. The method requires
-    /// both the TDX quote bytes (remote attestation proof) and the new public key bytes.
+    /// the new public key bytes and attestation report bytes.
     ///
     /// # Arguments
     ///
-    /// * `tdx_quote_bytes` - A vector of bytes containing the Intel TDX remote attestation quote
     /// * `public_key_bytes` - A 32-byte array containing the new public key
+    /// * `attestation_report_bytes` - A vector of bytes containing the attestation report
+    /// * `key_rotation_counter` - The key rotation counter value
+    /// * `device_type` - The device type identifier (as a u16)
+    /// * `task_small_id` - Optional small ID of the task
     /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
     ///           automatically select a gas object
     /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
@@ -1039,7 +1048,8 @@ impl Client {
     ///
     /// # Returns
     ///
-    /// Returns `Result<String>` where the String is the transaction digest if successful.
+    /// Returns `Result<(String, u64)>` where the String is the transaction digest and the u64 is
+    /// the key rotation counter if successful.
     ///
     /// # Errors
     ///
@@ -1047,39 +1057,47 @@ impl Client {
     /// - The node badge is not found
     /// - The wallet context operations fail
     /// - The transaction submission fails
-    /// - The TDX quote or public key data cannot be properly encoded
+    /// - Failed to find the key rotation event in the transaction response
+    /// - Failed to parse the event data
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use sui_sdk::types::base_types::ObjectID;
-    ///
-    /// async fn example(client: &mut AtomaSuiClient) -> Result<()> {
-    ///     let tdx_quote = vec![1, 2, 3, 4]; // Your TDX quote bytes
+    /// async fn example(client: &mut Client) -> Result<()> {
     ///     let public_key = [0u8; 32];       // Your new public key
+    ///     let attestation_report = vec![1, 2, 3, 4]; // Your attestation report bytes
+    ///     let key_rotation_counter = 1;
+    ///     let device_type = 1;
     ///
     ///     // Submit with default gas settings
-    ///     let tx_digest = client.submit_key_rotation_remote_attestation(
-    ///         tdx_quote,
+    ///     let (tx_digest, new_counter) = client.submit_key_rotation_remote_attestation(
     ///         public_key,
+    ///         attestation_report,
+    ///         key_rotation_counter,
+    ///         device_type,
+    ///         None,    // task_small_id
     ///         None,    // default gas
     ///         None,    // default gas budget
     ///         None,    // default gas price
     ///     ).await?;
     ///
-    ///     println!("Key rotation submitted: {}", tx_digest);
+    ///     println!("Key rotation submitted: {}, new counter: {}", tx_digest, new_counter);
     ///     Ok(())
     /// }
     /// ```
+    #[allow(clippy::too_many_arguments)]
     #[instrument(level = "info", skip_all, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
-        remote_attestation_quote = %hex::encode(&tdx_quote_bytes)
+        device_type = %device_type,
+        key_rotation_counter = %key_rotation_counter,
     ))]
     pub async fn submit_key_rotation_remote_attestation(
         &mut self,
         public_key_bytes: [u8; 32],
-        tdx_quote_bytes: Vec<u8>,
+        evidence_data_bytes: Vec<u8>,
+        key_rotation_counter: u64,
+        device_type: u16,
         gas: Option<ObjectID>,
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
@@ -1104,7 +1122,9 @@ impl Client {
                     SuiJsonValue::from_object_id(self.config.atoma_db()),
                     SuiJsonValue::from_object_id(node_badge_id),
                     SuiJsonValue::new(public_key_bytes.to_vec().into())?,
-                    SuiJsonValue::new(tdx_quote_bytes.into())?,
+                    SuiJsonValue::new(evidence_data_bytes.into())?,
+                    SuiJsonValue::new(key_rotation_counter.to_string().into())?,
+                    SuiJsonValue::new(device_type.into())?,
                 ],
                 gas,
                 gas_budget.unwrap_or(GAS_BUDGET),
@@ -1173,6 +1193,76 @@ impl Client {
             }
         }
     }
+
+    /// Retrieves the latest key rotation counter and nonce from the Atoma DB object.
+    ///
+    /// This method queries the Atoma DB shared object to get the current key rotation counter
+    /// and nonce values, which are used for tracking key rotation events in the system.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<Option<(u64, u64)>>` where:
+    /// - `Ok(Some((key_rotation_counter, nonce)))` if the values are successfully retrieved
+    /// - `Ok(None)` if the values are not found in the object
+    /// - `Err(AtomaSuiClientError)` if there was an error retrieving or parsing the object
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Failed to get the client from wallet context
+    /// - Failed to retrieve the Atoma DB object
+    /// - Failed to access the content of the Atoma DB object
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut client = Client::new(config).await?;
+    /// match client.get_last_key_rotation_event().await? {
+    ///     Some((counter, nonce)) => {
+    ///         println!("Current key rotation counter: {}, nonce: {}", counter, nonce);
+    ///     },
+    ///     None => {
+    ///         println!("No key rotation counter found");
+    ///     }
+    /// }
+    /// ```
+    #[instrument(level = "info", skip_all, fields(
+        endpoint = "get_last_key_rotation_event",
+        address = %self.wallet_ctx.active_address().unwrap()
+    ))]
+    pub async fn get_last_key_rotation_event(&mut self) -> Result<Option<(u64, u64)>> {
+        let client = self.wallet_ctx.get_client().await?;
+        let events = client
+            .read_api()
+            .get_object_with_options(
+                self.config.atoma_db(),
+                sui_sdk::rpc_types::SuiObjectDataOptions {
+                    show_type: true,
+                    show_content: true,
+                    ..Default::default()
+                },
+            )
+            .await?
+            .data;
+        if let Some(atoma_db) = events {
+            let Some(content) = atoma_db.content else {
+                return Err(AtomaSuiClientError::FailedToRetrieveAtomaDbContent);
+            };
+            if let sui_sdk::rpc_types::SuiParsedData::MoveObject(object) = content {
+                let object_fields = object.fields.to_json_value();
+                let key_rotation_counter = object_fields
+                    .get(KEY_ROTATION_COUNTER_FIELD)
+                    .and_then(serde_json::Value::as_u64);
+                let nonce = object_fields
+                    .get(NONCE_FIELD)
+                    .and_then(serde_json::Value::as_u64);
+                if let (Some(key_rotation_counter), Some(nonce)) = (key_rotation_counter, nonce) {
+                    return Ok(Some((key_rotation_counter, nonce)));
+                }
+            }
+        }
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -1195,6 +1285,8 @@ pub enum AtomaSuiClientError {
     FailedToFindNewKeyRotationEvent,
     #[error("Failed to parse event")]
     FailedToParseEvent(#[from] serde_json::Error),
+    #[error("Failed to retrieve AtomaDB shared object content")]
+    FailedToRetrieveAtomaDbContent,
 }
 
 pub(crate) mod utils {

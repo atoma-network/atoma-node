@@ -17,6 +17,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use flume::Sender;
 use futures::StreamExt;
 use libp2p::{
+    autonat,
     gossipsub::{self},
     identify, kad, mdns, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
@@ -27,12 +28,11 @@ use libp2p::{
     Multiaddr,
 };
 use opentelemetry::KeyValue;
+use rand::rngs::OsRng;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    path::Path,
-};
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use tokio::{
     sync::{mpsc::UnboundedReceiver, oneshot, watch},
@@ -71,6 +71,9 @@ pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 /// for peer discovery, message broadcasting, and distributed routing.
 #[derive(NetworkBehaviour)]
 struct AtomaP2pBehaviour {
+    /// Handles autonat protocol
+    autonat: autonat::v2::client::Behaviour,
+
     /// Handles publish-subscribe messaging across the P2P network.
     /// Used for broadcasting node addresses and other network messages using a gossip protocol
     /// that ensures efficient message propagation.
@@ -293,7 +296,14 @@ impl AtomaP2pNode {
                     local_key.public(),
                 ));
 
+                let autonat = autonat::v2::client::Behaviour::new(
+                    OsRng,
+                    autonat::v2::client::Config::default()
+                        .with_probe_interval(Duration::from_secs(10)),
+                );
+
                 Ok(AtomaP2pBehaviour {
+                    autonat,
                     gossipsub,
                     identify,
                     kademlia,
@@ -391,13 +401,6 @@ impl AtomaP2pNode {
             event = "node_started",
             peer_id = %swarm.local_peer_id(),
             "Libp2p node started"
-        );
-
-        info!(
-            target = "atoma-p2p",
-            event = "listening_addresses",
-            listen_addrs = ?swarm.listeners().map(ToString::to_string).collect::<Vec<_>>(),
-            "Listening on addresses"
         );
 
         // Initialize Kademlia's bootstrap process
@@ -748,7 +751,7 @@ impl AtomaP2pNode {
                             address,
                             ..
                         } => {
-                            debug!(
+                            info!(
                                 target = "atoma-p2p",
                                 event = "new_listen_addr",
                                 listener_id = %listener_id,
@@ -781,6 +784,24 @@ impl AtomaP2pNode {
                                 "Dialing peer"
                             );
                             TOTAL_DIALS_ATTEMPTED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
+                        }
+                        SwarmEvent::IncomingConnection {
+                            ..
+                        } => {
+                            info!(
+                                target = "atoma-p2p",
+                                event = "incoming_connection",
+                                "Incoming connection"
+                            );
+                        }
+                        SwarmEvent::IncomingConnectionError {
+                            ..
+                        } => {
+                            error!(
+                                target = "atoma-p2p",
+                                event = "incoming_connection_error",
+                                "Incoming connection error"
+                            );
                         }
                         SwarmEvent::OutgoingConnectionError {
                             peer_id,
