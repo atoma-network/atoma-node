@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }
@@ -20,12 +22,14 @@ libp2p = { workspace = true, features = [
 	"mdns",
 	"kad",
 	"macros",
+	"request-response",
 	"quic",
 	"tcp",
 	"yamux",
 	"noise",
 	"metrics",
 	"rsa",
+	"cbor",
 ] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
@@ -39,6 +43,7 @@ sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }

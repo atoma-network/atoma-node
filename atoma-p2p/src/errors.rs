@@ -62,4 +62,14 @@ pub enum AtomaP2pNodeError {
     PublishError(String),
     #[error("DNS resolver error: `{0}`")]
     DnsError(#[from] std::io::Error),
+    #[error("Failed to connect to database: `{0}`")]
+    DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("External error: `{0}`")]
+    External(String),
+}
+
+impl From<anyhow::Error> for AtomaP2pNodeError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::External(err.to_string())
+    }
 }
