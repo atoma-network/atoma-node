@@ -26,6 +26,14 @@ ignore = [
 	"RUSTSEC-2024-0370",
 	# ring is unmaintained but is a critical dependency through sui-sdk and libp2p
 	"RUSTSEC-2025-0007",
+	# protobuf stack overflow vulnerability
+	"RUSTSEC-2024-0437",
+	# ring AES functions may panic when overflow checking is enabled
+	"RUSTSEC-2025-0009",
+	# Ring versions prior to 0.17 are unmaintained
+	"RUSTSEC-2025-0010",
+	# paste is no longer maintained
+	"RUSTSEC-2024-0436",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
