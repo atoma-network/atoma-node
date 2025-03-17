@@ -647,7 +647,7 @@ impl AtomaP2pNode {
                                 topic: topic.clone(),
                             });
 
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "gossipsub_unsubscribed",
                                 peer_id = %peer_id,
@@ -677,14 +677,14 @@ impl AtomaP2pNode {
                             TOTAL_MDNS_DISCOVERIES.add(peer_count, &[KeyValue::new("peerId", peer_id.clone())]);
                         }
                         SwarmEvent::Behaviour(AtomaP2pBehaviourEvent::Mdns(mdns::Event::Expired(expired_peers))) => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "mdns_expired",
                                 num_expired_peers = %expired_peers.len(),
                                 "Mdns expired"
                             );
                             for (peer_id, multiaddr) in expired_peers {
-                                debug!(
+                                trace!(
                                     target = "atoma-p2p",
                                     event = "mdns_expired_peer",
                                     peer_id = %peer_id,
@@ -783,7 +783,7 @@ impl AtomaP2pNode {
                             connection_id,
                             ..
                         } => {
-                            debug!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "dialing",
                                 peer_id = ?peer_id,
@@ -795,7 +795,7 @@ impl AtomaP2pNode {
                         SwarmEvent::IncomingConnection {
                             ..
                         } => {
-                            info!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "incoming_connection",
                                 "Incoming connection"
@@ -814,7 +814,7 @@ impl AtomaP2pNode {
                             peer_id,
                             ..
                         } => {
-                            debug!(
+                            error!(
                                 target = "atoma-p2p",
                                 event = "outgoing_connection_error",
                                 peer_id = ?peer_id,
