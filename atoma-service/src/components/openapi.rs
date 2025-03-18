@@ -1,5 +1,6 @@
 use axum::Router;
-use utoipa::OpenApi;
+use serde_json::json;
+use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::handlers::chat_completions::{
@@ -18,6 +19,7 @@ use crate::server::{HealthOpenApi, MetricsOpenApi, HEALTH_PATH, METRICS_PATH};
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
+        modifiers(&SpeakeasyExtension),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi),
             (path = METRICS_PATH, api = MetricsOpenApi),
@@ -43,6 +45,30 @@ pub fn openapi_routes() -> Router {
         )
     )]
     struct ApiDoc;
+
+    #[derive(Default)]
+    struct SpeakeasyExtension;
+
+    impl Modify for SpeakeasyExtension {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            let extensions = openapi.extensions.get_or_insert_with(Default::default);
+
+            extensions.insert(
+                "x-speakeasy-retries".to_string(),
+                json!({
+                    "strategy": "backoff",
+                    "backoff": {
+                        "initialInterval": 500,
+                        "maxInterval": 60000,
+                        "maxElapsedTime": 3_600_000,
+                        "exponent": 1.5
+                    },
+                    "statusCodes": ["5XX"],
+                    "retryConnectionErrors": true
+                }),
+            );
+        }
+    }
 
     // Generate the OpenAPI spec and write it to a file
     #[cfg(debug_assertions)]
