@@ -377,7 +377,13 @@ pub fn extract_gossipsub_metrics(gossipsub: &gossipsub::Behaviour) {
 /// * IO errors when reading from or writing to the file
 /// * Decoding errors when parsing the identity from the file
 /// * Encoding errors when serializing the identity to the file
-#[instrument(level = "info", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = %path.display()
+    )
+)]
 pub async fn read_or_create_identity(
     path: &Path,
 ) -> Result<identity::Keypair, crate::errors::AtomaP2pNodeError> {
