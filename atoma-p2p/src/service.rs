@@ -814,7 +814,7 @@ impl AtomaP2pNode {
                             peer_id,
                             ..
                         } => {
-                            error!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "outgoing_connection_error",
                                 peer_id = ?peer_id,
