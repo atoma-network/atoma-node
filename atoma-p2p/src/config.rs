@@ -50,6 +50,9 @@ pub struct AtomaP2pNodeConfig {
 
     /// The list of bootstrap nodes to dial
     pub bootstrap_node_addrs: Vec<String>,
+
+    /// The path to the local key
+    pub local_key: String,
 }
 
 impl AtomaP2pNodeConfig {
