@@ -804,7 +804,7 @@ impl AtomaP2pNode {
                         SwarmEvent::IncomingConnectionError {
                             ..
                         } => {
-                            error!(
+                            trace!(
                                 target = "atoma-p2p",
                                 event = "incoming_connection_error",
                                 "Incoming connection error"
