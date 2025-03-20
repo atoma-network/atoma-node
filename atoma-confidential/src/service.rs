@@ -2,7 +2,8 @@ use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     nvml_cc::{
         check_confidential_compute_status, fetch_attestation_report_async,
-        fetch_device_certificate_chain_async, num_devices, AttestationError,
+        fetch_device_certificate_chain_async, get_cc_ready_state, num_devices, set_cc_ready_state,
+        AttestationError,
     },
     types::{
         ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -146,6 +147,28 @@ impl AtomaConfidentialCompute {
         let mut is_cc_supported = num_devices > 0;
         for index in 0..num_devices {
             is_cc_supported &= check_confidential_compute_status(index).unwrap_or(false);
+            if is_cc_supported {
+                let cc_ready_state = get_cc_ready_state(index).unwrap_or(false);
+                tracing::info!(
+                    target = "atoma-confidential-compute-service",
+                    event = "cc_ready_state",
+                    "Get CC ready state for device {index}: {cc_ready_state}"
+                );
+                if !cc_ready_state {
+                    set_cc_ready_state(index, cc_ready_state).unwrap_or_else(|e| {
+                        tracing::error!(
+                            target = "atoma-confidential-compute-service",
+                            error = %e,
+                            "Failed to set CC ready state for device {index}"
+                        );
+                    });
+                    tracing::info!(
+                        target = "atoma-confidential-compute-service",
+                        event = "cc_ready_state",
+                        "Set CC ready state for device {index}: {cc_ready_state}"
+                    );
+                }
+            }
         }
         tracing::info!(
             target = "atoma-confidential-compute-service",

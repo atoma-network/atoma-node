@@ -167,6 +167,44 @@ pub fn num_devices() -> Result<u32> {
     Ok(num_devices)
 }
 
+/// Get the confidential compute ready state for a given device index
+///
+/// This function queries the NVML library to determine the confidential compute
+/// ready state for a given device index.
+///
+/// # Returns
+///
+/// * `Result<bool>` - The confidential compute ready state for the given device index
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+pub fn get_cc_ready_state(index: u32) -> Result<bool> {
+    let nvml = Nvml::init()?;
+    let device = nvml.device_by_index(index)?;
+    let cc_ready_state = device.get_confidential_compute_state()?;
+    Ok(cc_ready_state)
+}
+
+/// Set the confidential compute ready state for a given device index
+///
+/// This function queries the NVML library to determine the confidential compute
+/// ready state for a given device index.
+///
+/// # Returns
+///
+/// * `Result<bool>` - The confidential compute ready state for the given device index
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+pub fn set_cc_ready_state(index: u32, is_accepting_work: bool) -> Result<()> {
+    let nvml = Nvml::init()?;
+    let device = nvml.device_by_index(index)?;
+    device.set_confidential_compute_state(is_accepting_work)?;
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AttestationError {
     #[error("NVML error: {0}")]

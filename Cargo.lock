@@ -5775,7 +5775,7 @@ checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 [[package]]
 name = "nvml-wrapper"
 version = "0.10.0"
-source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#c9b496b7e4e85c292fcf9e7abb4801ca5c318768"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#7552dac65cdd64c41cf4cf0ff9dbeb28fbccb4e7"
 dependencies = [
  "bitflags 2.9.0",
  "libloading",
@@ -5788,7 +5788,7 @@ dependencies = [
 [[package]]
 name = "nvml-wrapper-sys"
 version = "0.8.0"
-source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#c9b496b7e4e85c292fcf9e7abb4801ca5c318768"
+source = "git+https://github.com/atoma-network/nvml-wrapper.git?branch=main#7552dac65cdd64c41cf4cf0ff9dbeb28fbccb4e7"
 dependencies = [
  "libloading",
 ]
