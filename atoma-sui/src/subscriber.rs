@@ -53,6 +53,9 @@ pub struct Subscriber {
     /// The configuration values for the subscriber.
     config: SuiConfig,
 
+    /// Whether the subscriber is a proxy or instead a node.
+    is_proxy: bool,
+
     /// The event filter used to specify which events to subscribe to.
     filter: EventFilter,
 
@@ -81,6 +84,7 @@ impl Subscriber {
     #[must_use]
     pub fn new(
         config: SuiConfig,
+        is_proxy: bool,
         state_manager_sender: Sender<AtomaEvent>,
         stack_retrieve_receiver: StackRetrieveReceiver,
         confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
@@ -92,6 +96,7 @@ impl Subscriber {
         };
         Self {
             config,
+            is_proxy,
             filter,
             state_manager_sender,
             confidential_compute_service_sender,
@@ -120,6 +125,7 @@ impl Subscriber {
     /// * The configuration file cannot be read or parsed.
     pub fn new_from_config<P: AsRef<Path>>(
         config_path: P,
+        is_proxy: bool,
         state_manager_sender: Sender<AtomaEvent>,
         stack_retrieve_receiver: StackRetrieveReceiver,
         confidential_compute_service_sender: UnboundedSender<AtomaEvent>,
@@ -128,6 +134,7 @@ impl Subscriber {
         let config = SuiConfig::from_file_path(config_path);
         Self::new(
             config,
+            is_proxy,
             state_manager_sender,
             stack_retrieve_receiver,
             confidential_compute_service_sender,
@@ -424,7 +431,11 @@ impl Subscriber {
         atoma_event_id: AtomaEventIdentifier,
         atoma_event: AtomaEvent,
     ) -> Result<()> {
-        if atoma_event_id == AtomaEventIdentifier::NewKeyRotationEvent {
+        if atoma_event_id == AtomaEventIdentifier::NewKeyRotationEvent && !self.is_proxy {
+            // NOTE: If the subscriber is a node, we send the event to the confidential compute service
+            // to generate a new attestation evidence report by NVIDIA CC.
+            // Otherwise, we send the event to the state manager, as the proxy will handle the
+            // confidential compute request, in a similar way as all other events.
             self.confidential_compute_service_sender
                 .send(atoma_event)
                 .map_err(|e| {
