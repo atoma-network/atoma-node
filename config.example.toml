@@ -18,7 +18,7 @@ limit = 100                                                                     
 node_small_ids = [1]                                                                    # List of node IDs under control of the node wallet
 sui_config_path = "/root/.sui/sui_config/client.yaml"                                   # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
 sui_keystore_path = "/root/.sui/sui_config/sui.keystore"                                # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
-cursor_path = "./cursor.toml"                                                           # Path to the Sui events cursor file
+cursor_path = "/app/data/cursor.toml"                                                           # Path to the Sui events cursor file
 
 [atoma_state]
 # Path inside the container
@@ -62,3 +62,5 @@ country = ""
 # List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)
 # (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ("vllm", "http://chat-completions:8000/metrics")`)
 metrics_endpoints = { "meta-llama/Llama-3.2-3B-Instruct" = ["vllm", "http://chat-completions:8000/metrics"] }
+# The path to the local key
+local_key = "/app/data/local_key"

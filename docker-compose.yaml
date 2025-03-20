@@ -15,7 +15,6 @@ x-atoma-node: &atoma-node
             capabilities: [gpu]
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
-    - ./local-key:/app/local_key
     - ./logs:/app/logs
     - sui-config-volume:/root/.sui/sui_config
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config

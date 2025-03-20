@@ -49,9 +49,6 @@ const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 /// The protocol name for the Kademlia DHT
 const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
 
-// The path to the local key
-const LOCAL_KEY_PATH: &str = "./local_key";
-
 // Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
 const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
     "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
@@ -236,7 +233,9 @@ impl AtomaP2pNode {
                 .build()
                 .expect("Failed to build runtime");
 
-            rt.block_on(read_or_create_identity(Path::new(LOCAL_KEY_PATH)))
+            rt.block_on(read_or_create_identity(Path::new(
+                config.local_key.as_str(),
+            )))
         })
         .join()
         .expect("Thread panicked")?;
