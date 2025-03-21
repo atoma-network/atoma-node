@@ -667,6 +667,7 @@ dependencies = [
  "blake3",
  "config",
  "flume",
+ "hex",
  "nvml-wrapper",
  "rand 0.8.5",
  "remote-attestation",
