@@ -18,17 +18,12 @@ use atoma_utils::{
     constants::NONCE_SIZE,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use remote_attestation::DeviceEvidence;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
 use x25519_dalek::PublicKey;
-
-/// The key for the certificate in the evidence data
-const CERTIFICATE_KEY: &str = "certificate";
-
-/// The key for the evidence in the evidence data
-const EVIDENCE_KEY: &str = "evidence";
 
 /// Intel CC CPU device slot [0, 100)
 #[allow(dead_code)]
@@ -414,10 +409,10 @@ impl AtomaConfidentialCompute {
             let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
             let attestation_report_base64 = STANDARD.encode(attestation_report);
             let certificate_chain_base64 = STANDARD.encode(certificate_chain);
-            evidence_data.push(serde_json::json!({
-                CERTIFICATE_KEY: certificate_chain_base64,
-                EVIDENCE_KEY: attestation_report_base64,
-            }));
+            evidence_data.push(DeviceEvidence {
+                certificate: certificate_chain_base64,
+                evidence: attestation_report_base64,
+            });
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
         let compressed_evidence_data = compress_bytes(&evidence_data_bytes)?;
