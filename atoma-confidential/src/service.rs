@@ -238,6 +238,11 @@ impl AtomaConfidentialCompute {
                 shutdown_signal,
             )?;
             if service.is_cc_supported {
+                tracing::info!(
+                    target = "atoma-confidential-compute-service",
+                    event = "submit_nvidia_cc_attestation",
+                    "Starting confidential compute service and submitting NVIDIA CC attestation for node, with nonce: {nonce}, with key rotation counter: {key_rotation_counter}"
+                );
                 service.key_manager.rotate_keys();
                 service.submit_nvidia_cc_attestation(nonce).await?;
             }
