@@ -20,6 +20,8 @@ x-atoma-node: &atoma-node
     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     - ./data:/app/data
   env_file: .env
+  environment:
+    - RUST_LOG=${ATOMA_P2P_LOG_LEVEL:-atoma_p2p=info,atoma_daemon=info}
   networks:
     - atoma-network
 
