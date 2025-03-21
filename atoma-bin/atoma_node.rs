@@ -268,7 +268,7 @@ async fn main() -> Result<()> {
 
     let subscriber = Subscriber::new(
         config.sui.clone(),
-        true,
+        false,
         event_subscriber_sender,
         stack_retrieve_receiver,
         subscriber_confidential_compute_sender,

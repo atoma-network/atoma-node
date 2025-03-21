@@ -18,17 +18,12 @@ use atoma_utils::{
     constants::NONCE_SIZE,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use remote_attestation::DeviceEvidence;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
 use tracing::instrument;
 use x25519_dalek::PublicKey;
-
-/// The key for the certificate in the evidence data
-const CERTIFICATE_KEY: &str = "certificate";
-
-/// The key for the evidence in the evidence data
-const EVIDENCE_KEY: &str = "evidence";
 
 /// Intel CC CPU device slot [0, 100)
 #[allow(dead_code)]
@@ -243,6 +238,11 @@ impl AtomaConfidentialCompute {
                 shutdown_signal,
             )?;
             if service.is_cc_supported {
+                tracing::info!(
+                    target = "atoma-confidential-compute-service",
+                    event = "submit_nvidia_cc_attestation",
+                    "Starting confidential compute service and submitting NVIDIA CC attestation for node, with nonce: {nonce}, with key rotation counter: {key_rotation_counter}"
+                );
                 service.key_manager.rotate_keys();
                 service.submit_nvidia_cc_attestation(nonce).await?;
             }
@@ -407,17 +407,24 @@ impl AtomaConfidentialCompute {
             ]
             .concat(),
         );
+        tracing::info!(
+            target = "atoma-nvidia-cc-service",
+            event = "submit_nvidia_cc_attestation",
+            nonce = nonce,
+            public_key = hex::encode(public_key_bytes),
+            device_type = NVIDIA_CC_GPU_DEVICE_SLOT,
+            "Submitting NVIDIA CC attestation for node, with nonce: {}",
+            hex::encode(nonce_blake3_hash.as_bytes())
+        );
         let mut evidence_data = Vec::with_capacity(self.num_devices as usize);
         for device_index in 0..self.num_devices {
             let attestation_report =
                 fetch_attestation_report_async(device_index, *nonce_blake3_hash.as_bytes()).await?;
             let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
-            let attestation_report_base64 = STANDARD.encode(attestation_report);
-            let certificate_chain_base64 = STANDARD.encode(certificate_chain);
-            evidence_data.push(serde_json::json!({
-                CERTIFICATE_KEY: certificate_chain_base64,
-                EVIDENCE_KEY: attestation_report_base64,
-            }));
+            evidence_data.push(DeviceEvidence {
+                certificate: STANDARD.encode(certificate_chain),
+                evidence: STANDARD.encode(attestation_report),
+            });
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
         let compressed_evidence_data = compress_bytes(&evidence_data_bytes)?;
