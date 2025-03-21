@@ -410,9 +410,9 @@ impl AtomaConfidentialCompute {
         tracing::info!(
             target = "atoma-nvidia-cc-service",
             event = "submit_nvidia_cc_attestation",
-            nonce=nonce,
-            public_key=hex::encode(public_key_bytes),
-            device_type=NVIDIA_CC_GPU_DEVICE_SLOT,
+            nonce = nonce,
+            public_key = hex::encode(public_key_bytes),
+            device_type = NVIDIA_CC_GPU_DEVICE_SLOT,
             "Submitting NVIDIA CC attestation for node, with nonce: {}",
             hex::encode(nonce_blake3_hash.as_bytes())
         );
