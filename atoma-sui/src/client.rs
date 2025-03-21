@@ -1250,6 +1250,11 @@ impl Client {
             };
             if let sui_sdk::rpc_types::SuiParsedData::MoveObject(object) = content {
                 let object_fields = object.fields.to_json_value();
+                tracing::info!(
+                    target = "atoma-sui-client",
+                    event = "get_last_key_rotation_event",
+                    "Found object fields: {object_fields:?}"
+                );
                 let key_rotation_counter = object_fields
                     .get(KEY_ROTATION_COUNTER_FIELD)
                     .and_then(serde_json::Value::as_str)
