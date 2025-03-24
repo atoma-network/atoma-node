@@ -1,10 +1,11 @@
 use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
-    NodeRegisteredEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent,
-    NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreateAndUpdateEvent,
-    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, ClaimedStackEvent, NewStackSettlementAttestationEvent,
+    NodePublicKeyCommittmentEvent, NodeRegisteredEvent, NodeSubscribedToTaskEvent,
+    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
+    StackCreateAndUpdateEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
+    StackSettlementTicketEvent, StackSmallId, StackTrySettleEvent, TaskDeprecationEvent,
+    TaskRegisteredEvent,
 };
 use tokio::sync::oneshot;
 use tracing::{info, instrument};
@@ -58,6 +59,9 @@ pub async fn handle_atoma_event(
         AtomaEvent::PublishedEvent(event) => {
             info!("Published event: {:?}", event);
             Ok(())
+        }
+        AtomaEvent::ClaimedStackEvent(event) => {
+            handle_claimed_stack_event(state_manager, event).await
         }
         AtomaEvent::NodeRegisteredEvent((event, sender)) => {
             handle_node_registered_event(state_manager, event, sender.to_string()).await
@@ -621,6 +625,63 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
     state_manager
         .state
         .insert_stack_attestation_dispute(stack_attestation_dispute)
+        .await?;
+    Ok(())
+}
+
+/// Marks a stack as claimed in the database after a successful claim event.
+///
+/// This method is typically called as part of processing a `ClaimedStackEvent`, after updating
+/// the stack settlement ticket with claim information. It updates the `is_claimed` field to `TRUE`
+/// for the specified stack in the `stacks` table.
+///
+/// # Arguments
+///
+/// * `stack_small_id` - The unique identifier of the stack to be marked as claimed.
+///
+/// # Returns
+///
+/// * `Result<()>` - Returns `Ok(())` if the update was successful, or an error if the database
+///   operation fails.
+///
+/// # Errors
+///
+/// Returns `AtomaStateManagerError::DatabaseConnectionError` if there's an issue executing
+/// the database query.
+///
+/// # Usage
+///
+/// This method is commonly used in conjunction with `update_stack_settlement_ticket_with_claim`
+/// when processing claimed stack events:
+///
+/// ```rust,ignore
+/// state_manager.state.update_stack_settlement_ticket_with_claim(stack_small_id, user_refund_amount).await?;
+/// state_manager.state.update_stack_is_claimed(stack_small_id).await?;
+/// ```
+#[instrument(level = "info", skip_all)]
+pub(crate) async fn handle_claimed_stack_event(
+    state_manager: &AtomaStateManager,
+    event: ClaimedStackEvent,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-claimed-stack-event",
+        "Processing claimed stack event"
+    );
+    let ClaimedStackEvent {
+        stack_small_id: StackSmallId {
+            inner: stack_small_id,
+        },
+        user_refund_amount,
+        ..
+    } = event;
+    state_manager
+        .state
+        .update_stack_settlement_ticket_with_claim(stack_small_id as i64, user_refund_amount as i64)
+        .await?;
+    state_manager
+        .state
+        .update_stack_is_claimed(stack_small_id as i64)
         .await?;
     Ok(())
 }

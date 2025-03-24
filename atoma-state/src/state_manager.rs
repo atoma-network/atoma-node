@@ -2094,6 +2094,37 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Updates a stack's claim status to mark it as claimed.
+    ///
+    /// This method updates the `is_claimed` field to `TRUE` for a stack with the specified
+    /// `stack_small_id` in the `stacks` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique identifier of the stack to be marked as claimed.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - Returns `Ok(())` if the update was successful, or an error if the database
+    ///   operation fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AtomaStateManagerError::DatabaseConnectionError` if there's an issue executing
+    /// the database query.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id)
+    )]
+    pub async fn update_stack_is_claimed(&self, stack_small_id: i64) -> Result<()> {
+        sqlx::query("UPDATE stacks SET is_claimed = TRUE WHERE stack_small_id = $1")
+            .bind(stack_small_id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
     /// Retrieves all stacks that have been claimed for the specified node IDs.
     ///
     /// This method fetches all stack records from the `stacks` table where the `selected_node_id`

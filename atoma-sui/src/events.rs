@@ -43,6 +43,8 @@ pub enum AtomaEventIdentifier {
     StackSettlementTicketClaimedEvent,
     /// Emitted when there's a dispute in the attestation process for a stack.
     StackAttestationDisputeEvent,
+    /// Emitted when a stack is claimed.
+    ClaimedStackEvent,
 
     /// Events related to the settlement module:
     ///
@@ -101,6 +103,7 @@ impl FromStr for AtomaEventIdentifier {
             "NodeSubscriptionUpdatedEvent" => Ok(Self::NodeSubscriptionUpdatedEvent),
             "NewKeyRotationEvent" => Ok(Self::NewKeyRotationEvent),
             "NodePublicKeyCommittmentEvent" => Ok(Self::NodePublicKeyCommittmentEvent),
+            "ClaimedStackEvent" => Ok(Self::ClaimedStackEvent),
             _ => Err(SuiEventParseError::UnknownEvent(s.to_string())),
         }
     }
@@ -186,6 +189,9 @@ pub enum AtomaEvent {
 
     /// An event emitted when a node's key rotation remote attestation is verified successfully.
     NodePublicKeyCommittmentEvent(NodePublicKeyCommittmentEvent),
+
+    /// An event emitted when a stack is claimed.
+    ClaimedStackEvent(ClaimedStackEvent),
 }
 
 /// Deserializes a string representation of a number into a numeric type that implements `FromStr`.
@@ -768,6 +774,24 @@ pub struct SettledEvent {
     pub oracle_node_id: Option<NodeSmallId>,
 }
 
+/// Event emitted when a stack is claimed and the associated funds are distributed.
+///
+/// This event is triggered when a node successfully claims the funds for a completed stack execution
+/// and any remaining funds are refunded to the user.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClaimedStackEvent {
+    /// The unique identifier of the stack that was claimed.
+    pub stack_small_id: StackSmallId,
+    /// The identifier of the node that processed the stack and is claiming the funds.
+    pub selected_node_id: NodeSmallId,
+    /// The number of compute units actually used and claimed by the node.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub num_claimed_compute_units: u64,
+    /// The amount of funds refunded to the user for unused compute units.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub user_refund_amount: u64,
+}
+
 /// Represents an event emitted when a retry settlement is requested.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RetrySettlementEvent {
@@ -1242,6 +1266,21 @@ mod tests {
         assert_eq!(event.attestation_nodes.len(), 2);
         assert_eq!(event.attestation_nodes[0].inner, 25);
         assert_eq!(event.attestation_nodes[1].inner, 26);
+        assert_eq!(event.num_claimed_compute_units, 400);
+        assert_eq!(event.user_refund_amount, 100);
+    }
+
+    #[test]
+    fn test_claimed_stack_event_deserialization() {
+        let json = json!({
+            "stack_small_id": {"inner": "456"},
+            "selected_node_id": {"inner": "123"},
+            "num_claimed_compute_units": "400",
+            "user_refund_amount": "100"
+        });
+        let event: ClaimedStackEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.stack_small_id.inner, 456);
+        assert_eq!(event.selected_node_id.inner, 123);
         assert_eq!(event.num_claimed_compute_units, 400);
         assert_eq!(event.user_refund_amount, 100);
     }

@@ -667,6 +667,9 @@ async fn parse_event(
         AtomaEventIdentifier::NodePublicKeyCommittmentEvent => Ok(
             AtomaEvent::NodePublicKeyCommittmentEvent(serde_json::from_value(value)?),
         ),
+        AtomaEventIdentifier::ClaimedStackEvent => Ok(AtomaEvent::ClaimedStackEvent(
+            serde_json::from_value(value)?,
+        )),
     }
 }
 
