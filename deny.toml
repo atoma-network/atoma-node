@@ -147,6 +147,7 @@ allow-git = [
 	"https://github.com/asonnino/prometheus-parser",
 	"https://github.com/zhiburt/tabled",
 	"https://github.com/atoma-network/nvml-wrapper.git",
+	"https://github.com/atoma-network/nvrust.git",
 ]
 
 [sources.allow-org]
