@@ -1343,6 +1343,7 @@ impl AtomaState {
             AND owner_address = $3
             AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
+            AND is_claimed = false
             RETURNING *
             ",
         )
