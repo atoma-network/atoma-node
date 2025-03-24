@@ -67,8 +67,8 @@ serde_yaml = "0.9.34"
 serial_test = "3.1.1"
 sha2 = "0.10.8"
 sqlx = "0.8.2"
-sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.45.0" }
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.45.0" }
+sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.45.2" }
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.45.2" }
 sysinfo = "0.33.1"
 tempfile = "3.18.0"
 thiserror = "2.0.12"
