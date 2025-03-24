@@ -2118,7 +2118,11 @@ impl AtomaState {
         skip_all,
         fields(stack_small_id = %stack_small_id)
     )]
-    pub async fn update_stack_is_claimed(&self, stack_small_id: i64, user_refund_amount: i64) -> Result<()> {
+    pub async fn update_stack_is_claimed(
+        &self,
+        stack_small_id: i64,
+        user_refund_amount: i64,
+    ) -> Result<()> {
         sqlx::query("UPDATE stacks SET is_claimed = TRUE, user_refund_amount = $1 WHERE stack_small_id = $2")
             .bind(user_refund_amount)
             .bind(stack_small_id)

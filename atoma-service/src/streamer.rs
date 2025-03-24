@@ -356,23 +356,12 @@ impl Streamer {
 
         // NOTE: We remove the usage key from the chunk before encryption
         // because we need to send the usage key back to the client in the final chunk
-        let (encrypted_chunk, nonce) = if usage.is_some() {
-            let mut chunk = chunk.clone();
-            chunk.as_object_mut().map(|obj| obj.remove(USAGE_KEY));
-            encrypt_plaintext(
-                chunk.to_string().as_bytes(),
-                shared_secret,
-                salt,
-                Some(*nonce),
-            )
-        } else {
-            encrypt_plaintext(
-                chunk.to_string().as_bytes(),
-                shared_secret,
-                salt,
-                Some(*nonce),
-            )
-        }
+        let (encrypted_chunk, nonce) = encrypt_plaintext(
+            chunk.to_string().as_bytes(),
+            shared_secret,
+            salt,
+            Some(*nonce),
+        )
         .map_err(|e| {
             error!(
                 target = "atoma-service",
