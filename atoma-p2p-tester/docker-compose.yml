@@ -3,8 +3,6 @@ x-atoma-p2p-base: &atoma-p2p-base
   build: &atoma-p2p-base-build
     context: .
     dockerfile: Dockerfile
-    args: &atoma-p2p-base-build-args
-      TRACE_LEVEL: ${TRACE_LEVEL:-info}
   volumes:
     - ${CONFIG_PATH:-./config.toml}:/app/config.toml
     - ./logs:/app/logs
@@ -14,7 +12,8 @@ x-atoma-p2p-base: &atoma-p2p-base
     - .env
   environment:
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-    - RUST_LOG=${ATOMA_P2P_LOG_LEVEL:-atoma_p2p=info,libp2p=info}
+    - RUST_LOG=${ATOMA_LOG_LEVELS:-info}
+
   depends_on:
     prometheus:
       condition: service_healthy
@@ -35,7 +34,6 @@ services:
     build:
       <<: *atoma-p2p-base-build
       args:
-        <<: *atoma-p2p-base-build-args
         PROFILE: local
     ports:
       - "${ATOMA_P2P_TESTER_SERVICE_PORT:-8080}:8080"

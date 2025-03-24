@@ -21,7 +21,7 @@ x-atoma-node: &atoma-node
     - ./data:/app/data
   env_file: .env
   environment:
-    - RUST_LOG=${ATOMA_P2P_LOG_LEVEL:-atoma_p2p=info,atoma_daemon=info}
+    - RUST_LOG=${ATOMA_LOG_LEVELS:-info}
   networks:
     - atoma-network
 
