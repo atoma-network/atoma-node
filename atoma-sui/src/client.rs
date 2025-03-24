@@ -37,6 +37,9 @@ const START_ATTESTATION_DISPUTE_METHOD: &str = "start_attestation_dispute";
 /// The Atoma's contract method name for claiming funds
 const CLAIM_FUNDS_METHOD: &str = "claim_funds";
 
+/// The Atoma's contract method name for claiming funds for stacks
+const CLAIM_FUNDS_FOR_STACKS_METHOD: &str = "claim_funds_for_stacks";
+
 /// The Atoma's contract method name for updating a node task subscription
 const UPDATE_NODE_TASK_SUBSCRIPTION_METHOD: &str = "update_node_subscription";
 
@@ -1028,6 +1031,116 @@ impl Client {
         Ok(response.digest.to_string())
     }
 
+    /// Submits a transaction to claim funds for stacks in the Atoma network.
+    ///
+    /// This method creates and submits a transaction that claims funds for a list of stacks.
+    /// The node must have a valid node badge to perform this operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_ids` - A vector of stack small IDs that have been settled and are ready for claiming
+    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `num_claimed_compute_units` - A vector of the number of compute units claimed for each stack
+    /// * `gas` - Optional ObjectID to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the funds claim is successful, or an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node badge is not found
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// # use sui_sdk::types::base_types::ObjectID;
+    /// # async fn example(client: &mut AtomaSuiClient) -> Result<()> {
+    /// // Claim funds with default gas settings
+    /// client.submit_claim_funds_for_stacks_tx(
+    ///     vec![123, 456],         // stack_small_ids
+    ///     None,                   // use stored node_badge_id
+    ///     vec![1000, 2000],      // num_claimed_compute_units
+    ///     None,                   // default gas
+    ///     None,                   // default gas budget
+    ///     None                    // default gas price
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(
+            address = %self.wallet_ctx.active_address().unwrap(),
+            stack_small_ids = ?stack_small_ids,
+            node_badge_id = ?node_badge_id,
+            num_claimed_compute_units = ?num_claimed_compute_units,
+    ))]
+    pub async fn submit_claim_funds_for_stacks_tx(
+        &mut self,
+        stack_small_ids: Vec<u64>,
+        node_badge_id: Option<ObjectID>,
+        num_claimed_compute_units: Vec<u64>,
+        gas: Option<ObjectID>,
+        gas_budget: Option<u64>,
+        gas_price: Option<u64>,
+    ) -> Result<String> {
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
+        let node_badge_id = node_badge_id.unwrap_or(
+            self.node_badge
+                .as_ref()
+                .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
+                .0,
+        );
+        if stack_small_ids.len() != num_claimed_compute_units.len() {
+            return Err(AtomaSuiClientError::InvalidInputForClaimFundsForStacks {
+                stack_small_ids_len: stack_small_ids.len(),
+                num_claimed_compute_units_len: num_claimed_compute_units.len(),
+            });
+        }
+        let tx = client
+            .transaction_builder()
+            .move_call(
+                active_address,
+                self.config.atoma_package_id(),
+                MODULE_ID,
+                CLAIM_FUNDS_FOR_STACKS_METHOD,
+                vec![],
+                vec![
+                    SuiJsonValue::from_object_id(self.config.atoma_db()),
+                    SuiJsonValue::from_object_id(node_badge_id),
+                    SuiJsonValue::new(stack_small_ids.into())?,
+                    SuiJsonValue::new(num_claimed_compute_units.into())?,
+                ],
+                gas,
+                gas_budget.unwrap_or(GAS_BUDGET),
+                gas_price,
+            )
+            .await?;
+
+        info!("Submitting claim funds for stacks transaction...");
+
+        let tx = self.wallet_ctx.sign_transaction(&tx);
+        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+
+        info!(
+            "Claim funds for stacks transaction submitted successfully. Transaction digest: {:?}",
+            response.digest
+        );
+
+        Ok(response.digest.to_string())
+    }
+
     /// Submits a transaction to rotate a node's key with remote attestation in the Atoma network.
     ///
     /// This method creates and submits a transaction that rotates a node's key using remote
@@ -1289,6 +1402,11 @@ pub enum AtomaSuiClientError {
     FailedToParseEvent(#[from] serde_json::Error),
     #[error("Failed to retrieve AtomaDB shared object content")]
     FailedToRetrieveAtomaDbContent,
+    #[error("Invalid input for claim funds for stacks: stack_small_ids length {stack_small_ids_len} != num_claimed_compute_units length {num_claimed_compute_units_len}")]
+    InvalidInputForClaimFundsForStacks {
+        stack_small_ids_len: usize,
+        num_claimed_compute_units_len: usize,
+    },
 }
 
 pub(crate) mod utils {

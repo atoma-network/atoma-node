@@ -11,12 +11,12 @@ use crate::{
     calculate_node_index, compute_committed_stack_proof,
     types::{
         NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest,
-        NodeClaimFundsResponse, NodeModelSubscriptionRequest, NodeModelSubscriptionResponse,
-        NodeRegistrationRequest, NodeRegistrationResponse, NodeTaskSubscriptionRequest,
-        NodeTaskSubscriptionResponse, NodeTaskUnsubscriptionRequest,
-        NodeTaskUnsubscriptionResponse, NodeTaskUpdateSubscriptionRequest,
-        NodeTaskUpdateSubscriptionResponse, NodeTrySettleStacksRequest,
-        NodeTrySettleStacksResponse,
+        NodeClaimFundsResponse, NodeClaimStacksFundsRequest, NodeClaimStacksFundsResponse,
+        NodeModelSubscriptionRequest, NodeModelSubscriptionResponse, NodeRegistrationRequest,
+        NodeRegistrationResponse, NodeTaskSubscriptionRequest, NodeTaskSubscriptionResponse,
+        NodeTaskUnsubscriptionRequest, NodeTaskUnsubscriptionResponse,
+        NodeTaskUpdateSubscriptionRequest, NodeTaskUpdateSubscriptionResponse,
+        NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
     },
     CommittedStackProof, DaemonState,
 };
@@ -497,8 +497,6 @@ pub async fn nodes_submit_attestations(
 
 /// Create claim funds transaction
 ///
-/// Create claim funds transaction
-///
 /// Claims funds for completed stacks.
 #[utoipa::path(
     post,
@@ -538,4 +536,45 @@ pub async fn nodes_claim_funds(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(NodeClaimFundsResponse { tx_digest }))
+}
+
+/// Claims stacks for a node, provided the node is running in confidential compute mode.
+#[utoipa::path(
+    post,
+    path = "/claim-stacks-funds",
+    request_body = NodeClaimFundsRequest,
+    responses(
+        (status = OK, description = "Node claim funds successful", body = NodeClaimFundsResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit claim funds")
+    )
+)]
+#[tracing::instrument(level = "info", skip_all)]
+pub async fn nodes_claim_stacks(
+    State(daemon_state): State<DaemonState>,
+    Json(value): Json<NodeClaimStacksFundsRequest>,
+) -> Result<Json<NodeClaimStacksFundsResponse>, StatusCode> {
+    let NodeClaimStacksFundsRequest {
+        stack_small_ids,
+        node_badge_id,
+        num_claimed_compute_units,
+        gas,
+        gas_budget,
+        gas_price,
+    } = value;
+
+    let tx_digest = daemon_state
+        .client
+        .write()
+        .await
+        .submit_claim_funds_for_stacks_tx(
+            stack_small_ids,
+            node_badge_id,
+            num_claimed_compute_units,
+            gas,
+            gas_budget,
+            gas_price,
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(NodeClaimStacksFundsResponse { tx_digest }))
 }
