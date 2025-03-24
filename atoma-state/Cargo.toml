@@ -20,3 +20,4 @@ utoipa = { workspace = true }
 [dev-dependencies]
 serial_test = { workspace = true }
 atoma-utils = { workspace = true }
+futures = { workspace = true }

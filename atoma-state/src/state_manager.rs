@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_p2p_event, handle_state_manager_event};
 use crate::types::{
@@ -6,13 +8,14 @@ use crate::types::{
 };
 
 use atoma_p2p::types::AtomaP2pEvent;
+use atoma_sui::client::Client;
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
-use tokio::sync::oneshot;
 use tokio::sync::watch::Receiver;
+use tokio::sync::{oneshot, RwLock};
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -23,6 +26,8 @@ pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 pub struct AtomaStateManager {
     /// The Postgres connection pool used for database operations.
     pub state: AtomaState,
+    /// The Sui blockchain client to interact with the Atoma smart contract
+    pub client: Arc<RwLock<Client>>,
     /// Receiver channel from the SuiEventSubscriber
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
@@ -36,12 +41,14 @@ impl AtomaStateManager {
     #[must_use]
     pub const fn new(
         db: PgPool,
+        client: Arc<RwLock<Client>>,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
         p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
+            client,
             event_subscriber_receiver,
             state_manager_receiver,
             p2p_service_receiver,
@@ -68,6 +75,7 @@ impl AtomaStateManager {
     /// - Failed to run database migrations
     pub async fn new_from_url(
         database_url: &str,
+        client: Arc<RwLock<Client>>,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
         p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
@@ -77,6 +85,7 @@ impl AtomaStateManager {
         sqlx::migrate!("./src/migrations").run(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
+            client,
             event_subscriber_receiver,
             state_manager_receiver,
             p2p_service_receiver,
@@ -1509,23 +1518,24 @@ impl AtomaState {
         stack_small_id: i64,
         estimated_total_compute_units: i64,
         total_compute_units: i64,
-    ) -> Result<()> {
+    ) -> Result<(f64, i64)> {
         let result = sqlx::query(
             "UPDATE stacks
             SET already_computed_units = already_computed_units - ($1 - $2)
-            WHERE stack_small_id = $3",
+            WHERE stack_small_id = $3
+            RETURNING already_computed_units, 
+                CAST(already_computed_units AS FLOAT) / CAST(num_compute_units AS FLOAT)",
         )
         .bind(estimated_total_compute_units)
         .bind(total_compute_units)
         .bind(stack_small_id)
-        .execute(&self.db)
+        .fetch_optional(&self.db)
         .await?;
 
-        if result.rows_affected() == 0 {
-            return Err(AtomaStateManagerError::StackNotFound);
-        }
-
-        Ok(())
+        result.map_or_else(
+            || Err(AtomaStateManagerError::StackNotFound),
+            |ratio| Ok((ratio.get(1), ratio.get(0))),
+        )
     }
 
     /// Retrieves the stack settlement ticket for a given stack.
@@ -2442,6 +2452,8 @@ pub enum AtomaStateManagerError {
     FailedToMigrateDatabase(#[from] sqlx::migrate::MigrateError),
     #[error("Node small ID ownership verification failed")]
     NodeSmallIdOwnershipVerificationFailed,
+    #[error("Sui client error: {0}")]
+    SuiClientError(#[from] atoma_sui::client::AtomaSuiClientError),
 }
 
 #[cfg(test)]
@@ -5055,6 +5067,137 @@ mod tests {
         assert_eq!(row.get::<Vec<u8>, _>("evidence_data_bytes"), empty_bytes);
 
         truncate_tables(&state_manager.db).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[allow(clippy::cast_possible_truncation)]
+    async fn test_update_stack_num_compute_units() -> Result<()> {
+        let state = setup_test_db().await;
+
+        // Create a test stack with known values
+        let stack = Stack {
+            stack_small_id: 1,
+            task_small_id: 1,
+            num_compute_units: 1000,
+            already_computed_units: 500,
+            owner_address: "0x1".to_string(),
+            stack_id: "0x1".to_string(),
+            selected_node_id: 1,
+            price_per_one_million_compute_units: 1000,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state.insert_new_stack(stack).await?;
+
+        // Test case 1: Normal update - estimated is higher than actual
+        let (ratio, already_computed_units) =
+            state.update_stack_num_compute_units(1, 200, 100).await?;
+        assert_eq!((ratio * 100.0) as i64, 40); // (500 - (200 - 100)) / 1000 = 400 / 1000 = 0.4
+        assert_eq!(already_computed_units, 400);
+
+        // Test case 2: Normal update - estimated is lower than actual
+        let (ratio, already_computed_units) =
+            state.update_stack_num_compute_units(1, 400, 200).await?;
+        assert_eq!((ratio * 100.0) as i64, 20); // (400 - (400 - 200)) / 1000 = 200 / 1000 = 0.2
+        assert_eq!(already_computed_units, 200);
+
+        // Test case 3: Stack not found
+        let err = state.update_stack_num_compute_units(999, 0, 0).await;
+        assert!(matches!(err, Err(AtomaStateManagerError::StackNotFound)));
+
+        // Test case 4: Edge case - estimated equals num_compute_units
+        let (ratio, already_computed_units) =
+            state.update_stack_num_compute_units(1, 200, 200).await?;
+        assert_eq!((ratio * 100.0) as i64, 20); // No change: 200 / 1000 = 0.2
+        assert_eq!(already_computed_units, 200);
+
+        // Clean up
+        truncate_tables(&state.db).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[allow(clippy::cast_possible_truncation)]
+    async fn test_update_stack_num_compute_units_with_large_numbers() -> Result<()> {
+        let state = setup_test_db().await;
+
+        // Create a test stack with known values
+        let stack = Stack {
+            stack_small_id: 1,
+            task_small_id: 1,
+            num_compute_units: 1000,
+            already_computed_units: 1000,
+            owner_address: "0x1".to_string(),
+            stack_id: "0x1".to_string(),
+            selected_node_id: 1,
+            price_per_one_million_compute_units: 1000,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state.insert_new_stack(stack).await?;
+
+        // Test case 1: Starting from fully computed
+        let (ratio, already_computed_units) =
+            state.update_stack_num_compute_units(1, 1200, 1000).await?;
+        assert_eq!((ratio * 100.0) as i64, 80); // (1000 - (1200 - 1000)) / 1000 = 800 / 1000 = 0.8
+        assert_eq!(already_computed_units, 800);
+
+        // Test case 2: Large difference between estimated and actual
+        let (ratio, already_computed_units) =
+            state.update_stack_num_compute_units(1, 1800, 1000).await?;
+        assert_eq!((ratio * 100.0) as i64, 0); // (800 - (1800 - 1000)) / 1000 = 0.0
+        assert_eq!(already_computed_units, 0);
+
+        // Clean up
+        truncate_tables(&state.db).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[allow(clippy::cast_possible_truncation)]
+    async fn test_update_stack_num_compute_units_concurrent() -> Result<()> {
+        let state = setup_test_db().await;
+
+        // Create a test stack with known values
+        let stack = Stack {
+            stack_small_id: 1,
+            task_small_id: 1,
+            num_compute_units: 1000,
+            already_computed_units: 0,
+            owner_address: "0x1".to_string(),
+            stack_id: "0x1".to_string(),
+            selected_node_id: 1,
+            price_per_one_million_compute_units: 1000,
+            in_settle_period: false,
+            total_hash: vec![0; 32],
+            num_total_messages: 0,
+        };
+        state.insert_new_stack(stack).await?;
+
+        // Simulate concurrent updates
+        let futures = vec![
+            state.update_stack_num_compute_units(1, 200, 400),
+            state.update_stack_num_compute_units(1, 200, 400),
+            state.update_stack_num_compute_units(1, 200, 400),
+        ];
+
+        let results = futures::future::join_all(futures).await;
+
+        // All operations should succeed
+        assert!(results.iter().all(std::result::Result::is_ok));
+
+        // Final ratio should be consistent
+        let (final_ratio, _) = state.update_stack_num_compute_units(1, 200, 400).await?;
+        assert_eq!((final_ratio * 100.0) as i64, 80);
+
+        // Clean up
+        truncate_tables(&state.db).await;
         Ok(())
     }
 }

@@ -16,6 +16,8 @@ use crate::{
     AtomaStateManager, AtomaStateManagerError,
 };
 
+const RATIO_FOR_CLAIM_STACK_THRESHOLD: f64 = 0.5;
+
 #[instrument(level = "info", skip_all)]
 pub async fn handle_atoma_event(
     event: AtomaEvent,
@@ -744,14 +746,13 @@ pub(crate) async fn handle_state_manager_event(
             estimated_total_compute_units,
             total_compute_units,
         } => {
-            state_manager
-                .state
-                .update_stack_num_compute_units(
-                    stack_small_id,
-                    estimated_total_compute_units,
-                    total_compute_units,
-                )
-                .await?;
+            handle_update_stack_num_compute_units(
+                state_manager,
+                stack_small_id,
+                estimated_total_compute_units,
+                total_compute_units,
+            )
+            .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
             stack_small_id,
@@ -762,6 +763,70 @@ pub(crate) async fn handle_state_manager_event(
                 .update_stack_total_hash(stack_small_id, total_hash)
                 .await?;
         }
+    }
+    Ok(())
+}
+
+/// Handles an update to the number of compute units in a stack.
+///
+/// This function processes an update to the number of compute units in a stack by parsing the event data
+/// and updating the corresponding stack in the database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
+/// * `stack_small_id` - The unique identifier of the stack to be updated.
+/// * `estimated_total_compute_units` - The estimated total number of compute units in the stack.
+/// * `total_compute_units` - The total number of compute units in the stack.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the update was successful, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to update the stack number of compute units fails.
+/// * The Sui client operation to submit the claim funds for stacks transaction fails.
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(stack_small_id, estimated_total_compute_units, total_compute_units)
+)]
+pub(crate) async fn handle_update_stack_num_compute_units(
+    state_manager: &AtomaStateManager,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    total_compute_units: i64,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-claim-funds-for-stacks-tx-event",
+        "Processing claim funds for stacks tx event"
+    );
+    let (ratio, stack_computed_units) = state_manager
+        .state
+        .update_stack_num_compute_units(
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+        )
+        .await?;
+    if ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD {
+        state_manager
+            .client
+            .write()
+            .await
+            .submit_claim_funds_for_stacks_tx(
+                vec![stack_small_id.try_into().unwrap()],
+                None,
+                vec![stack_computed_units.try_into().unwrap()],
+                None,
+                None,
+                None,
+            )
+            .await
+            .map_err(AtomaStateManagerError::SuiClientError)?;
     }
     Ok(())
 }

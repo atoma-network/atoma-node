@@ -115,6 +115,7 @@ mod middleware {
     }
 
     async fn setup_database(
+        client: Arc<RwLock<Client>>,
         public_key: PublicKey,
     ) -> (
         JoinHandle<()>,
@@ -132,6 +133,7 @@ mod middleware {
         let (p2p_event_sender, p2p_event_receiver) = flume::unbounded();
         let state_manager = AtomaStateManager::new_from_url(
             POSTGRES_TEST_DB_URL,
+            client,
             event_subscriber_receiver,
             state_manager_receiver,
             p2p_event_receiver,
@@ -260,6 +262,12 @@ mod middleware {
             .sign_hashed(&keystore.addresses()[0], blake2b_hash.as_slice())
             .expect("Failed to sign message");
         let tokenizer = load_tokenizer().await;
+        let (client_config, client_yaml_path, keystore_path) = build_client_config();
+        let client = Arc::new(RwLock::new(
+            Client::new(client_config)
+                .await
+                .expect("Failed to create Sui client"),
+        ));
         let (
             state_manager_handle,
             state_manager_sender,
@@ -267,22 +275,17 @@ mod middleware {
             event_subscriber_sender,
             p2p_event_sender,
             shutdown_receiver,
-        ) = setup_database(public_key.clone()).await;
+        ) = setup_database(client.clone(), public_key.clone()).await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
         let (_, event_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (encryption_sender, encryption_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (pk_sender, pk_receiver) = tokio::sync::oneshot::channel();
-        let (client_config, client_yaml_path, keystore_path) = build_client_config();
         let (compute_shared_secret_sender, compute_shared_secret_receiver) =
             tokio::sync::mpsc::unbounded_channel();
         let _join_handle = tokio::spawn(async move {
             let confidential_compute_service = AtomaConfidentialCompute::new(
-                Arc::new(RwLock::new(
-                    Client::new(client_config)
-                        .await
-                        .expect("Failed to create Sui client"),
-                )),
+                client,
                 0,
                 event_receiver,
                 decryption_receiver,

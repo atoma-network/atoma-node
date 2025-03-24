@@ -209,12 +209,18 @@ async fn main() -> Result<()> {
         database_url = config.state.database_url,
         "Spawning state manager service"
     );
+
+    let client = Arc::new(RwLock::new(
+        Client::new_from_config(args.config_path).await?,
+    ));
     let state_manager_shutdown_receiver = shutdown_receiver.clone();
     let database_url = config.state.database_url.clone();
+    let client_clone = client.clone();
     let state_manager_handle = spawn_with_shutdown(
         async move {
             let state_manager = AtomaStateManager::new_from_url(
                 &database_url,
+                client_clone,
                 event_subscriber_receiver,
                 state_manager_receiver,
                 p2p_event_receiver,
@@ -237,10 +243,6 @@ async fn main() -> Result<()> {
         event = "confidential_compute_service_spawn",
         "Spawning confidential compute service"
     );
-
-    let client = Arc::new(RwLock::new(
-        Client::new_from_config(args.config_path).await?,
-    ));
 
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
