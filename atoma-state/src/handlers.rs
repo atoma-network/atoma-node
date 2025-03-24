@@ -677,11 +677,7 @@ pub(crate) async fn handle_claimed_stack_event(
     } = event;
     state_manager
         .state
-        .update_stack_settlement_ticket_with_claim(stack_small_id as i64, user_refund_amount as i64)
-        .await?;
-    state_manager
-        .state
-        .update_stack_is_claimed(stack_small_id as i64)
+        .update_stack_is_claimed(stack_small_id as i64, user_refund_amount as i64)
         .await?;
     Ok(())
 }
