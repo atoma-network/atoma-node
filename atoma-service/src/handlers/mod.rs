@@ -346,7 +346,7 @@ pub fn update_stack_num_compute_units(
 /// }
 /// ```
 #[instrument(level = "info", skip_all, fields(stack_small_id, endpoint))]
-pub fn handle_concurrent_requests_count_updates(
+pub fn handle_concurrent_requests_count_decrement(
     concurrent_requests_per_stack: &DashMap<i64, u64>,
     stack_small_id: i64,
     endpoint: &str,

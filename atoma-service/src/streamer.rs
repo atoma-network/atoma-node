@@ -25,7 +25,7 @@ use x25519_dalek::SharedSecret;
 
 use crate::{
     handlers::{
-        handle_concurrent_requests_count_updates,
+        handle_concurrent_requests_count_decrement,
         metrics::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
@@ -284,7 +284,7 @@ impl Streamer {
         }
 
         // Update stack num tokens
-        let num_concurrent_requests = handle_concurrent_requests_count_updates(
+        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -691,7 +691,7 @@ impl Streamer {
         // will not be penalized for the failed request.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        let num_concurrent_requests = handle_concurrent_requests_count_updates(
+        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,

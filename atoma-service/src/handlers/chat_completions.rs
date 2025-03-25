@@ -1,6 +1,6 @@
 use crate::{
     handlers::{
-        handle_concurrent_requests_count_updates,
+        handle_concurrent_requests_count_decrement,
         metrics::{
             CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
@@ -255,7 +255,7 @@ pub async fn chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_updates(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "chat-completions/chat_completions_handler",
@@ -433,7 +433,7 @@ pub async fn confidential_chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_updates(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "chat-completions/confidential_chat_completions_handler",
@@ -915,7 +915,7 @@ pub mod utils {
     use opentelemetry::KeyValue;
 
     use crate::handlers::{
-        handle_concurrent_requests_count_updates, handle_status_code_error,
+        handle_concurrent_requests_count_decrement, handle_status_code_error,
         metrics::CHAT_COMPLETIONS_LATENCY_METRICS,
     };
 
@@ -1357,7 +1357,7 @@ pub mod utils {
         // to update the stack num tokens beforehand.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        let concurrent_requests = handle_concurrent_requests_count_updates(
+        let concurrent_requests = handle_concurrent_requests_count_decrement(
             &state.concurrent_requests_per_stack,
             stack_small_id,
             "chat-completions/serve_non_streaming_response",

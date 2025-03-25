@@ -3,7 +3,8 @@ use std::time::Instant;
 use crate::{
     error::AtomaServiceError,
     handlers::{
-        handle_concurrent_requests_count_updates, handle_confidential_compute_encryption_response,
+        handle_concurrent_requests_count_decrement,
+        handle_confidential_compute_encryption_response,
         metrics::{
             TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS,
             TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
@@ -130,7 +131,7 @@ pub async fn embeddings_handler(
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_updates(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "embeddings/embeddings_handler",
@@ -254,7 +255,7 @@ pub async fn confidential_embeddings_handler(
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_updates(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "embeddings/confidential_embeddings_handler",
