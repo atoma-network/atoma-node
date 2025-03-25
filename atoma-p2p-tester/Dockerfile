@@ -6,8 +6,6 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETARCH
 
-# Trace level argument
-ARG TRACE_LEVEL
 ARG PROFILE
 
 # Install build dependencies

@@ -35,7 +35,7 @@ COPY . .
 
 # Compile with increased limits
 RUN ulimit -n 65535 && \
-    RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-node
+    cargo build --release --bin atoma-node
 
 # Final stage
 FROM ubuntu:24.04
