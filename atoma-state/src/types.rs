@@ -258,3 +258,16 @@ pub enum AtomaAtomaStateManagerEvent {
         result_sender: oneshot::Sender<Result<Option<Stack>, AtomaStateManagerError>>,
     },
 }
+
+/// Represents the result of updating the number of compute units in a stack and claiming funds
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UpdateStackNumComputeUnitsAndClaimFunds {
+    /// Ratio of compute units that have been computed
+    pub ratio: f64,
+
+    /// Number of compute units that have been computed already for the current stack
+    pub stack_computed_units: i64,
+
+    /// Indicates whether the stack is confidential
+    pub is_confidential: bool,
+}

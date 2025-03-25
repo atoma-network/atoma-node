@@ -12,7 +12,9 @@ use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result,
-    types::{AtomaAtomaStateManagerEvent, StackSettlementTicket},
+    types::{
+        AtomaAtomaStateManagerEvent, StackSettlementTicket, UpdateStackNumComputeUnitsAndClaimFunds,
+    },
     AtomaStateManager, AtomaStateManagerError,
 };
 
@@ -811,7 +813,11 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Processing update stack num compute units and claim funds"
     );
-    let (ratio, stack_computed_units) = state_manager
+    let UpdateStackNumComputeUnitsAndClaimFunds {
+        ratio,
+        stack_computed_units,
+        is_confidential,
+    } = state_manager
         .state
         .update_stack_num_compute_units(
             stack_small_id,
@@ -819,7 +825,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             total_compute_units,
         )
         .await?;
-    if ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD {
+    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD {
         state_manager
             .client
             .write()
