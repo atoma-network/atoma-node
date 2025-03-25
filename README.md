@@ -211,6 +211,16 @@ COMPOSE_PROFILES=chat_completions_vllm,non-confidential docker compose up --buil
 COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,non-confidential docker compose up -d --build
 ```
 
+The deployment defaults to `info` level logs, in order to change the log level upon deployment, you can run set the `ATOMA_LOG_LEVELS` env variable at runtime.
+
+```bash
+ATOMA_LOG_LEVELS=atoma_p2p=info,debug docker compose up -d --build
+```
+
+Some examples for the `ATOMA_LOG_LEVELS`
+- `info,atoma_p2p=off,libp2p_mdns=off,opentelemetry_sdk=off,quinn_udp=off,tracing_loki=off` - no p2p/metrics logs
+- `info,sqlx=debug` for showing the sql queries
+
 #### Container Architecture
 
 The deployment consists of two main services:
