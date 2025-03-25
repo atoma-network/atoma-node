@@ -569,7 +569,18 @@ mod vllm_metrics {
             })
             .collect();
         while let Some(kv_cache_usage_data) = futures.next().await {
-            let kv_cache_usage_data = kv_cache_usage_data?;
+            let kv_cache_usage_data = match kv_cache_usage_data {
+                Ok(kv_cache_usage_data) => kv_cache_usage_data,
+                Err(e) => {
+                    tracing::error!(
+                        target = "atoma-service",
+                        level = "error",
+                        "Failed to get metrics for chat completions service url: {}",
+                        e
+                    );
+                    continue;
+                }
+            };
             let kv_cache_usage = kv_cache_usage_data.metrics_data.result.first().map_or(
                 f64::MAX,
                 |kv_cache_usage| {
