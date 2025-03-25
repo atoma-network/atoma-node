@@ -1,24 +1,24 @@
 [atoma_service]
-chat_completions_service_urls = { "meta-llama/Llama-3.2-3B-Instruct" = "http://chat-completions:8000"}
-embeddings_service_url = "http://embeddings:80"
+chat_completions_service_urls = { "meta-llama/Llama-3.2-3B-Instruct" = "http://chat-completions:8000" }
+embeddings_service_url        = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
 # List of models to be used by the service, the current value here is just a placeholder, please change it to the models you want to deploy
-models = ["meta-llama/Llama-3.2-3B-Instruct"]
-revisions = ["main"]
+models               = [ "meta-llama/Llama-3.2-3B-Instruct" ]
+revisions            = [ "main" ]
 service_bind_address = "0.0.0.0:3000"
 
 [atoma_sui]
-http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet
-atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be"         # Current ATOMA DB object ID for testnet
-atoma_package_id = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
-usdc_package_id = "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29"  # Current USDC package ID for testnet
-request_timeout = { secs = 300, nanos = 0 }                                             # Some reference value
-max_concurrent_requests = 10                                                            # Some reference value
-limit = 100                                                                             # Some reference value
-node_small_ids = [1]                                                                    # List of node IDs under control of the node wallet
-sui_config_path = "/root/.sui/sui_config/client.yaml"                                   # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
-sui_keystore_path = "/root/.sui/sui_config/sui.keystore"                                # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
-cursor_path = "/app/data/cursor.toml"                                                           # Path to the Sui events cursor file
+atoma_db                = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be" # Current ATOMA DB object ID for testnet
+atoma_package_id        = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
+cursor_path             = "/app/data/cursor.toml"                                              # Path to the Sui events cursor file
+http_rpc_node_addr      = "https://fullnode.testnet.sui.io:443"                                # Current RPC node address for testnet
+limit                   = 100                                                                  # Some reference value
+max_concurrent_requests = 10                                                                   # Some reference value
+node_small_ids          = [ 1 ]                                                                # List of node IDs under control of the node wallet
+request_timeout         = { secs = 300, nanos = 0 }                                            # Some reference value
+sui_config_path         = "/root/.sui/sui_config/client.yaml"                                  # Path to the Sui client configuration file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/client.yaml)
+sui_keystore_path       = "/root/.sui/sui_config/sui.keystore"                                 # Path to the Sui keystore file, accessed from the docker container (if this is not the case, pass in the full path, on your host machine which is by default ~/.sui/sui_config/sui.keystore)
+usdc_package_id         = "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29" # Current USDC package ID for testnet
 
 [atoma_state]
 # Path inside the container
@@ -43,15 +43,9 @@ heartbeat_interval = { secs = 30, nanos = 0 }
 idle_connection_timeout = { secs = 60, nanos = 0 }
 # Address to listen for incoming QUIC connections (format: "/ip4/x.x.x.x/udp/x")
 # Address to listen for incoming QUIC connections (format: "/ip4/x.x.x.x/udp/x")
-listen_addrs = [
-    "/ip4/0.0.0.0/tcp/4001",
-    "/ip4/0.0.0.0/udp/4001/quic-v1",
-]
+listen_addrs = [ "/ip4/0.0.0.0/tcp/4001", "/ip4/0.0.0.0/udp/4001/quic-v1" ]
 # The list of bootstrap nodes to dial
-bootstrap_node_addrs = [
-    "/ip4/213.130.147.75/tcp/8083",
-    "/ip4/213.130.147.75/udp/8083/quic-v1",
-]
+bootstrap_node_addrs = [ "/ip4/213.130.147.75/tcp/8083", "/ip4/213.130.147.75/udp/8083/quic-v1" ]
 
 # Node's small ID (assigned by Atoma smart contract)
 node_small_id = 1
@@ -61,6 +55,9 @@ public_url = "https://<PUBLIC_URL>"
 country = ""
 # List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)
 # (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ("vllm", "http://chat-completions:8000/metrics")`)
-metrics_endpoints = { "meta-llama/Llama-3.2-3B-Instruct" = ["vllm", "http://chat-completions:8000/metrics"] }
+metrics_endpoints = { "meta-llama/Llama-3.2-3B-Instruct" = [
+    "http://chat-completions:8000/metrics",
+    "vllm",
+] }
 # The path to the local key
 local_key = "/app/data/local_key"

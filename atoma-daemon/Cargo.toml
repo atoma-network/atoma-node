@@ -1,8 +1,8 @@
 [package]
-name = "atoma-daemon"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
+name              = "atoma-daemon"
+version.workspace = true
 
 [[bin]]
 name = "atoma-daemon"
@@ -17,39 +17,30 @@ axum = { workspace = true }
 blake2 = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
+once_cell = "1.20"
+opentelemetry = { workspace = true, features = [ "logs", "metrics", "trace" ] }
+opentelemetry-otlp = { workspace = true, features = [
+    "grpc-tonic",
+    "logs",
+    "metrics",
+    "tls",
+    "trace",
+] }
+opentelemetry_sdk = { workspace = true, features = [ "logs", "metrics", "rt-tokio", "trace" ] }
 rs_merkle = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sui-sdk = { workspace = true }
 tokio = { workspace = true }
-once_cell = "1.20"
-opentelemetry = { workspace = true, features = ["trace", "metrics", "logs"] }
-opentelemetry_sdk = { workspace = true, features = [
-  "rt-tokio",
-  "trace",
-  "metrics",
-  "logs",
-] }
-opentelemetry-otlp = { workspace = true, features = [
-  "metrics",
-  "grpc-tonic",
-  "trace",
-  "tls",
-  "logs",
-] }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = [
-  "env-filter",
-  "json",
-  "local-time",
-] }
-tracing-opentelemetry = { workspace = true }
 tracing-loki = { workspace = true }
-utoipa = { workspace = true, features = ["axum_extras"] }
-utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = [ "env-filter", "json", "local-time" ] }
 url = { workspace = true }
+utoipa = { workspace = true, features = [ "axum_extras" ] }
+utoipa-swagger-ui = { workspace = true, features = [ "axum" ] }
 
 
 [dev-dependencies]

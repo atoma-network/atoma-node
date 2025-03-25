@@ -1,21 +1,21 @@
 [package]
-name = "atoma-p2p-tester"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
+name              = "atoma-p2p-tester"
+version.workspace = true
 
 [dependencies]
-atoma-p2p = { path = "../atoma-p2p" }
-atoma-sui = { path = "../atoma-sui" }
-atoma-daemon = { path = "../atoma-daemon" }
-atoma-utils = { path = "../atoma-utils" }
-anyhow = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-clap = { workspace = true, features = ["derive"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-config = { workspace = true }
-sui-keys = { workspace = true }
-flume = { workspace = true }
+anyhow             = { workspace = true }
+atoma-daemon       = { path = "../atoma-daemon" }
+atoma-p2p          = { path = "../atoma-p2p" }
+atoma-sui          = { path = "../atoma-sui" }
+atoma-utils        = { path = "../atoma-utils" }
+clap               = { workspace = true, features = [ "derive" ] }
+config             = { workspace = true }
+flume              = { workspace = true }
+serde              = { workspace = true, features = [ "derive" ] }
+serde_json         = { workspace = true }
+sui-keys           = { workspace = true }
+tokio              = { workspace = true, features = [ "full" ] }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true, features = [ "env-filter" ] }

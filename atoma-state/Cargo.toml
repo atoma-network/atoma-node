@@ -1,23 +1,23 @@
 [package]
-name = "atoma-state"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
+name              = "atoma-state"
+version.workspace = true
 
 [dependencies]
-atoma-p2p = { workspace = true }
-atoma-sui = { workspace = true }
-config = { workspace = true }
-flume = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+atoma-p2p  = { workspace = true }
+atoma-sui  = { workspace = true }
+config     = { workspace = true }
+flume      = { workspace = true }
+serde      = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
-sqlx = { workspace = true, features = ["runtime-tokio", "postgres", "migrate"] }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tracing = { workspace = true }
-utoipa = { workspace = true }
+sqlx       = { workspace = true, features = [ "migrate", "postgres", "runtime-tokio" ] }
+thiserror  = { workspace = true }
+tokio      = { workspace = true, features = [ "full" ] }
+tracing    = { workspace = true }
+utoipa     = { workspace = true }
 
 [dev-dependencies]
-serial_test = { workspace = true }
 atoma-utils = { workspace = true }
-futures = { workspace = true }
+futures     = { workspace = true }
+serial_test = { workspace = true }
