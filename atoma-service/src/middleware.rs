@@ -487,6 +487,13 @@ pub async fn verify_stack_permissions(
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
+    {
+        let mut entry = state
+            .concurrent_requests_per_stack
+            .entry(stack_small_id)
+            .or_insert(0);
+        *entry += 1;
+    }
     Ok(next.run(req).await)
 }
 

@@ -747,12 +747,14 @@ pub(crate) async fn handle_state_manager_event(
             stack_small_id,
             estimated_total_compute_units,
             total_compute_units,
+            concurrent_requests,
         } => {
             handle_update_stack_num_compute_units_and_claim_funds(
                 state_manager,
                 stack_small_id,
                 estimated_total_compute_units,
                 total_compute_units,
+                concurrent_requests,
             )
             .await?;
         }
@@ -807,6 +809,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     total_compute_units: i64,
+    concurrent_requests: u64,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
@@ -823,9 +826,10 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             stack_small_id,
             estimated_total_compute_units,
             total_compute_units,
+            RATIO_FOR_CLAIM_STACK_THRESHOLD,
         )
         .await?;
-    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD {
+    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
         state_manager
             .client
             .write()

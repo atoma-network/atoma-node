@@ -13,6 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dashmap::DashMap;
 use flume::Sender as FlumeSender;
 use hyper::StatusCode;
 use prometheus::Encoder;
@@ -103,6 +104,13 @@ type SharedSecretRequest = (
 /// management and communication between components.
 #[derive(Clone)]
 pub struct AppState {
+    /// Map for assessing how many requests are being concurrently processed for each available stack.
+    ///
+    /// This is useful to keep track of when the node should be able to claim a stack that is
+    /// almost full, without compromising any possible mismatch of compute units calculations
+    /// due to concurrent accesses to a given stack (simultaneously).
+    pub concurrent_requests_per_stack: Arc<DashMap<i64, u64>>,
+
     /// Channel sender for managing application events.
     ///
     /// This sender is used to communicate events and state changes to the

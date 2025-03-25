@@ -14,6 +14,7 @@ use atoma_utils::{
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
 use base64::{engine::general_purpose::STANDARD, Engine};
+use dashmap::DashMap;
 use flume::Sender as FlumeSender;
 use futures::Stream;
 use opentelemetry::KeyValue;
@@ -24,6 +25,7 @@ use x25519_dalek::SharedSecret;
 
 use crate::{
     handlers::{
+        handle_concurrent_requests_count_updates,
         metrics::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
@@ -76,6 +78,8 @@ pub struct StreamingEncryptionMetadata {
 
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
+    /// The number of concurrent requests for the stack
+    concurrent_requests: Arc<DashMap<i64, u64>>,
     /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     /// Current status of the stream
@@ -129,6 +133,7 @@ impl Streamer {
     pub fn new(
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
+        concurrent_requests: Arc<DashMap<i64, u64>>,
         stack_small_id: i64,
         estimated_total_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
@@ -140,6 +145,7 @@ impl Streamer {
         first_token_generation_timer: Instant,
     ) -> Self {
         Self {
+            concurrent_requests,
             stream: Box::pin(stream),
             status: StreamStatus::NotStarted,
             stack_small_id,
@@ -278,12 +284,18 @@ impl Streamer {
         }
 
         // Update stack num tokens
+        let num_concurrent_requests = handle_concurrent_requests_count_updates(
+            &self.concurrent_requests,
+            self.stack_small_id,
+            &self.endpoint,
+        );
         if let Err(e) = update_stack_num_compute_units(
             &self.state_manager_sender,
             self.stack_small_id,
             self.estimated_total_compute_units,
             total_compute_units as i64,
             &self.endpoint,
+            num_concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
@@ -677,12 +689,20 @@ impl Streamer {
         // a proper response. For this reason, we set the total number of tokens to 0.
         // This will ensure that the stack number of tokens is not updated, and the stack
         // will not be penalized for the failed request.
+        //
+        // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+        let num_concurrent_requests = handle_concurrent_requests_count_updates(
+            &self.concurrent_requests,
+            self.stack_small_id,
+            &self.endpoint,
+        );
         if let Err(e) = update_stack_num_compute_units(
             &self.state_manager_sender,
             self.stack_small_id,
             self.estimated_total_compute_units,
             0,
             &self.endpoint,
+            num_concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",

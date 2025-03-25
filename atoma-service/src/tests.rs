@@ -15,6 +15,7 @@ mod middleware {
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
     use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
+    use dashmap::DashMap;
     use flume::Sender;
     use serde_json::{json, Value};
     use serial_test::serial;
@@ -308,6 +309,7 @@ mod middleware {
             .expect("Failed to remove keystore");
         (
             AppState {
+                concurrent_requests_per_stack: Arc::new(DashMap::new()),
                 models: Arc::new(
                     models
                         .into_iter()

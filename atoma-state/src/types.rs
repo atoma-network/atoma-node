@@ -238,6 +238,8 @@ pub enum AtomaAtomaStateManagerEvent {
         estimated_total_compute_units: i64,
         /// Total number of compute units in the stack
         total_compute_units: i64,
+        /// Number of concurrent requests for the stack
+        concurrent_requests: u64,
     },
     /// Represents an update to the total hash of a stack
     UpdateStackTotalHash {
@@ -260,7 +262,7 @@ pub enum AtomaAtomaStateManagerEvent {
 }
 
 /// Represents the result of updating the number of compute units in a stack and claiming funds
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct UpdateStackNumComputeUnitsAndClaimFunds {
     /// Ratio of compute units that have been computed
     pub ratio: f64,

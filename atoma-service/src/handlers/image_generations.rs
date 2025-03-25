@@ -3,6 +3,7 @@ use std::time::Instant;
 use crate::{
     error::AtomaServiceError,
     handlers::{
+        handle_concurrent_requests_count_updates,
         metrics::{
             IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
             TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
@@ -134,12 +135,18 @@ pub async fn image_generations_handler(
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.to_owned())]);
+            let concurrent_requests = handle_concurrent_requests_count_updates(
+                &state.concurrent_requests_per_stack,
+                stack_small_id,
+                "image-generations/image_generations_handler",
+            );
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
                 estimated_total_compute_units,
                 0,
                 &endpoint,
+                concurrent_requests,
             )?;
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),
@@ -250,12 +257,18 @@ pub async fn confidential_image_generations_handler(
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
             TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.clone())]);
+            let concurrent_requests = handle_concurrent_requests_count_updates(
+                &state.concurrent_requests_per_stack,
+                stack_small_id,
+                "image-generations/confidential_image_generations_handler",
+            );
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
                 estimated_total_compute_units,
                 0,
                 &endpoint,
+                concurrent_requests,
             )?;
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),

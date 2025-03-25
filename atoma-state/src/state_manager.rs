@@ -1353,6 +1353,7 @@ impl AtomaState {
             AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
             AND is_claimed = false
+            AND is_locked_for_claim = false
             RETURNING *
             ",
         )
@@ -1522,30 +1523,41 @@ impl AtomaState {
         stack_small_id: i64,
         estimated_total_compute_units: i64,
         total_compute_units: i64,
+        ratio_for_claim_stacks: f64,
     ) -> Result<UpdateStackNumComputeUnitsAndClaimFunds> {
         let result = sqlx::query(
-            "UPDATE stacks s
-            SET already_computed_units = already_computed_units - ($1 - $2)
+            "WITH updated AS (
+                SELECT 
+                    CAST(already_computed_units - ($1 - $2) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
+                    is_confidential
+                FROM stacks
+                WHERE stack_small_id = $3
+            )
+            UPDATE stacks s
+            SET 
+                already_computed_units = already_computed_units - ($1 - $2),
+                is_locked_for_claim = (
+                    SELECT (u.is_confidential = true AND u.new_ratio > $4)
+                    FROM updated u
+                )
             WHERE s.stack_small_id = $3
             RETURNING 
-                CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT),
-                s.already_computed_units,
+                CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT) as ratio,
+                s.already_computed_units as stack_computed_units,
                 (s.is_confidential = true) as is_confidential",
         )
         .bind(estimated_total_compute_units)
         .bind(total_compute_units)
         .bind(stack_small_id)
+        .bind(ratio_for_claim_stacks)
         .fetch_optional(&self.db)
         .await?;
 
         result.map_or_else(
             || Err(AtomaStateManagerError::StackNotFound),
-            |ratio| {
-                Ok(UpdateStackNumComputeUnitsAndClaimFunds {
-                    ratio: ratio.get(0),
-                    stack_computed_units: ratio.get(1),
-                    is_confidential: ratio.get(2),
-                })
+            |row| {
+                UpdateStackNumComputeUnitsAndClaimFunds::from_row(&row)
+                    .map_err(AtomaStateManagerError::from)
             },
         )
     }
@@ -5123,7 +5135,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 200, 100).await?;
+        } = state
+            .update_stack_num_compute_units(1, 200, 100, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 40); // (500 - (200 - 100)) / 1000 = 400 / 1000 = 0.4
         assert_eq!(stack_computed_units, 400);
         assert!(is_confidential);
@@ -5133,12 +5147,14 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 400, 200).await?;
+        } = state
+            .update_stack_num_compute_units(1, 400, 200, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 20); // (400 - (400 - 200)) / 1000 = 200 / 1000 = 0.2
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
         // Test case 3: Stack not found
-        let err = state.update_stack_num_compute_units(999, 0, 0).await;
+        let err = state.update_stack_num_compute_units(999, 0, 0, 0.95).await;
         assert!(matches!(err, Err(AtomaStateManagerError::StackNotFound)));
 
         // Test case 4: Edge case - estimated equals num_compute_units
@@ -5146,7 +5162,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 200, 200).await?;
+        } = state
+            .update_stack_num_compute_units(1, 200, 200, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 20); // No change: 200 / 1000 = 0.2
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
@@ -5197,7 +5215,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 1200, 1000).await?;
+        } = state
+            .update_stack_num_compute_units(1, 1200, 1000, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 80); // (1000 - (1200 - 1000)) / 1000 = 800 / 1000 = 0.8
         assert_eq!(stack_computed_units, 800);
         assert!(is_confidential);
@@ -5207,7 +5227,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 1800, 1000).await?;
+        } = state
+            .update_stack_num_compute_units(1, 1800, 1000, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 0); // (800 - (1800 - 1000)) / 1000 = 0.0
         assert_eq!(stack_computed_units, 0);
         assert!(is_confidential);
@@ -5254,9 +5276,9 @@ mod tests {
 
         // Simulate concurrent updates
         let futures = vec![
-            state.update_stack_num_compute_units(1, 200, 400),
-            state.update_stack_num_compute_units(1, 200, 400),
-            state.update_stack_num_compute_units(1, 200, 400),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95),
         ];
 
         let results = futures::future::join_all(futures).await;
@@ -5269,7 +5291,9 @@ mod tests {
             ratio: final_ratio,
             is_confidential,
             ..
-        } = state.update_stack_num_compute_units(1, 200, 400).await?;
+        } = state
+            .update_stack_num_compute_units(1, 200, 400, 0.95)
+            .await?;
         assert_eq!((final_ratio * 100.0) as i64, 80);
         assert!(is_confidential);
 
@@ -5319,7 +5343,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 200, 400).await?;
+        } = state
+            .update_stack_num_compute_units(1, 200, 400, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 20);
         assert!(!is_confidential);
         assert_eq!(stack_computed_units, 200);
@@ -5329,7 +5355,9 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
-        } = state.update_stack_num_compute_units(1, 1200, 1000).await?;
+        } = state
+            .update_stack_num_compute_units(1, 1200, 1000, 0.95)
+            .await?;
         assert_eq!((ratio * 100.0) as i64, 0);
         assert!(!is_confidential);
         assert_eq!(stack_computed_units, 0);
