@@ -7,26 +7,26 @@ version = 2
 # The path where the advisory database is cloned/fetched into
 db-path = "~/cargo/advisory-db"
 # The url of the advisory database to use
-db-urls = ["https://github.com/rustsec/advisory-db"]
+db-urls = [ "https://github.com/rustsec/advisory-db" ]
 # The lint level for crates that have been yanked from their source registry
 yanked = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-	# These are all related to the sui SDK, which is outside of our control
-	# derivative is not maintained
-	"RUSTSEC-2024-0388",
-	"RUSTSEC-2024-0436",
-	"RUSTSEC-2024-0437",
-	# we don't do RSA signing on Sui (only verifying for zklogin)
-	"RUSTSEC-2023-0071",
-	# allow yaml-rust being unmaintained
-	"RUSTSEC-2024-0320",
-	# allow unmaintained proc-macro-error used in transitive dependencies
-	"RUSTSEC-2024-0370",
-	# ring is unmaintained but is a critical dependency through sui-sdk and libp2p
-	"RUSTSEC-2025-0009",
-	"RUSTSEC-2025-0010",
+    # These are all related to the sui SDK, which is outside of our control
+    # derivative is not maintained
+    "RUSTSEC-2024-0388",
+    "RUSTSEC-2024-0436",
+    "RUSTSEC-2024-0437",
+    # we don't do RSA signing on Sui (only verifying for zklogin)
+    "RUSTSEC-2023-0071",
+    # allow yaml-rust being unmaintained
+    "RUSTSEC-2024-0320",
+    # allow unmaintained proc-macro-error used in transitive dependencies
+    "RUSTSEC-2024-0370",
+    # ring is unmaintained but is a critical dependency through sui-sdk and libp2p
+    "RUSTSEC-2025-0009",
+    "RUSTSEC-2025-0010",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
@@ -48,19 +48,19 @@ version = 2
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 allow = [
-	"Apache-2.0 WITH LLVM-exception",
-	"Apache-2.0",
-	"BSD-2-Clause",
-	"BSD-3-Clause",
-	"ISC",
-	"MIT",
-	"MPL-2.0",
-	"BSL-1.0",
-	"OpenSSL",
-	"CC0-1.0",
-	"Unlicense",
-	"Unicode-3.0",
-	"Zlib",
+    "Apache-2.0 WITH LLVM-exception",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
@@ -71,24 +71,24 @@ confidence-threshold = 0.8
 # aren't accepted for every possible crate as with the normal allow list
 exceptions = [
 
-	{ allow = [
-		"MIT",
-	], name = "addchain" },
-	{ allow = [
-		"MIT",
-	], name = "anemo" },
-	{ allow = [
-		"MIT",
-	], name = "addr2line" },
+    { allow = [
+        "MIT",
+    ], name = "addchain" },
+    { allow = [
+        "MIT",
+    ], name = "addr2line" },
+    { allow = [
+        "MIT",
+    ], name = "anemo" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
 [[licenses.clarify]]
-name = "ring"
-expression = "ISC AND MIT AND OpenSSL"
-license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+expression    = "ISC AND MIT AND OpenSSL"
+license-files = [ { path = "LICENSE", hash = 0xbd0eed23 } ]
+name          = "ring"
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
@@ -140,15 +140,15 @@ unknown-registry = "deny"
 unknown-git = "deny"
 # List of URLs for allowed crate registries. Defaults to the crates.io index
 # if not specified. If it is specified but empty, no registries are allowed.
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-registry = [ "https://github.com/rust-lang/crates.io-index" ]
 # List of URLs for allowed Git repositories
 # Allow the mysten labs repositories for Sui
 allow-git = [
-	"https://github.com/asonnino/prometheus-parser",
-	"https://github.com/zhiburt/tabled",
-	"https://github.com/atoma-network/nvml-wrapper.git",
-	"https://github.com/atoma-network/nvrust.git",
+    "https://github.com/asonnino/prometheus-parser",
+    "https://github.com/atoma-network/nvml-wrapper.git",
+    "https://github.com/atoma-network/nvrust.git",
+    "https://github.com/zhiburt/tabled",
 ]
 
 [sources.allow-org]
-github = ["mystenmark", "bmwill", "mystenlabs", "nextest-rs", "rustls"]
+github = [ "bmwill", "mystenlabs", "mystenmark", "nextest-rs", "rustls" ]
