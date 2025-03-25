@@ -575,8 +575,7 @@ mod vllm_metrics {
                     tracing::error!(
                         target = "atoma-service",
                         level = "error",
-                        "Failed to get metrics for chat completions service url: {}",
-                        e
+                        "Failed to get metrics for chat completions service url: {e}",
                     );
                     continue;
                 }
