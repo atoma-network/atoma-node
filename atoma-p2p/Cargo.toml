@@ -1,50 +1,50 @@
 [package]
-name = "atoma-p2p"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
+name              = "atoma-p2p"
+version.workspace = true
 
 [dependencies]
 blake3 = { workspace = true }
 bytes = { workspace = true }
-ciborium = { workspace = true }
 chrono = { workspace = true }
+ciborium = { workspace = true }
 config = { workspace = true }
-isocountry = { workspace = true }
-libp2p = { workspace = true, features = [
-	"autonat",
-	"tokio",
-	"dns",
-	"identify",
-	"gossipsub",
-	"mdns",
-	"kad",
-	"macros",
-	"quic",
-	"tcp",
-	"yamux",
-	"noise",
-	"metrics",
-	"rsa",
-] }
 fastcrypto = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
+isocountry = { workspace = true }
+libp2p = { workspace = true, features = [
+    "autonat",
+    "dns",
+    "gossipsub",
+    "identify",
+    "kad",
+    "macros",
+    "mdns",
+    "metrics",
+    "noise",
+    "quic",
+    "rsa",
+    "tcp",
+    "tokio",
+    "yamux",
+] }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
-reqwest = { workspace = true }
 rand = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+reqwest = { workspace = true }
+serde = { workspace = true, features = [ "derive" ] }
+serde_json = { workspace = true }
 sui-keys = { workspace = true }
 sui-sdk = { workspace = true }
-serde_json = { workspace = true }
 sysinfo = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = [ "full" ] }
 tracing = { workspace = true }
 url = { workspace = true }
-validator = { workspace = true, features = ["derive"] }
+validator = { workspace = true, features = [ "derive" ] }
 
 [dev-dependencies]
-rand = { workspace = true }
+rand     = { workspace = true }
 tempfile = { workspace = true }

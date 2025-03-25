@@ -59,6 +59,22 @@ jobs:
             -W clippy::perf \
             -W clippy::suspicious \
             -W clippy::correctness
+  toml-format:
+    name: toml-format
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Taplo
+        env:
+          version: "0.9.3"
+        run: |
+          curl -Ls "https://github.com/tamasfe/taplo/releases/download/${{ env.version }}/taplo-full-linux-x86_64.gz" | \
+          gzip -d > taplo && \
+          chmod +x taplo && \
+          sudo mv taplo /usr/local/bin/taplo
+      - name: Run Taplo
+        run: taplo fmt --check
 
   test:
     name: test
