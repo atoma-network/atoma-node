@@ -16,7 +16,7 @@ use crate::{
     AtomaStateManager, AtomaStateManagerError,
 };
 
-const RATIO_FOR_CLAIM_STACK_THRESHOLD: f64 = 0.5;
+const RATIO_FOR_CLAIM_STACK_THRESHOLD: f64 = 0.95;
 
 #[instrument(level = "info", skip_all)]
 pub async fn handle_atoma_event(
@@ -746,7 +746,7 @@ pub(crate) async fn handle_state_manager_event(
             estimated_total_compute_units,
             total_compute_units,
         } => {
-            handle_update_stack_num_compute_units(
+            handle_update_stack_num_compute_units_and_claim_funds(
                 state_manager,
                 stack_small_id,
                 estimated_total_compute_units,
@@ -770,7 +770,8 @@ pub(crate) async fn handle_state_manager_event(
 /// Handles an update to the number of compute units in a stack.
 ///
 /// This function processes an update to the number of compute units in a stack by parsing the event data
-/// and updating the corresponding stack in the database.
+/// and updating the corresponding stack in the database. If the ratio of compute units is greater than or equal to 95%,
+/// it will submit a claim funds for stacks transaction.
 ///
 /// # Arguments
 ///
@@ -791,9 +792,15 @@ pub(crate) async fn handle_state_manager_event(
 #[instrument(
     level = "info",
     skip_all,
-    fields(stack_small_id, estimated_total_compute_units, total_compute_units)
+    fields(
+        stack_small_id,
+        estimated_total_compute_units,
+        total_compute_units,
+        ratio
+    )
 )]
-pub(crate) async fn handle_update_stack_num_compute_units(
+#[allow(clippy::cast_sign_loss)]
+pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
     state_manager: &AtomaStateManager,
     stack_small_id: i64,
     estimated_total_compute_units: i64,
@@ -801,8 +808,8 @@ pub(crate) async fn handle_update_stack_num_compute_units(
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
-        event = "handle-claim-funds-for-stacks-tx-event",
-        "Processing claim funds for stacks tx event"
+        event = "handle-update-stack-num-compute-units-and-claim-funds",
+        "Processing update stack num compute units and claim funds"
     );
     let (ratio, stack_computed_units) = state_manager
         .state
@@ -818,9 +825,9 @@ pub(crate) async fn handle_update_stack_num_compute_units(
             .write()
             .await
             .submit_claim_funds_for_stacks_tx(
-                vec![stack_small_id.try_into().unwrap()],
+                vec![stack_small_id as u64],
                 None,
-                vec![stack_computed_units.try_into().unwrap()],
+                vec![stack_computed_units as u64],
                 None,
                 None,
                 None,
