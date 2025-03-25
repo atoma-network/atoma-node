@@ -197,7 +197,28 @@ services:
       postgres-db:
         condition: service_started
         required: true
-      vllm:
+      vllm1:
+        condition: service_started
+        required: false
+      vllm2:
+        condition: service_started
+        required: false
+      vllm3:
+        condition: service_started
+        required: false
+      vllm4:
+        condition: service_started
+        required: false
+      vllm5:
+        condition: service_started
+        required: false
+      vllm6:
+        condition: service_started
+        required: false
+      vllm7:
+        condition: service_started
+        required: false
+      vllm8:
         condition: service_started
         required: false
       vllm-cpu:
@@ -219,9 +240,9 @@ services:
         condition: service_started
         required: true
 
-  vllm:
+  vllm1:
     <<: *inference-service-cuda
-    container_name: chat-completions
+    container_name: chat-completions1
     profiles: [chat_completions_vllm]
     image: vllm/vllm-openai:v0.8.1
     environment:
@@ -233,9 +254,152 @@ services:
       # - "ROCM_FLASH": use ROCmFlashAttention
       # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
       - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=1
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+  
+  vllm2:
+    <<: *inference-service-cuda
+    container_name: chat-completions2
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=2
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
 
+  vllm3:
+    <<: *inference-service-cuda
+    container_name: chat-completions3
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=3
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm4:
+    <<: *inference-service-cuda
+    container_name: chat-completions4
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=4
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm5:
+    <<: *inference-service-cuda
+    container_name: chat-completions5
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1  
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=5
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm6:
+    <<: *inference-service-cuda
+    container_name: chat-completions6
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN 
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=6
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm7:
+    <<: *inference-service-cuda
+    container_name: chat-completions7
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=7
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+
+  vllm8:
+    <<: *inference-service-cuda
+    container_name: chat-completions8
+    profiles: [chat_completions_vllm]
+    image: vllm/vllm-openai:v0.8.1
+    environment:
+      # Backend for attention computation
+      # Available options:
+      # - "TORCH_SDPA": use torch.nn.MultiheadAttention
+      # - "FLASH_ATTN": use FlashAttention
+      # - "XFORMERS": use XFormers
+      # - "ROCM_FLASH": use ROCmFlashAttention
+      # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
+      - VLLM_FLASH_ATTN_VERSION=3
+      - VLLM_USE_V1=1
+      - CUDA_VISIBLE_DEVICES=8
+    ipc: host
+    command: ${VLLM_ENGINE_ARGS}
+  
   vllm-cpu:
     <<: *inference-service-cpu
     container_name: chat-completions

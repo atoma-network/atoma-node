@@ -415,3 +415,222 @@ pub fn handle_status_code_error(
         }),
     }
 }
+
+mod vllm_metrics {
+    use std::collections::HashMap;
+
+    pub type Result<T> = std::result::Result<T, VllmMetricsError>;
+
+    use futures::{stream::FuturesUnordered, StreamExt};
+    use hyper::StatusCode;
+    use once_cell::sync::Lazy;
+    use serde::{Deserialize, Serialize};
+    use tracing::instrument;
+
+    /// The timeout for the Prometheus metrics queries
+    const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// The HTTP client for the Prometheus metrics queries
+    static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+        reqwest::Client::builder()
+            .timeout(METRICS_TIMEOUT)
+            .build()
+            .expect("Failed to create HTTP client")
+    });
+
+    /// Response structure for Prometheus metrics queries
+    ///
+    /// This struct represents the response format from the Prometheus HTTP API,
+    /// which includes a status field and the actual metrics data.
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct MetricsResponse {
+        /// The status of the query response ("success" or "error")
+        pub status: String,
+
+        /// The actual metrics data returned by Prometheus
+        pub data: MetricsData,
+    }
+
+    /// Container for Prometheus query results
+    ///
+    /// This struct holds the result type (usually "vector") and an array of metric results.
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct MetricsData {
+        /// The type of result returned ("vector", "matrix", "scalar", or "string")
+        #[serde(rename = "resultType")]
+        pub result_type: String,
+
+        /// Vector of individual metric results
+        pub result: Vec<MetricsResult>,
+    }
+
+    /// Individual metric result from a Prometheus query
+    ///
+    /// Each result contains metric labels, a timestamp, and the metric value.
+    /// The timestamp and value are returned as a 2-element array: [timestamp, value]
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct MetricsResult {
+        /// Labels associated with the metric (e.g., {"instance": "localhost:9090"})
+        pub metric: HashMap<String, String>,
+
+        /// A 2-element array containing [timestamp, value]
+        /// The timestamp is a Unix timestamp in seconds
+        /// The value is a string that can be parsed into a number
+        pub value: (i64, String),
+    }
+
+    /// A struct that combines a chat completions service URL with its associated metrics data.
+    ///
+    /// This struct is used to pair the URL of a chat completions service endpoint with
+    /// the metrics data retrieved from that endpoint, making it easier to track and
+    /// analyze metrics for specific service instances.
+    pub struct MetricsDataAndUrl {
+        /// The URL of the chat completions service endpoint
+        pub chat_completions_service_url: String,
+
+        /// The metrics data retrieved from the chat completions service endpoint
+        pub metrics_data: MetricsData,
+    }
+
+    /// Retrieves metrics data from a chat completions service endpoint.
+    ///
+    /// This function sends a GET request to the specified endpoint with the provided query parameters,
+    /// and returns the metrics data as a `MetricsDataAndUrl` struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - The HTTP client to use for the request
+    /// * `query` - The Prometheus query to execute
+    /// * `endpoint` - The URL of the chat completions service endpoint
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the metrics data as a `MetricsDataAndUrl` struct.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
+    async fn get_metrics(
+        client: &reqwest::Client,
+        query: &str,
+        endpoint: &str,
+    ) -> Result<MetricsDataAndUrl> {
+        let response: MetricsResponse = client
+            .get(endpoint)
+            .query(&[("query", query)])
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        Ok(MetricsDataAndUrl {
+            chat_completions_service_url: endpoint.to_string(),
+            metrics_data: response.data,
+        })
+    }
+
+    /// Retrieves the best available chat completions service URL for a given model.
+    ///
+    /// This function iterates through a list of chat completions service URLs,
+    /// executes a Prometheus query to retrieve GPU cache usage metrics,
+    /// and selects the URL with the lowest GPU cache usage percentage.
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls` - A list of chat completions service URLs to query
+    /// * `model` - The name of the model to query
+    ///
+    /// # Returns
+    ///
+    /// Returns the URL of the chat completions service with the lowest GPU cache usage percentage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if the list of chat completions service URLs is empty.
+    #[instrument(level = "info", skip_all, fields(model=model, chat_completions_service_urls=chat_completions_service_urls.len()))]
+    pub async fn get_best_available_chat_completions_service_url(
+        chat_completions_service_urls: &[String],
+        model: &str,
+    ) -> Result<(String, StatusCode)> {
+        if chat_completions_service_urls.is_empty() {
+            return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
+                model.to_string(),
+            ));
+        }
+        let query =
+            format!("avg_over_time(vllm:gpu_cache_usage_perc{{model_name=\"{model}\"}}[30s]) or 0");
+        let mut min_kv_cache_usage = f64::MAX;
+        let mut best_url = chat_completions_service_urls[0].clone();
+        let mut futures: FuturesUnordered<_> = chat_completions_service_urls
+            .iter()
+            .map(|chat_completions_service_url| {
+                get_metrics(&HTTP_CLIENT, &query, chat_completions_service_url)
+            })
+            .collect();
+        while let Some(kv_cache_usage_data) = futures.next().await {
+            let kv_cache_usage_data = match kv_cache_usage_data {
+                Ok(kv_cache_usage_data) => kv_cache_usage_data,
+                Err(e) => {
+                    tracing::error!(
+                        target = "atoma-service",
+                        level = "error",
+                        "Failed to get metrics for chat completions service url: {e}",
+                    );
+                    continue;
+                }
+            };
+            let kv_cache_usage = kv_cache_usage_data.metrics_data.result.first().map_or(
+                f64::MAX,
+                |kv_cache_usage| {
+                    kv_cache_usage
+                        .value
+                        .1
+                        .parse::<f64>()
+                        .map_err(|e| {
+                            tracing::error!(
+                                target = "atoma-service",
+                                level = "error",
+                                "Failed to parse GPU cache usage value: {}",
+                                e
+                            );
+                            VllmMetricsError::InvalidMetricsValue(e)
+                        })
+                        .unwrap_or(f64::MAX)
+                },
+            );
+            if kv_cache_usage < min_kv_cache_usage {
+                min_kv_cache_usage = kv_cache_usage;
+                best_url.clone_from(&kv_cache_usage_data.chat_completions_service_url);
+            }
+        }
+        tracing::info!(
+            target = "atoma-service",
+            level = "info",
+            "Best available chat completions service URL for model: {model} is: {best_url}",
+            model = model,
+            best_url = best_url
+        );
+        if min_kv_cache_usage > 0.9 {
+            tracing::warn!(
+                target = "atoma-service",
+                level = "warn",
+                "Best available chat completions service URL for model: {model} has a GPU cache usage of {min_kv_cache_usage}%",
+                model = model,
+                min_kv_cache_usage = min_kv_cache_usage
+            );
+            return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
+        }
+        Ok((best_url, StatusCode::OK))
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum VllmMetricsError {
+        #[error("Failed to get metrics: {0}")]
+        GetMetricsError(#[from] reqwest::Error),
+        #[error("No chat completions service urls found for model: {0}")]
+        NoChatCompletionsServiceUrlsFound(String),
+        #[error("Invalid metrics value: {0}")]
+        InvalidMetricsValue(#[from] std::num::ParseFloatError),
+    }
+}

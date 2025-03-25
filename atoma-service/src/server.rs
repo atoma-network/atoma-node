@@ -163,7 +163,7 @@ pub struct AppState {
     /// These URLs point to the external services responsible for performing
     /// AI model chat completions. The application forwards requests to this
     /// service to obtain AI-generated responses.
-    pub chat_completions_service_urls: HashMap<String, String>,
+    pub chat_completions_service_urls: HashMap<String, Vec<String>>,
 
     /// URL for the embeddings service.
     ///
