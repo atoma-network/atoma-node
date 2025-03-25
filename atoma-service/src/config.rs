@@ -13,7 +13,7 @@ pub struct AtomaServiceConfig {
     ///
     /// This is an optional field that, if provided, specifies the endpoint
     /// for the chat completions service used by the Atoma Service.
-    pub chat_completions_service_urls: HashMap<String, String>,
+    pub chat_completions_service_urls: HashMap<String, Vec<String>>,
 
     /// URL for the embeddings service.
     ///
