@@ -12,9 +12,13 @@ use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result,
-    types::{AtomaAtomaStateManagerEvent, StackSettlementTicket},
+    types::{
+        AtomaAtomaStateManagerEvent, StackSettlementTicket, UpdateStackNumComputeUnitsAndClaimFunds,
+    },
     AtomaStateManager, AtomaStateManagerError,
 };
+
+const RATIO_FOR_CLAIM_STACK_THRESHOLD: f64 = 0.95;
 
 #[instrument(level = "info", skip_all)]
 pub async fn handle_atoma_event(
@@ -743,15 +747,16 @@ pub(crate) async fn handle_state_manager_event(
             stack_small_id,
             estimated_total_compute_units,
             total_compute_units,
+            concurrent_requests,
         } => {
-            state_manager
-                .state
-                .update_stack_num_compute_units(
-                    stack_small_id,
-                    estimated_total_compute_units,
-                    total_compute_units,
-                )
-                .await?;
+            handle_update_stack_num_compute_units_and_claim_funds(
+                state_manager,
+                stack_small_id,
+                estimated_total_compute_units,
+                total_compute_units,
+                concurrent_requests,
+            )
+            .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
             stack_small_id,
@@ -762,6 +767,83 @@ pub(crate) async fn handle_state_manager_event(
                 .update_stack_total_hash(stack_small_id, total_hash)
                 .await?;
         }
+    }
+    Ok(())
+}
+
+/// Handles an update to the number of compute units in a stack.
+///
+/// This function processes an update to the number of compute units in a stack by parsing the event data
+/// and updating the corresponding stack in the database. If the ratio of compute units is greater than or equal to 95%,
+/// it will submit a claim funds for stacks transaction.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
+/// * `stack_small_id` - The unique identifier of the stack to be updated.
+/// * `estimated_total_compute_units` - The estimated total number of compute units in the stack.
+/// * `total_compute_units` - The total number of compute units in the stack.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the update was successful, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to update the stack number of compute units fails.
+/// * The Sui client operation to submit the claim funds for stacks transaction fails.
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        stack_small_id,
+        estimated_total_compute_units,
+        total_compute_units,
+        ratio
+    )
+)]
+#[allow(clippy::cast_sign_loss)]
+pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
+    state_manager: &AtomaStateManager,
+    stack_small_id: i64,
+    estimated_total_compute_units: i64,
+    total_compute_units: i64,
+    concurrent_requests: u64,
+) -> Result<()> {
+    info!(
+        target = "atoma-state-handlers",
+        event = "handle-update-stack-num-compute-units-and-claim-funds",
+        "Processing update stack num compute units and claim funds"
+    );
+    let UpdateStackNumComputeUnitsAndClaimFunds {
+        ratio,
+        stack_computed_units,
+        is_confidential,
+    } = state_manager
+        .state
+        .update_stack_num_compute_units(
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+            RATIO_FOR_CLAIM_STACK_THRESHOLD,
+        )
+        .await?;
+    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
+        state_manager
+            .client
+            .write()
+            .await
+            .submit_claim_funds_for_stacks_tx(
+                vec![stack_small_id as u64],
+                None,
+                vec![stack_computed_units as u64],
+                None,
+                None,
+                None,
+            )
+            .await
+            .map_err(AtomaStateManagerError::SuiClientError)?;
     }
     Ok(())
 }

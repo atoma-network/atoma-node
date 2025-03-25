@@ -9,6 +9,7 @@ use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
+use dashmap::DashMap;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
@@ -209,12 +210,18 @@ async fn main() -> Result<()> {
         database_url = config.state.database_url,
         "Spawning state manager service"
     );
+
+    let client = Arc::new(RwLock::new(
+        Client::new_from_config(args.config_path).await?,
+    ));
     let state_manager_shutdown_receiver = shutdown_receiver.clone();
     let database_url = config.state.database_url.clone();
+    let client_clone = client.clone();
     let state_manager_handle = spawn_with_shutdown(
         async move {
             let state_manager = AtomaStateManager::new_from_url(
                 &database_url,
+                client_clone,
                 event_subscriber_receiver,
                 state_manager_receiver,
                 p2p_event_receiver,
@@ -237,10 +244,6 @@ async fn main() -> Result<()> {
         event = "confidential_compute_service_spawn",
         "Spawning confidential compute service"
     );
-
-    let client = Arc::new(RwLock::new(
-        Client::new_from_config(args.config_path).await?,
-    ));
 
     let (compute_shared_secret_sender, compute_shared_secret_receiver) =
         tokio::sync::mpsc::unbounded_channel();
@@ -310,6 +313,7 @@ async fn main() -> Result<()> {
         .context("Failed to initialize keystore")?;
 
     let app_state = AppState {
+        concurrent_requests_per_stack: Arc::new(DashMap::new()),
         state_manager_sender,
         stack_retrieve_sender,
         decryption_sender: app_state_decryption_sender,

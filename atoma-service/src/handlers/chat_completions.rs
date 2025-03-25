@@ -1,5 +1,6 @@
 use crate::{
     handlers::{
+        handle_concurrent_requests_count_decrement,
         metrics::{
             CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
@@ -252,12 +253,20 @@ pub async fn chat_completions_handler(
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
             // will not be penalized for the request.
+            //
+            // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &state.concurrent_requests_per_stack,
+                stack_small_id,
+                "chat-completions/chat_completions_handler",
+            );
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
                 estimated_total_compute_units,
                 0,
                 &endpoint,
+                concurrent_requests,
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
@@ -422,12 +431,20 @@ pub async fn confidential_chat_completions_handler(
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
             // will not be penalized for the request.
+            //
+            // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &state.concurrent_requests_per_stack,
+                stack_small_id,
+                "chat-completions/confidential_chat_completions_handler",
+            );
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
                 estimated_total_compute_units,
                 0,
                 &endpoint,
+                concurrent_requests,
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
@@ -751,11 +768,11 @@ async fn handle_streaming_response(
     }
 
     let stream = response.bytes_stream();
-
     // Create the SSE stream
     let stream = Sse::new(Streamer::new(
         stream,
         state.state_manager_sender.clone(),
+        state.concurrent_requests_per_stack.clone(),
         stack_small_id,
         estimated_total_compute_units,
         payload_hash,
@@ -860,6 +877,9 @@ impl RequestModel for RequestModelChatCompletions {
                 MessageContent::Array(parts) => {
                     if parts.is_empty() {
                         tracing::error!(
+                            target = "atoma-service",
+                            endpoint = "chat-completions/get_compute_units_estimate",
+                            level = "error",
                             "Received empty array of message parts for chat completion request"
                         );
                         return Err(AtomaServiceError::InvalidBody {
@@ -894,7 +914,10 @@ pub mod utils {
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
     use opentelemetry::KeyValue;
 
-    use crate::handlers::{handle_status_code_error, metrics::CHAT_COMPLETIONS_LATENCY_METRICS};
+    use crate::handlers::{
+        handle_concurrent_requests_count_decrement, handle_status_code_error,
+        metrics::CHAT_COMPLETIONS_LATENCY_METRICS,
+    };
 
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
@@ -1332,12 +1355,20 @@ pub mod utils {
         //
         // NOTE: We update the total number of tokens as a final step, as if some error occurs, we don't want
         // to update the stack num tokens beforehand.
+        //
+        // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+        let concurrent_requests = handle_concurrent_requests_count_decrement(
+            &state.concurrent_requests_per_stack,
+            stack_small_id,
+            "chat-completions/serve_non_streaming_response",
+        );
         update_stack_num_compute_units(
             &state.state_manager_sender,
             stack_small_id,
             estimated_total_compute_units,
             total_compute_units,
             &endpoint,
+            concurrent_requests,
         )?;
 
         Ok(response_body)

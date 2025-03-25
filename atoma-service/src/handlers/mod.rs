@@ -9,6 +9,7 @@ use atoma_confidential::types::{
 };
 use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use dashmap::DashMap;
 use flume::Sender;
 use hyper::StatusCode;
 use image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
@@ -298,17 +299,82 @@ pub fn update_stack_num_compute_units(
     estimated_total_compute_units: i64,
     total_compute_units: i64,
     endpoint: &str,
+    concurrent_requests: u64,
 ) -> Result<(), AtomaServiceError> {
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
             total_compute_units,
             estimated_total_compute_units,
+            concurrent_requests,
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update stack num compute units event: {e}"),
             endpoint: endpoint.to_string(),
         })
+}
+
+/// Handles the concurrent requests count updates for a stack.
+///
+/// This function updates the concurrent requests count for a stack and removes the stack from the map
+/// if the count reaches 0.
+///
+/// # Arguments
+///
+/// * `concurrent_requests_per_stack` - The map of stack small ids to their concurrent requests count
+/// * `stack_small_id` - The small id of the stack to update
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the update was successful, or an `AtomaServiceError` if the update failed.
+///
+/// # Instrumentation
+///
+/// This function is instrumented with info-level tracing that includes:
+/// - stack_small_id
+/// - concurrent_requests_count
+/// - endpoint
+///
+/// # Example   
+///
+/// ```rust,ignore
+/// use crate::AppState;
+///
+/// async fn handle_concurrent_requests_count_updates(state: &AppState, stack_small_id: i64) -> Result<(), AtomaServiceError> {
+///     handle_concurrent_requests_count_updates(&state.concurrent_requests_per_stack, stack_small_id).await?;
+///     Ok(())
+/// }
+/// ```
+#[instrument(level = "info", skip_all, fields(stack_small_id, endpoint))]
+pub fn handle_concurrent_requests_count_decrement(
+    concurrent_requests_per_stack: &DashMap<i64, u64>,
+    stack_small_id: i64,
+    endpoint: &str,
+) -> u64 {
+    let mut concurrent_requests_count = concurrent_requests_per_stack
+        .entry(stack_small_id)
+        .or_insert(0);
+    if *concurrent_requests_count == 0 {
+        tracing::error!(
+            target = "atoma-service",
+            level = "error",
+            endpoint = endpoint,
+            "Concurrent requests count is 0 for stack small id: {}, but we still need to update the stack num compute units",
+            stack_small_id
+        );
+    }
+    *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
+    if *concurrent_requests_count == 0 {
+        tracing::info!(
+            target = "atoma-service",
+            level = "info",
+            endpoint = endpoint,
+            "Concurrent requests count is 0 for stack small id: {}, updating stack num compute units",
+            stack_small_id
+        );
+        concurrent_requests_per_stack.remove(&stack_small_id);
+    }
+    *concurrent_requests_count
 }
 
 /// Handles the status code returned by the inference service.
