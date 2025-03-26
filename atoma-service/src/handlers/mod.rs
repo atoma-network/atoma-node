@@ -351,20 +351,22 @@ pub fn handle_concurrent_requests_count_decrement(
     stack_small_id: i64,
     endpoint: &str,
 ) -> u64 {
-    let mut concurrent_requests_count = concurrent_requests_per_stack
-        .entry(stack_small_id)
-        .or_insert(0);
-    if *concurrent_requests_count == 0 {
-        tracing::error!(
-            target = "atoma-service",
-            level = "error",
-            endpoint = endpoint,
-            "Concurrent requests count is 0 for stack small id: {}, but we still need to update the stack num compute units",
-            stack_small_id
-        );
-    }
-    *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
-    if *concurrent_requests_count == 0 {
+    let concurrent_requests_count = { let mut concurrent_requests_count = concurrent_requests_per_stack
+            .entry(stack_small_id)
+            .or_insert(0);
+        if *concurrent_requests_count == 0 {
+            tracing::error!(
+                target = "atoma-service",
+                level = "error",
+                endpoint = endpoint,
+                "Concurrent requests count is 0 for stack small id: {}, but we still need to update the stack num compute units",
+                stack_small_id
+            );
+        }
+        *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
+        *concurrent_requests_count
+    };
+    if concurrent_requests_count == 0 {
         tracing::info!(
             target = "atoma-service",
             level = "info",
@@ -374,7 +376,7 @@ pub fn handle_concurrent_requests_count_decrement(
         );
         concurrent_requests_per_stack.remove(&stack_small_id);
     }
-    *concurrent_requests_count
+    concurrent_requests_count
 }
 
 /// Handles the status code returned by the inference service.
