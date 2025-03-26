@@ -558,8 +558,7 @@ mod vllm_metrics {
                 model.to_string(),
             ));
         }
-        let query =
-            format!("avg_over_time(vllm:gpu_cache_usage_perc{{model_name=\"{model}\"}}[30s]) or 0");
+        let query = "avg_over_time(vllm:gpu_cache_usage_perc[30s]) or 0".to_string();
         let mut min_kv_cache_usage = f64::MAX;
         let mut best_url = chat_completions_service_urls[0].clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
