@@ -631,7 +631,11 @@ async fn handle_non_streaming_response(
 
     CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
-
+    info!(
+        target = "atoma-service",
+        level = "info",
+        "Sending non-streaming chat completions request to {endpoint}"
+    );
     let response_body = utils::send_request_to_inference_service(
         state,
         &payload,
@@ -640,7 +644,16 @@ async fn handle_non_streaming_response(
         &endpoint,
     )
     .await?;
-
+    info!(
+        target = "atoma-service",
+        level = "info",
+        "Received non-streaming chat completions response from {endpoint}"
+    );
+    info!(
+        target = "atoma-service",
+        level = "info",
+        "Response body: {response_body}"
+    );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
