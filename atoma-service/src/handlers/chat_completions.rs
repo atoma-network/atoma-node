@@ -649,11 +649,6 @@ async fn handle_non_streaming_response(
         level = "info",
         "Received non-streaming chat completions response from {endpoint}"
     );
-    info!(
-        target = "atoma-service",
-        level = "info",
-        "Response body: {response_body}"
-    );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
@@ -1403,10 +1398,20 @@ pub mod utils {
         // to update the stack num tokens beforehand.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Decrementing concurrent requests count for stack small id: {stack_small_id}"
+        );
         let concurrent_requests = handle_concurrent_requests_count_decrement(
             &state.concurrent_requests_per_stack,
             stack_small_id,
             "chat-completions/serve_non_streaming_response",
+        );
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Concurrent requests have been decremented. Updating stack num compute units for stack small id: {stack_small_id}"
         );
         update_stack_num_compute_units(
             &state.state_manager_sender,
