@@ -417,15 +417,13 @@ pub fn handle_status_code_error(
 }
 
 mod vllm_metrics {
-    use std::collections::HashMap;
-
-    pub type Result<T> = std::result::Result<T, VllmMetricsError>;
-
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
     use once_cell::sync::Lazy;
-    use serde::{Deserialize, Serialize};
+    use serde::de::Error;
     use tracing::{info, instrument};
+
+    pub type Result<T> = std::result::Result<T, VllmMetricsError>;
 
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -438,58 +436,39 @@ mod vllm_metrics {
             .expect("Failed to create HTTP client")
     });
 
-    /// Response structure for Prometheus metrics queries
+    /// Parses the GPU cache usage from the metrics text
     ///
-    /// This struct represents the response format from the Prometheus HTTP API,
-    /// which includes a status field and the actual metrics data.
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct MetricsResponse {
-        /// The status of the query response ("success" or "error")
-        pub status: String,
-
-        /// The actual metrics data returned by Prometheus
-        pub data: MetricsData,
-    }
-
-    /// Container for Prometheus query results
+    /// # Arguments
     ///
-    /// This struct holds the result type (usually "vector") and an array of metric results.
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct MetricsData {
-        /// The type of result returned ("vector", "matrix", "scalar", or "string")
-        #[serde(rename = "resultType")]
-        pub result_type: String,
-
-        /// Vector of individual metric results
-        pub result: Vec<MetricsResult>,
-    }
-
-    /// Individual metric result from a Prometheus query
+    /// * `metrics_text` - The text of the metrics response
     ///
-    /// Each result contains metric labels, a timestamp, and the metric value.
-    /// The timestamp and value are returned as a 2-element array: [timestamp, value]
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct MetricsResult {
-        /// Labels associated with the metric (e.g., {"instance": "localhost:9090"})
-        pub metric: HashMap<String, String>,
-
-        /// A 2-element array containing [timestamp, value]
-        /// The timestamp is a Unix timestamp in seconds
-        /// The value is a string that can be parsed into a number
-        pub value: (i64, String),
-    }
-
-    /// A struct that combines a chat completions service URL with its associated metrics data.
+    /// # Returns
     ///
-    /// This struct is used to pair the URL of a chat completions service endpoint with
-    /// the metrics data retrieved from that endpoint, making it easier to track and
-    /// analyze metrics for specific service instances.
-    pub struct MetricsDataAndUrl {
-        /// The URL of the chat completions service endpoint
-        pub chat_completions_service_url: String,
-
-        /// The metrics data retrieved from the chat completions service endpoint
-        pub metrics_data: MetricsData,
+    /// Returns the GPU cache usage as a `f64`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if the GPU cache usage metric is not found or the value is not a valid `f64`.
+    #[instrument(level = "info", skip_all)]
+    fn parse_gpu_cache_usage(metrics_text: &str) -> Result<f64> {
+        for line in metrics_text.lines() {
+            if line.starts_with("vllm:gpu_cache_usage_perc{") {
+                if let Some(value_str) = line.split_whitespace().last() {
+                    return value_str.parse::<f64>().map_err(|e| {
+                        tracing::error!(
+                            target = "atoma-service",
+                            level = "error",
+                            "Failed to parse GPU cache usage: {}",
+                            e
+                        );
+                        VllmMetricsError::InvalidMetricsValue(e)
+                    });
+                }
+            }
+        }
+        Err(VllmMetricsError::InvalidMetricsResponse(
+            serde_json::Error::custom("GPU cache usage metric not found"),
+        ))
     }
 
     /// Retrieves metrics data from a chat completions service endpoint.
@@ -510,31 +489,22 @@ mod vllm_metrics {
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
-    #[instrument(level = "info", skip_all, fields(endpoint=endpoint, query=query))]
-    async fn get_metrics(
-        client: &reqwest::Client,
-        query: &str,
-        endpoint: &str,
-    ) -> Result<MetricsDataAndUrl> {
+    #[instrument(level = "info", skip_all, fields(endpoint=endpoint))]
+    async fn get_metrics(client: &reqwest::Client, endpoint: &str) -> Result<(String, f64)> {
         let metrics_endpoint = format!("{endpoint}/metrics");
         info!(
             target = "atoma-service",
             level = "info",
-            "Getting metrics for chat completions service url: {metrics_endpoint}, query: {query}"
+            "Getting metrics for chat completions service url: {metrics_endpoint}"
         );
-        let response: MetricsResponse = client
+        let response = client
             .get(metrics_endpoint)
-            .query(&[("query", query)])
             .send()
             .await?
             .error_for_status()?
-            .json()
+            .text()
             .await?;
-
-        Ok(MetricsDataAndUrl {
-            chat_completions_service_url: endpoint.to_string(),
-            metrics_data: response.data,
-        })
+        parse_gpu_cache_usage(&response).map(|f| (endpoint.to_string(), f))
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
@@ -565,18 +535,24 @@ mod vllm_metrics {
                 model.to_string(),
             ));
         }
-        let query = "avg_over_time(vllm:gpu_cache_usage_perc[30s]) or 0".to_string();
         let mut min_kv_cache_usage = f64::MAX;
         let mut best_url = chat_completions_service_urls[0].clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
             .map(|chat_completions_service_url| {
-                get_metrics(&HTTP_CLIENT, &query, chat_completions_service_url)
+                get_metrics(&HTTP_CLIENT, chat_completions_service_url)
             })
             .collect();
         while let Some(kv_cache_usage_data) = futures.next().await {
-            let kv_cache_usage_data = match kv_cache_usage_data {
-                Ok(kv_cache_usage_data) => kv_cache_usage_data,
+            let (chat_completions_service_url, kv_cache_usage) = match kv_cache_usage_data {
+                Ok((chat_completions_service_url, kv_cache_usage)) => {
+                    info!(
+                        target = "atoma-service",
+                        level = "info",
+                        "Received vLLM GPU cache usage metrics response for {chat_completions_service_url}: {kv_cache_usage}"
+                    );
+                    (chat_completions_service_url, kv_cache_usage)
+                }
                 Err(e) => {
                     tracing::error!(
                         target = "atoma-service",
@@ -586,28 +562,9 @@ mod vllm_metrics {
                     continue;
                 }
             };
-            let kv_cache_usage = kv_cache_usage_data.metrics_data.result.first().map_or(
-                f64::MAX,
-                |kv_cache_usage| {
-                    kv_cache_usage
-                        .value
-                        .1
-                        .parse::<f64>()
-                        .map_err(|e| {
-                            tracing::error!(
-                                target = "atoma-service",
-                                level = "error",
-                                "Failed to parse GPU cache usage value: {}",
-                                e
-                            );
-                            VllmMetricsError::InvalidMetricsValue(e)
-                        })
-                        .unwrap_or(f64::MAX)
-                },
-            );
             if kv_cache_usage < min_kv_cache_usage {
                 min_kv_cache_usage = kv_cache_usage;
-                best_url.clone_from(&kv_cache_usage_data.chat_completions_service_url);
+                best_url.clone_from(&chat_completions_service_url);
             }
         }
         tracing::info!(
@@ -638,5 +595,7 @@ mod vllm_metrics {
         NoChatCompletionsServiceUrlsFound(String),
         #[error("Invalid metrics value: {0}")]
         InvalidMetricsValue(#[from] std::num::ParseFloatError),
+        #[error("Invalid metrics response: {0}")]
+        InvalidMetricsResponse(#[from] serde_json::Error),
     }
 }
