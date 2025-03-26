@@ -351,7 +351,8 @@ pub fn handle_concurrent_requests_count_decrement(
     stack_small_id: i64,
     endpoint: &str,
 ) -> u64 {
-    let concurrent_requests_count = { let mut concurrent_requests_count = concurrent_requests_per_stack
+    let concurrent_requests_count = {
+        let mut concurrent_requests_count = concurrent_requests_per_stack
             .entry(stack_small_id)
             .or_insert(0);
         if *concurrent_requests_count == 0 {
