@@ -526,6 +526,9 @@ mod vllm_metrics {
             .get(metrics_endpoint)
             .query(&[("query", query)])
             .send()
+            .await?
+            .error_for_status()?
+            .text()
             .await?;
 
         info!(
@@ -534,14 +537,16 @@ mod vllm_metrics {
             "Received vLLM metrics response: {response:?}"
         );
 
-        let response: MetricsResponse = response.json().await?;
-
-        info!(
-            target = "atoma-service",
-            level = "info",
-            "Metrics response: {response:?}"
-        );
-
+        let response: MetricsResponse = serde_json::from_str(&response).map_err(|e| {
+            tracing::error!(
+                target = "atoma-service",
+                level = "error",
+                "Failed to parse metrics response: {}",
+                e
+            );
+            VllmMetricsError::InvalidMetricsResponse(e)
+        })?;
+        
         Ok(MetricsDataAndUrl {
             chat_completions_service_url: endpoint.to_string(),
             metrics_data: response.data,
