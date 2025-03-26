@@ -244,29 +244,27 @@ pub fn create_router(app_state: AppState) -> Router {
 
     Router::new()
         .merge(
-            confidential_routes
-                .layer(
-                    ServiceBuilder::new()
-                        .layer(from_fn_with_state(
-                            app_state.clone(),
-                            confidential_compute_middleware,
-                        ))
-                        .layer(from_fn_with_state(
-                            app_state.clone(),
-                            verify_stack_permissions,
-                        )),
-                )
+            confidential_routes.layer(
+                ServiceBuilder::new()
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        confidential_compute_middleware,
+                    ))
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        verify_stack_permissions,
+                    )),
+            ),
         )
         .merge(
-            regular_routes
-                .layer(
-                    ServiceBuilder::new()
-                        .layer(from_fn(signature_verification_middleware))
-                        .layer(from_fn_with_state(
-                            app_state.clone(),
-                            verify_stack_permissions,
-                        )),
-                )
+            regular_routes.layer(
+                ServiceBuilder::new()
+                    .layer(from_fn(signature_verification_middleware))
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        verify_stack_permissions,
+                    )),
+            ),
         )
         .merge(public_routes)
         .with_state(app_state)
