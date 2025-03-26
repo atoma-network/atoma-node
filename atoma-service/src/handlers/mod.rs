@@ -489,17 +489,13 @@ mod vllm_metrics {
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
-    #[instrument(level = "info", skip_all, fields(endpoint=endpoint, query=query))]
-    async fn get_metrics(
-        client: &reqwest::Client,
-        query: &str,
-        endpoint: &str,
-    ) -> Result<(String, f64)> {
+    #[instrument(level = "info", skip_all, fields(endpoint=endpoint))]
+    async fn get_metrics(client: &reqwest::Client, endpoint: &str) -> Result<(String, f64)> {
         let metrics_endpoint = format!("{endpoint}/metrics");
         info!(
             target = "atoma-service",
             level = "info",
-            "Getting metrics for chat completions service url: {metrics_endpoint}, query: {query}"
+            "Getting metrics for chat completions service url: {metrics_endpoint}"
         );
         let response = client
             .get(metrics_endpoint)
@@ -547,13 +543,12 @@ mod vllm_metrics {
                 model.to_string(),
             ));
         }
-        let query = "vllm:gpu_cache_usage_perc".to_string();
         let mut min_kv_cache_usage = f64::MAX;
         let mut best_url = chat_completions_service_urls[0].clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
             .map(|chat_completions_service_url| {
-                get_metrics(&HTTP_CLIENT, &query, chat_completions_service_url)
+                get_metrics(&HTTP_CLIENT, chat_completions_service_url)
             })
             .collect();
         while let Some(kv_cache_usage_data) = futures.next().await {
