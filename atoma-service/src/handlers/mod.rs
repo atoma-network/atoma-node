@@ -504,14 +504,6 @@ mod vllm_metrics {
             .error_for_status()?
             .text()
             .await?;
-
-        info!(
-            target = "atoma-service",
-            level = "info",
-            "Received vLLM metrics response: {response:?}"
-        );
-
-        // Parse the GPU cache usage from the metrics text
         parse_gpu_cache_usage(&response).map(|f| (endpoint.to_string(), f))
     }
 
@@ -554,6 +546,11 @@ mod vllm_metrics {
         while let Some(kv_cache_usage_data) = futures.next().await {
             let (chat_completions_service_url, kv_cache_usage) = match kv_cache_usage_data {
                 Ok((chat_completions_service_url, kv_cache_usage)) => {
+                    info!(
+                        target = "atoma-service",
+                        level = "info",
+                        "Received vLLM GPU cache usage metrics response for {chat_completions_service_url}: {kv_cache_usage}"
+                    );
                     (chat_completions_service_url, kv_cache_usage)
                 }
                 Err(e) => {
