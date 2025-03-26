@@ -425,7 +425,7 @@ mod vllm_metrics {
     use hyper::StatusCode;
     use once_cell::sync::Lazy;
     use serde::{Deserialize, Serialize};
-    use tracing::instrument;
+    use tracing::{info, instrument};
 
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -510,13 +510,20 @@ mod vllm_metrics {
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
+    #[instrument(level = "info", skip_all, fields(endpoint=endpoint, query=query))]
     async fn get_metrics(
         client: &reqwest::Client,
         query: &str,
         endpoint: &str,
     ) -> Result<MetricsDataAndUrl> {
+        let metrics_endpoint = format!("{endpoint}/metrics");
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Getting metrics for chat completions service url: {metrics_endpoint}, query: {query}"
+        );
         let response: MetricsResponse = client
-            .get(endpoint)
+            .get(metrics_endpoint)
             .query(&[("query", query)])
             .send()
             .await?
