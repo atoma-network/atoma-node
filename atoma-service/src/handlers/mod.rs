@@ -367,16 +367,18 @@ pub fn handle_concurrent_requests_count_decrement(
         *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
         *concurrent_requests_count
     };
-    if concurrent_requests_count == 0 {
-        tracing::info!(
-            target = "atoma-service",
-            level = "info",
-            endpoint = endpoint,
-            "Concurrent requests count is 0 for stack small id: {}, updating stack num compute units",
-            stack_small_id
-        );
-        concurrent_requests_per_stack.remove(&stack_small_id);
-    }
+    concurrent_requests_per_stack.remove_if(&stack_small_id, |sid, count| {
+        let predicate = *count == 0;
+        if predicate {
+            tracing::info!(
+                target = "atoma-service",
+                level = "info",
+                endpoint = endpoint,
+                "Concurrent requests count is 0 for stack small id: {sid}, updating stack num compute units",
+            );
+        }
+        predicate
+    });
     concurrent_requests_count
 }
 
