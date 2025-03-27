@@ -218,6 +218,7 @@ pub fn create_router(app_state: AppState) -> Router {
         .allow_origin(Any)
         .allow_methods(vec![Method::GET, Method::POST])
         .allow_headers(Any);
+
     let confidential_routes = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
@@ -230,37 +231,43 @@ pub fn create_router(app_state: AppState) -> Router {
         .route(
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
             post(confidential_image_generations_handler),
-        )
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_fn_with_state(
-                    app_state.clone(),
-                    confidential_compute_middleware,
-                ))
-                .layer(from_fn_with_state(
-                    app_state.clone(),
-                    verify_stack_permissions,
-                ))
-                .into_inner(),
-        )
-        .with_state(app_state.clone());
-    Router::new()
+        );
+
+    let regular_routes = Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
-        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_fn(signature_verification_middleware))
-                .layer(from_fn_with_state(
-                    app_state.clone(),
-                    verify_stack_permissions,
-                ))
-                .into_inner(),
-        )
-        .with_state(app_state)
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler));
+
+    let public_routes = Router::new()
         .route(HEALTH_PATH, get(health))
-        .route(METRICS_PATH, get(metrics_handler))
-        .merge(confidential_routes)
+        .route(METRICS_PATH, get(metrics_handler));
+
+    Router::new()
+        .merge(
+            confidential_routes.layer(
+                ServiceBuilder::new()
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        confidential_compute_middleware,
+                    ))
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        verify_stack_permissions,
+                    )),
+            ),
+        )
+        .merge(
+            regular_routes.layer(
+                ServiceBuilder::new()
+                    .layer(from_fn(signature_verification_middleware))
+                    .layer(from_fn_with_state(
+                        app_state.clone(),
+                        verify_stack_permissions,
+                    )),
+            ),
+        )
+        .merge(public_routes)
+        .with_state(app_state)
         .merge(openapi_routes())
         .layer(cors)
 }
