@@ -43,7 +43,7 @@ use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
@@ -631,9 +631,9 @@ async fn handle_non_streaming_response(
 
     CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
-    info!(
+    debug!(
         target = "atoma-service",
-        level = "info",
+        level = "debug",
         "Sending non-streaming chat completions request to {endpoint}"
     );
     let response_body = utils::send_request_to_inference_service(
@@ -644,9 +644,9 @@ async fn handle_non_streaming_response(
         &endpoint,
     )
     .await?;
-    info!(
+    debug!(
         target = "atoma-service",
-        level = "info",
+        level = "debug",
         "Received non-streaming chat completions response from {endpoint}"
     );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
