@@ -93,10 +93,7 @@ paths:
       tags:
       - Nodes
       summary: Create claim funds transaction
-      description: |-
-        Create claim funds transaction
-
-        Claims funds for completed stacks.
+      description: Claims funds for completed stacks.
       operationId: nodes_claim_funds
       requestBody:
         content:
