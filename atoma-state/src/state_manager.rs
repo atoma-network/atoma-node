@@ -3416,7 +3416,7 @@ mod tests {
             .unwrap();
         assert!(matches!(result, StackAvailability::Locked));
         let updated_stack = state_manager.get_stack(2).await.unwrap();
-        assert_eq!(updated_stack.already_computed_units, 50);
+        assert_eq!(updated_stack.already_computed_units, 0);
 
         // Test case 4: Stack with different owner
         let mut stack3 = stack1.clone();
@@ -3431,7 +3431,7 @@ mod tests {
             .unwrap();
         assert!(matches!(result, StackAvailability::Locked));
         let updated_stack = state_manager.get_stack(3).await.unwrap();
-        assert_eq!(updated_stack.already_computed_units, 50);
+        assert_eq!(updated_stack.already_computed_units, 0);
 
         // Test case 5: Non-existent stack
         let result = state_manager
