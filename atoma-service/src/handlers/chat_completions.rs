@@ -43,7 +43,7 @@ use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
@@ -631,7 +631,11 @@ async fn handle_non_streaming_response(
 
     CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
-
+    debug!(
+        target = "atoma-service",
+        level = "debug",
+        "Sending non-streaming chat completions request to {endpoint}"
+    );
     let response_body = utils::send_request_to_inference_service(
         state,
         &payload,
@@ -640,7 +644,11 @@ async fn handle_non_streaming_response(
         &endpoint,
     )
     .await?;
-
+    debug!(
+        target = "atoma-service",
+        level = "debug",
+        "Received non-streaming chat completions response from {endpoint}"
+    );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
@@ -1390,10 +1398,20 @@ pub mod utils {
         // to update the stack num tokens beforehand.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Decrementing concurrent requests count for stack small id: {stack_small_id}"
+        );
         let concurrent_requests = handle_concurrent_requests_count_decrement(
             &state.concurrent_requests_per_stack,
             stack_small_id,
             "chat-completions/serve_non_streaming_response",
+        );
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Concurrent requests have been decremented. Updating stack num compute units for stack small id: {stack_small_id}"
         );
         update_stack_num_compute_units(
             &state.state_manager_sender,
