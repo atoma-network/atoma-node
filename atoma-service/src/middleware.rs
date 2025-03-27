@@ -10,7 +10,7 @@ use crate::{
     types::ConfidentialComputeRequest,
 };
 use atoma_confidential::types::{ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE};
-use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_state::types::{AtomaAtomaStateManagerEvent, StackAvailability};
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     hashing::blake2b_hash,
@@ -450,9 +450,10 @@ pub async fn verify_stack_permissions(
             ),
             endpoint: endpoint.clone(),
         })?;
-    if available_stack.is_none() {
+    if matches!(available_stack, StackAvailability::DoesNotExist) {
         // NOTE: If we are within this branch logic, it means that no available stack was found,
-        // which implies that no compute units were locked, so far.
+        // which implies that no compute units were locked, so far. For this reason, we query the
+        // Sui blockchain to check if a new stack was created for the client, already.
         let tx_digest_str = req_parts
             .headers
             .get(atoma_utils::constants::TX_DIGEST)
@@ -478,6 +479,16 @@ pub async fn verify_stack_permissions(
         // NOTE: We do not need to check that the stack small id matches the one in the request,
         // or that the number of compute units within the stack is enough for processing the request,
         // as the Sui subscriber service should handle this verification.
+    } else if matches!(available_stack, StackAvailability::Locked) {
+        // NOTE: If we are within this branch logic, it means that there is a stack with the same
+        // stack_small_id, but it is locked, so the user needs to buy a new stack, and we provide
+        // a specific status code to flag this scenario to the client.
+        return Err(AtomaServiceError::LockedStackError {
+            message: format!(
+                "Stack with stack_small_id={stack_small_id} is locked, please buy a new stack."
+            ),
+            endpoint: endpoint.clone(),
+        });
     }
     let request_metadata = req_parts
         .extensions
