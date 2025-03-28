@@ -4,7 +4,7 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
-        image_generations::IMAGE_GENERATIONS_PATH,
+        image_generations::IMAGE_GENERATIONS_PATH, request_model::ComputeUnitsEstimate,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
@@ -65,6 +65,8 @@ pub struct EncryptionMetadata {
 pub struct RequestMetadata {
     /// The stack small ID
     pub stack_small_id: i64,
+    /// The number of input tokens
+    pub num_input_tokens: i64,
     /// The estimated total number of compute units
     pub estimated_total_compute_units: i64,
     /// The payload hash
@@ -95,9 +97,11 @@ impl RequestMetadata {
     pub const fn with_stack_info(
         mut self,
         stack_small_id: i64,
+        num_input_tokens: i64,
         estimated_total_compute_units: i64,
     ) -> Self {
         self.stack_small_id = stack_small_id;
+        self.num_input_tokens = num_input_tokens;
         self.estimated_total_compute_units = estimated_total_compute_units;
         self
     }
@@ -416,8 +420,13 @@ pub async fn verify_stack_permissions(
         });
     }
 
-    let total_num_compute_units =
-        utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+    let ComputeUnitsEstimate {
+        num_input_compute_units,
+        max_total_compute_units,
+    } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+
+    let max_total_compute_units = max_total_compute_units as i64;
+    let num_input_compute_units = num_input_compute_units as i64;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -426,7 +435,7 @@ pub async fn verify_stack_permissions(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
                 sui_address: sui_address.to_string(),
-                total_num_compute_units,
+                total_num_compute_units: max_total_compute_units,
                 result_sender,
             },
         )
@@ -468,7 +477,7 @@ pub async fn verify_stack_permissions(
         utils::request_blockchain_for_stack(
             &state,
             tx_digest,
-            total_num_compute_units,
+            max_total_compute_units,
             stack_small_id,
             endpoint.clone(),
         )
@@ -493,7 +502,11 @@ pub async fn verify_stack_permissions(
         .get::<RequestMetadata>()
         .cloned()
         .unwrap_or_default()
-        .with_stack_info(stack_small_id, total_num_compute_units)
+        .with_stack_info(
+            stack_small_id,
+            num_input_compute_units,
+            max_total_compute_units,
+        )
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -648,8 +661,10 @@ pub mod utils {
     use hyper::HeaderMap;
 
     use crate::handlers::{
-        chat_completions::RequestModelChatCompletions, embeddings::RequestModelEmbeddings,
-        image_generations::RequestModelImageGenerations, request_model::RequestModel,
+        chat_completions::RequestModelChatCompletions,
+        embeddings::RequestModelEmbeddings,
+        image_generations::RequestModelImageGenerations,
+        request_model::{ComputeUnitsEstimate, RequestModel},
     };
 
     use super::{
@@ -801,7 +816,7 @@ pub mod utils {
         state: &AppState,
         model: &str,
         endpoint: &str,
-    ) -> Result<i64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         match request_type {
             RequestType::ChatCompletions => {
                 let request_model = RequestModelChatCompletions::new(body_json)?;
@@ -814,9 +829,7 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model
-                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::Embeddings => {
                 let request_model = RequestModelEmbeddings::new(body_json)?;
@@ -829,17 +842,16 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model
-                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::ImageGenerations => {
                 let request_model = RequestModelImageGenerations::new(body_json)?;
-                request_model
-                    .get_compute_units_estimate(None)
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(None)
             }
-            RequestType::NonInference => Ok(0),
+            RequestType::NonInference => Ok(ComputeUnitsEstimate {
+                num_input_compute_units: 0,
+                max_total_compute_units: 0,
+            }),
         }
     }
 
