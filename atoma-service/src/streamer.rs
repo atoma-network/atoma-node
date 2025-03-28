@@ -802,7 +802,7 @@ impl Drop for Streamer {
             &self.state_manager_sender,
             self.stack_small_id,
             self.estimated_total_compute_units,
-            0,
+            self.streamer_computed_num_tokens,
             &self.endpoint,
             num_concurrent_requests,
         ) {
