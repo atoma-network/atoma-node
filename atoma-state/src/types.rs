@@ -112,6 +112,17 @@ impl From<StackCreateAndUpdateEvent> for Stack {
     }
 }
 
+/// Represents the availability of a stack
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StackAvailability {
+    /// The stack is available
+    Available,
+    /// The stack does not exist
+    DoesNotExist,
+    /// The stack is locked
+    Locked,
+}
+
 /// Represents a settlement ticket for a compute stack
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StackSettlementTicket {
@@ -257,7 +268,7 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Total number of compute units
         total_num_compute_units: i64,
         /// Oneshot channel to send the result back to the sender channel
-        result_sender: oneshot::Sender<Result<Option<Stack>, AtomaStateManagerError>>,
+        result_sender: oneshot::Sender<Result<StackAvailability, AtomaStateManagerError>>,
     },
 }
 
