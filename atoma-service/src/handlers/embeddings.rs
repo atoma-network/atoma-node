@@ -80,7 +80,8 @@ pub struct EmbeddingsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -204,7 +205,8 @@ pub struct ConfidentialEmbeddingsOpenApi;
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -325,7 +327,8 @@ pub async fn confidential_embeddings_handler(
 #[instrument(
     level = "info",
     skip(state, payload),
-    fields(path = endpoint)
+    fields(path = endpoint),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_embeddings_response(
