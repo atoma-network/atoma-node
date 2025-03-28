@@ -4,7 +4,7 @@ use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_p2p_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, Node, NodeSubscription, Stack, StackAttestationDispute,
-    StackSettlementTicket, Task, UpdateStackNumComputeUnitsAndClaimFunds,
+    StackAvailability, StackSettlementTicket, Task, UpdateStackNumComputeUnitsAndClaimFunds,
 };
 
 use atoma_p2p::types::AtomaP2pEvent;
@@ -1273,61 +1273,38 @@ impl AtomaState {
         .await?)
     }
 
-    /// Retrieves and updates an available stack with the specified number of compute units.
+    /// Attempts to atomically reserve compute units from a stack and returns its availability status.
     ///
-    /// This method attempts to reserve a specified number of compute units from a stack
-    /// owned by the given public key. It performs this operation atomically using a database
-    /// transaction to ensure consistency.
+    /// This method performs an atomic check-and-update operation on a stack to reserve compute units.
+    /// It will:
+    /// 1. Check if the stack exists
+    /// 2. If it exists, attempt to update its `already_computed_units` if all conditions are met
+    /// 3. Return the appropriate availability status
     ///
     /// # Arguments
     ///
-    /// * `stack_small_id` - The unique identifier of the stack.
-    /// * `public_key` - The public key of the stack owner.
-    /// * `num_compute_units` - The number of compute units to reserve.
+    /// * `stack_small_id` - The ID of the stack to check and potentially update
+    /// * `sui_address` - The Sui address that owns the stack
+    /// * `num_compute_units` - The number of compute units to reserve
     ///
     /// # Returns
     ///
-    /// - `Result<Option<Stack>>`: A result containing either:
-    ///   - `Ok(Some(Stack))`: If the stack was successfully updated, returns the updated stack.
-    ///   - `Ok(None)`: If the stack couldn't be updated (e.g., insufficient compute units or stack in settle period).
-    ///   - `Err(AtomaStateManagerError)`: If there was an error during the database operation.
+    /// Returns a `Result<StackAvailability>` which will be:
+    /// * `StackAvailability::Available` - If the stack exists, belongs to the provided address, and has sufficient
+    ///   remaining compute units. In this case, the compute units are successfully reserved.
+    /// * `StackAvailability::DoesNotExist` - If no stack with the provided ID exists in the database
+    /// * `StackAvailability::Locked` - If the stack exists but cannot be updated because:
+    ///   - It belongs to a different address
+    ///   - It has insufficient remaining compute units
+    ///   - It is in settlement period
+    ///   - It is already claimed
+    ///   - It is locked for claim
     ///
-    /// # Errors
+    /// # Notes
     ///
-    /// This function will return an error if:
-    /// - The database transaction fails to begin, execute, or commit.
-    /// - There's an issue with the SQL query execution.
-    ///
-    /// # Details
-    ///
-    /// The function performs the following steps:
-    /// 1. Begins a database transaction.
-    /// 2. Attempts to update the stack by increasing the `already_computed_units` field.
-    /// 3. If the update is successful (i.e., the stack has enough available compute units),
-    ///    it fetches the updated stack information.
-    /// 4. Commits the transaction.
-    ///
-    /// The update will only succeed if:
-    /// - The stack belongs to the specified owner (public key).
-    /// - The stack has enough remaining compute units.
-    /// - The stack is not in the settle period.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
-    ///
-    /// async fn reserve_compute_units(state_manager: &AtomaStateManager) -> Result<Option<Stack>, AtomaStateManagerError> {
-    ///     let stack_small_id = 1;
-    ///     let public_key = "owner_public_key";
-    ///     let num_compute_units = 100;
-    ///
-    ///     state_manager.get_available_stack_with_compute_units(stack_small_id, public_key, num_compute_units).await
-    /// }
-    /// ```
-    ///
-    /// This function is particularly useful for atomically reserving compute units from a stack,
-    /// ensuring that the operation is thread-safe and consistent even under concurrent access.
+    /// The operation is performed atomically in a single database query to ensure thread safety
+    /// and prevent race conditions when multiple processes attempt to reserve compute units
+    /// from the same stack.
     #[tracing::instrument(
         level = "trace",
         skip_all,
@@ -1342,28 +1319,46 @@ impl AtomaState {
         stack_small_id: i64,
         sui_address: &str,
         num_compute_units: i64,
-    ) -> Result<Option<Stack>> {
-        // Single query that updates and returns the modified row
-        let maybe_stack = sqlx::query_as::<_, Stack>(
-            r"
-            UPDATE stacks
-            SET already_computed_units = already_computed_units + $1
-            WHERE stack_small_id = $2
-            AND owner_address = $3
-            AND num_compute_units - already_computed_units >= $1
-            AND in_settle_period = false
-            AND is_claimed = false
-            AND is_locked_for_claim = false
-            RETURNING *
+    ) -> Result<StackAvailability> {
+        const AVAILABLE: &str = "Available";
+        const DOES_NOT_EXIST: &str = "DoesNotExist";
+        const LOCKED: &str = "Locked";
+        const STATUS_COLUMN: &str = "status";
+
+        let result = sqlx::query(
+            &format!(
+                "
+                WITH stack_update AS (
+                    UPDATE stacks
+                    SET already_computed_units = already_computed_units + $1
+                    WHERE stack_small_id = $2
+                    AND owner_address = $3
+                    AND num_compute_units - already_computed_units >= $1
+                AND in_settle_period = false
+                AND is_claimed = false
+                AND is_locked_for_claim = false
+                RETURNING 1
+            )
+            SELECT 
+                CASE 
+                    WHEN NOT EXISTS (SELECT 1 FROM stacks WHERE stack_small_id = $2) THEN '{DOES_NOT_EXIST}'
+                    WHEN EXISTS (SELECT 1 FROM stack_update) THEN '{AVAILABLE}'
+                    ELSE '{LOCKED}'
+                END::text as status
             ",
-        )
-        .bind(num_compute_units)
-        .bind(stack_small_id)
-        .bind(sui_address)
-        .fetch_optional(&self.db)
+            ))
+            .bind(num_compute_units)
+            .bind(stack_small_id)
+            .bind(sui_address)
+        .fetch_one(&self.db)
         .await?;
 
-        Ok(maybe_stack)
+        Ok(match result.get::<&str, _>(STATUS_COLUMN) {
+            AVAILABLE => StackAvailability::Available,
+            DOES_NOT_EXIST => StackAvailability::DoesNotExist,
+            LOCKED => StackAvailability::Locked,
+            _ => unreachable!(),
+        })
     }
 
     /// Inserts a new stack into the database if it doesn't already exist.
@@ -3395,8 +3390,8 @@ mod tests {
             .get_available_stack_with_compute_units(1, "0x123", 50)
             .await
             .unwrap();
-        assert!(result.is_some());
-        let updated_stack = result.unwrap();
+        assert!(matches!(result, StackAvailability::Available));
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 50);
 
         // Test case 2: Stack with insufficient compute units
@@ -3404,7 +3399,9 @@ mod tests {
             .get_available_stack_with_compute_units(1, "0x123", 60)
             .await
             .unwrap();
-        assert!(result.is_none());
+        assert!(matches!(result, StackAvailability::Locked));
+        let updated_stack = state_manager.get_stack(1).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 50);
 
         // Test case 3: Stack in settle period
         let mut stack2 = stack1.clone();
@@ -3417,7 +3414,9 @@ mod tests {
             .get_available_stack_with_compute_units(2, "0x123", 50)
             .await
             .unwrap();
-        assert!(result.is_none());
+        assert!(matches!(result, StackAvailability::Locked));
+        let updated_stack = state_manager.get_stack(2).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0);
 
         // Test case 4: Stack with different owner
         let mut stack3 = stack1.clone();
@@ -3430,14 +3429,16 @@ mod tests {
             .get_available_stack_with_compute_units(3, "0x123", 50)
             .await
             .unwrap();
-        assert!(result.is_none());
+        assert!(matches!(result, StackAvailability::Locked));
+        let updated_stack = state_manager.get_stack(3).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0);
 
         // Test case 5: Non-existent stack
         let result = state_manager
             .get_available_stack_with_compute_units(999, "0x123", 50)
             .await
             .unwrap();
-        assert!(result.is_none());
+        assert!(matches!(result, StackAvailability::DoesNotExist));
 
         // Test case 6: Exact number of compute units available
         let mut stack4 = stack1.clone();
@@ -3451,8 +3452,8 @@ mod tests {
             .get_available_stack_with_compute_units(4, "0x123", 50)
             .await
             .unwrap();
-        assert!(result.is_some());
-        let updated_stack = result.unwrap();
+        assert!(matches!(result, StackAvailability::Available));
+        let updated_stack = state_manager.get_stack(4).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 100);
 
         // Test case 7: Attempt to use more compute units than available
@@ -3460,7 +3461,9 @@ mod tests {
             .get_available_stack_with_compute_units(4, "0x123", 1)
             .await
             .unwrap();
-        assert!(result.is_none());
+        assert!(matches!(result, StackAvailability::Locked));
+        let updated_stack = state_manager.get_stack(4).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 100);
 
         truncate_tables(&state_manager.db).await;
     }
