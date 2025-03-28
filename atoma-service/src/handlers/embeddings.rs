@@ -25,7 +25,10 @@ use tokenizers::Tokenizer;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
-use super::{handle_status_code_error, request_model::RequestModel};
+use super::{
+    handle_status_code_error,
+    request_model::{ComputeUnitsEstimate, RequestModel},
+};
 
 /// The path for confidential embeddings requests
 pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
@@ -100,7 +103,7 @@ pub async fn embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     let timer = Instant::now();
@@ -227,7 +230,7 @@ pub async fn confidential_embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     let timer = Instant::now();
@@ -430,7 +433,7 @@ impl RequestModel for RequestModelEmbeddings {
     fn get_compute_units_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<u64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         let Some(tokenizer) = tokenizer else {
             return Err(AtomaServiceError::InternalError {
                 message: "Tokenizer is required for current model, but is not currently available"
@@ -468,6 +471,9 @@ impl RequestModel for RequestModelEmbeddings {
             }
         };
 
-        Ok(total_units)
+        Ok(ComputeUnitsEstimate {
+            num_input_compute_units: total_units,
+            max_total_compute_units: total_units,
+        })
     }
 }
