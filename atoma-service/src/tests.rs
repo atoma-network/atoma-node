@@ -350,10 +350,11 @@ mod middleware {
         assert_eq!(request_metadata.estimated_total_compute_units, 0);
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
-        let request_metadata = request_metadata.with_stack_info(1, 2);
+        let request_metadata = request_metadata.with_stack_info(1, 100, 200);
 
         assert_eq!(request_metadata.stack_small_id, 1);
-        assert_eq!(request_metadata.estimated_total_compute_units, 2);
+        assert_eq!(request_metadata.num_input_tokens, 100);
+        assert_eq!(request_metadata.estimated_total_compute_units, 200);
 
         let request_metadata = request_metadata.with_payload_hash([3u8; 32]);
 
@@ -999,6 +1000,7 @@ mod middleware {
         // Create initial RequestMetadata with some existing values
         let initial_metadata = RequestMetadata {
             stack_small_id: 42,
+            num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
@@ -1624,6 +1626,7 @@ mod middleware {
         // Create initial RequestMetadata
         let initial_metadata = RequestMetadata {
             stack_small_id: 42,
+            num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
