@@ -314,92 +314,82 @@ pub fn update_stack_num_compute_units(
         })
 }
 
-/// Decrements and manages concurrent request counts for a stack in a thread-safe manner.
+/// Atomically decrements the concurrent request count for a specific stack ID in a `DashMap`.
 ///
-/// # Overview
-/// This function safely decrements the concurrent request counter for a given stack and handles
-/// cleanup when the count reaches zero. It uses `DashMap` - a concurrent hash map implementation
-/// that provides interior mutability and thread-safe operations.
-///
-/// # Concurrency Safety
-/// The function handles several concurrent scenarios safely:
-///
-/// 1. **Atomic Entry Operations**:
-///    - Uses DashMap's `entry()` API which provides atomic get-or-insert operations
-///    - The entry is held with a mutable guard, preventing other threads from modifying the same entry
-///    - The scope-based lock ensures the entry is automatically released after modification
-///
-/// 2. **Race Condition Prevention**:
-///    - The decrement operation is performed within a single atomic block using the entry guard
-///    - Uses `saturating_sub(1)` to prevent underflow in case of concurrent decrements
-///    - The count value is captured before removal to ensure consistent return values
-///
-/// 3. **Safe Key Removal**:
-///    - The `remove_if` operation is atomic and uses a predicate-based removal
-///    - Even if multiple threads attempt removal when count = 0, only one will succeed
-///    - The removal predicate is evaluated atomically with the removal operation
+/// If the count reaches zero after decrementing, the entry for the stack ID is removed from the map.
+/// This function uses the `DashMap::entry` API to ensure atomicity of the check-decrement-update/remove
+/// operation for a given key.
 ///
 /// # Arguments
-/// * `concurrent_requests_per_stack` - Thread-safe map tracking concurrent requests per stack
-/// * `stack_small_id` - Unique identifier for the stack
-/// * `endpoint` - API endpoint string for logging purposes
+///
+/// * `concurrent_requests_per_stack` - A reference to the `DashMap` storing `stack_small_id` -> `count`.
+/// * `stack_small_id` - The identifier of the stack whose concurrent request count should be decremented.
+/// * `endpoint` - A string representing the API endpoint, used for logging context.
 ///
 /// # Returns
 /// Returns the new concurrent request count after decrement
 ///
-/// # Example
-/// ```rust,ignore
-/// let concurrent_map = DashMap::new();
-/// concurrent_map.insert(1, 2); // Stack 1 has 2 concurrent requests
+/// Returns the concurrent request count for the `stack_small_id` *after* the decrement operation.
+/// If the entry did not exist, or if the count was already zero, it returns 0. If the count reached zero
+/// due to this decrement, it returns 0 after removing the entry.
 ///
-/// let new_count = handle_concurrent_requests_count_decrement(&concurrent_map, 1, "/api/v1");
-/// assert_eq!(new_count, 1); // Count decremented to 1
+/// # Concurrency
 ///
-/// let new_count = handle_concurrent_requests_count_decrement(&concurrent_map, 1, "/api/v1");
-/// assert_eq!(new_count, 0); // Count decremented to 0 and key removed
-/// assert!(concurrent_map.is_empty()); // Map is empty after removal
-/// ```
+/// The `DashMap::entry` method locks the relevant map shard, ensuring that the read, potential decrement,
+/// update, and potential removal operations occur atomically for the given `stack_small_id`.
 ///
-/// # Implementation Details
-/// 1. The function uses a scoped block with the entry guard to ensure atomic operations
-/// 2. Logs an error if attempting to decrement from 0 (indicates potential logic error)
-/// 3. Performs removal check only after decrement, preventing race conditions
-/// 4. Uses logging to track important state changes for debugging
+/// # Logging
+///
+/// - Logs an error if an attempt is made to decrement the count for a `stack_small_id` that is not
+///   present in the map (implying a count of 0).
+/// - Logs an error if an attempt is made to decrement a count that is already 0.
+/// - Logs informational message when a count reaches 0 and the corresponding entry is removed.
 #[instrument(level = "info", skip_all, fields(stack_small_id, endpoint))]
 pub fn handle_concurrent_requests_count_decrement(
     concurrent_requests_per_stack: &DashMap<i64, u64>,
     stack_small_id: i64,
     endpoint: &str,
 ) -> u64 {
-    let concurrent_requests_count = {
-        let mut concurrent_requests_count = concurrent_requests_per_stack
-            .entry(stack_small_id)
-            .or_insert(0);
-        if *concurrent_requests_count == 0 {
+    let entry = concurrent_requests_per_stack.entry(stack_small_id);
+    match entry {
+        dashmap::mapref::entry::Entry::Occupied(mut occupied_entry) => {
+            let current_count = *occupied_entry.get();
+            if current_count == 0 {
+                tracing::error!(
+                    target = "atoma-service",
+                    level = "error",
+                    endpoint = endpoint,
+                );
+                occupied_entry.remove();
+                0
+            } else {
+                let new_count = current_count.saturating_sub(1);
+                occupied_entry.insert(new_count);
+                if new_count == 0 {
+                    tracing::info!(
+                        target = "atoma-service",
+                        level = "info",
+                        endpoint = endpoint,
+                        stack_small_id,
+                        "Concurrent requests count reached 0 for stack, removing entry and updating stack num compute units.",
+                    );
+                    occupied_entry.remove();
+                }
+                new_count
+            }
+        }
+        dashmap::mapref::entry::Entry::Vacant(_) => {
+            // Entry doesn't exist. This implies a count of 0.
             tracing::error!(
                 target = "atoma-service",
                 level = "error",
                 endpoint = endpoint,
-                "Concurrent requests count is 0 for stack small id: {}, but we still need to update the stack num compute units",
-                stack_small_id
+                stack_small_id,
+                "Attempted to decrement concurrent requests for non-existent stack entry (implies count is 0).",
             );
+            0
         }
-        *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
-        *concurrent_requests_count
-    };
-    concurrent_requests_per_stack.remove_if(&stack_small_id, |sid, count| {
-        let predicate = *count == 0;
-        if predicate {
-            tracing::info!(
-                target = "atoma-service",
-                level = "info",
-                endpoint = endpoint,
-                "Concurrent requests count is 0 for stack small id: {sid}, updating stack num compute units",
-            );
-        }
-        predicate
-    });
-    concurrent_requests_count
+    }
 }
 
 /// Handles the status code returned by the inference service.
