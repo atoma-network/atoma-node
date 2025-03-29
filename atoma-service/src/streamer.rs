@@ -216,7 +216,8 @@ impl Streamer {
             stack_small_id = self.stack_small_id,
             estimated_total_compute_units = self.estimated_total_compute_units,
             payload_hash = hex::encode(self.payload_hash)
-        )
+        ),
+        err
     )]
     fn handle_final_chunk(
         &mut self,
@@ -331,7 +332,7 @@ impl Streamer {
     /// Returns a tuple containing:
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, err)]
     pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
         let (response_hash, signature) =
             utils::sign_response_body(chunk, &self.keystore, self.address_index).map_err(|e| {
@@ -370,7 +371,7 @@ impl Streamer {
     ///
     /// * Sets `waiting_for_encrypted_chunk` to `true`
     /// * Updates `encryption_response_receiver` with the new receiver
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, err)]
     fn handle_encryption_request(
         chunk: &Value,
         usage: Option<&Value>,

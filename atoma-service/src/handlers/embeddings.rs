@@ -82,8 +82,9 @@ pub struct EmbeddingsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -114,7 +115,6 @@ pub async fn embeddings_handler(
         &state,
         &payload,
         stack_small_id,
-        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
         &endpoint,
@@ -206,8 +206,9 @@ pub struct ConfidentialEmbeddingsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -239,7 +240,6 @@ pub async fn confidential_embeddings_handler(
         &state,
         &payload,
         stack_small_id,
-        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
         &endpoint,
@@ -327,15 +327,15 @@ pub async fn confidential_embeddings_handler(
 /// ```
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = endpoint)
+    skip_all,
+    fields(path = endpoint),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_embeddings_response(
     state: &AppState,
     payload: &Value,
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
