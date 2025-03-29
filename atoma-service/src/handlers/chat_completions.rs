@@ -193,7 +193,7 @@ pub struct ChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
+    skip_all,
     fields(path = request_metadata.endpoint_path),
     err
 )]
@@ -367,7 +367,7 @@ pub struct ConfidentialChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
+    skip_all,
     fields(path = request_metadata.endpoint_path),
     err
 )]

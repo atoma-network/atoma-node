@@ -83,7 +83,7 @@ pub struct ImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
+    skip_all,
     fields(path = request_metadata.endpoint_path),
     err
 )]
@@ -120,7 +120,6 @@ pub async fn image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -209,7 +208,7 @@ pub struct ConfidentialImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
+    skip_all,
     fields(path = request_metadata.endpoint_path),
     err
 )]
@@ -243,7 +242,6 @@ pub async fn confidential_image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -314,7 +312,7 @@ pub async fn confidential_image_generations_handler(
 /// * Failed to handle confidential compute encryption
 #[instrument(
     level = "info",
-    skip(state, payload),
+    skip_all,
     fields(path = endpoint),
     err
 )]
@@ -324,7 +322,6 @@ async fn handle_image_generations_response(
     payload: Value,
     payload_hash: [u8; 32],
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
     timer: Instant,
