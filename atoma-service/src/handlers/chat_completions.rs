@@ -194,8 +194,9 @@ pub struct ChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -369,8 +370,9 @@ pub struct ConfidentialChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -510,7 +512,8 @@ pub async fn confidential_chat_completions_handler(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_response(
@@ -617,7 +620,8 @@ async fn handle_response(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
 async fn handle_non_streaming_response(
     state: &AppState,
@@ -708,7 +712,8 @@ async fn handle_non_streaming_response(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_streaming_response(
@@ -982,7 +987,8 @@ pub mod utils {
             payload_hash,
             stack_small_id,
             endpoint_path = endpoint
-        )
+        ),
+        err
     )]
     pub async fn get_streaming_encryption_metadata(
         state: &AppState,
@@ -1090,7 +1096,8 @@ pub mod utils {
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, payload_hash, endpoint)
+        fields(stack_small_id, payload_hash, endpoint),
+        err
     )]
     pub async fn send_request_to_inference_service(
         state: &AppState,
@@ -1287,7 +1294,8 @@ pub mod utils {
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint)
+        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint),
+        err
     )]
     #[allow(clippy::too_many_arguments)]
     pub async fn serve_non_streaming_response(

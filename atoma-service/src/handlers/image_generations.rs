@@ -84,8 +84,9 @@ pub struct ImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -120,7 +121,6 @@ pub async fn image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -209,8 +209,9 @@ pub struct ConfidentialImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -242,7 +243,6 @@ pub async fn confidential_image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -313,8 +313,9 @@ pub async fn confidential_image_generations_handler(
 /// * Failed to handle confidential compute encryption
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = endpoint)
+    skip_all,
+    fields(path = endpoint),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_image_generations_response(
@@ -322,7 +323,6 @@ async fn handle_image_generations_response(
     payload: Value,
     payload_hash: [u8; 32],
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
     timer: Instant,

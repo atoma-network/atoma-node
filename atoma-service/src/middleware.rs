@@ -227,7 +227,8 @@ impl RequestMetadata {
     skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn signature_verification_middleware(
     req: Request<Body>,
@@ -329,7 +330,8 @@ pub async fn signature_verification_middleware(
     skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn verify_stack_permissions(
     state: State<AppState>,
@@ -565,7 +567,8 @@ pub async fn verify_stack_permissions(
     level = "info", skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn confidential_compute_middleware(
     state: State<AppState>,
@@ -742,7 +745,7 @@ pub mod utils {
     /// - No stack is found for the given transaction
     /// - Stack exists but has insufficient compute units
     /// - Stack small ID doesn't match the expected value
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
@@ -894,7 +897,7 @@ pub mod utils {
     ///     "max_tokens": 100
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn calculate_chat_completion_compute_units(
         body_json: &Value,
         state: &AppState,
@@ -996,7 +999,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Verification failed: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn verify_plaintext_body_hash(
         plaintext_body_hash: &[u8; PAYLOAD_HASH_SIZE],
         headers: &HeaderMap,
@@ -1057,7 +1060,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Decryption failed: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub async fn decrypt_confidential_compute_request(
         state: &AppState,
         confidential_compute_request: &ConfidentialComputeRequest,
@@ -1204,7 +1207,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Plaintext body hash does not match: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn check_plaintext_body_hash(
         plaintext_body_hash_bytes: [u8; PAYLOAD_HASH_SIZE],
         plaintext: &[u8],

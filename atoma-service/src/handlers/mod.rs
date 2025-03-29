@@ -56,7 +56,8 @@ pub const USAGE_KEY: &str = "usage";
 #[instrument(
     level = "info",
     skip(response_body, state),
-    fields(event = "sign-response-and-update-stack-hash",)
+    fields(event = "sign-response-and-update-stack-hash",),
+    err
 )]
 async fn sign_response_and_update_stack_hash(
     response_body: &mut Value,
@@ -134,7 +135,8 @@ async fn sign_response_and_update_stack_hash(
 #[instrument(
     level = "info",
     skip(state, response_body, client_encryption_metadata),
-    fields(event = "confidential-compute-encryption-response")
+    fields(event = "confidential-compute-encryption-response"),
+    err
 )]
 pub async fn handle_confidential_compute_encryption_response(
     state: &AppState,
@@ -291,7 +293,8 @@ pub async fn handle_confidential_compute_encryption_response(
         total_compute_units,
         payload_hash,
         endpoint
-    )
+    ),
+    err
 )]
 pub fn update_stack_num_compute_units(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
@@ -415,7 +418,7 @@ pub fn handle_concurrent_requests_count_decrement(
 /// # Returns
 ///
 /// Returns an `AtomaServiceError` variant based on the status code.
-#[instrument(level = "info", skip_all, fields(endpoint))]
+#[instrument(level = "info", skip_all, fields(endpoint), err)]
 pub fn handle_status_code_error(
     status_code: StatusCode,
     endpoint: &str,
