@@ -112,6 +112,15 @@ pub struct Streamer {
     chunk_buffer: String,
     /// Timer for measuring time between token generations
     inter_stream_token_latency_timer: Option<Instant>,
+    /// Whether the final chunk has been handled already or not,
+    /// useful in situations where the client kills the connection
+    /// before the final chunk is sent
+    is_final_chunk_handled: bool,
+    /// The number of tokens computed so far, this is used when the client
+    /// kills the connection before the final chunk is sent. If, instead,
+    /// the last chunk is handled, the value is updated to the actual number of tokens
+    /// returned by the LLM inference service
+    streamer_computed_num_tokens: i64,
 }
 
 /// Represents the various states of a streaming process
@@ -135,6 +144,7 @@ impl Streamer {
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         concurrent_requests: Arc<DashMap<i64, u64>>,
         stack_small_id: i64,
+        num_input_tokens: i64,
         estimated_total_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         keystore: Arc<FileBasedKeystore>,
@@ -161,6 +171,8 @@ impl Streamer {
             endpoint,
             chunk_buffer: String::new(),
             inter_stream_token_latency_timer: None,
+            is_final_chunk_handled: false,
+            streamer_computed_num_tokens: num_input_tokens,
         }
     }
 
@@ -174,6 +186,8 @@ impl Streamer {
     /// 4. Calculates a total hash combining payload and response hashes
     /// 5. Updates the state manager with the total hash
     /// 6. Creates a final SSE message containing signature and metadata
+    /// 7. Updates the stack num tokens
+    /// 8. Sets the variable `is_final_chunk_handled` to `true`
     ///
     /// # Arguments
     ///
@@ -202,7 +216,8 @@ impl Streamer {
             stack_small_id = self.stack_small_id,
             estimated_total_compute_units = self.estimated_total_compute_units,
             payload_hash = hex::encode(self.payload_hash)
-        )
+        ),
+        err
     )]
     fn handle_final_chunk(
         &mut self,
@@ -305,6 +320,8 @@ impl Streamer {
             );
         }
 
+        self.is_final_chunk_handled = true;
+
         Ok(())
     }
 
@@ -315,7 +332,7 @@ impl Streamer {
     /// Returns a tuple containing:
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, err)]
     pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
         let (response_hash, signature) =
             utils::sign_response_body(chunk, &self.keystore, self.address_index).map_err(|e| {
@@ -354,7 +371,7 @@ impl Streamer {
     ///
     /// * Sets `waiting_for_encrypted_chunk` to `true`
     /// * Updates `encryption_response_receiver` with the new receiver
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, err)]
     fn handle_encryption_request(
         chunk: &Value,
         usage: Option<&Value>,
@@ -606,6 +623,9 @@ impl Streamer {
                 chunk
             };
             update_chunk(&mut chunk, &signature, response_hash);
+            // NOTE: We increment the number of tokens computed so far, as we are processing a new chunk
+            // which corresponds to a new generated token.
+            self.streamer_computed_num_tokens += 1;
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
     }
@@ -726,4 +746,74 @@ impl Streamer {
 fn update_chunk(chunk: &mut Value, signature: &str, response_hash: [u8; PAYLOAD_HASH_SIZE]) {
     chunk[SIGNATURE_KEY] = json!(signature);
     chunk[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
+}
+
+impl Drop for Streamer {
+    /// Implements the Drop trait to handle cleanup when the streamer is dropped
+    ///
+    /// This method ensures proper resource cleanup and state management when the streamer
+    /// is dropped, particularly in cases where the final chunk hasn't been handled.
+    ///
+    /// # Implementation Details
+    ///
+    /// - Checks if the final chunk has already been handled to prevent duplicate cleanup
+    /// - If the final chunk has not been handled, it records the decoding phase timer taken so far
+    /// - Decrements the concurrent request counter for the associated stack
+    /// - Updates the stack's compute units through the state manager
+    /// - Sets the stream status to Completed
+    ///
+    /// # Instrumentation
+    ///
+    /// This method is instrumented with the following fields for tracing:
+    /// - `endpoint`: The API endpoint being accessed
+    /// - `stack_small_id`: The unique identifier for the stack
+    /// - `estimated_total_compute_units`: Expected compute units for the operation
+    /// - `payload_hash`: Hex-encoded hash of the request payload
+    ///
+    /// # Error Handling
+    ///
+    /// If updating the stack's compute units fails, the error is logged but not propagated
+    /// since this is a destructor implementation.
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(
+            endpoint = self.endpoint,
+            stack_small_id = self.stack_small_id,
+            estimated_total_compute_units = self.estimated_total_compute_units,
+            payload_hash = hex::encode(self.payload_hash)
+        )
+    )]
+    fn drop(&mut self) {
+        if self.is_final_chunk_handled {
+            return;
+        }
+        if let Some(timer) = self.decoding_phase_timer.take() {
+            CHAT_COMPLETIONS_DECODING_TIME.record(
+                timer.elapsed().as_secs_f64(),
+                &[KeyValue::new("model", self.model.clone())],
+            );
+        }
+        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
+            &self.concurrent_requests,
+            self.stack_small_id,
+            &self.endpoint,
+        );
+        if let Err(e) = update_stack_num_compute_units(
+            &self.state_manager_sender,
+            self.stack_small_id,
+            self.estimated_total_compute_units,
+            self.streamer_computed_num_tokens,
+            &self.endpoint,
+            num_concurrent_requests,
+        ) {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                "Error updating stack num tokens: {}",
+                e
+            );
+        }
+        self.status = StreamStatus::Completed;
+    }
 }

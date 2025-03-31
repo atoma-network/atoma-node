@@ -4,13 +4,13 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
-        image_generations::IMAGE_GENERATIONS_PATH,
+        image_generations::IMAGE_GENERATIONS_PATH, request_model::ComputeUnitsEstimate,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
 };
 use atoma_confidential::types::{ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE};
-use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_state::types::{AtomaAtomaStateManagerEvent, StackAvailability};
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     hashing::blake2b_hash,
@@ -65,6 +65,8 @@ pub struct EncryptionMetadata {
 pub struct RequestMetadata {
     /// The stack small ID
     pub stack_small_id: i64,
+    /// The number of input tokens
+    pub num_input_tokens: i64,
     /// The estimated total number of compute units
     pub estimated_total_compute_units: i64,
     /// The payload hash
@@ -95,9 +97,11 @@ impl RequestMetadata {
     pub const fn with_stack_info(
         mut self,
         stack_small_id: i64,
+        num_input_tokens: i64,
         estimated_total_compute_units: i64,
     ) -> Self {
         self.stack_small_id = stack_small_id;
+        self.num_input_tokens = num_input_tokens;
         self.estimated_total_compute_units = estimated_total_compute_units;
         self
     }
@@ -223,7 +227,8 @@ impl RequestMetadata {
     skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn signature_verification_middleware(
     req: Request<Body>,
@@ -325,7 +330,8 @@ pub async fn signature_verification_middleware(
     skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn verify_stack_permissions(
     state: State<AppState>,
@@ -416,8 +422,13 @@ pub async fn verify_stack_permissions(
         });
     }
 
-    let total_num_compute_units =
-        utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+    let ComputeUnitsEstimate {
+        num_input_compute_units,
+        max_total_compute_units,
+    } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+
+    let max_total_compute_units = max_total_compute_units as i64;
+    let num_input_compute_units = num_input_compute_units as i64;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -426,7 +437,7 @@ pub async fn verify_stack_permissions(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
                 sui_address: sui_address.to_string(),
-                total_num_compute_units,
+                total_num_compute_units: max_total_compute_units,
                 result_sender,
             },
         )
@@ -448,9 +459,10 @@ pub async fn verify_stack_permissions(
             ),
             endpoint: endpoint.clone(),
         })?;
-    if available_stack.is_none() {
+    if matches!(available_stack, StackAvailability::DoesNotExist) {
         // NOTE: If we are within this branch logic, it means that no available stack was found,
-        // which implies that no compute units were locked, so far.
+        // which implies that no compute units were locked, so far. For this reason, we query the
+        // Sui blockchain to check if a new stack was created for the client, already.
         let tx_digest_str = req_parts
             .headers
             .get(atoma_utils::constants::TX_DIGEST)
@@ -467,7 +479,7 @@ pub async fn verify_stack_permissions(
         utils::request_blockchain_for_stack(
             &state,
             tx_digest,
-            total_num_compute_units,
+            max_total_compute_units,
             stack_small_id,
             endpoint.clone(),
         )
@@ -476,13 +488,27 @@ pub async fn verify_stack_permissions(
         // NOTE: We do not need to check that the stack small id matches the one in the request,
         // or that the number of compute units within the stack is enough for processing the request,
         // as the Sui subscriber service should handle this verification.
+    } else if matches!(available_stack, StackAvailability::Locked) {
+        // NOTE: If we are within this branch logic, it means that there is a stack with the same
+        // stack_small_id, but it is locked, so the user needs to buy a new stack, and we provide
+        // a specific status code to flag this scenario to the client.
+        return Err(AtomaServiceError::LockedStackError {
+            message: format!(
+                "Stack with stack_small_id={stack_small_id} is locked, please buy a new stack."
+            ),
+            endpoint: endpoint.clone(),
+        });
     }
     let request_metadata = req_parts
         .extensions
         .get::<RequestMetadata>()
         .cloned()
         .unwrap_or_default()
-        .with_stack_info(stack_small_id, total_num_compute_units)
+        .with_stack_info(
+            stack_small_id,
+            num_input_compute_units,
+            max_total_compute_units,
+        )
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -541,7 +567,8 @@ pub async fn verify_stack_permissions(
     level = "info", skip_all,
     fields(
         endpoint = %req.uri().path(),
-    )
+    ),
+    err
 )]
 pub async fn confidential_compute_middleware(
     state: State<AppState>,
@@ -637,8 +664,10 @@ pub mod utils {
     use hyper::HeaderMap;
 
     use crate::handlers::{
-        chat_completions::RequestModelChatCompletions, embeddings::RequestModelEmbeddings,
-        image_generations::RequestModelImageGenerations, request_model::RequestModel,
+        chat_completions::RequestModelChatCompletions,
+        embeddings::RequestModelEmbeddings,
+        image_generations::RequestModelImageGenerations,
+        request_model::{ComputeUnitsEstimate, RequestModel},
     };
 
     use super::{
@@ -716,7 +745,7 @@ pub mod utils {
     /// - No stack is found for the given transaction
     /// - Stack exists but has insufficient compute units
     /// - Stack small ID doesn't match the expected value
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub async fn request_blockchain_for_stack(
         state: &AppState,
         tx_digest: TransactionDigest,
@@ -790,7 +819,7 @@ pub mod utils {
         state: &AppState,
         model: &str,
         endpoint: &str,
-    ) -> Result<i64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         match request_type {
             RequestType::ChatCompletions => {
                 let request_model = RequestModelChatCompletions::new(body_json)?;
@@ -803,9 +832,7 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model
-                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::Embeddings => {
                 let request_model = RequestModelEmbeddings::new(body_json)?;
@@ -818,17 +845,16 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model
-                    .get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::ImageGenerations => {
                 let request_model = RequestModelImageGenerations::new(body_json)?;
-                request_model
-                    .get_compute_units_estimate(None)
-                    .map(|i| i as i64)
+                request_model.get_compute_units_estimate(None)
             }
-            RequestType::NonInference => Ok(0),
+            RequestType::NonInference => Ok(ComputeUnitsEstimate {
+                num_input_compute_units: 0,
+                max_total_compute_units: 0,
+            }),
         }
     }
 
@@ -871,7 +897,7 @@ pub mod utils {
     ///     "max_tokens": 100
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn calculate_chat_completion_compute_units(
         body_json: &Value,
         state: &AppState,
@@ -973,7 +999,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Verification failed: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn verify_plaintext_body_hash(
         plaintext_body_hash: &[u8; PAYLOAD_HASH_SIZE],
         headers: &HeaderMap,
@@ -1034,7 +1060,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Decryption failed: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub async fn decrypt_confidential_compute_request(
         state: &AppState,
         confidential_compute_request: &ConfidentialComputeRequest,
@@ -1181,7 +1207,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Plaintext body hash does not match: {}", e),
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all, err)]
     pub fn check_plaintext_body_hash(
         plaintext_body_hash_bytes: [u8; PAYLOAD_HASH_SIZE],
         plaintext: &[u8],

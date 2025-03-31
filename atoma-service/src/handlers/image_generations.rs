@@ -25,7 +25,8 @@ use utoipa::OpenApi;
 
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
-    request_model::RequestModel, sign_response_and_update_stack_hash,
+    request_model::{ComputeUnitsEstimate, RequestModel},
+    sign_response_and_update_stack_hash,
 };
 
 /// The path for confidential image generations requests
@@ -83,8 +84,9 @@ pub struct ImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -106,7 +108,7 @@ pub async fn image_generations_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     let model = payload
@@ -119,7 +121,6 @@ pub async fn image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -208,8 +209,9 @@ pub struct ConfidentialImageGenerationsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -233,7 +235,7 @@ pub async fn confidential_image_generations_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     match handle_image_generations_response(
@@ -241,7 +243,6 @@ pub async fn confidential_image_generations_handler(
         payload.clone(),
         payload_hash,
         stack_small_id,
-        estimated_total_compute_units,
         client_encryption_metadata,
         &endpoint,
         timer,
@@ -312,8 +313,9 @@ pub async fn confidential_image_generations_handler(
 /// * Failed to handle confidential compute encryption
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = endpoint)
+    skip_all,
+    fields(path = endpoint),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_image_generations_response(
@@ -321,7 +323,6 @@ async fn handle_image_generations_response(
     payload: Value,
     payload_hash: [u8; 32],
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
     timer: Instant,
@@ -443,7 +444,7 @@ impl RequestModel for RequestModelImageGenerations {
     fn get_compute_units_estimate(
         &self,
         _tokenizer: Option<&Tokenizer>,
-    ) -> Result<u64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         // Parse dimensions from size string (e.g., "1024x1024")
         let dimensions: Vec<u64> = self
             .size
@@ -465,6 +466,9 @@ impl RequestModel for RequestModelImageGenerations {
         let height = dimensions[1];
 
         // Calculate compute units based on number of images and pixel count
-        Ok(self.n * width * height)
+        Ok(ComputeUnitsEstimate {
+            num_input_compute_units: self.n * width * height,
+            max_total_compute_units: self.n * width * height,
+        })
     }
 }

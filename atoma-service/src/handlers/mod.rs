@@ -56,7 +56,8 @@ pub const USAGE_KEY: &str = "usage";
 #[instrument(
     level = "info",
     skip(response_body, state),
-    fields(event = "sign-response-and-update-stack-hash",)
+    fields(event = "sign-response-and-update-stack-hash",),
+    err
 )]
 async fn sign_response_and_update_stack_hash(
     response_body: &mut Value,
@@ -134,7 +135,8 @@ async fn sign_response_and_update_stack_hash(
 #[instrument(
     level = "info",
     skip(state, response_body, client_encryption_metadata),
-    fields(event = "confidential-compute-encryption-response")
+    fields(event = "confidential-compute-encryption-response"),
+    err
 )]
 pub async fn handle_confidential_compute_encryption_response(
     state: &AppState,
@@ -291,7 +293,8 @@ pub async fn handle_confidential_compute_encryption_response(
         total_compute_units,
         payload_hash,
         endpoint
-    )
+    ),
+    err
 )]
 pub fn update_stack_num_compute_units(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
@@ -314,67 +317,81 @@ pub fn update_stack_num_compute_units(
         })
 }
 
-/// Handles the concurrent requests count updates for a stack.
+/// Atomically decrements the concurrent request count for a specific stack ID in a `DashMap`.
 ///
-/// This function updates the concurrent requests count for a stack and removes the stack from the map
-/// if the count reaches 0.
+/// If the count reaches zero after decrementing, the entry for the stack ID is removed from the map.
+/// This function uses the `DashMap::entry` API to ensure atomicity of the check-decrement-update/remove
+/// operation for a given key.
 ///
 /// # Arguments
 ///
-/// * `concurrent_requests_per_stack` - The map of stack small ids to their concurrent requests count
-/// * `stack_small_id` - The small id of the stack to update
+/// * `concurrent_requests_per_stack` - A reference to the `DashMap` storing `stack_small_id` -> `count`.
+/// * `stack_small_id` - The identifier of the stack whose concurrent request count should be decremented.
+/// * `endpoint` - A string representing the API endpoint, used for logging context.
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if the update was successful, or an `AtomaServiceError` if the update failed.
+/// Returns the concurrent request count for the `stack_small_id` *after* the decrement operation.
+/// If the entry did not exist, or if the count was already zero, it returns 0. If the count reached zero
+/// due to this decrement, it returns 0 after removing the entry.
 ///
-/// # Instrumentation
+/// # Concurrency
 ///
-/// This function is instrumented with info-level tracing that includes:
-/// - stack_small_id
-/// - concurrent_requests_count
-/// - endpoint
+/// The `DashMap::entry` method locks the relevant map shard, ensuring that the read, potential decrement,
+/// update, and potential removal operations occur atomically for the given `stack_small_id`.
 ///
-/// # Example   
+/// # Logging
 ///
-/// ```rust,ignore
-/// use crate::AppState;
-///
-/// async fn handle_concurrent_requests_count_updates(state: &AppState, stack_small_id: i64) -> Result<(), AtomaServiceError> {
-///     handle_concurrent_requests_count_updates(&state.concurrent_requests_per_stack, stack_small_id).await?;
-///     Ok(())
-/// }
-/// ```
+/// - Logs an error if an attempt is made to decrement the count for a `stack_small_id` that is not
+///   present in the map (implying a count of 0).
+/// - Logs an error if an attempt is made to decrement a count that is already 0.
+/// - Logs informational message when a count reaches 0 and the corresponding entry is removed.
 #[instrument(level = "info", skip_all, fields(stack_small_id, endpoint))]
 pub fn handle_concurrent_requests_count_decrement(
     concurrent_requests_per_stack: &DashMap<i64, u64>,
     stack_small_id: i64,
     endpoint: &str,
 ) -> u64 {
-    let mut concurrent_requests_count = concurrent_requests_per_stack
-        .entry(stack_small_id)
-        .or_insert(0);
-    if *concurrent_requests_count == 0 {
-        tracing::error!(
-            target = "atoma-service",
-            level = "error",
-            endpoint = endpoint,
-            "Concurrent requests count is 0 for stack small id: {}, but we still need to update the stack num compute units",
-            stack_small_id
-        );
+    let entry = concurrent_requests_per_stack.entry(stack_small_id);
+    match entry {
+        dashmap::mapref::entry::Entry::Occupied(mut occupied_entry) => {
+            let current_count = *occupied_entry.get();
+            if current_count == 0 {
+                tracing::error!(
+                    target = "atoma-service",
+                    level = "error",
+                    endpoint = endpoint,
+                );
+                occupied_entry.remove();
+                0
+            } else {
+                let new_count = current_count.saturating_sub(1);
+                occupied_entry.insert(new_count);
+                if new_count == 0 {
+                    tracing::info!(
+                        target = "atoma-service",
+                        level = "info",
+                        endpoint = endpoint,
+                        stack_small_id,
+                        "Concurrent requests count reached 0 for stack, removing entry and updating stack num compute units.",
+                    );
+                    occupied_entry.remove();
+                }
+                new_count
+            }
+        }
+        dashmap::mapref::entry::Entry::Vacant(_) => {
+            // Entry doesn't exist. This implies a count of 0.
+            tracing::error!(
+                target = "atoma-service",
+                level = "error",
+                endpoint = endpoint,
+                stack_small_id,
+                "Attempted to decrement concurrent requests for non-existent stack entry (implies count is 0).",
+            );
+            0
+        }
     }
-    *concurrent_requests_count = concurrent_requests_count.saturating_sub(1);
-    if *concurrent_requests_count == 0 {
-        tracing::info!(
-            target = "atoma-service",
-            level = "info",
-            endpoint = endpoint,
-            "Concurrent requests count is 0 for stack small id: {}, updating stack num compute units",
-            stack_small_id
-        );
-        concurrent_requests_per_stack.remove(&stack_small_id);
-    }
-    *concurrent_requests_count
 }
 
 /// Handles the status code returned by the inference service.
@@ -390,7 +407,7 @@ pub fn handle_concurrent_requests_count_decrement(
 /// # Returns
 ///
 /// Returns an `AtomaServiceError` variant based on the status code.
-#[instrument(level = "info", skip_all, fields(endpoint))]
+#[instrument(level = "info", skip_all, fields(endpoint), err)]
 pub fn handle_status_code_error(
     status_code: StatusCode,
     endpoint: &str,

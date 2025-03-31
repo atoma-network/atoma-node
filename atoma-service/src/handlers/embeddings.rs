@@ -25,7 +25,10 @@ use tokenizers::Tokenizer;
 use tracing::{info, instrument};
 use utoipa::OpenApi;
 
-use super::{handle_status_code_error, request_model::RequestModel};
+use super::{
+    handle_status_code_error,
+    request_model::{ComputeUnitsEstimate, RequestModel},
+};
 
 /// The path for confidential embeddings requests
 pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
@@ -79,8 +82,9 @@ pub struct EmbeddingsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -100,7 +104,7 @@ pub async fn embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     let timer = Instant::now();
@@ -111,7 +115,6 @@ pub async fn embeddings_handler(
         &state,
         &payload,
         stack_small_id,
-        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
         &endpoint,
@@ -203,8 +206,9 @@ pub struct ConfidentialEmbeddingsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -227,7 +231,7 @@ pub async fn confidential_embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        request_type: _,
+        ..
     } = request_metadata;
 
     let timer = Instant::now();
@@ -236,7 +240,6 @@ pub async fn confidential_embeddings_handler(
         &state,
         &payload,
         stack_small_id,
-        estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
         &endpoint,
@@ -324,15 +327,15 @@ pub async fn confidential_embeddings_handler(
 /// ```
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = endpoint)
+    skip_all,
+    fields(path = endpoint),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_embeddings_response(
     state: &AppState,
     payload: &Value,
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
@@ -430,7 +433,7 @@ impl RequestModel for RequestModelEmbeddings {
     fn get_compute_units_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<u64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         let Some(tokenizer) = tokenizer else {
             return Err(AtomaServiceError::InternalError {
                 message: "Tokenizer is required for current model, but is not currently available"
@@ -468,6 +471,9 @@ impl RequestModel for RequestModelEmbeddings {
             }
         };
 
-        Ok(total_units)
+        Ok(ComputeUnitsEstimate {
+            num_input_compute_units: total_units,
+            max_total_compute_units: total_units,
+        })
     }
 }

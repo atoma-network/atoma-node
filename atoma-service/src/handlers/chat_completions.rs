@@ -59,7 +59,8 @@ use crate::{
 
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
-    request_model::RequestModel, DEFAULT_MAX_TOKENS,
+    request_model::{ComputeUnitsEstimate, RequestModel},
+    DEFAULT_MAX_TOKENS,
 };
 
 /// The path for confidential chat completions requests
@@ -193,8 +194,9 @@ pub struct ChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -204,6 +206,7 @@ pub async fn chat_completions_handler(
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units,
+        num_input_tokens,
         payload_hash,
         client_encryption_metadata,
         ..
@@ -233,6 +236,7 @@ pub async fn chat_completions_handler(
         stack_small_id,
         is_stream,
         payload.clone(),
+        num_input_tokens,
         estimated_total_compute_units,
         client_encryption_metadata,
     )
@@ -366,8 +370,9 @@ pub struct ConfidentialChatCompletionsOpenApi;
 )]
 #[instrument(
     level = "info",
-    skip(state, payload),
-    fields(path = request_metadata.endpoint_path)
+    skip_all,
+    fields(path = request_metadata.endpoint_path),
+    err
 )]
 pub async fn confidential_chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
@@ -376,6 +381,7 @@ pub async fn confidential_chat_completions_handler(
 ) -> Result<Response<Body>, AtomaServiceError> {
     let RequestMetadata {
         stack_small_id,
+        num_input_tokens,
         estimated_total_compute_units,
         payload_hash,
         client_encryption_metadata,
@@ -410,6 +416,7 @@ pub async fn confidential_chat_completions_handler(
         stack_small_id,
         is_stream,
         payload.clone(),
+        num_input_tokens,
         estimated_total_compute_units,
         client_encryption_metadata,
     )
@@ -505,7 +512,8 @@ pub async fn confidential_chat_completions_handler(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_response(
@@ -515,6 +523,7 @@ async fn handle_response(
     stack_small_id: i64,
     is_stream: bool,
     payload: Value,
+    num_input_tokens: i64,
     estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -532,6 +541,7 @@ async fn handle_response(
             state,
             payload,
             stack_small_id,
+            num_input_tokens,
             estimated_total_compute_units,
             payload_hash,
             streaming_encryption_metadata,
@@ -610,7 +620,8 @@ async fn handle_response(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
 async fn handle_non_streaming_response(
     state: &AppState,
@@ -701,12 +712,15 @@ async fn handle_non_streaming_response(
         stack_small_id,
         estimated_total_compute_units,
         payload_hash
-    )
+    ),
+    err
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_streaming_response(
     state: &AppState,
     mut payload: Value,
     stack_small_id: i64,
+    num_input_tokens: i64,
     estimated_total_compute_units: i64,
     payload_hash: [u8; 32],
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
@@ -774,6 +788,7 @@ async fn handle_streaming_response(
         state.state_manager_sender.clone(),
         state.concurrent_requests_per_stack.clone(),
         stack_small_id,
+        num_input_tokens,
         estimated_total_compute_units,
         payload_hash,
         state.keystore.clone(),
@@ -835,7 +850,7 @@ impl RequestModel for RequestModelChatCompletions {
     fn get_compute_units_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<u64, AtomaServiceError> {
+    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
         // In order to account for the possibility of not taking into account possible additional special tokens,
         // which might not be considered by the tokenizer, we add a small overhead to the total number of tokens, per message.
         const MESSAGE_OVERHEAD_TOKENS: u64 = 3;
@@ -858,7 +873,7 @@ impl RequestModel for RequestModelChatCompletions {
                 .len() as u64)
         };
 
-        let mut total_num_tokens = 0;
+        let mut total_num_messages_tokens = 0;
 
         for message in &self.messages {
             let content = message
@@ -872,7 +887,7 @@ impl RequestModel for RequestModelChatCompletions {
             match content {
                 MessageContent::Text(text) => {
                     let num_tokens = count_text_tokens(&text)?;
-                    total_num_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
+                    total_num_messages_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
                 }
                 MessageContent::Array(parts) => {
                     if parts.is_empty() {
@@ -891,7 +906,7 @@ impl RequestModel for RequestModelChatCompletions {
                         match part {
                             MessageContentPart::Text { text, .. } => {
                                 let num_tokens = count_text_tokens(&text)?;
-                                total_num_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
+                                total_num_messages_tokens += num_tokens + MESSAGE_OVERHEAD_TOKENS;
                             }
                             MessageContentPart::Image { .. } => {
                                 // TODO: Ensure that for image content parts, we have a way to estimate the number of tokens,
@@ -904,7 +919,10 @@ impl RequestModel for RequestModelChatCompletions {
             }
         }
         // add the max completion tokens, to account for the response
-        Ok(total_num_tokens + self.max_completion_tokens)
+        Ok(ComputeUnitsEstimate {
+            num_input_compute_units: total_num_messages_tokens,
+            max_total_compute_units: total_num_messages_tokens + self.max_completion_tokens,
+        })
     }
 }
 
@@ -969,7 +987,8 @@ pub mod utils {
             payload_hash,
             stack_small_id,
             endpoint_path = endpoint
-        )
+        ),
+        err
     )]
     pub async fn get_streaming_encryption_metadata(
         state: &AppState,
@@ -1077,7 +1096,8 @@ pub mod utils {
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, payload_hash, endpoint)
+        fields(stack_small_id, payload_hash, endpoint),
+        err
     )]
     pub async fn send_request_to_inference_service(
         state: &AppState,
@@ -1274,7 +1294,8 @@ pub mod utils {
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint)
+        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint),
+        err
     )]
     #[allow(clippy::too_many_arguments)]
     pub async fn serve_non_streaming_response(
@@ -2279,7 +2300,7 @@ mod tests {
         let tokenizer = load_tokenizer().await;
         let result = request.get_compute_units_estimate(Some(&tokenizer));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 21); // 8 tokens + 3 overhead + 10 completion
+        assert_eq!(result.unwrap().max_total_compute_units, 21); // 8 tokens + 3 overhead + 10 completion
     }
 
     #[tokio::test]
@@ -2300,7 +2321,7 @@ mod tests {
         let tokenizer = load_tokenizer().await;
         let result = request.get_compute_units_estimate(Some(&tokenizer));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 32); // (8+8) tokens + (3+3) overhead + 10 completion
+        assert_eq!(result.unwrap().max_total_compute_units, 32); // (8+8) tokens + (3+3) overhead + 10 completion
     }
 
     #[tokio::test]
@@ -2325,7 +2346,7 @@ mod tests {
         let tokenizer = load_tokenizer().await;
         let result = request.get_compute_units_estimate(Some(&tokenizer));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 32); // (8+8) tokens  (3 + 3) overhead + 10 completion
+        assert_eq!(result.unwrap().max_total_compute_units, 32); // (8+8) tokens  (3 + 3) overhead + 10 completion
     }
 
     #[tokio::test]
@@ -2340,7 +2361,7 @@ mod tests {
         let tokenizer = load_tokenizer().await;
         let result = request.get_compute_units_estimate(Some(&tokenizer));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 14); // 1 tokens (special token) + 3 overhead + 10 completion
+        assert_eq!(result.unwrap().max_total_compute_units, 14); // 1 tokens (special token) + 3 overhead + 10 completion
     }
 
     #[tokio::test]
@@ -2379,7 +2400,7 @@ mod tests {
         // System message: tokens + 15 completion
         // User message array: (2 text parts tokens) + (15 * 2 for text completion for parts)
         let tokens = result.unwrap();
-        assert_eq!(tokens, 48); // 3 * 8 + 3 * 3 overhead + 15
+        assert_eq!(tokens.max_total_compute_units, 48); // 3 * 8 + 3 * 3 overhead + 15
     }
 
     #[tokio::test]
@@ -2431,6 +2452,6 @@ mod tests {
         let result = request.get_compute_units_estimate(Some(&tokenizer));
         assert!(result.is_ok());
         let tokens = result.unwrap();
-        assert!(tokens > 13); // Should be more than minimum (3 overhead + 10 completion)
+        assert!(tokens.max_total_compute_units > 13); // Should be more than minimum (3 overhead + 10 completion)
     }
 }
