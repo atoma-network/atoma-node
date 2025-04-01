@@ -1293,18 +1293,18 @@ impl AtomaState {
     /// * `StackAvailability::Available` - If the stack exists, belongs to the provided address, and has sufficient
     ///   remaining compute units. In this case, the compute units are successfully reserved.
     /// * `StackAvailability::DoesNotExist` - If no stack with the provided ID exists in the database
+    /// * `StackAvailability::Unavailable` - If the stack exists, belongs to the correct owner, is not in settlement/claimed/locked,
+    ///   but has insufficient remaining compute units.
     /// * `StackAvailability::Locked` - If the stack exists but cannot be updated because:
     ///   - It belongs to a different address
-    ///   - It has insufficient remaining compute units
     ///   - It is in settlement period
     ///   - It is already claimed
     ///   - It is locked for claim
     ///
     /// # Notes
     ///
-    /// The operation is performed atomically in a single database query to ensure thread safety
-    /// and prevent race conditions when multiple processes attempt to reserve compute units
-    /// from the same stack.
+    /// The operation is performed atomically using CTEs to ensure thread safety
+    /// and prevent race conditions.
     #[tracing::instrument(
         level = "trace",
         skip_all,
@@ -1322,42 +1322,82 @@ impl AtomaState {
     ) -> Result<StackAvailability> {
         const AVAILABLE: &str = "Available";
         const DOES_NOT_EXIST: &str = "DoesNotExist";
+        const UNAVAILABLE: &str = "Unavailable";
         const LOCKED: &str = "Locked";
         const STATUS_COLUMN: &str = "status";
 
-        let result = sqlx::query(
-            &format!(
-                "
-                WITH stack_update AS (
-                    UPDATE stacks
-                    SET already_computed_units = already_computed_units + $1
-                    WHERE stack_small_id = $2
-                    AND owner_address = $3
-                    AND num_compute_units - already_computed_units >= $1
-                AND in_settle_period = false
-                AND is_claimed = false
-                AND is_locked_for_claim = false
+        // NOTE: It is safe to format! in here, as any injection is only through the above
+        // constants, which are not interpolated.
+        let query = format!(
+            "
+            WITH attempt_update AS (
+                UPDATE stacks
+                SET already_computed_units = already_computed_units + $1
+                WHERE stack_small_id = $2
+                  AND owner_address = $3
+                  AND num_compute_units - already_computed_units >= $1
+                  AND in_settle_period = false
+                  AND is_claimed = false
+                  AND is_locked_for_claim = false
                 RETURNING 1
+            ),
+            stack_status AS (
+                SELECT
+                    CASE
+                        -- Check if update succeeded
+                        WHEN EXISTS (SELECT 1 FROM attempt_update) THEN '{AVAILABLE}'
+                        -- If update failed, determine the reason
+                        ELSE (
+                            SELECT
+                                CASE
+                                    -- 2. Check other locking conditions
+                                    WHEN s.owner_address != $3 -- Check owner mismatch first
+                                    THEN '{DOES_NOT_EXIST}'
+                                    -- 3. Check other locking conditions (only if owner matches)
+                                    WHEN s.in_settle_period = true
+                                      OR s.is_claimed = true
+                                      OR s.is_locked_for_claim = true
+                                    THEN '{LOCKED}'
+                                    -- 4. Check insufficient compute units (only remaining reason if not locked otherwise)
+                                    WHEN s.num_compute_units - s.already_computed_units < $1 THEN '{UNAVAILABLE}'
+                                    -- 5. Fallback: Should technically not be reached if logic is sound
+                                    ELSE '{LOCKED}'
+                                END
+                            FROM stacks s
+                            WHERE s.stack_small_id = $2
+                            -- Handle case where stack doesn't exist for the ELSE branch
+                            UNION ALL
+                            SELECT '{DOES_NOT_EXIST}'
+                            WHERE NOT EXISTS (SELECT 1 FROM stacks WHERE stack_small_id = $2)
+                            LIMIT 1 -- Ensure only one row is returned
+                        )
+                    END as status
             )
-            SELECT 
-                CASE 
-                    WHEN NOT EXISTS (SELECT 1 FROM stacks WHERE stack_small_id = $2) THEN '{DOES_NOT_EXIST}'
-                    WHEN EXISTS (SELECT 1 FROM stack_update) THEN '{AVAILABLE}'
-                    ELSE '{LOCKED}'
-                END::text as status
+            SELECT status::text FROM stack_status;
             ",
-            ))
+        );
+
+        let result = sqlx::query(&query)
             .bind(num_compute_units)
             .bind(stack_small_id)
             .bind(sui_address)
-        .fetch_one(&self.db)
-        .await?;
+            .fetch_one(&self.db)
+            .await?;
 
         Ok(match result.get::<&str, _>(STATUS_COLUMN) {
             AVAILABLE => StackAvailability::Available,
             DOES_NOT_EXIST => StackAvailability::DoesNotExist,
+            UNAVAILABLE => StackAvailability::Unavailable,
             LOCKED => StackAvailability::Locked,
-            _ => unreachable!(),
+            status => {
+                tracing::error!(
+                    "Invalid stack availability status: {}, this should never happen",
+                    result.get::<&str, _>(STATUS_COLUMN)
+                );
+                return Err(AtomaStateManagerError::InvalidSqlQuery(format!(
+                    "Invalid stack availability status: {status}, this should never happen"
+                )));
+            }
         })
     }
 
@@ -1408,10 +1448,12 @@ impl AtomaState {
             "INSERT INTO stacks
                 (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, 
                 num_compute_units, price_per_one_million_compute_units, already_computed_units, 
-                in_settle_period, total_hash, num_total_messages, is_confidential)
+                in_settle_period, total_hash, num_total_messages, is_confidential,
+                is_claimed, is_locked_for_claim)
             SELECT 
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                (SELECT security_level = 1 FROM tasks WHERE task_small_id = $4)
+                (SELECT security_level = 1 FROM tasks WHERE task_small_id = $4),
+                $12, $13
             ON CONFLICT (stack_small_id) DO UPDATE
             SET already_computed_units = stacks.already_computed_units + $8
             WHERE stacks.stack_small_id = $2;",
@@ -1427,6 +1469,8 @@ impl AtomaState {
         .bind(stack.in_settle_period)
         .bind(stack.total_hash)
         .bind(stack.num_total_messages)
+        .bind(stack.is_claimed)
+        .bind(stack.is_locked_for_claim)
         .execute(&self.db)
         .await?;
         Ok(())
@@ -2473,6 +2517,8 @@ pub enum AtomaStateManagerError {
     NodeSmallIdOwnershipVerificationFailed,
     #[error("Sui client error: {0}")]
     SuiClientError(#[from] atoma_sui::client::AtomaSuiClientError),
+    #[error("Invalid SQL query: {0}")]
+    InvalidSqlQuery(String),
 }
 
 #[cfg(test)]
@@ -2867,6 +2913,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack.clone()).await.unwrap();
 
@@ -2913,6 +2961,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(initial_stack).await.unwrap();
 
@@ -2998,6 +3048,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
 
         // Test case 1: First insertion should succeed
@@ -3052,6 +3104,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -3103,6 +3157,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -3166,6 +3222,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let initial_ticket = StackSettlementTicket {
@@ -3263,6 +3321,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
         let ticket = StackSettlementTicket {
@@ -3348,6 +3408,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_get_available_stack_with_compute_units() {
         let state_manager = setup_test_db().await;
+        truncate_tables(&state_manager.db).await;
 
         // Setup: Insert a task and subscribe a node
         let task = Task {
@@ -3380,6 +3441,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager
             .insert_new_stack(stack1.clone())
@@ -3399,7 +3462,7 @@ mod tests {
             .get_available_stack_with_compute_units(1, "0x123", 60)
             .await
             .unwrap();
-        assert!(matches!(result, StackAvailability::Locked));
+        assert!(matches!(result, StackAvailability::Unavailable));
         let updated_stack = state_manager.get_stack(1).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 50);
 
@@ -3429,7 +3492,7 @@ mod tests {
             .get_available_stack_with_compute_units(3, "0x123", 50)
             .await
             .unwrap();
-        assert!(matches!(result, StackAvailability::Locked));
+        assert!(matches!(result, StackAvailability::DoesNotExist));
         let updated_stack = state_manager.get_stack(3).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 0);
 
@@ -3461,9 +3524,105 @@ mod tests {
             .get_available_stack_with_compute_units(4, "0x123", 1)
             .await
             .unwrap();
-        assert!(matches!(result, StackAvailability::Locked));
+        assert!(matches!(result, StackAvailability::Unavailable));
         let updated_stack = state_manager.get_stack(4).await.unwrap();
         assert_eq!(updated_stack.already_computed_units, 100);
+
+        // Test case 8: Stack is claimed, but different owner -> DoesNotExist
+        let mut stack5 = stack1.clone();
+        stack5.stack_small_id = 5;
+        stack5.stack_id = "stack5".to_string();
+        stack5.is_claimed = true;
+        stack5.already_computed_units = 0;
+        state_manager.insert_new_stack(stack5).await.unwrap();
+        let result = state_manager
+            .get_available_stack_with_compute_units(5, "owner1", 50)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::DoesNotExist));
+        let updated_stack = state_manager.get_stack(5).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0);
+
+        // Test case 9: Stack is claimed, but different owner -> DoesNotExist
+        let mut stack6 = stack1.clone();
+        stack6.stack_small_id = 6;
+        stack6.stack_id = "stack6".to_string();
+        stack6.is_claimed = true;
+        stack6.already_computed_units = 0;
+        state_manager.insert_new_stack(stack6).await.unwrap();
+        let result = state_manager
+            .get_available_stack_with_compute_units(6, "owner1", 50)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::DoesNotExist));
+        let updated_stack = state_manager.get_stack(6).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0);
+
+        // Test case 10: Stack is locked for claim -> Locked
+        let mut stack7 = stack1.clone();
+        stack7.stack_small_id = 7;
+        stack7.stack_id = "stack7".to_string();
+        stack7.is_locked_for_claim = true;
+        stack7.already_computed_units = 0;
+        state_manager.insert_new_stack(stack7).await.unwrap();
+        let result = state_manager
+            .get_available_stack_with_compute_units(7, "0x123", 50)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::Locked));
+        let updated_stack = state_manager.get_stack(7).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0);
+
+        // Test case 11: Multiple locks active (e.g., claimed AND wrong owner) -> DoesNotExist
+        let mut stack8 = stack1.clone();
+        stack8.stack_small_id = 8;
+        stack8.stack_id = "stack8".to_string();
+        stack8.is_claimed = true;
+        stack8.owner_address = "owner2".to_string();
+        stack8.already_computed_units = 0;
+        state_manager.insert_new_stack(stack8.clone()).await.unwrap();
+        let result = state_manager
+            .get_available_stack_with_compute_units(8, "owner1", 50)
+            .await
+            .unwrap(); // Requesting with owner1
+        assert!(matches!(result, StackAvailability::DoesNotExist));
+        let updated_stack = state_manager.get_stack(8).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0); // Unchanged
+
+        // Test case 12: Zero requested compute units -> Available (if stack is otherwise available)
+        // Re-use stack1 state before it was filled
+        let mut stack9 = stack1.clone();
+        stack9.stack_small_id = 9;
+        stack9.stack_id = "stack9".to_string();
+        stack9.already_computed_units = 10; // Some units already used
+        state_manager.insert_new_stack(stack9).await.unwrap();
+        let result = state_manager
+            .get_available_stack_with_compute_units(9, "0x123", 0)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::Available));
+        let updated_stack = state_manager.get_stack(9).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 10); // Updated by 0
+
+        // Test case 13: Zero requested compute units on a full stack -> Available (requesting 0 is always possible if not locked)
+        // Use stack4 which is full
+        let result = state_manager
+            .get_available_stack_with_compute_units(4, "0x123", 0)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::Available));
+        let updated_stack = state_manager.get_stack(4).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 100); // Unchanged (still full)
+
+        // Test case 14: Zero requested compute units on a locked stack -> Locked
+        // Use stack 7 (claimed and wrong owner)
+        let result = state_manager
+            .get_available_stack_with_compute_units(7, "owner1", 0)
+            .await
+            .unwrap();
+        assert!(matches!(result, StackAvailability::DoesNotExist));
+        let updated_stack = state_manager.get_stack(7).await.unwrap();
+        assert_eq!(updated_stack.already_computed_units, 0); // Unchanged
 
         truncate_tables(&state_manager.db).await;
     }
@@ -3504,6 +3663,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -3688,6 +3849,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![1, 2, 3],
                 num_total_messages: 1,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner2".to_string(),
@@ -3701,6 +3864,8 @@ mod tests {
                 in_settle_period: true,
                 total_hash: vec![4, 5, 6],
                 num_total_messages: 2,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner3".to_string(),
@@ -3714,6 +3879,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![7, 8, 9],
                 num_total_messages: 3,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
         ];
 
@@ -3766,7 +3933,7 @@ mod tests {
             "Node 2 should have 1 stack"
         );
 
-        // Test 4: Get stacks with mix of existing and non-existing nodes
+        // Test 4: Get stacks with mix of existing and non-existent nodes
         let result = state_manager
             .get_stacks_by_node_small_ids(&[1, 99])
             .await
@@ -3875,6 +4042,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
 
         let stack2 = Stack {
@@ -3889,6 +4058,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
 
         // Insert test stacks
@@ -3956,6 +4127,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
 
         let stack2 = Stack {
@@ -3970,6 +4143,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
 
         state_manager
@@ -4041,6 +4216,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             // Stack 50% filled for node 1
             Stack {
@@ -4055,6 +4232,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             // Stack 95% filled for node 2
             Stack {
@@ -4069,6 +4248,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             // Stack 100% filled for node 3
             Stack {
@@ -4083,6 +4264,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
         ];
 
@@ -4190,6 +4373,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(zero_stack).await.unwrap();
 
@@ -4206,6 +4391,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(large_stack).await.unwrap();
 
@@ -4270,6 +4457,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -4352,6 +4541,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.insert_new_stack(stack).await.unwrap();
 
@@ -4467,6 +4658,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner2".to_string(),
@@ -4480,6 +4673,8 @@ mod tests {
                 in_settle_period: true,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner3".to_string(),
@@ -4493,6 +4688,8 @@ mod tests {
                 in_settle_period: false,
                 total_hash: vec![0; 32],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
         ];
 
@@ -4578,7 +4775,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_get_all_total_hashes() {
         let state_manager = setup_test_db().await;
-
+        truncate_tables(&state_manager.db).await;
         // Setup: Create a Task
         let task = Task {
             task_small_id: 1,
@@ -4614,6 +4811,8 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
+            is_claimed: false,
+            is_locked_for_claim: false,
             total_hash: hash1.clone(),
             num_total_messages: 0,
         };
@@ -4637,6 +4836,8 @@ mod tests {
             price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
+            is_claimed: false,
+            is_locked_for_claim: false,
             total_hash: hash2.clone(),
             num_total_messages: 0,
         };
@@ -4651,6 +4852,8 @@ mod tests {
             price_per_one_million_compute_units: 3000,
             already_computed_units: 0,
             in_settle_period: false,
+            is_claimed: false,
+            is_locked_for_claim: false,
             total_hash: hash3.clone(),
             num_total_messages: 0,
         };
@@ -4742,6 +4945,8 @@ mod tests {
                 in_settle_period: true,
                 total_hash: vec![],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner2".to_string(),
@@ -4755,6 +4960,8 @@ mod tests {
                 in_settle_period: true,
                 total_hash: vec![],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
             Stack {
                 owner_address: "owner3".to_string(),
@@ -4768,6 +4975,8 @@ mod tests {
                 in_settle_period: true,
                 total_hash: vec![],
                 num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
             },
         ];
 
@@ -5130,6 +5339,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state.insert_new_stack(stack).await?;
 
@@ -5210,6 +5421,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state.insert_new_stack(stack).await?;
 
@@ -5274,6 +5487,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state.insert_new_stack(stack).await?;
 
@@ -5338,6 +5553,8 @@ mod tests {
             in_settle_period: false,
             total_hash: vec![0; 32],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state.insert_new_stack(stack).await?;
 

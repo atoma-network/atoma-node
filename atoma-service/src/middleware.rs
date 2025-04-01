@@ -459,45 +459,63 @@ pub async fn verify_stack_permissions(
             ),
             endpoint: endpoint.clone(),
         })?;
-    if matches!(available_stack, StackAvailability::DoesNotExist) {
-        // NOTE: If we are within this branch logic, it means that no available stack was found,
-        // which implies that no compute units were locked, so far. For this reason, we query the
-        // Sui blockchain to check if a new stack was created for the client, already.
-        let tx_digest_str = req_parts
-            .headers
-            .get(atoma_utils::constants::TX_DIGEST)
-            .ok_or_else(|| AtomaServiceError::InvalidHeader {
-                message: "Stack not found, tx digest header expected but not found".to_string(),
-                endpoint: endpoint.clone(),
-            })?
-            .to_str()
-            .map_err(|e| AtomaServiceError::InvalidHeader {
-                message: format!("Tx digest cannot be converted to a string, with error: {e}"),
-                endpoint: endpoint.clone(),
-            })?;
-        let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
-        utils::request_blockchain_for_stack(
-            &state,
-            tx_digest,
-            max_total_compute_units,
-            stack_small_id,
-            endpoint.clone(),
-        )
-        .await?;
 
-        // NOTE: We do not need to check that the stack small id matches the one in the request,
-        // or that the number of compute units within the stack is enough for processing the request,
-        // as the Sui subscriber service should handle this verification.
-    } else if matches!(available_stack, StackAvailability::Locked) {
-        // NOTE: If we are within this branch logic, it means that there is a stack with the same
-        // stack_small_id, but it is locked, so the user needs to buy a new stack, and we provide
-        // a specific status code to flag this scenario to the client.
-        return Err(AtomaServiceError::LockedStackError {
-            message: format!(
-                "Stack with stack_small_id={stack_small_id} is locked, please buy a new stack."
-            ),
-            endpoint: endpoint.clone(),
-        });
+    match available_stack {
+        StackAvailability::Available => {
+            // NOTE: If we are within this branch logic, it means that there is a stack with the same
+            // stack_small_id and the client has enough compute units to use it.
+        }
+        StackAvailability::DoesNotExist => {
+            // NOTE: If we are within this branch logic, it means that no available stack was found,
+            // which implies that no compute units were locked, so far. For this reason, we query the
+            // Sui blockchain to check if a new stack was created for the client, already.
+            let tx_digest_str = req_parts
+                .headers
+                .get(atoma_utils::constants::TX_DIGEST)
+                .ok_or_else(|| AtomaServiceError::InvalidHeader {
+                    message: "Stack not found, tx digest header expected but not found".to_string(),
+                    endpoint: endpoint.clone(),
+                })?
+                .to_str()
+                .map_err(|e| AtomaServiceError::InvalidHeader {
+                    message: format!("Tx digest cannot be converted to a string, with error: {e}"),
+                    endpoint: endpoint.clone(),
+                })?;
+            let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
+            utils::request_blockchain_for_stack(
+                &state,
+                tx_digest,
+                max_total_compute_units,
+                stack_small_id,
+                endpoint.clone(),
+            )
+            .await?;
+            // NOTE: We do not need to check that the stack small id matches the one in the request,
+            // or that the number of compute units within the stack is enough for processing the request,
+            // as the Sui subscriber service should handle this verification.
+        }
+        StackAvailability::Locked => {
+            // NOTE: If we are within this branch logic, it means that there is a stack with the same
+            // stack_small_id, but it is locked, so the user needs to buy a new stack, and we provide
+            // a specific status code to flag this scenario to the client.
+            return Err(AtomaServiceError::LockedStackError {
+                message: format!(
+                    "Stack with stack_small_id={stack_small_id} is locked, please buy a new stack."
+                ),
+                endpoint: endpoint.clone(),
+            });
+        }
+        StackAvailability::Unavailable => {
+            // NOTE: If we are within this branch logic, it means that there is a stack with the same
+            // stack_small_id, but it is unavailable, so the client either buys a new stack or awaits
+            // the stack to be available again.
+            return Err(AtomaServiceError::UnavailableStackError {
+                message: format!(
+                    "Stack with stack_small_id={stack_small_id} is unavailable, please buy a new stack or await it to be available again."
+                ),
+                endpoint: endpoint.clone(),
+            });
+        }
     }
     let request_metadata = req_parts
         .extensions

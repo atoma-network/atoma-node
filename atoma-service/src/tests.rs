@@ -172,6 +172,8 @@ mod middleware {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 1,
+            is_claimed: false,
+            is_locked_for_claim: false,
         };
         state_manager.state.insert_new_stack(stack).await.unwrap();
         let (shutdown_sender, shutdown_signal) = tokio::sync::watch::channel(false);
@@ -586,7 +588,7 @@ mod middleware {
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::LOCKED);
+        assert_eq!(response.status(), StatusCode::TOO_EARLY);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
         truncate_tables().await;

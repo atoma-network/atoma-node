@@ -74,6 +74,10 @@ pub struct Stack {
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
     pub num_total_messages: i64,
+    /// Indicates whether the stack is claimed (for testing purposes)
+    pub is_claimed: bool,
+    /// Indicates whether the stack is locked for claim (for testing purposes)
+    pub is_locked_for_claim: bool,
 }
 
 impl From<StackCreatedEvent> for Stack {
@@ -90,6 +94,8 @@ impl From<StackCreatedEvent> for Stack {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            is_claimed: false,
+            is_locked_for_claim: false,
         }
     }
 }
@@ -108,6 +114,8 @@ impl From<StackCreateAndUpdateEvent> for Stack {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 1,
+            is_claimed: false,
+            is_locked_for_claim: false,
         }
     }
 }
@@ -121,6 +129,8 @@ pub enum StackAvailability {
     DoesNotExist,
     /// The stack is locked
     Locked,
+    /// The stack is unavailable at the moment
+    Unavailable,
 }
 
 /// Represents a settlement ticket for a compute stack
