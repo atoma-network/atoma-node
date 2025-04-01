@@ -3580,7 +3580,10 @@ mod tests {
         stack8.is_claimed = true;
         stack8.owner_address = "owner2".to_string();
         stack8.already_computed_units = 0;
-        state_manager.insert_new_stack(stack8.clone()).await.unwrap();
+        state_manager
+            .insert_new_stack(stack8.clone())
+            .await
+            .unwrap();
         let result = state_manager
             .get_available_stack_with_compute_units(8, "owner1", 50)
             .await

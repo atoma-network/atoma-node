@@ -119,6 +119,7 @@ mod middleware {
         client: Arc<RwLock<Client>>,
         public_key: PublicKey,
         available_compute_units: Option<i64>,
+        locked: bool,
     ) -> (
         JoinHandle<()>,
         Sender<AtomaAtomaStateManagerEvent>,
@@ -173,7 +174,7 @@ mod middleware {
             total_hash: vec![],
             num_total_messages: 1,
             is_claimed: false,
-            is_locked_for_claim: false,
+            is_locked_for_claim: locked,
         };
         state_manager.state.insert_new_stack(stack).await.unwrap();
         let (shutdown_sender, shutdown_signal) = tokio::sync::watch::channel(false);
@@ -243,6 +244,7 @@ mod middleware {
     #[allow(clippy::too_many_lines)]
     async fn setup_app_state(
         available_compute_units: Option<i64>,
+        locked: bool,
     ) -> (
         AppState,
         PublicKey,
@@ -281,7 +283,13 @@ mod middleware {
             event_subscriber_sender,
             p2p_event_sender,
             shutdown_receiver,
-        ) = setup_database(client.clone(), public_key.clone(), available_compute_units).await;
+        ) = setup_database(
+            client.clone(),
+            public_key.clone(),
+            available_compute_units,
+            locked,
+        )
+        .await;
         let (stack_retrieve_sender, _) = tokio::sync::mpsc::unbounded_channel();
         let (_, event_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (decryption_sender, decryption_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -378,7 +386,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         // Create request body
         let body = json!({
@@ -430,7 +438,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -473,7 +481,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "unsupported-model",
@@ -516,7 +524,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -560,7 +568,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(Some(1_000)).await;
+        ) = setup_app_state(Some(1_000), false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -596,6 +604,52 @@ mod middleware {
 
     #[tokio::test]
     #[serial]
+    async fn test_verify_stack_permissions_missing_max_tokens_with_locked_state() {
+        let (
+            app_state,
+            _,
+            signature,
+            shutdown_sender,
+            state_manager_handle,
+            _event_subscriber_sender,
+            _p2p_event_sender,
+            _,
+        ) = setup_app_state(None, true).await;
+
+        let body = json!({
+            "model": "meta-llama/Llama-3.1-70B-Instruct",
+            "messages": [{
+                "role": "user",
+                "content": "Hello"
+            }],
+            // Intentionally omitting max_tokens
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(CHAT_COMPLETIONS_PATH)
+            .header(constants::SIGNATURE, signature.encode_base64())
+            .header(constants::STACK_SMALL_ID, "1")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let mut app = Router::new()
+            .route(CHAT_COMPLETIONS_PATH, post(test_handler))
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                verify_stack_permissions,
+            ));
+
+        let response = app.call(req).await.expect("Failed to get response");
+        assert_eq!(response.status(), StatusCode::LOCKED);
+        shutdown_sender.send(true).unwrap();
+        state_manager_handle.await.unwrap();
+        truncate_tables().await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_verify_stack_permissions_missing_max_tokens_with_enough_available_compute_units()
     {
         let (
@@ -607,7 +661,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(Some(10_000)).await;
+        ) = setup_app_state(Some(10_000), false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -653,7 +707,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -696,7 +750,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -756,7 +810,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "meta-llama/Llama-3.1-70B-Instruct",
@@ -1118,7 +1172,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         // Test single string input
         let body = json!({
@@ -1195,7 +1249,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let body = json!({
             "model": "black-forest-labs/FLUX.1-schnell",
@@ -1298,7 +1352,7 @@ mod middleware {
             _event_subscriber_sender,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         // Test with invalid input type (number instead of string or array)
         let body = json!({
@@ -1342,7 +1396,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             server_dh_public_key,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1406,7 +1460,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             server_dh_public_key,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1464,7 +1518,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             _,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1540,7 +1594,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             server_dh_public_key,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1592,7 +1646,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             server_dh_public_key,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1651,7 +1705,7 @@ mod middleware {
             _,
             _p2p_event_sender,
             server_dh_public_key,
-        ) = setup_app_state(None).await;
+        ) = setup_app_state(None, false).await;
 
         let salt = rand::random::<[u8; SALT_SIZE]>();
         let client_dh_private_key = x25519_dalek::StaticSecret::random_from_rng(rand::thread_rng());
@@ -1731,7 +1785,7 @@ mod middleware {
     #[serial]
     async fn test_confidential_compute_middleware_invalid_json() {
         let (app_state, _, _, shutdown_sender, state_manager_handle, _, _p2p_event_sender, _) =
-            setup_app_state(None).await;
+            setup_app_state(None, false).await;
 
         // Create invalid JSON request
         let invalid_json = "{ invalid json }";
