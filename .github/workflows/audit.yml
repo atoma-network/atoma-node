@@ -23,4 +23,5 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          ignore: RUSTSEC-2023-0071
+          # These are all related to the sui SDK, which is outside of our control
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2024-0320,RUSTSEC-2024-0370,RUSTSEC-2024-0437,RUSTSEC-2025-0009,RUSTSEC-2025-0010,RUSTSEC-2024-0436
