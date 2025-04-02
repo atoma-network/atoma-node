@@ -98,6 +98,15 @@ pub enum AtomaServiceError {
         /// The endpoint that the error occurred on
         endpoint: String,
     },
+
+    /// Error returned when the stack is unavailable
+    #[error("Stack is unavailable: {message}")]
+    UnavailableStackError {
+        /// Description of why the stack is unavailable
+        message: String,
+        /// The endpoint that the error occurred on
+        endpoint: String,
+    },
 }
 
 impl AtomaServiceError {
@@ -125,6 +134,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => "AUTH_ERROR",
             Self::InternalError { .. } => "INTERNAL_ERROR",
             Self::LockedStackError { .. } => "LOCKED_STACK_ERROR",
+            Self::UnavailableStackError { .. } => "UNAVAILABLE_STACK_ERROR",
         }
     }
 
@@ -152,6 +162,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => "Authentication failed".to_string(),
             Self::InternalError { .. } => "Internal server error occurred".to_string(),
             Self::LockedStackError { .. } => "Stack is locked".to_string(),
+            Self::UnavailableStackError { .. } => "Stack is unavailable".to_string(),
         }
     }
 
@@ -175,6 +186,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => StatusCode::UNAUTHORIZED,
             Self::InternalError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::LockedStackError { .. } => StatusCode::LOCKED,
+            Self::UnavailableStackError { .. } => StatusCode::TOO_EARLY,
         }
     }
 
@@ -195,7 +207,8 @@ impl AtomaServiceError {
             | Self::ModelError { endpoint, .. }
             | Self::AuthError { endpoint, .. }
             | Self::InternalError { endpoint, .. }
-            | Self::LockedStackError { endpoint, .. } => endpoint.clone(),
+            | Self::LockedStackError { endpoint, .. }
+            | Self::UnavailableStackError { endpoint, .. } => endpoint.clone(),
         }
     }
 
@@ -223,6 +236,9 @@ impl AtomaServiceError {
             Self::AuthError { auth_error, .. } => format!("Authentication error: {}", auth_error),
             Self::InternalError { message, .. } => format!("Internal server error: {}", message),
             Self::LockedStackError { message, .. } => format!("Stack is locked: {}", message),
+            Self::UnavailableStackError { message, .. } => {
+                format!("Stack is unavailable: {}", message)
+            }
         }
     }
 }
