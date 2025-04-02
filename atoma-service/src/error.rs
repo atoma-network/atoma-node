@@ -99,6 +99,15 @@ pub enum AtomaServiceError {
         endpoint: String,
     },
 
+    /// Error returned when the stack is unavailable
+    #[error("Stack is unavailable: {message}")]
+    UnavailableStackError {
+        /// Description of why the stack is unavailable
+        message: String,
+        /// The endpoint that the error occurred on
+        endpoint: String,
+    },
+
     /// Error returned when the chat completions service is unavailable
     #[error("Chat completions service is unavailable: {message}")]
     ChatCompletionsServiceUnavailable {
@@ -134,6 +143,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => "AUTH_ERROR",
             Self::InternalError { .. } => "INTERNAL_ERROR",
             Self::LockedStackError { .. } => "LOCKED_STACK_ERROR",
+            Self::UnavailableStackError { .. } => "UNAVAILABLE_STACK_ERROR",
             Self::ChatCompletionsServiceUnavailable { .. } => {
                 "CHAT_COMPLETIONS_SERVICE_UNAVAILABLE"
             }
@@ -164,6 +174,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => "Authentication failed".to_string(),
             Self::InternalError { .. } => "Internal server error occurred".to_string(),
             Self::LockedStackError { .. } => "Stack is locked".to_string(),
+            Self::UnavailableStackError { .. } => "Stack is unavailable".to_string(),
             Self::ChatCompletionsServiceUnavailable { .. } => {
                 "Chat completions service is unavailable".to_string()
             }
@@ -190,6 +201,7 @@ impl AtomaServiceError {
             Self::AuthError { .. } => StatusCode::UNAUTHORIZED,
             Self::InternalError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::LockedStackError { .. } => StatusCode::LOCKED,
+            Self::UnavailableStackError { .. } => StatusCode::TOO_EARLY,
             Self::ChatCompletionsServiceUnavailable { .. } => StatusCode::TOO_MANY_REQUESTS,
         }
     }
@@ -212,6 +224,7 @@ impl AtomaServiceError {
             | Self::AuthError { endpoint, .. }
             | Self::InternalError { endpoint, .. }
             | Self::LockedStackError { endpoint, .. }
+            | Self::UnavailableStackError { endpoint, .. }
             | Self::ChatCompletionsServiceUnavailable { endpoint, .. } => endpoint.clone(),
         }
     }
@@ -240,6 +253,9 @@ impl AtomaServiceError {
             Self::AuthError { auth_error, .. } => format!("Authentication error: {}", auth_error),
             Self::InternalError { message, .. } => format!("Internal server error: {}", message),
             Self::LockedStackError { message, .. } => format!("Stack is locked: {}", message),
+            Self::UnavailableStackError { message, .. } => {
+                format!("Stack is unavailable: {}", message)
+            }
             Self::ChatCompletionsServiceUnavailable { message, .. } => {
                 format!("Chat completions service is unavailable: {}", message)
             }
