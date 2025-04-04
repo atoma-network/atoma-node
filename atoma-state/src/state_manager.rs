@@ -1563,32 +1563,34 @@ impl AtomaState {
         estimated_total_compute_units: i64,
         total_compute_units: i64,
         ratio_for_claim_stacks: f64,
+        concurrent_requests: i64,
     ) -> Result<UpdateStackNumComputeUnitsAndClaimFunds> {
         let result = sqlx::query(
             "WITH updated AS (
-                SELECT 
-                    CAST(already_computed_units - ($1 - $2) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
+                SELECT
+                    CAST(already_computed_units - ($2 - $3) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
                     is_confidential
                 FROM stacks
-                WHERE stack_small_id = $3
+                WHERE stack_small_id = $1
             )
             UPDATE stacks s
-            SET 
-                already_computed_units = already_computed_units - ($1 - $2),
+            SET
+                already_computed_units = already_computed_units - ($2 - $3),
                 is_locked_for_claim = (
-                    SELECT (u.is_confidential = true AND u.new_ratio > $4)
+                    SELECT (u.is_confidential = true AND u.new_ratio > $4 AND $5 = 0)
                     FROM updated u
                 )
-            WHERE s.stack_small_id = $3
-            RETURNING 
+            WHERE s.stack_small_id = $1
+            RETURNING
                 CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT) as ratio,
                 s.already_computed_units as stack_computed_units,
                 (s.is_confidential = true) as is_confidential",
         )
+        .bind(stack_small_id)
         .bind(estimated_total_compute_units)
         .bind(total_compute_units)
-        .bind(stack_small_id)
         .bind(ratio_for_claim_stacks)
+        .bind(concurrent_requests)
         .fetch_optional(&self.db)
         .await?;
 
@@ -5353,7 +5355,7 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 200, 100, 0.95)
+            .update_stack_num_compute_units(1, 200, 100, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 40); // (500 - (200 - 100)) / 1000 = 400 / 1000 = 0.4
         assert_eq!(stack_computed_units, 400);
@@ -5365,13 +5367,15 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 400, 200, 0.95)
+            .update_stack_num_compute_units(1, 400, 200, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 20); // (400 - (400 - 200)) / 1000 = 200 / 1000 = 0.2
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
         // Test case 3: Stack not found
-        let err = state.update_stack_num_compute_units(999, 0, 0, 0.95).await;
+        let err = state
+            .update_stack_num_compute_units(999, 0, 0, 0.95, 0)
+            .await;
         assert!(matches!(err, Err(AtomaStateManagerError::StackNotFound)));
 
         // Test case 4: Edge case - estimated equals num_compute_units
@@ -5380,11 +5384,56 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 200, 200, 0.95)
+            .update_stack_num_compute_units(1, 200, 200, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 20); // No change: 200 / 1000 = 0.2
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
+
+        state
+            .insert_new_stack(Stack {
+                stack_small_id: 2,
+                task_small_id: 1,
+                num_compute_units: 1000,
+                already_computed_units: 960,
+                owner_address: "0x1".to_string(),
+                stack_id: "0x2".to_string(),
+                selected_node_id: 1,
+                price_per_one_million_compute_units: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
+            })
+            .await?;
+        // Test case 6: Edge case - estimated equals num_compute_units, but with concurrent requests
+        let UpdateStackNumComputeUnitsAndClaimFunds {
+            ratio,
+            stack_computed_units,
+            is_confidential,
+        } = state
+            .update_stack_num_compute_units(2, 50, 50, 0.95, 1)
+            .await?;
+        assert_eq!((ratio * 100.0) as i64, 96); // No change: 960 / 1000 = 0.96
+        assert_eq!(stack_computed_units, 960);
+        assert!(is_confidential);
+        let stack = state.get_stack(2).await?;
+        assert!(!stack.is_locked_for_claim);
+
+        // Test case 7: Edge case - estimated equals num_compute_units, but with no concurrent requests
+        let UpdateStackNumComputeUnitsAndClaimFunds {
+            ratio,
+            stack_computed_units,
+            is_confidential,
+        } = state
+            .update_stack_num_compute_units(2, 0, 0, 0.95, 0)
+            .await?;
+        assert_eq!((ratio * 100.0) as i64, 96); // No change: 960 / 1000 = 0.96
+        assert_eq!(stack_computed_units, 960);
+        assert!(is_confidential);
+        let stack = state.get_stack(2).await?;
+        assert!(stack.is_locked_for_claim);
 
         // Clean up
         truncate_tables(&state.db).await;
@@ -5396,7 +5445,7 @@ mod tests {
     #[allow(clippy::cast_possible_truncation)]
     async fn test_update_stack_num_compute_units_with_large_numbers() -> Result<()> {
         let state = setup_test_db().await;
-
+        truncate_tables(&state.db).await;
         // Create a test task with known values
         state
             .insert_new_task(Task {
@@ -5435,7 +5484,7 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 1200, 1000, 0.95)
+            .update_stack_num_compute_units(1, 1200, 1000, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 80); // (1000 - (1200 - 1000)) / 1000 = 800 / 1000 = 0.8
         assert_eq!(stack_computed_units, 800);
@@ -5447,7 +5496,7 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 1800, 1000, 0.95)
+            .update_stack_num_compute_units(1, 1800, 1000, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 0); // (800 - (1800 - 1000)) / 1000 = 0.0
         assert_eq!(stack_computed_units, 0);
@@ -5463,7 +5512,7 @@ mod tests {
     #[allow(clippy::cast_possible_truncation)]
     async fn test_update_stack_num_compute_units_concurrent() -> Result<()> {
         let state = setup_test_db().await;
-
+        truncate_tables(&state.db).await;
         state
             .insert_new_task(Task {
                 task_small_id: 1,
@@ -5497,9 +5546,9 @@ mod tests {
 
         // Simulate concurrent updates
         let futures = vec![
-            state.update_stack_num_compute_units(1, 200, 400, 0.95),
-            state.update_stack_num_compute_units(1, 200, 400, 0.95),
-            state.update_stack_num_compute_units(1, 200, 400, 0.95),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95, 0),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95, 0),
+            state.update_stack_num_compute_units(1, 200, 400, 0.95, 0),
         ];
 
         let results = futures::future::join_all(futures).await;
@@ -5513,7 +5562,7 @@ mod tests {
             is_confidential,
             ..
         } = state
-            .update_stack_num_compute_units(1, 200, 400, 0.95)
+            .update_stack_num_compute_units(1, 200, 400, 0.95, 0)
             .await?;
         assert_eq!((final_ratio * 100.0) as i64, 80);
         assert!(is_confidential);
@@ -5528,7 +5577,7 @@ mod tests {
     #[allow(clippy::cast_possible_truncation)]
     async fn test_update_stack_num_compute_units_without_confidential_task() -> Result<()> {
         let state = setup_test_db().await;
-
+        truncate_tables(&state.db).await;
         // Create a non-confidential task
         state
             .insert_new_task(Task {
@@ -5567,7 +5616,7 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 200, 400, 0.95)
+            .update_stack_num_compute_units(1, 200, 400, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 20);
         assert!(!is_confidential);
@@ -5579,7 +5628,7 @@ mod tests {
             stack_computed_units,
             is_confidential,
         } = state
-            .update_stack_num_compute_units(1, 1200, 1000, 0.95)
+            .update_stack_num_compute_units(1, 1200, 1000, 0.95, 0)
             .await?;
         assert_eq!((ratio * 100.0) as i64, 0);
         assert!(!is_confidential);
