@@ -1567,28 +1567,28 @@ impl AtomaState {
     ) -> Result<UpdateStackNumComputeUnitsAndClaimFunds> {
         let result = sqlx::query(
             "WITH updated AS (
-                SELECT 
-                    CAST(already_computed_units - ($1 - $2) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
+                SELECT
+                    CAST(already_computed_units - ($2 - $3) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
                     is_confidential
                 FROM stacks
-                WHERE stack_small_id = $3
+                WHERE stack_small_id = $1
             )
             UPDATE stacks s
-            SET 
-                already_computed_units = already_computed_units - ($1 - $2),
+            SET
+                already_computed_units = already_computed_units - ($2 - $3),
                 is_locked_for_claim = (
                     SELECT (u.is_confidential = true AND u.new_ratio > $4 AND $5 = 0)
                     FROM updated u
                 )
-            WHERE s.stack_small_id = $3
-            RETURNING 
+            WHERE s.stack_small_id = $1
+            RETURNING
                 CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT) as ratio,
                 s.already_computed_units as stack_computed_units,
                 (s.is_confidential = true) as is_confidential",
         )
+        .bind(stack_small_id)
         .bind(estimated_total_compute_units)
         .bind(total_compute_units)
-        .bind(stack_small_id)
         .bind(ratio_for_claim_stacks)
         .bind(concurrent_requests)
         .fetch_optional(&self.db)
