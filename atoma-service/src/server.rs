@@ -50,6 +50,7 @@ use crate::{
             confidential_image_generations_handler, image_generations_handler,
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
         },
+        stop_streamer::stop_streamer_handler,
     },
     middleware::{
         confidential_compute_middleware, signature_verification_middleware,
@@ -62,6 +63,9 @@ pub const HEALTH_PATH: &str = "/health";
 
 /// The path for the metrics endpoint.
 pub const METRICS_PATH: &str = "/metrics";
+
+/// The path for the stop streamer endpoint.
+pub const STOP_STREAMER_PATH: &str = "/v1/stop-streamer";
 
 /// A small identifier for a Stack, represented as a 64-bit unsigned integer.
 type StackSmallId = i64;
@@ -110,6 +114,9 @@ pub struct AppState {
     /// almost full, without compromising any possible mismatch of compute units calculations
     /// due to concurrent accesses to a given stack (simultaneously).
     pub concurrent_requests_per_stack: Arc<DashMap<i64, u64>>,
+
+    /// Client dropped streamer connections
+    pub client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
 
     /// Channel sender for managing application events.
     ///
@@ -240,6 +247,7 @@ pub fn create_router(app_state: AppState) -> Router {
 
     let public_routes = Router::new()
         .route(HEALTH_PATH, get(health))
+        .route(STOP_STREAMER_PATH, post(stop_streamer_handler))
         .route(METRICS_PATH, get(metrics_handler));
 
     Router::new()

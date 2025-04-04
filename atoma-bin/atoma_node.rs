@@ -314,6 +314,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState {
         concurrent_requests_per_stack: Arc::new(DashMap::new()),
+        client_dropped_streamer_connections: Arc::new(DashMap::new()),
         state_manager_sender,
         stack_retrieve_sender,
         decryption_sender: app_state_decryption_sender,

@@ -54,6 +54,15 @@ const CHOICES: &str = "choices";
 /// The ciphertext key
 const CIPHERTEXT_KEY: &str = "ciphertext";
 
+/// The prompt tokens key
+const PROMPT_TOKENS_KEY: &str = "prompt_tokens";
+
+/// The completion tokens key
+const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
+
+/// The total tokens key
+const TOTAL_TOKENS_KEY: &str = "total_tokens";
+
 /// The nonce key
 const NONCE_KEY: &str = "nonce";
 
@@ -80,6 +89,8 @@ pub struct StreamingEncryptionMetadata {
 pub struct Streamer {
     /// The number of concurrent requests for the stack
     concurrent_requests: Arc<DashMap<i64, u64>>,
+    /// The client dropped streamer connections
+    client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
     /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     /// Current status of the stream
@@ -108,6 +119,8 @@ pub struct Streamer {
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
     /// The endpoint for the request
     endpoint: String,
+    /// The request ID for the request
+    request_id: String,
     /// A chunk buffer (needed as some chunks might be split into multiple parts)
     chunk_buffer: String,
     /// Timer for measuring time between token generations
@@ -121,6 +134,8 @@ pub struct Streamer {
     /// the last chunk is handled, the value is updated to the actual number of tokens
     /// returned by the LLM inference service
     streamer_computed_num_tokens: i64,
+    /// The number of input tokens for the request
+    num_input_tokens: i64,
 }
 
 /// Represents the various states of a streaming process
@@ -143,6 +158,7 @@ impl Streamer {
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         concurrent_requests: Arc<DashMap<i64, u64>>,
+        client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
         stack_small_id: i64,
         num_input_tokens: i64,
         estimated_total_compute_units: i64,
@@ -152,10 +168,12 @@ impl Streamer {
         model: String,
         streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
         endpoint: String,
+        request_id: String,
         first_token_generation_timer: Instant,
     ) -> Self {
         Self {
             concurrent_requests,
+            client_dropped_streamer_connections,
             stream: Box::pin(stream),
             status: StreamStatus::NotStarted,
             stack_small_id,
@@ -169,10 +187,12 @@ impl Streamer {
             decoding_phase_timer: None,
             streaming_encryption_metadata,
             endpoint,
+            request_id,
             chunk_buffer: String::new(),
             inter_stream_token_latency_timer: None,
             is_final_chunk_handled: false,
-            streamer_computed_num_tokens: num_input_tokens,
+            streamer_computed_num_tokens: 0,
+            num_input_tokens,
         }
     }
 
@@ -626,6 +646,20 @@ impl Streamer {
             // NOTE: We increment the number of tokens computed so far, as we are processing a new chunk
             // which corresponds to a new generated token.
             self.streamer_computed_num_tokens += 1;
+            if let Some(client_dropped_streamer_connection) = self
+                .client_dropped_streamer_connections
+                .get(&self.request_id)
+            {
+                if *client_dropped_streamer_connection {
+                    self.status = StreamStatus::Completed;
+                    chunk[USAGE_KEY] = json!({
+                        PROMPT_TOKENS_KEY: self.num_input_tokens,
+                        COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
+                        TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
+                    });
+                    return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
+                }
+            }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
     }
@@ -803,7 +837,7 @@ impl Drop for Streamer {
             &self.state_manager_sender,
             self.stack_small_id,
             self.estimated_total_compute_units,
-            self.streamer_computed_num_tokens,
+            self.num_input_tokens + self.streamer_computed_num_tokens,
             &self.endpoint,
             num_concurrent_requests,
         ) {
