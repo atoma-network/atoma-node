@@ -5373,7 +5373,9 @@ mod tests {
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
         // Test case 3: Stack not found
-        let err = state.update_stack_num_compute_units(999, 0, 0, 0.95, 0).await;
+        let err = state
+            .update_stack_num_compute_units(999, 0, 0, 0.95, 0)
+            .await;
         assert!(matches!(err, Err(AtomaStateManagerError::StackNotFound)));
 
         // Test case 4: Edge case - estimated equals num_compute_units
@@ -5388,21 +5390,23 @@ mod tests {
         assert_eq!(stack_computed_units, 200);
         assert!(is_confidential);
 
-        state.insert_new_stack(Stack {
-            stack_small_id: 2,
-            task_small_id: 1,
-            num_compute_units: 1000,
-            already_computed_units: 960,
-            owner_address: "0x1".to_string(),
-            stack_id: "0x2".to_string(),
-            selected_node_id: 1,
-            price_per_one_million_compute_units: 1000,
-            in_settle_period: false,
-            total_hash: vec![0; 32],
-            num_total_messages: 0,
-            is_claimed: false,
-            is_locked_for_claim: false,
-        }).await?;
+        state
+            .insert_new_stack(Stack {
+                stack_small_id: 2,
+                task_small_id: 1,
+                num_compute_units: 1000,
+                already_computed_units: 960,
+                owner_address: "0x1".to_string(),
+                stack_id: "0x2".to_string(),
+                selected_node_id: 1,
+                price_per_one_million_compute_units: 1000,
+                in_settle_period: false,
+                total_hash: vec![0; 32],
+                num_total_messages: 0,
+                is_claimed: false,
+                is_locked_for_claim: false,
+            })
+            .await?;
         // Test case 6: Edge case - estimated equals num_compute_units, but with concurrent requests
         let UpdateStackNumComputeUnitsAndClaimFunds {
             ratio,
