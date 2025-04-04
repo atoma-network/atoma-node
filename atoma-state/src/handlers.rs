@@ -827,6 +827,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             estimated_total_compute_units,
             total_compute_units,
             RATIO_FOR_CLAIM_STACK_THRESHOLD,
+            concurrent_requests as i64,
         )
         .await?;
     if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
