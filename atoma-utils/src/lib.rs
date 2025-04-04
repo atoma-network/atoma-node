@@ -28,6 +28,10 @@ pub mod constants {
     /// Contains a unique identifier for a blockchain transaction.
     pub const TX_DIGEST: &str = "X-Tx-Digest";
 
+    /// HTTP header name for the request ID.
+    /// Contains a unique identifier for a request.
+    pub const REQUEST_ID: &str = "X-Request-Id";
+
     /// Field name for encrypted data in the request/response body.
     /// Contains the encrypted payload of the message.
     pub const CIPHERTEXT: &str = "ciphertext";

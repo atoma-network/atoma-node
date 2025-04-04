@@ -15,13 +15,14 @@ use crate::{
 use atoma_confidential::types::{
     ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
 };
-use atoma_utils::constants::PAYLOAD_HASH_SIZE;
+use atoma_utils::constants::{PAYLOAD_HASH_SIZE, REQUEST_ID};
 use axum::{
     body::Body,
     extract::State,
     response::{IntoResponse, Response, Sse},
     Extension, Json,
 };
+use hyper::HeaderMap;
 use openai_api::{
     completion_choice::{
         ChatCompletionChoice, ChatCompletionChunkChoice, ChatCompletionChunkDelta,
@@ -201,6 +202,7 @@ pub struct ChatCompletionsOpenApi;
 pub async fn chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, AtomaServiceError> {
     let RequestMetadata {
@@ -239,6 +241,7 @@ pub async fn chat_completions_handler(
         num_input_tokens,
         estimated_total_compute_units,
         client_encryption_metadata,
+        headers,
     )
     .await
     {
@@ -377,6 +380,7 @@ pub struct ConfidentialChatCompletionsOpenApi;
 pub async fn confidential_chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, AtomaServiceError> {
     let RequestMetadata {
@@ -419,6 +423,7 @@ pub async fn confidential_chat_completions_handler(
         num_input_tokens,
         estimated_total_compute_units,
         client_encryption_metadata,
+        headers,
     )
     .await
     {
@@ -526,6 +531,7 @@ async fn handle_response(
     num_input_tokens: i64,
     estimated_total_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
+    headers: HeaderMap,
 ) -> Result<Response<Body>, AtomaServiceError> {
     if is_stream {
         let streaming_encryption_metadata = utils::get_streaming_encryption_metadata(
@@ -546,6 +552,7 @@ async fn handle_response(
             payload_hash,
             streaming_encryption_metadata,
             endpoint,
+            headers,
         )
         .await
     } else {
@@ -725,6 +732,7 @@ async fn handle_streaming_response(
     payload_hash: [u8; 32],
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
     endpoint: String,
+    headers: HeaderMap,
 ) -> Result<Response<Body>, AtomaServiceError> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -732,6 +740,19 @@ async fn handle_streaming_response(
     payload["stream_options"] = json!({
         "include_usage": true
     });
+
+    let request_id = headers
+        .get(REQUEST_ID)
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: REQUEST_ID.to_string(),
+            endpoint: endpoint.clone(),
+        })?
+        .to_str()
+        .map_err(|_| AtomaServiceError::InvalidHeader {
+            message: "Request ID header is invalid, cannot be converted to string".to_string(),
+            endpoint: endpoint.clone(),
+        })?
+        .to_string();
 
     let model = payload
         .get(MODEL_KEY)
@@ -787,6 +808,7 @@ async fn handle_streaming_response(
         stream,
         state.state_manager_sender.clone(),
         state.concurrent_requests_per_stack.clone(),
+        state.client_dropped_streamer_connections.clone(),
         stack_small_id,
         num_input_tokens,
         estimated_total_compute_units,
@@ -796,6 +818,7 @@ async fn handle_streaming_response(
         model.to_string(),
         streaming_encryption_metadata,
         endpoint,
+        request_id,
         timer,
     ))
     .keep_alive(

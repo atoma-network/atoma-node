@@ -323,6 +323,7 @@ mod middleware {
         (
             AppState {
                 concurrent_requests_per_stack: Arc::new(DashMap::new()),
+                client_dropped_streamer_connections: Arc::new(DashMap::new()),
                 models: Arc::new(
                     models
                         .into_iter()

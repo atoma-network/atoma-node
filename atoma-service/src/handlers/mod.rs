@@ -3,6 +3,7 @@ pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
 pub mod request_model;
+pub mod stop_streamer;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
