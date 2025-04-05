@@ -293,4 +293,7 @@ pub struct UpdateStackNumComputeUnitsAndClaimFunds {
 
     /// Indicates whether the stack is confidential
     pub is_confidential: bool,
+
+    /// Indicates whether the stack is locked for claim
+    pub is_locked_for_claim: bool,
 }
