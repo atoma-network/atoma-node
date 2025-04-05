@@ -1584,7 +1584,8 @@ impl AtomaState {
             RETURNING
                 CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT) as ratio,
                 s.already_computed_units as stack_computed_units,
-                (s.is_confidential = true) as is_confidential",
+                (s.is_confidential = true) as is_confidential,
+                s.is_locked_for_claim as is_locked_for_claim",
         )
         .bind(stack_small_id)
         .bind(estimated_total_compute_units)
@@ -5354,6 +5355,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 200, 100, 0.95, 0)
             .await?;
@@ -5366,6 +5368,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 400, 200, 0.95, 0)
             .await?;
@@ -5383,6 +5386,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 200, 200, 0.95, 0)
             .await?;
@@ -5412,6 +5416,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(2, 50, 50, 0.95, 1)
             .await?;
@@ -5426,6 +5431,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(2, 0, 0, 0.95, 0)
             .await?;
@@ -5483,6 +5489,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 1200, 1000, 0.95, 0)
             .await?;
@@ -5495,6 +5502,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 1800, 1000, 0.95, 0)
             .await?;
@@ -5615,6 +5623,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 200, 400, 0.95, 0)
             .await?;
@@ -5627,6 +5636,7 @@ mod tests {
             ratio,
             stack_computed_units,
             is_confidential,
+            ..
         } = state
             .update_stack_num_compute_units(1, 1200, 1000, 0.95, 0)
             .await?;
