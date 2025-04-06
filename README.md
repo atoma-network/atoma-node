@@ -178,37 +178,20 @@ We currently support the following inference services:
 | -------------------------------------------------------- | --------------------- | ----------------------------- |
 | [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | CUDA                  | `image_generations_mistralrs` |
 
-Additionally, we offer the flexibility to run Atoma's node in two different modes:
-
-- **Confidential**: This mode allows to run the Atoma node infrastructure in a confidential mode, meaning that the node will only be able to process requests that have been authenticated by the Atoma's smart contract, through secure hardware enclaves, allowing for full data privacy and security. This mode is the most secure one, and it is the recommended mode for most applications, but it requires operating on the latest hardware (e.g. NVIDIA Hopper and Blackwell GPUs).
-- **Non-Confidential**: This mode is the default one, and it runs the Atoma's node in a non-confidential mode, meaning that the node will be able to process requests without any further privacy guarantees, even though Atoma still offers strong compute integrity guarantees through our novel [Sampling Consensus algorithm](https://github.com/atoma-network/atoma-docs/blob/main/papers/atoma_whitepaper.pdf).
-
-To run the Atoma node in a confidential mode, you need to pass the `confidential` profile to the `docker compose up` command:
-
 Also please note that if you are on an ARM64 architecture, you need to set the `PLATFORM=linux/arm64` environment variable and then run the `docker compose up` command.
 
 ```bash
 # Build and start all services
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,confidential docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs  docker compose up --build
+
+# Build and start without nvidia runtime
+COMPOSE_PROFILES=vllm-cpu,no-gpu docker compose up --build
 
 # Only start one service
-COMPOSE_PROFILES=chat_completions_vllm,confidential docker compose up --build
+COMPOSE_PROFILES=chat_completions_vllm docker compose up --build
 
 # Run in detached mode
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,confidential docker compose up -d --build
-```
-
-Similarly, to run the Atoma node in a non-confidential mode, you need to pass the `non-confidential` profile to the `docker compose up` command:
-
-```bash
-# Build and start all services
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,non-confidential docker compose up --build
-
-# Only start one service
-COMPOSE_PROFILES=chat_completions_vllm,non-confidential docker compose up --build
-
-# Run in detached mode
-COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs,non-confidential docker compose up -d --build
+COMPOSE_PROFILES=chat_completions_vllm,embeddings_tei,image_generations_mistralrs docker compose up -d --build
 ```
 
 The deployment defaults to `info` level logs, in order to change the log level upon deployment, you can run set the `ATOMA_LOG_LEVELS` env variable at runtime.
@@ -254,8 +237,8 @@ View logs:
 docker compose logs
 
 # Specific service
-docker compose logs atoma-node-confidential # Confidential mode
-docker compose logs atoma-node-non-confidential # Non-confidential mode
+docker compose logs atoma-node-no-nvidia-1 # No nvidia run
+docker compose logs atoma-node-1 #  Nvidia runtime
 docker compose logs vllm # vLLM service
 
 # Follow logs
