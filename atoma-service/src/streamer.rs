@@ -656,7 +656,6 @@ impl Streamer {
                     COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
                     TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
                 });
-                return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
             }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
