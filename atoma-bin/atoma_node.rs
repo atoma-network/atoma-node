@@ -9,7 +9,7 @@ use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use sui_keys::keystore::FileBasedKeystore;
@@ -314,7 +314,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState {
         concurrent_requests_per_stack: Arc::new(DashMap::new()),
-        client_dropped_streamer_connections: Arc::new(DashMap::new()),
+        client_dropped_streamer_connections: Arc::new(DashSet::new()),
         state_manager_sender,
         stack_retrieve_sender,
         decryption_sender: app_state_decryption_sender,

@@ -40,7 +40,7 @@ pub async fn stop_streamer_handler(
 
     app_state
         .client_dropped_streamer_connections
-        .insert(request_id.to_string(), true);
+        .insert(request_id.to_string());
 
     Ok(Json("OK".to_string()))
 }

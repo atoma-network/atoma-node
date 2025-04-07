@@ -14,7 +14,7 @@ use atoma_utils::{
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use flume::Sender as FlumeSender;
 use futures::Stream;
 use opentelemetry::KeyValue;
@@ -90,7 +90,7 @@ pub struct Streamer {
     /// The number of concurrent requests for the stack
     concurrent_requests: Arc<DashMap<i64, u64>>,
     /// The client dropped streamer connections
-    client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
+    client_dropped_streamer_connections: Arc<DashSet<String>>,
     /// The stream of bytes from the inference service
     stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     /// Current status of the stream
@@ -158,7 +158,7 @@ impl Streamer {
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         concurrent_requests: Arc<DashMap<i64, u64>>,
-        client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
+        client_dropped_streamer_connections: Arc<DashSet<String>>,
         stack_small_id: i64,
         num_input_tokens: i64,
         estimated_total_compute_units: i64,
@@ -646,19 +646,17 @@ impl Streamer {
             // NOTE: We increment the number of tokens computed so far, as we are processing a new chunk
             // which corresponds to a new generated token.
             self.streamer_computed_num_tokens += 1;
-            if let Some(client_dropped_streamer_connection) = self
+            if let Some(_client_dropped_streamer_connection) = self
                 .client_dropped_streamer_connections
-                .get(&self.request_id)
+                .remove(&self.request_id)
             {
-                if *client_dropped_streamer_connection {
-                    self.status = StreamStatus::Completed;
-                    chunk[USAGE_KEY] = json!({
-                        PROMPT_TOKENS_KEY: self.num_input_tokens,
-                        COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
-                        TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
-                    });
-                    return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
-                }
+                self.status = StreamStatus::Completed;
+                chunk[USAGE_KEY] = json!({
+                    PROMPT_TOKENS_KEY: self.num_input_tokens,
+                    COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
+                    TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
+                });
+                return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
             }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }

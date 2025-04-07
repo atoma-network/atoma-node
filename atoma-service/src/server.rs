@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use flume::Sender as FlumeSender;
 use hyper::StatusCode;
 use prometheus::Encoder;
@@ -116,7 +116,7 @@ pub struct AppState {
     pub concurrent_requests_per_stack: Arc<DashMap<i64, u64>>,
 
     /// Client dropped streamer connections
-    pub client_dropped_streamer_connections: Arc<DashMap<String, bool>>,
+    pub client_dropped_streamer_connections: Arc<DashSet<String>>,
 
     /// Channel sender for managing application events.
     ///
