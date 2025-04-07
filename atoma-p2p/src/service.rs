@@ -58,7 +58,10 @@ const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
 ];
 
 // The proxy bootstrap nodes
-const PROXY_BOOTSTRAP_NODES: [&str; 1] = ["12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ"];
+const PROXY_BOOTSTRAP_NODES: [&str; 2] = [
+    "12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ",
+    "12D3KooWBLv3tmR3PY9gTSfp1yYNL3ST2v3ZpmHxgASjnycUurmC",
+];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
