@@ -663,9 +663,17 @@ impl Streamer {
                     TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
                 });
                 // NOTE: At this point, we will need to re-sign the chunk, as we added the usage key.
-                // This is also the last chunk, as the connection was dropped, and therefore, there is 
+                // This is also the last chunk, as the connection was dropped, and therefore, there is
                 // little to no latency overhead to do it once more.
+                //
+                // 1. Remove the previous signature and response hash from the chunk
+                if let Some(obj) = chunk.as_object_mut() {
+                    obj.remove(SIGNATURE_KEY);
+                    obj.remove(RESPONSE_HASH_KEY);
+                }
+                // 2. Sign the chunk again
                 let (signature, response_hash) = self.sign_chunk(&chunk)?;
+                // 3. Update the chunk with the new signature and response hash
                 update_chunk(&mut chunk, &signature, response_hash);
                 info!(
                     target = "atoma-service-streamer",
