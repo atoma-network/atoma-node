@@ -471,7 +471,7 @@ mod vllm_metrics {
     #[instrument(level = "info", skip_all)]
     fn parse_gpu_cache_usage(metrics_text: &str) -> Result<f64> {
         for line in metrics_text.lines() {
-            if line.starts_with("vllm:gpu_cache_usage_perc{") {
+            if line.starts_with("vllm:request_queue_time_seconds{") {
                 if let Some(value_str) = line.split_whitespace().last() {
                     return value_str.parse::<f64>().map_err(|e| {
                         tracing::error!(
@@ -549,12 +549,13 @@ mod vllm_metrics {
         chat_completions_service_urls: &[String],
         model: &str,
     ) -> Result<(String, StatusCode)> {
+        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0;
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
                 model.to_string(),
             ));
         }
-        let mut min_kv_cache_usage = f64::MAX;
+        let mut min_request_queue_time_seconds = 4.0; // Default to 4 seconds
         let mut best_url = chat_completions_service_urls[0].clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
@@ -562,15 +563,15 @@ mod vllm_metrics {
                 get_metrics(&HTTP_CLIENT, chat_completions_service_url)
             })
             .collect();
-        while let Some(kv_cache_usage_data) = futures.next().await {
-            let (chat_completions_service_url, kv_cache_usage) = match kv_cache_usage_data {
-                Ok((chat_completions_service_url, kv_cache_usage)) => {
+        while let Some(request_queue_time_seconds) = futures.next().await {
+            let (chat_completions_service_url, request_queue_time_seconds) = match request_queue_time_seconds {
+                Ok((chat_completions_service_url, request_queue_time_seconds)) => {
                     info!(
                         target = "atoma-service",
                         level = "info",
-                        "Received vLLM GPU cache usage metrics response for {chat_completions_service_url}: {kv_cache_usage}"
+                        "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
                     );
-                    (chat_completions_service_url, kv_cache_usage)
+                    (chat_completions_service_url, request_queue_time_seconds)
                 }
                 Err(e) => {
                     tracing::error!(
@@ -581,8 +582,8 @@ mod vllm_metrics {
                     continue;
                 }
             };
-            if kv_cache_usage < min_kv_cache_usage {
-                min_kv_cache_usage = kv_cache_usage;
+            if request_queue_time_seconds < min_request_queue_time_seconds {
+                min_request_queue_time_seconds = request_queue_time_seconds;
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
@@ -593,13 +594,13 @@ mod vllm_metrics {
             model = model,
             best_url = best_url
         );
-        if min_kv_cache_usage > 0.9 {
+        if min_request_queue_time_seconds > MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
-                "Best available chat completions service URL for model: {model} has a GPU cache usage of {min_kv_cache_usage}%",
+                "Best available chat completions service URL for model: {model} has a request queue time of at least {min_request_queue_time_seconds} seconds",
                 model = model,
-                min_kv_cache_usage = min_kv_cache_usage
+                min_request_queue_time_seconds = min_request_queue_time_seconds
             );
             return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
         }
