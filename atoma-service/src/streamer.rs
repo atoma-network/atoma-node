@@ -662,6 +662,13 @@ impl Streamer {
                     COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
                     TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
                 });
+                info!(
+                    target = "atoma-service-streamer",
+                    level = "info",
+                    endpoint = self.endpoint,
+                    "Client dropped streamer connection, updating usage, chunk = {chunk}"
+                );
+                return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
             }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
