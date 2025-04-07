@@ -15,7 +15,7 @@ mod middleware {
         body::Body, extract::Request, http::StatusCode, response::Response, routing::post, Router,
     };
     use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
-    use dashmap::DashMap;
+    use dashmap::{DashMap, DashSet};
     use flume::Sender;
     use serde_json::{json, Value};
     use serial_test::serial;
@@ -323,6 +323,7 @@ mod middleware {
         (
             AppState {
                 concurrent_requests_per_stack: Arc::new(DashMap::new()),
+                client_dropped_streamer_connections: Arc::new(DashSet::new()),
                 models: Arc::new(
                     models
                         .into_iter()
