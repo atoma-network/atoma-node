@@ -650,13 +650,18 @@ impl Streamer {
                 .client_dropped_streamer_connections
                 .remove(&self.request_id)
             {
+                info!(
+                    target = "atoma-service-streamer",
+                    level = "info",
+                    endpoint = self.endpoint,
+                    "Client dropped streamer connection, updating usage"
+                );
                 self.status = StreamStatus::Completed;
                 chunk[USAGE_KEY] = json!({
                     PROMPT_TOKENS_KEY: self.num_input_tokens,
                     COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
                     TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
                 });
-                return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
             }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         }
