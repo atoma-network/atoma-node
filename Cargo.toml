@@ -29,7 +29,7 @@ atoma-utils                 = { path = "./atoma-utils" }
 axum                        = "0.7.5"
 base64                      = "0.22.1"
 blake2                      = "0.10.6"
-blake3                      = "1.8.0"
+blake3                      = "1.8.1"
 bytes                       = "1.10.0"
 chrono                      = "0.4.39"
 ciborium                    = "0.2.2"
