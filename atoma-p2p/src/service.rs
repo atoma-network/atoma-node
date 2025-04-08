@@ -821,6 +821,14 @@ impl AtomaP2pNode {
                                 event = "incoming_connection",
                                 "Incoming connection"
                             );
+                            if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id.to_string() == peer_id).unwrap_or(false)) {
+                                info!(
+                                    target = "atoma-p2p",
+                                    event = "incoming_connection_bootstrap_node",
+                                    peer_id = %peer_id,
+                                    "Incoming connection from proxy bootstrap node"
+                                );
+                            }
                         }
                         SwarmEvent::IncomingConnectionError {
                             ..
