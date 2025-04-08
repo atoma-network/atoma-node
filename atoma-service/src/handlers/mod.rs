@@ -455,7 +455,7 @@ mod vllm_metrics {
             .expect("Failed to create HTTP client")
     });
 
-    /// Parses the GPU cache usage from the metrics text
+    /// Parses the waiting running queue time from the metrics text
     ///
     /// # Arguments
     ///
@@ -463,13 +463,18 @@ mod vllm_metrics {
     ///
     /// # Returns
     ///
-    /// Returns the GPU cache usage as a `f64`.
+    /// Returns the waiting running queue time as a `f64`.
     ///
     /// # Errors
     ///
-    /// Returns a `VllmMetricsError` if the GPU cache usage metric is not found or the value is not a valid `f64`.
+    /// Returns a `VllmMetricsError` if the waiting running queue time metric is not found or the value is not a valid `f64`.
     #[instrument(level = "info", skip_all)]
-    fn parse_gpu_cache_usage(metrics_text: &str) -> Result<f64> {
+    fn parse_waiting_running_queue_time(metrics_text: &str) -> Result<f64> {
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Parsing waiting running queue time metrics: {metrics_text}"
+        );
         for line in metrics_text.lines() {
             if line.starts_with("vllm:request_queue_time_seconds{") {
                 if let Some(value_str) = line.split_whitespace().last() {
@@ -477,7 +482,7 @@ mod vllm_metrics {
                         tracing::error!(
                             target = "atoma-service",
                             level = "error",
-                            "Failed to parse GPU cache usage: {}",
+                            "Failed to parse waiting running queue time: {}",
                             e
                         );
                         VllmMetricsError::InvalidMetricsValue(e)
@@ -486,7 +491,7 @@ mod vllm_metrics {
             }
         }
         Err(VllmMetricsError::InvalidMetricsResponse(
-            serde_json::Error::custom("GPU cache usage metric not found"),
+            serde_json::Error::custom("Waiting running queue time metric not found"),
         ))
     }
 
@@ -523,7 +528,7 @@ mod vllm_metrics {
             .error_for_status()?
             .text()
             .await?;
-        parse_gpu_cache_usage(&response).map(|f| (endpoint.to_string(), f))
+        parse_waiting_running_queue_time(&response).map(|f| (endpoint.to_string(), f))
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
