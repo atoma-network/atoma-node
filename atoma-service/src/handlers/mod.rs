@@ -549,13 +549,13 @@ mod vllm_metrics {
         chat_completions_service_urls: &[String],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0;
+        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
                 model.to_string(),
             ));
         }
-        let mut min_request_queue_time_seconds = 4.0; // Default to 4 seconds
+        let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
         let mut best_url = chat_completions_service_urls[0].clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
@@ -564,24 +564,25 @@ mod vllm_metrics {
             })
             .collect();
         while let Some(request_queue_time_seconds) = futures.next().await {
-            let (chat_completions_service_url, request_queue_time_seconds) = match request_queue_time_seconds {
-                Ok((chat_completions_service_url, request_queue_time_seconds)) => {
-                    info!(
+            let (chat_completions_service_url, request_queue_time_seconds) =
+                match request_queue_time_seconds {
+                    Ok((chat_completions_service_url, request_queue_time_seconds)) => {
+                        info!(
                         target = "atoma-service",
                         level = "info",
                         "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
                     );
-                    (chat_completions_service_url, request_queue_time_seconds)
-                }
-                Err(e) => {
-                    tracing::error!(
-                        target = "atoma-service",
-                        level = "error",
-                        "Failed to get metrics for chat completions service url: {e}",
-                    );
-                    continue;
-                }
-            };
+                        (chat_completions_service_url, request_queue_time_seconds)
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target = "atoma-service",
+                            level = "error",
+                            "Failed to get metrics for chat completions service url: {e}",
+                        );
+                        continue;
+                    }
+                };
             if request_queue_time_seconds < min_request_queue_time_seconds {
                 min_request_queue_time_seconds = request_queue_time_seconds;
                 best_url.clone_from(&chat_completions_service_url);
