@@ -600,8 +600,6 @@ mod vllm_metrics {
                 target = "atoma-service",
                 level = "warn",
                 "Best available chat completions service URL for model: {model} has a request queue time of at least {min_request_queue_time_seconds} seconds",
-                model = model,
-                min_request_queue_time_seconds = min_request_queue_time_seconds
             );
             return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
         }
