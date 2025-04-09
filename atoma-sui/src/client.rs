@@ -1118,6 +1118,14 @@ impl Client {
             level = "info",
             "Building claim funds for stacks transaction..."
         );
+        let stack_small_ids = stack_small_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>();
+        let num_claimed_compute_units = num_claimed_compute_units
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>();
         let tx = client
             .transaction_builder()
             .move_call(

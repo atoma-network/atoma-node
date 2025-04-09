@@ -565,7 +565,7 @@ mod vllm_metrics {
                             target = "atoma-service",
                             module = "vllm_metrics",
                             level = "error",
-                            "Failed to get metrics for chat completions service url: {e}",
+                            "Failed to get metrics for chat completions service url with error: {e}",
                         );
                         continue;
                     }
