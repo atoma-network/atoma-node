@@ -29,7 +29,7 @@ use crate::{
         metrics::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+            CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -341,6 +341,24 @@ impl Streamer {
         }
 
         self.is_final_chunk_handled = true;
+
+        CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS.record(
+            self.inter_stream_token_latency_timer
+                .unwrap()
+                .elapsed()
+                .as_secs_f64(),
+            &[
+                KeyValue::new("model", self.model.clone()),
+                KeyValue::new(
+                    "privacy_level",
+                    if self.streaming_encryption_metadata.is_some() {
+                        "confidential"
+                    } else {
+                        "non-confidential"
+                    },
+                ),
+            ],
+        );
 
         Ok(())
     }

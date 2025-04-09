@@ -181,9 +181,32 @@ pub static TEXT_EMBEDDINGS_NUM_REQUESTS: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Name: `atoma_chat_completions_token_latency`
 /// - Type: Histogram
 /// - Labels: `model`
+/// - Labels: `privacy_level`
 /// - Unit: seconds
 /// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(|| {
+    GLOBAL_METER
+        .f64_histogram("atoma_chat_completions_token_latency")
+        .with_description("The latency of chat completion generation in seconds")
+        .with_unit("s")
+        .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+        .build()
+});
+
+/// Histogram metric that tracks the latency of chat completion streaming token generation.
+///
+/// This metric measures the time taken to generate each token during chat completions,
+/// broken down by model type. The histogram buckets range from 10ms to 10 minutes to
+/// capture both fast and slow token generation scenarios.
+///
+/// # Metric Details
+/// - Name: `atoma_chat_completions_token_latency`
+/// - Type: Histogram
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+/// - Unit: seconds
+/// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+pub static CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(|| {
     GLOBAL_METER
         .f64_histogram("atoma_chat_completions_token_latency")
         .with_description("The latency of chat completion generation in seconds")
@@ -202,6 +225,7 @@ pub static CHAT_COMPLETIONS_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(||
 /// - Name: `atoma_image_generation_latency`
 /// - Type: Histogram
 /// - Labels: `model`
+/// - Labels: `privacy_level`
 /// - Unit: seconds
 /// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static IMAGE_GEN_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(|| {
@@ -223,6 +247,7 @@ pub static IMAGE_GEN_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(|| {
 /// - Name: `atoma_text_embeddings_latency`
 /// - Type: Histogram
 /// - Labels: `model`
+/// - Labels: `privacy_level`
 /// - Unit: seconds
 /// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
 pub static TEXT_EMBEDDINGS_LATENCY_METRICS: Lazy<Histogram<f64>> = Lazy::new(|| {
