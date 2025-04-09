@@ -439,7 +439,7 @@ mod vllm_metrics {
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
     use once_cell::sync::Lazy;
-    use serde::de::Error;
+    use prometheus_http_query::Client;
     use tracing::{info, instrument};
 
     pub type Result<T> = std::result::Result<T, VllmMetricsError>;
@@ -447,53 +447,20 @@ mod vllm_metrics {
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-    /// The HTTP client for the Prometheus metrics queries
-    static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-        reqwest::Client::builder()
-            .timeout(METRICS_TIMEOUT)
-            .build()
-            .expect("Failed to create HTTP client")
-    });
+    /// Prometheus url for the atoma-node instance
+    const PROMETHEUS_URL: &str = "http://prometheus:9090";
 
-    /// Parses the waiting running queue time from the metrics text
-    ///
-    /// # Arguments
-    ///
-    /// * `metrics_text` - The text of the metrics response
-    ///
-    /// # Returns
-    ///
-    /// Returns the waiting running queue time as a `f64`.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `VllmMetricsError` if the waiting running queue time metric is not found or the value is not a valid `f64`.
-    #[instrument(level = "info", skip_all)]
-    fn parse_waiting_running_queue_time(metrics_text: &str) -> Result<f64> {
-        info!(
-            target = "atoma-service",
-            level = "info",
-            "Parsing waiting running queue time metrics: {metrics_text}"
-        );
-        for line in metrics_text.lines() {
-            if line.starts_with("vllm:request_queue_time_seconds{") {
-                if let Some(value_str) = line.split_whitespace().last() {
-                    return value_str.parse::<f64>().map_err(|e| {
-                        tracing::error!(
-                            target = "atoma-service",
-                            level = "error",
-                            "Failed to parse waiting running queue time: {}",
-                            e
-                        );
-                        VllmMetricsError::InvalidMetricsValue(e)
-                    });
-                }
-            }
-        }
-        Err(VllmMetricsError::InvalidMetricsResponse(
-            serde_json::Error::custom("Waiting running queue time metric not found"),
-        ))
-    }
+    /// The HTTP client for the Prometheus metrics queries
+    static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
+        Client::from(
+            reqwest::Client::builder()
+                .timeout(METRICS_TIMEOUT)
+                .build()
+                .expect("Failed to create HTTP client"),
+            PROMETHEUS_URL,
+        )
+        .expect("Failed to create HTTP client")
+    });
 
     /// Retrieves metrics data from a chat completions service endpoint.
     ///
@@ -513,45 +480,58 @@ mod vllm_metrics {
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
-    #[instrument(level = "info", skip_all, fields(endpoint=endpoint))]
-    async fn get_metrics(client: &reqwest::Client, endpoint: &str) -> Result<(String, f64)> {
-        let metrics_endpoint = format!("{endpoint}/metrics");
+    #[instrument(level = "info", skip_all, fields(job=job))]
+    async fn get_metrics(
+        client: &Client,
+        job: &str,
+        chat_completions_service_url: &str,
+    ) -> Result<(String, f64)> {
         info!(
             target = "atoma-service",
+            module = "vllm_metrics",
             level = "info",
-            "Getting metrics for chat completions service url: {metrics_endpoint}"
+            "Getting metrics for job: {job}"
         );
-        let response = client
-            .get(metrics_endpoint)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        parse_waiting_running_queue_time(&response).map(|f| (endpoint.to_string(), f))
+        let query = format!(
+            "histogram_quantile(0.90, sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])) by (le))"
+        );
+        let response = client.query(&query).get().await?;
+        response.data().as_vector().map_or_else(
+            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            |data_vector| {
+                data_vector.first().map_or_else(
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    |value| {
+                        let sample = value.sample();
+                        let value = sample.value();
+                        Ok((chat_completions_service_url.to_string(), value))
+                    },
+                )
+            },
+        )
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
     ///
     /// This function iterates through a list of chat completions service URLs,
-    /// executes a Prometheus query to retrieve GPU cache usage metrics,
-    /// and selects the URL with the lowest GPU cache usage percentage.
+    /// executes a Prometheus query to retrieve request queue time metrics,
+    /// and selects the URL with the lowest request queue time.
     ///
     /// # Arguments
     ///
-    /// * `chat_completions_service_urls` - A list of chat completions service URLs to query
+    /// * `chat_completions_service_urls` - A list of chat completions service URLs together with respective job names to query
     /// * `model` - The name of the model to query
     ///
     /// # Returns
     ///
-    /// Returns the URL of the chat completions service with the lowest GPU cache usage percentage.
+    /// Returns the URL of the chat completions service with the lowest request queue time.
     ///
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the list of chat completions service URLs is empty.
     #[instrument(level = "info", skip_all, fields(model=model, chat_completions_service_urls=chat_completions_service_urls.len()))]
     pub async fn get_best_available_chat_completions_service_url(
-        chat_completions_service_urls: &[String],
+        chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
         const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
@@ -561,11 +541,11 @@ mod vllm_metrics {
             ));
         }
         let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
-        let mut best_url = chat_completions_service_urls[0].clone();
+        let mut best_url = chat_completions_service_urls[0].0.clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
-            .map(|chat_completions_service_url| {
-                get_metrics(&HTTP_CLIENT, chat_completions_service_url)
+            .map(|(chat_completions_service_url, job_name)| {
+                get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
             })
             .collect();
         while let Some(request_queue_time_seconds) = futures.next().await {
@@ -573,23 +553,31 @@ mod vllm_metrics {
                 match request_queue_time_seconds {
                     Ok((chat_completions_service_url, request_queue_time_seconds)) => {
                         info!(
-                        target = "atoma-service",
-                        level = "info",
-                        "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
-                    );
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "info",
+                            "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
+                        );
                         (chat_completions_service_url, request_queue_time_seconds)
                     }
                     Err(e) => {
                         tracing::error!(
                             target = "atoma-service",
+                            module = "vllm_metrics",
                             level = "error",
                             "Failed to get metrics for chat completions service url: {e}",
                         );
                         continue;
                     }
                 };
-            if request_queue_time_seconds < min_request_queue_time_seconds {
-                min_request_queue_time_seconds = request_queue_time_seconds;
+            if request_queue_time_seconds < min_request_queue_time_seconds
+                || request_queue_time_seconds.is_nan()
+            {
+                min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
+                    0.0
+                } else {
+                    request_queue_time_seconds
+                };
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
@@ -621,5 +609,9 @@ mod vllm_metrics {
         InvalidMetricsValue(#[from] std::num::ParseFloatError),
         #[error("Invalid metrics response: {0}")]
         InvalidMetricsResponse(#[from] serde_json::Error),
+        #[error("Failed to create HTTP client: {0}")]
+        FailedToCreateHttpClient(#[from] prometheus_http_query::Error),
+        #[error("No metrics found for job: {0}")]
+        NoMetricsFound(String),
     }
 }
