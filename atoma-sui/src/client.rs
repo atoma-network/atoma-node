@@ -1094,11 +1094,24 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await?;
-        let active_address = self.wallet_ctx.active_address()?;
+        let client = self.wallet_ctx.get_client().await.map_err(|e| {
+            tracing::error!(
+                target = "atoma-sui-client",
+                level = "error",
+                "Failed to get Sui client: {e}"
+            );
+            AtomaSuiClientError::WalletContextError(e)
+        })?;
+        let active_address = self.wallet_ctx.active_address().map_err(|e| {
+            tracing::error!(
+                target = "atoma-sui-client",
+                level = "error",
+                "Failed to get active address: {e}"
+            );
+            AtomaSuiClientError::WalletContextError(e)
+        })?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
-                .as_ref()
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
                 .0,
         );
