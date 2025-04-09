@@ -439,7 +439,7 @@ mod vllm_metrics {
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
     use once_cell::sync::Lazy;
-    use serde::de::Error;
+    use prometheus_http_query::Client;
     use tracing::{info, instrument};
 
     pub type Result<T> = std::result::Result<T, VllmMetricsError>;
@@ -447,222 +447,20 @@ mod vllm_metrics {
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+    /// Prometheus url for the atoma-node instance
+    const PROMETHEUS_URL: &str = "http://prometheus:9090";
+
     /// The HTTP client for the Prometheus metrics queries
-    static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-        reqwest::Client::builder()
-            .timeout(METRICS_TIMEOUT)
-            .build()
-            .expect("Failed to create HTTP client")
+    static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
+        Client::from(
+            reqwest::Client::builder()
+                .timeout(METRICS_TIMEOUT)
+                .build()
+                .expect("Failed to create HTTP client"),
+            PROMETHEUS_URL,
+        )
+        .expect("Failed to create HTTP client")
     });
-
-    /// A struct representing a bucket in a histogram.
-    #[derive(Debug)]
-    struct Bucket {
-        /// The upper bound of the bucket.
-        le: f64,
-        /// The number of values in the bucket.
-        count: f64,
-    }
-
-    /// Calculates an estimated percentile value from Prometheus histogram metrics text.
-    ///
-    /// Prometheus histograms provide cumulative counts (`_bucket` lines with `le` labels)
-    /// and a total count (`_count` line). This function parses these lines for a given
-    /// `metric_name`, calculates the target rank corresponding to the requested `percentile`,
-    /// sorts the buckets by their upper bound (`le`), and then finds the first bucket
-    /// whose cumulative count meets or exceeds the target rank.
-    ///
-    /// The function returns the upper bound (`le`) of this identified bucket as the estimated
-    /// percentile value. This is a common method for percentile estimation from histograms,
-    /// though linear interpolation within the bucket could provide a more refined estimate
-    /// (this implementation does not do interpolation).
-    ///
-    /// # Arguments
-    ///
-    /// * `metrics_text` - A string slice containing the Prometheus metrics output.
-    /// * `metrics_name` - The base name of the histogram metric (e.g., "vllm:request_queue_time_seconds").
-    ///                    The function will look for lines starting with `{metrics_name}_bucket` and `{metrics_name}_count`.
-    /// * `percentile` - The desired percentile, expressed as a float between 0.0 and 1.0 (inclusive).
-    ///                  For example, 0.9 represents the 90th percentile.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Result<f64, VllmMetricsError>`:
-    /// * `Ok(f64)` containing the estimated percentile value (the `le` of the target bucket). If the total count is 0, it currently returns `Ok(0.0)`.
-    /// * `Err(VllmMetricsError)` if:
-    ///     * The `percentile` is outside the valid range [0.0, 1.0] (`InvalidPercentile`).
-    ///     * Parsing of numeric values (counts, `le`) fails (`InvalidMetricsValue`).
-    ///     * The `_count` line or `_bucket` lines for the metric are not found or improperly formatted (`InvalidMetricsResponse`).
-    ///     * No suitable bucket containing the target rank is found (e.g., data inconsistency or missing `+Inf` bucket) (`InvalidMetricsResponse`).
-    ///     * Line parsing fails due to unexpected format (`InvalidMetricsResponse`).
-    #[instrument(level = "info", skip_all, fields(percentile))]
-    fn calculate_percentile_from_histogram(
-        metrics_text: &str,
-        metrics_name: &str,
-        percentile: f64,
-    ) -> Result<f64> {
-        if !(0.0..=1.0).contains(&percentile) {
-            return Err(VllmMetricsError::InvalidPercentile(percentile));
-        }
-        let mut buckets: Vec<Bucket> = Vec::new();
-        let mut total_count: Option<f64> = None;
-        let bucket_prefix = format!("{metrics_name}_bucket");
-        let count_prefix = format!("{metrics_name}_count");
-        for line in metrics_text.lines() {
-            if line.starts_with(&bucket_prefix) {
-                if let Some((labels_part, value_str)) = line.rsplit_once('}') {
-                    let cumulative_count = value_str.trim().parse::<f64>().map_err(|e| {
-                        tracing::error!(
-                            target = "atoma-service::vllm_metrics",
-                            level = "error",
-                            "Failed to parse cumulative count for {metrics_name}: {e}",
-                        );
-                        VllmMetricsError::InvalidMetricsValue(e)
-                    })?;
-                    if let Some(le_label_part) = labels_part
-                        .split(',')
-                        .find(|s| s.trim().starts_with("le=\""))
-                    {
-                        let le_value = parse_le_value(le_label_part)?;
-                        buckets.push(Bucket {
-                            le: le_value,
-                            count: cumulative_count,
-                        });
-                    } else {
-                        tracing::error!(
-                            target = "atoma-service::vllm_metrics",
-                            level = "error",
-                            "Label {labels_part} part does not contain le value",
-                        );
-                        return Err(VllmMetricsError::InvalidMetricsResponse(
-                            serde_json::Error::custom(format!(
-                                "Invalid parsing of line {line} for {metrics_name} metrics"
-                            )),
-                        ));
-                    }
-                }
-            } else if line.starts_with(&count_prefix) {
-                if let Some(value_str) = line.split_whitespace().last() {
-                    total_count = Some(value_str.parse::<f64>().map_err(|e| {
-                        tracing::error!(
-                            target = "atoma-service::vllm_metrics",
-                            level = "error",
-                            "Failed to parse total count for {metrics_name}: {e}",
-                            metrics_name = metrics_name,
-                            e = e
-                        );
-                        VllmMetricsError::InvalidMetricsValue(e)
-                    })?);
-                } else {
-                    tracing::error!("Invalid parsing of line {line} for {metrics_name} metrics",);
-                    return Err(VllmMetricsError::InvalidMetricsResponse(
-                        serde_json::Error::custom(format!(
-                            "Invalid parsing of line {line} for {metrics_name} metrics"
-                        )),
-                    ));
-                }
-            }
-        }
-
-        let total_count = total_count.ok_or(VllmMetricsError::InvalidMetricsResponse(
-            serde_json::Error::custom(format!("Total count for {metrics_name} metrics not found")),
-        ))?;
-
-        if total_count == 0.0 {
-            tracing::info!(
-                target = "atoma-service::vllm_metrics",
-                level = "info",
-                "Total count for {metrics_name} metrics is 0, returning 0.0 as percentile"
-            );
-            return Ok(0.0);
-        }
-
-        if buckets.is_empty() {
-            tracing::error!(
-                target = "atoma-service::vllm_metrics",
-                level = "error",
-                "No buckets found for {metrics_name} metrics, returning 0.0 as percentile"
-            );
-            return Err(VllmMetricsError::InvalidMetricsResponse(
-                serde_json::Error::custom(format!("No buckets found for {metrics_name} metrics")),
-            ));
-        }
-
-        buckets.sort_by(|a, b| a.le.partial_cmp(&b.le).unwrap_or(std::cmp::Ordering::Equal));
-        let target_rank = total_count * percentile;
-        for bucket in &buckets {
-            if bucket.count >= target_rank {
-                tracing::info!(
-                    target = "atoma-service::vllm_metrics",
-                    level = "info",
-                    "Found bucket for {metrics_name} metrics at {} with count {}",
-                    bucket.le,
-                    bucket.count
-                );
-                return Ok(bucket.le);
-            }
-        }
-
-        tracing::error!(
-            target = "atoma-service::vllm_metrics",
-            level = "error",
-            "Could not find a bucket containing the rank {target_rank}. Last bucket: {:?}",
-            buckets.last()
-        );
-
-        Err(VllmMetricsError::InvalidMetricsResponse(
-            serde_json::Error::custom(format!(
-            "No bucket found for {metrics_name} metrics at {target_rank} with count {total_count}"
-        )),
-        ))
-    }
-
-    /// Parses the floating-point value from a Prometheus bucket label like `le="..."`.
-    ///
-    /// This helper function specifically targets the label format used in Prometheus histograms
-    /// to define the upper bounds of buckets (`le` stands for "less than or equal to").
-    /// It handles the special case where the value is `"+Inf"` (positive infinity),
-    /// converting it to `f64::INFINITY`.
-    ///
-    /// # Arguments
-    ///
-    /// * `label_part` - A string slice containing the label part, e.g., `le="0.5"` or `le="+Inf"`.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Result<f64, VllmMetricsError>`:
-    /// * `Ok(f64)` containing the parsed upper bound value.
-    /// * `Err(VllmMetricsError::InvalidMetricsResponse)` if the input string does not match the `le="..."` format.
-    /// * `Err(VllmMetricsError::InvalidMetricsValue)` if the value inside the quotes (other than `"+Inf"`) cannot be parsed as an `f64`.
-    #[instrument(level = "info", skip_all)]
-    fn parse_le_value(label_part: &str) -> Result<f64> {
-        if let Some(le_value_str) = label_part
-            .strip_prefix("le=\"")
-            .ok_or_else(|| {
-                VllmMetricsError::InvalidMetricsResponse(serde_json::Error::custom(format!(
-                    "Label part '{}' does not start with 'le=\"'",
-                    label_part
-                )))
-            })?
-            .strip_suffix("\"")
-        {
-            if le_value_str == "+Inf" {
-                return Ok(f64::INFINITY);
-            }
-            return le_value_str.parse::<f64>().map_err(|e| {
-                tracing::error!(
-                    target = "atoma-service::vllm_metrics",
-                    level = "error",
-                    "Failed to parse le value: {}",
-                    e
-                );
-                VllmMetricsError::InvalidMetricsValue(e)
-            });
-        }
-        Err(VllmMetricsError::InvalidMetricsResponse(
-            serde_json::Error::custom(format!("Label {label_part} part does not contain le value")),
-        ))
-    }
 
     /// Retrieves metrics data from a chat completions service endpoint.
     ///
@@ -682,46 +480,58 @@ mod vllm_metrics {
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
-    #[instrument(level = "info", skip_all, fields(endpoint=endpoint))]
-    async fn get_metrics(client: &reqwest::Client, endpoint: &str) -> Result<(String, f64)> {
-        let metrics_endpoint = format!("{endpoint}/metrics");
+    #[instrument(level = "info", skip_all, fields(job=job))]
+    async fn get_metrics(
+        client: &Client,
+        job: &str,
+        chat_completions_service_url: &str,
+    ) -> Result<(String, f64)> {
         info!(
             target = "atoma-service",
+            module = "vllm_metrics",
             level = "info",
-            "Getting metrics for chat completions service url: {metrics_endpoint}"
+            "Getting metrics for job: {job}"
         );
-        let response = client
-            .get(metrics_endpoint)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        calculate_percentile_from_histogram(&response, "vllm:request_queue_time_seconds", 0.9)
-            .map(|f| (endpoint.to_string(), f))
+        let query = format!(
+            "histogram_quantile(0.90, sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])) by (le))"
+        );
+        let response = client.query(&query).get().await?;
+        response.data().as_vector().map_or_else(
+            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            |data_vector| {
+                data_vector.first().map_or_else(
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    |value| {
+                        let sample = value.sample();
+                        let value = sample.value();
+                        Ok((chat_completions_service_url.to_string(), value))
+                    },
+                )
+            },
+        )
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
     ///
     /// This function iterates through a list of chat completions service URLs,
-    /// executes a Prometheus query to retrieve GPU cache usage metrics,
-    /// and selects the URL with the lowest GPU cache usage percentage.
+    /// executes a Prometheus query to retrieve request queue time metrics,
+    /// and selects the URL with the lowest request queue time.
     ///
     /// # Arguments
     ///
-    /// * `chat_completions_service_urls` - A list of chat completions service URLs to query
+    /// * `chat_completions_service_urls` - A list of chat completions service URLs together with respective job names to query
     /// * `model` - The name of the model to query
     ///
     /// # Returns
     ///
-    /// Returns the URL of the chat completions service with the lowest GPU cache usage percentage.
+    /// Returns the URL of the chat completions service with the lowest request queue time.
     ///
     /// # Errors
     ///
     /// Returns a `VllmMetricsError` if the list of chat completions service URLs is empty.
     #[instrument(level = "info", skip_all, fields(model=model, chat_completions_service_urls=chat_completions_service_urls.len()))]
     pub async fn get_best_available_chat_completions_service_url(
-        chat_completions_service_urls: &[String],
+        chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
         const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
@@ -731,11 +541,11 @@ mod vllm_metrics {
             ));
         }
         let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
-        let mut best_url = chat_completions_service_urls[0].clone();
+        let mut best_url = chat_completions_service_urls[0].0.clone();
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
-            .map(|chat_completions_service_url| {
-                get_metrics(&HTTP_CLIENT, chat_completions_service_url)
+            .map(|(chat_completions_service_url, job_name)| {
+                get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
             })
             .collect();
         while let Some(request_queue_time_seconds) = futures.next().await {
@@ -743,23 +553,31 @@ mod vllm_metrics {
                 match request_queue_time_seconds {
                     Ok((chat_completions_service_url, request_queue_time_seconds)) => {
                         info!(
-                        target = "atoma-service",
-                        level = "info",
-                        "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
-                    );
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "info",
+                            "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
+                        );
                         (chat_completions_service_url, request_queue_time_seconds)
                     }
                     Err(e) => {
                         tracing::error!(
                             target = "atoma-service",
+                            module = "vllm_metrics",
                             level = "error",
                             "Failed to get metrics for chat completions service url: {e}",
                         );
                         continue;
                     }
                 };
-            if request_queue_time_seconds < min_request_queue_time_seconds {
-                min_request_queue_time_seconds = request_queue_time_seconds;
+            if request_queue_time_seconds < min_request_queue_time_seconds
+                || request_queue_time_seconds.is_nan()
+            {
+                min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
+                    0.0
+                } else {
+                    request_queue_time_seconds
+                };
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
@@ -791,7 +609,9 @@ mod vllm_metrics {
         InvalidMetricsValue(#[from] std::num::ParseFloatError),
         #[error("Invalid metrics response: {0}")]
         InvalidMetricsResponse(#[from] serde_json::Error),
-        #[error("Invalid percentile: {0}")]
-        InvalidPercentile(f64),
+        #[error("Failed to create HTTP client: {0}")]
+        FailedToCreateHttpClient(#[from] prometheus_http_query::Error),
+        #[error("No metrics found for job: {0}")]
+        NoMetricsFound(String),
     }
 }

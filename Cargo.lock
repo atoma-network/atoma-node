@@ -792,6 +792,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "prometheus",
+ "prometheus-http-query",
  "rand 0.8.5",
  "reqwest",
  "serde",
@@ -6646,6 +6647,20 @@ dependencies = [
  "anyhow",
  "prometheus",
  "protobuf",
+]
+
+[[package]]
+name = "prometheus-http-query"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fcebfa99f03ae51220778316b37d24981e36322c82c24848f48c5bd0f64cbdb"
+dependencies = [
+ "enum-as-inner",
+ "mime",
+ "reqwest",
+ "serde",
+ "time",
+ "url",
 ]
 
 [[package]]
