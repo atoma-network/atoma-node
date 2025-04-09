@@ -1110,10 +1110,20 @@ impl Client {
             );
             AtomaSuiClientError::WalletContextError(e)
         })?;
+        info!(
+            target = "atoma-sui-client",
+            level = "info",
+            "Active address: {active_address}"
+        );
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
                 .0,
+        );
+        info!(
+            target = "atoma-sui-client",
+            level = "info",
+            "Node badge ID: {node_badge_id}"
         );
         if stack_small_ids.len() != num_claimed_compute_units.len() {
             return Err(AtomaSuiClientError::InvalidInputForClaimFundsForStacks {
@@ -1121,6 +1131,11 @@ impl Client {
                 num_claimed_compute_units_len: num_claimed_compute_units.len(),
             });
         }
+        info!(
+            target = "atoma-sui-client",
+            level = "info",
+            "Building claim funds for stacks transaction..."
+        );
         let tx = client
             .transaction_builder()
             .move_call(
@@ -1141,7 +1156,7 @@ impl Client {
             )
             .await?;
 
-        info!("Submitting claim funds for stacks transaction...");
+        info!("Submitted claim funds for stacks transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
         let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
