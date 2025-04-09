@@ -153,7 +153,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_node_registration_tx(
@@ -250,7 +250,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         model_name = %model_name,
         echelon = %echelon,
         address = %self.wallet_ctx.active_address().unwrap()
@@ -352,7 +352,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
     ))]
@@ -461,7 +461,7 @@ impl Client {
     ///     Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
         address = %self.wallet_ctx.active_address().unwrap()
@@ -560,7 +560,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_unsubscribe_node_from_task_tx(
@@ -664,7 +664,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         num_claimed_compute_units = %num_claimed_compute_units,
     ))]
@@ -775,7 +775,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -881,7 +881,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_start_attestation_dispute_tx(
@@ -980,7 +980,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
     pub async fn submit_claim_funds_tx(
@@ -1079,6 +1079,7 @@ impl Client {
     #[instrument(
         level = "info",
         skip_all,
+        err,
         fields(
             address = %self.wallet_ctx.active_address().unwrap(),
             stack_small_ids = ?stack_small_ids,
@@ -1094,27 +1095,8 @@ impl Client {
         gas_budget: Option<u64>,
         gas_price: Option<u64>,
     ) -> Result<String> {
-        let client = self.wallet_ctx.get_client().await.map_err(|e| {
-            tracing::error!(
-                target = "atoma-sui-client",
-                level = "error",
-                "Failed to get Sui client: {e}"
-            );
-            AtomaSuiClientError::WalletContextError(e)
-        })?;
-        let active_address = self.wallet_ctx.active_address().map_err(|e| {
-            tracing::error!(
-                target = "atoma-sui-client",
-                level = "error",
-                "Failed to get active address: {e}"
-            );
-            AtomaSuiClientError::WalletContextError(e)
-        })?;
-        info!(
-            target = "atoma-sui-client",
-            level = "info",
-            "Active address: {active_address}"
-        );
+        let client = self.wallet_ctx.get_client().await?;
+        let active_address = self.wallet_ctx.active_address()?;
         let node_badge_id = node_badge_id.unwrap_or(
             self.node_badge
                 .ok_or(AtomaSuiClientError::FailedToFindNodeBadge)?
@@ -1227,7 +1209,7 @@ impl Client {
     /// }
     /// ```
     #[allow(clippy::too_many_arguments)]
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         public_key = %hex::encode(public_key_bytes),
         device_type = %device_type,
@@ -1310,7 +1292,7 @@ impl Client {
     /// let mut client = AtomaProxy::new(config).await?;
     /// let usdc_wallet_id = client.get_or_load_usdc_wallet_object_id().await?;
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         endpoint = "get_or_load_usdc_wallet_object_id",
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -1367,7 +1349,7 @@ impl Client {
     ///     }
     /// }
     /// ```
-    #[instrument(level = "info", skip_all, fields(
+    #[instrument(level = "info", skip_all, err, fields(
         endpoint = "get_last_key_rotation_event",
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -1410,15 +1392,15 @@ impl Client {
 
 #[derive(Debug, Error)]
 pub enum AtomaSuiClientError {
-    #[error("Failed to create wallet context")]
-    WalletContextError(#[from] anyhow::Error),
+    #[error("Anyhow error: `{0}`")]
+    AnyhowError(#[from] anyhow::Error),
     #[error("Failed to submit node registration transaction")]
     NodeRegistrationFailed,
     #[error("Failed to find node badge")]
     FailedToFindNodeBadge,
     #[error("Sui client error: `{0}`")]
     AtomaSuiClientError(#[from] sui_sdk::error::Error),
-    #[error("Node is not subscribed to model {0}")]
+    #[error("Node is not subscribed to model `{0}`")]
     NodeNotSubscribedToModel(String),
     #[error("No USDC wallet found")]
     NoUsdcWalletFound,
@@ -1426,11 +1408,11 @@ pub enum AtomaSuiClientError {
     NoUsdcTokensFound,
     #[error("Failed to find new key rotation event")]
     FailedToFindNewKeyRotationEvent,
-    #[error("Failed to parse event")]
+    #[error("Failed to parse event: `{0}`")]
     FailedToParseEvent(#[from] serde_json::Error),
     #[error("Failed to retrieve AtomaDB shared object content")]
     FailedToRetrieveAtomaDbContent,
-    #[error("Invalid input for claim funds for stacks: stack_small_ids length {stack_small_ids_len} != num_claimed_compute_units length {num_claimed_compute_units_len}")]
+    #[error("Invalid input for claim funds for stacks: stack_small_ids length `{stack_small_ids_len}` != num_claimed_compute_units length `{num_claimed_compute_units_len}`")]
     InvalidInputForClaimFundsForStacks {
         stack_small_ids_len: usize,
         num_claimed_compute_units_len: usize,
