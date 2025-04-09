@@ -859,8 +859,8 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             tracing::error!(
                     target = "atoma-state-handlers",
                     event = "handle-update-stack-num-compute-units-and-claim-funds",
-                    "Failed to submit claim funds for locked stack {} with ratio {} with total compute units {} confidential state {} and is locked for claim {}",
-                    stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
+                    "Failed to submit claim funds for locked stack {} with ratio {} with total compute units {} confidential state {} and is locked for claim {}, with error {}",
+                    stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim, e
                 );
             return Err(AtomaStateManagerError::SuiClientError(e));
         }
