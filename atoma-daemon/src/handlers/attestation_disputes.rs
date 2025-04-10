@@ -30,11 +30,11 @@ pub struct AttestationDisputesOpenApi;
 pub fn attestation_disputes_router() -> Router<DaemonState> {
     Router::new()
         .route(
-            &format!("{ATTESTATION_DISPUTES_PATH}/against/nodes/:node_id"),
+            &format!("{ATTESTATION_DISPUTES_PATH}/against/nodes/{{node_id}}"),
             get(attestation_disputes_against_nodes_list),
         )
         .route(
-            &format!("{ATTESTATION_DISPUTES_PATH}/own/nodes/:node_id"),
+            &format!("{ATTESTATION_DISPUTES_PATH}/own/nodes/{{node_id}}"),
             get(attestation_disputes_own_nodes_list),
         )
 }

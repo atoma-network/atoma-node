@@ -27,7 +27,7 @@ pub struct StacksOpenApi;
 
 pub fn stacks_router() -> Router<DaemonState> {
     Router::new().route(
-        &format!("{STACKS_PATH}/nodes/:node_id"),
+        &format!("{STACKS_PATH}/nodes/{{node_id}}"),
         get(stacks_nodes_list),
     )
 }

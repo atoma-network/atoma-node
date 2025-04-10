@@ -16,7 +16,7 @@ pub struct ClaimedStacksOpenApi;
 
 pub fn claimed_stacks_router() -> Router<DaemonState> {
     Router::new().route(
-        &format!("{CLAIMED_STACKS_PATH}/nodes/:node_id"),
+        &format!("{CLAIMED_STACKS_PATH}/nodes/{{node_id}}"),
         get(claimed_stacks_nodes_list),
     )
 }

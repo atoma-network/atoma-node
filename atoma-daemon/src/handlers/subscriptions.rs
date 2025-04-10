@@ -24,7 +24,7 @@ pub struct SubscriptionsOpenApi;
 /// within the system.
 pub fn subscriptions_router() -> Router<DaemonState> {
     Router::new().route(
-        &format!("{SUBSCRIPTIONS_PATH}/nodes/:node_id"),
+        &format!("{SUBSCRIPTIONS_PATH}/nodes/{{node_id}}"),
         get(subscriptions_nodes_list),
     )
 }
