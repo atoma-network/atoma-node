@@ -230,6 +230,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "antithesis_sdk"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "201eba73b76341631014baf9c0018e703af204a1e0f15d7664d8a0947f6be74d"
+dependencies = [
+ "libc",
+ "libloading",
+ "linkme",
+ "once_cell",
+ "rand 0.8.5",
+ "rustc_version_runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1639,7 +1655,7 @@ dependencies = [
 [[package]]
 name = "consensus-config"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "fastcrypto 0.1.8",
  "mysten-network",
@@ -2493,7 +2509,7 @@ dependencies = [
 [[package]]
 name = "enum-compat-util"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "serde_yaml 0.8.26",
 ]
@@ -4745,6 +4761,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
+name = "linkme"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22d227772b5999ddc0690e733f734f95ca05387e329c4084fe65678c51198ffe"
+dependencies = [
+ "linkme-impl",
+]
+
+[[package]]
+name = "linkme-impl"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71a98813fa0073a317ed6a8055dcd4722a49d9b862af828ee68449adb799b6be"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4979,7 +5015,7 @@ dependencies = [
 [[package]]
 name = "move-abstract-interpreter"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "move-binary-format",
  "move-bytecode-verifier-meter",
@@ -4988,12 +5024,12 @@ dependencies = [
 [[package]]
 name = "move-abstract-stack"
 version = "0.0.1"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 
 [[package]]
 name = "move-binary-format"
 version = "0.0.3"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "enum-compat-util",
@@ -5007,12 +5043,12 @@ dependencies = [
 [[package]]
 name = "move-borrow-graph"
 version = "0.0.1"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 
 [[package]]
 name = "move-bytecode-source-map"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5028,7 +5064,7 @@ dependencies = [
 [[package]]
 name = "move-bytecode-utils"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "indexmap 2.8.0",
@@ -5041,7 +5077,7 @@ dependencies = [
 [[package]]
 name = "move-bytecode-verifier"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "move-abstract-interpreter",
  "move-abstract-stack",
@@ -5056,7 +5092,7 @@ dependencies = [
 [[package]]
 name = "move-bytecode-verifier-meter"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "move-binary-format",
  "move-core-types",
@@ -5066,7 +5102,7 @@ dependencies = [
 [[package]]
 name = "move-command-line-common"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5077,6 +5113,7 @@ dependencies = [
  "move-binary-format",
  "move-core-types",
  "once_cell",
+ "packed_struct",
  "serde",
  "sha2 0.9.9",
  "vfs",
@@ -5086,7 +5123,7 @@ dependencies = [
 [[package]]
 name = "move-compiler"
 version = "0.0.1"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5121,7 +5158,7 @@ dependencies = [
 [[package]]
 name = "move-core-types"
 version = "0.0.4"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5145,7 +5182,7 @@ dependencies = [
 [[package]]
 name = "move-coverage"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5166,7 +5203,7 @@ dependencies = [
 [[package]]
 name = "move-disassembler"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -5187,7 +5224,7 @@ dependencies = [
 [[package]]
 name = "move-ir-to-bytecode"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "codespan-reporting",
@@ -5205,7 +5242,7 @@ dependencies = [
 [[package]]
 name = "move-ir-to-bytecode-syntax"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "hex",
@@ -5218,7 +5255,7 @@ dependencies = [
 [[package]]
 name = "move-ir-types"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "hex",
  "move-command-line-common",
@@ -5231,7 +5268,7 @@ dependencies = [
 [[package]]
 name = "move-proc-macros"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "enum-compat-util",
  "quote",
@@ -5241,7 +5278,7 @@ dependencies = [
 [[package]]
 name = "move-symbol-pool"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "once_cell",
  "phf",
@@ -5251,7 +5288,7 @@ dependencies = [
 [[package]]
 name = "move-vm-config"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "move-binary-format",
  "once_cell",
@@ -5260,7 +5297,7 @@ dependencies = [
 [[package]]
 name = "move-vm-profiler"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "move-vm-config",
  "once_cell",
@@ -5272,7 +5309,7 @@ dependencies = [
 [[package]]
 name = "move-vm-test-utils"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "move-binary-format",
@@ -5286,7 +5323,7 @@ dependencies = [
 [[package]]
 name = "move-vm-types"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "bcs",
  "move-binary-format",
@@ -5408,18 +5445,24 @@ dependencies = [
 [[package]]
 name = "mysten-common"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
+ "antithesis_sdk",
  "anyhow",
+ "either",
  "fastcrypto 0.1.8",
  "futures",
  "mysten-metrics",
+ "once_cell",
  "parking_lot",
  "prometheus",
+ "rand 0.8.5",
  "reqwest",
  "snap",
+ "sui-macros",
  "sui-tls",
  "sui-types",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -5427,7 +5470,7 @@ dependencies = [
 [[package]]
 name = "mysten-metrics"
 version = "0.7.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "async-trait",
  "axum",
@@ -5448,7 +5491,7 @@ dependencies = [
 [[package]]
 name = "mysten-network"
 version = "0.2.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anemo",
  "anemo-tower",
@@ -6101,6 +6144,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "packed_struct"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36b29691432cc9eff8b282278473b63df73bea49bc3ec5e67f31a3ae9c3ec190"
+dependencies = [
+ "bitvec 1.0.1",
+ "packed_struct_codegen",
+ "serde",
+]
+
+[[package]]
+name = "packed_struct_codegen"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cd6706dfe50d53e0f6aa09e12c034c44faacd23e966ae5a209e8bdb8f179f98"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "pairing"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6642,7 +6707,7 @@ dependencies = [
 [[package]]
 name = "prometheus-closure-metric"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "prometheus",
@@ -7406,6 +7471,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc_version_runtime"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dd18cd2bae1820af0b6ad5e54f4a51d0f3fcc53b05f845675074efcc7af071d"
+dependencies = [
+ "rustc_version",
+ "semver",
+]
+
+[[package]]
 name = "rusticata-macros"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7992,7 +8067,7 @@ dependencies = [
 [[package]]
 name = "shared-crypto"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "bcs",
  "eyre",
@@ -8466,15 +8541,6 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
-dependencies = [
- "strum_macros 0.24.3",
-]
-
-[[package]]
-name = "strum"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
@@ -8483,16 +8549,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "strum_macros"
-version = "0.24.3"
+name = "strum"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59"
+checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
 dependencies = [
- "heck 0.4.1",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 1.0.109",
+ "strum_macros 0.27.1",
 ]
 
 [[package]]
@@ -8502,6 +8564,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23dc1fa9ac9c169a78ba62f0b841814b7abae11bdd047b9c58f893439e309ea0"
 dependencies = [
  "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.100",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
+dependencies = [
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -8523,7 +8598,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 [[package]]
 name = "sui-config"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anemo",
  "anyhow",
@@ -8554,7 +8629,7 @@ dependencies = [
 [[package]]
 name = "sui-enum-compat-util"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "serde_yaml 0.8.26",
 ]
@@ -8562,7 +8637,7 @@ dependencies = [
 [[package]]
 name = "sui-http"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "bytes",
  "http 1.3.1",
@@ -8582,7 +8657,7 @@ dependencies = [
 [[package]]
 name = "sui-json"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -8599,7 +8674,7 @@ dependencies = [
 [[package]]
 name = "sui-json-rpc-api"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "fastcrypto 0.1.8",
@@ -8619,7 +8694,7 @@ dependencies = [
 [[package]]
 name = "sui-json-rpc-types"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bcs",
@@ -8651,7 +8726,7 @@ dependencies = [
 [[package]]
 name = "sui-keys"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "bip32",
@@ -8670,7 +8745,7 @@ dependencies = [
 [[package]]
 name = "sui-macros"
 version = "0.7.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "futures",
  "once_cell",
@@ -8680,8 +8755,8 @@ dependencies = [
 
 [[package]]
 name = "sui-open-rpc"
-version = "1.45.2"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+version = "1.46.2"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "bcs",
  "schemars",
@@ -8693,7 +8768,7 @@ dependencies = [
 [[package]]
 name = "sui-open-rpc-macros"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "derive-syn-parse",
  "itertools 0.13.0",
@@ -8706,7 +8781,7 @@ dependencies = [
 [[package]]
 name = "sui-package-resolver"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "async-trait",
  "bcs",
@@ -8725,7 +8800,7 @@ dependencies = [
 [[package]]
 name = "sui-proc-macros"
 version = "0.7.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "msim-macros",
  "proc-macro2",
@@ -8737,7 +8812,7 @@ dependencies = [
 [[package]]
 name = "sui-protocol-config"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "clap",
  "insta",
@@ -8753,7 +8828,7 @@ dependencies = [
 [[package]]
 name = "sui-protocol-config-macros"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8763,7 +8838,7 @@ dependencies = [
 [[package]]
 name = "sui-rpc-api"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8789,7 +8864,7 @@ dependencies = [
  "serde_with",
  "sui-protocol-config",
  "sui-sdk-types",
- "sui-transaction-builder 0.1.0",
+ "sui-transaction-builder 0.0.4",
  "sui-types",
  "tap",
  "thiserror 1.0.69",
@@ -8805,8 +8880,8 @@ dependencies = [
 
 [[package]]
 name = "sui-sdk"
-version = "1.45.2"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+version = "1.46.2"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8838,8 +8913,8 @@ dependencies = [
 
 [[package]]
 name = "sui-sdk-types"
-version = "0.0.2"
-source = "git+https://github.com/MystenLabs/sui-rust-sdk.git?rev=5e11579031793f086178332219f5847ec94da0c4#5e11579031793f086178332219f5847ec94da0c4"
+version = "0.0.4"
+source = "git+https://github.com/MystenLabs/sui-rust-sdk.git?rev=83ff809bc11cbabda21b60130e1f5420170548bf#83ff809bc11cbabda21b60130e1f5420170548bf"
 dependencies = [
  "base64ct",
  "bcs",
@@ -8858,7 +8933,7 @@ dependencies = [
 [[package]]
 name = "sui-tls"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -8880,7 +8955,7 @@ dependencies = [
 [[package]]
 name = "sui-transaction-builder"
 version = "0.0.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8896,8 +8971,8 @@ dependencies = [
 
 [[package]]
 name = "sui-transaction-builder"
-version = "0.1.0"
-source = "git+https://github.com/MystenLabs/sui-rust-sdk.git?rev=5e11579031793f086178332219f5847ec94da0c4#5e11579031793f086178332219f5847ec94da0c4"
+version = "0.0.4"
+source = "git+https://github.com/MystenLabs/sui-rust-sdk.git?rev=83ff809bc11cbabda21b60130e1f5420170548bf#83ff809bc11cbabda21b60130e1f5420170548bf"
 dependencies = [
  "base64ct",
  "bcs",
@@ -8911,7 +8986,7 @@ dependencies = [
 [[package]]
 name = "sui-types"
 version = "0.1.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "anemo",
  "anyhow",
@@ -8962,8 +9037,8 @@ dependencies = [
  "shared-crypto",
  "signature 1.6.4",
  "static_assertions",
- "strum 0.24.1",
- "strum_macros 0.24.3",
+ "strum 0.27.1",
+ "strum_macros 0.27.1",
  "sui-enum-compat-util",
  "sui-macros",
  "sui-protocol-config",
@@ -9758,7 +9833,7 @@ dependencies = [
 [[package]]
 name = "typed-store-error"
 version = "0.4.0"
-source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.45.2#88ba4e08e96ba1ab965c11ce1a915331dd3ed68d"
+source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.46.2#43e8aad17f0d1f5481b529201b9c320a6bbb382e"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
