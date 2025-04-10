@@ -26,7 +26,7 @@ atoma-p2p                   = { path = "./atoma-p2p" }
 atoma-state                 = { path = "./atoma-state" }
 atoma-sui                   = { path = "./atoma-sui" }
 atoma-utils                 = { path = "./atoma-utils" }
-axum                        = "0.7.5"
+axum                        = "0.8.3"
 base64                      = "0.22.1"
 blake2                      = "0.10.6"
 blake3                      = "1.8.1"
@@ -85,8 +85,8 @@ tracing-loki                = "0.2.6"
 tracing-opentelemetry       = "0.28.0"
 tracing-subscriber          = "0.3.18"
 url                         = "2.5.4"
-utoipa                      = "5.1.1"
-utoipa-swagger-ui           = "8.0.1"
+utoipa                      = "5.3.1"
+utoipa-swagger-ui           = "9.0.1"
 validator                   = "0.20.0"
 x25519-dalek                = "2.0.1"
 
