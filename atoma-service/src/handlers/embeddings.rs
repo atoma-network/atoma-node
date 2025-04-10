@@ -124,7 +124,10 @@ pub async fn embeddings_handler(
         Ok(response) => {
             TEXT_EMBEDDINGS_LATENCY_METRICS.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", model.as_str().to_owned())],
+                &[
+                    KeyValue::new("model", model.as_str().to_owned()),
+                    KeyValue::new("privacy_level", "non-confidential"),
+                ],
             );
 
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
@@ -249,7 +252,10 @@ pub async fn confidential_embeddings_handler(
         Ok(response) => {
             TEXT_EMBEDDINGS_LATENCY_METRICS.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", model.as_str().to_owned())],
+                &[
+                    KeyValue::new("model", model.as_str().to_owned()),
+                    KeyValue::new("privacy_level", "confidential"),
+                ],
             );
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             Ok(response)

@@ -379,7 +379,7 @@ async fn handle_image_generations_response(
     match handle_confidential_compute_encryption_response(
         state,
         response_body,
-        client_encryption_metadata,
+        client_encryption_metadata.clone(),
         endpoint.to_string(),
     )
     .await
@@ -388,7 +388,7 @@ async fn handle_image_generations_response(
             // Stop the timer before returning the valid response
             IMAGE_GEN_LATENCY_METRICS.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", model.clone())],
+                &[KeyValue::new("model", model.clone()), KeyValue::new("privacy_level", if client_encryption_metadata.is_some() { "confidential" } else { "non-confidential" })],
             );
             Ok(Json(response_body))
         }
