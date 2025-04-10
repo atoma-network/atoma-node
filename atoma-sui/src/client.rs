@@ -1141,7 +1141,7 @@ impl Client {
                     SuiJsonValue::new(num_claimed_compute_units.into())?,
                 ],
                 gas,
-                gas_budget.unwrap_or(5 * GAS_BUDGET),
+                gas_budget.unwrap_or(GAS_BUDGET),
                 gas_price,
             )
             .await?;
