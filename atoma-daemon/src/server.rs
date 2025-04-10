@@ -113,7 +113,7 @@ pub async fn run_server(
 ///
 /// ## Subscription Management
 /// * `GET /subscriptions` - Get all subscriptions for registered nodes
-/// * `GET /subscriptions/:id` - Get subscriptions for a specific node
+/// * `GET /subscriptions/{id}` - Get subscriptions for a specific node
 /// * `POST /nodes/model-subscribe` - Subscribe a node to a model
 /// * `POST /nodes/task-subscribe` - Subscribe a node to a task
 /// * `POST /nodes/task-update-subscription` - Updates an existing task subscription
@@ -124,20 +124,20 @@ pub async fn run_server(
 ///
 /// ## Stack Operations
 /// * `GET /stacks` - Get all stacks for registered nodes
-/// * `GET /stacks/:id` - Get stacks for a specific node
-/// * `GET /almost_filled_stacks/:fraction` - Get stacks filled above specified fraction
-/// * `GET /almost_filled_stacks/:id/:fraction` - Get node's stacks filled above fraction
+/// * `GET /stacks/{id}` - Get stacks for a specific node
+/// * `GET /almost_filled_stacks/{fraction}` - Get stacks filled above specified fraction
+/// * `GET /almost_filled_stacks/{id}/{fraction}` - Get node's stacks filled above fraction
 /// * `GET /stacks/claimed_stacks` - Get all claimed stacks
-/// * `GET /stacks/claimed_stacks/:id` - Get claimed stacks for a specific node
+/// * `GET /stacks/claimed_stacks/{id}` - Get claimed stacks for a specific node
 /// * `POST /nodes/try-settle-stacks` - Attempt to settle specified stacks
 /// * `POST /submit_stack_settlement_attestations` - Submit attestations for stack settlement
 /// * `POST /claim_funds` - Claim funds from completed stacks
 ///
 /// ## Attestation Disputes
 /// * `GET /attestation_disputes/against` - Get disputes against registered nodes
-/// * `GET /attestation_disputes/against/:id` - Get disputes against a specific node
+/// * `GET /attestation_disputes/against/{id}` - Get disputes against a specific node
 /// * `GET /attestation_disputes/own` - Get disputes initiated by registered nodes
-/// * `GET /attestation_disputes/own/:id` - Get disputes initiated by a specific node
+/// * `GET /attestation_disputes/own/{id}` - Get disputes initiated by a specific node
 ///
 /// ## Node Registration
 /// * `POST /nodes/register` - Register a new node
