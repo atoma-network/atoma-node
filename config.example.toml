@@ -41,8 +41,8 @@ revisions            = [ "main" ]
 service_bind_address = "0.0.0.0:3000"
 
 [atoma_sui]
-atoma_db                = "0xb2add06b26925f1423c3dd8e7da3887290bfe19e371b816fa92c741538b68000" # Current ATOMA DB object ID for testnet
-atoma_package_id        = "0x901203415696585dfffd10483c5e14f63bd2d09590fd0c673d3aae66a91b4b9c" # Current ATOMA package ID for testnet
+atoma_db                = "0x02920289f426dd1f3c2572d613f7dc92be95041720864a73d44d65585530efc5" # Current ATOMA DB object ID for testnet
+atoma_package_id        = "0x8903298ba49a8e83d438e014b2cfd18404324f3a0274b9507b520d5745b85208" # Current ATOMA package ID for testnet
 cursor_path             = "/app/data/cursor.toml"                                              # Path to the Sui events cursor file
 http_rpc_node_addr      = "https://fullnode.testnet.sui.io:443"                                # Current RPC node address for testnet
 limit                   = 100                                                                  # Some reference value
