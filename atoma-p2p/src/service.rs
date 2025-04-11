@@ -58,7 +58,10 @@ const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
 ];
 
 // The proxy bootstrap nodes
-const PROXY_BOOTSTRAP_NODES: [&str; 1] = ["12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ"];
+const PROXY_BOOTSTRAP_NODES: [&str; 2] = [
+    "12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ",
+    "12D3KooWBLv3tmR3PY9gTSfp1yYNL3ST2v3ZpmHxgASjnycUurmC",
+];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
 
@@ -818,6 +821,14 @@ impl AtomaP2pNode {
                                 event = "incoming_connection",
                                 "Incoming connection"
                             );
+                            if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id.to_string() == peer_id).unwrap_or(false)) {
+                                info!(
+                                    target = "atoma-p2p",
+                                    event = "incoming_connection_bootstrap_node",
+                                    peer_id = %peer_id,
+                                    "Incoming connection from proxy bootstrap node"
+                                );
+                            }
                         }
                         SwarmEvent::IncomingConnectionError {
                             ..
