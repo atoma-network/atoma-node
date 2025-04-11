@@ -1,15 +1,48 @@
 [atoma_service]
-chat_completions_service_urls = { "meta-llama/Llama-3.2-3B-Instruct" = "http://chat-completions:8000" }
-embeddings_service_url        = "http://embeddings:80"
+chat_completions_service_urls = { "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" = [
+    [
+        "http://chat-completions1:8000",
+        "vllm1",
+    ],
+    [
+        "http://chat-completions2:8000",
+        "vllm2",
+    ],
+    [
+        "http://chat-completions3:8000",
+        "vllm3",
+    ],
+    [
+        "http://chat-completions4:8000",
+        "vllm4",
+    ],
+    [
+        "http://chat-completions5:8000",
+        "vllm5",
+    ],
+    [
+        "http://chat-completions6:8000",
+        "vllm6",
+    ],
+    [
+        "http://chat-completions7:8000",
+        "vllm7",
+    ],
+    [
+        "http://chat-completions8:8000",
+        "vllm8",
+    ],
+] }
+embeddings_service_url = "http://embeddings:80"
 image_generations_service_url = "http://image-generations:80"
 # List of models to be used by the service, the current value here is just a placeholder, please change it to the models you want to deploy
-models               = [ "meta-llama/Llama-3.2-3B-Instruct" ]
+models               = [ "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" ]
 revisions            = [ "main" ]
 service_bind_address = "0.0.0.0:3000"
 
 [atoma_sui]
-atoma_db                = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be" # Current ATOMA DB object ID for testnet
-atoma_package_id        = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
+atoma_db                = "0xb2add06b26925f1423c3dd8e7da3887290bfe19e371b816fa92c741538b68000" # Current ATOMA DB object ID for testnet
+atoma_package_id        = "0x901203415696585dfffd10483c5e14f63bd2d09590fd0c673d3aae66a91b4b9c" # Current ATOMA package ID for testnet
 cursor_path             = "/app/data/cursor.toml"                                              # Path to the Sui events cursor file
 http_rpc_node_addr      = "https://fullnode.testnet.sui.io:443"                                # Current RPC node address for testnet
 limit                   = 100                                                                  # Some reference value
@@ -55,8 +88,15 @@ public_url = "https://<PUBLIC_URL>"
 country = ""
 # List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)
 # (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ("vllm", "http://chat-completions:8000/metrics")`)
-metrics_endpoints = { "meta-llama/Llama-3.2-3B-Instruct" = [
-    "http://chat-completions:8000/metrics",
+metrics_endpoints = { "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" = [
+    "http://chat-completions1:8000/metrics",
+    "http://chat-completions2:8000/metrics",
+    "http://chat-completions3:8000/metrics",
+    "http://chat-completions4:8000/metrics",
+    "http://chat-completions5:8000/metrics",
+    "http://chat-completions6:8000/metrics",
+    "http://chat-completions7:8000/metrics",
+    "http://chat-completions8:8000/metrics",
     "vllm",
 ] }
 # The path to the local key

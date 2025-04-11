@@ -331,6 +331,7 @@ pub fn update_stack_num_compute_units(
 /// * `endpoint` - A string representing the API endpoint, used for logging context.
 ///
 /// # Returns
+/// Returns the new concurrent request count after decrement
 ///
 /// Returns the concurrent request count for the `stack_small_id` *after* the decrement operation.
 /// If the entry did not exist, or if the count was already zero, it returns 0. If the count reached zero
@@ -431,5 +432,186 @@ pub fn handle_status_code_error(
             message: format!("Inference service returned non-success error: {error}"),
             endpoint: endpoint.to_string(),
         }),
+    }
+}
+
+mod vllm_metrics {
+    use futures::{stream::FuturesUnordered, StreamExt};
+    use hyper::StatusCode;
+    use once_cell::sync::Lazy;
+    use prometheus_http_query::Client;
+    use tracing::{info, instrument};
+
+    pub type Result<T> = std::result::Result<T, VllmMetricsError>;
+
+    /// The timeout for the Prometheus metrics queries
+    const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// Prometheus url for the atoma-node instance
+    const PROMETHEUS_URL: &str = "http://prometheus:9090";
+
+    /// The HTTP client for the Prometheus metrics queries
+    static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
+        Client::from(
+            reqwest::Client::builder()
+                .timeout(METRICS_TIMEOUT)
+                .build()
+                .expect("Failed to create HTTP client"),
+            PROMETHEUS_URL,
+        )
+        .expect("Failed to create HTTP client")
+    });
+
+    /// Retrieves metrics data from a chat completions service endpoint.
+    ///
+    /// This function sends a GET request to the specified endpoint with the provided query parameters,
+    /// and returns the metrics data as a `MetricsDataAndUrl` struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - The HTTP client to use for the request
+    /// * `query` - The Prometheus query to execute
+    /// * `endpoint` - The URL of the chat completions service endpoint
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the metrics data as a `MetricsDataAndUrl` struct.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
+    #[instrument(level = "info", skip_all, fields(job=job))]
+    async fn get_metrics(
+        client: &Client,
+        job: &str,
+        chat_completions_service_url: &str,
+    ) -> Result<(String, f64)> {
+        info!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "info",
+            "Getting metrics for job: {job}"
+        );
+        let query = format!(
+            "histogram_quantile(0.90, sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])) by (le))"
+        );
+        let response = client.query(&query).get().await?;
+        response.data().as_vector().map_or_else(
+            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            |data_vector| {
+                data_vector.first().map_or_else(
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    |value| {
+                        let sample = value.sample();
+                        let value = sample.value();
+                        Ok((chat_completions_service_url.to_string(), value))
+                    },
+                )
+            },
+        )
+    }
+
+    /// Retrieves the best available chat completions service URL for a given model.
+    ///
+    /// This function iterates through a list of chat completions service URLs,
+    /// executes a Prometheus query to retrieve request queue time metrics,
+    /// and selects the URL with the lowest request queue time.
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls` - A list of chat completions service URLs together with respective job names to query
+    /// * `model` - The name of the model to query
+    ///
+    /// # Returns
+    ///
+    /// Returns the URL of the chat completions service with the lowest request queue time.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if the list of chat completions service URLs is empty.
+    #[instrument(level = "info", skip_all, fields(model=model, chat_completions_service_urls=chat_completions_service_urls.len()))]
+    pub async fn get_best_available_chat_completions_service_url(
+        chat_completions_service_urls: &[(String, String)],
+        model: &str,
+    ) -> Result<(String, StatusCode)> {
+        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
+        if chat_completions_service_urls.is_empty() {
+            return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
+                model.to_string(),
+            ));
+        }
+        let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
+        let mut best_url = chat_completions_service_urls[0].0.clone();
+        let mut futures: FuturesUnordered<_> = chat_completions_service_urls
+            .iter()
+            .map(|(chat_completions_service_url, job_name)| {
+                get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
+            })
+            .collect();
+        while let Some(request_queue_time_seconds) = futures.next().await {
+            let (chat_completions_service_url, request_queue_time_seconds) =
+                match request_queue_time_seconds {
+                    Ok((chat_completions_service_url, request_queue_time_seconds)) => {
+                        info!(
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "info",
+                            "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
+                        );
+                        (chat_completions_service_url, request_queue_time_seconds)
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "error",
+                            "Failed to get metrics for chat completions service url with error: {e}",
+                        );
+                        continue;
+                    }
+                };
+            if request_queue_time_seconds < min_request_queue_time_seconds
+                || request_queue_time_seconds.is_nan()
+            {
+                min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
+                    0.0
+                } else {
+                    request_queue_time_seconds
+                };
+                best_url.clone_from(&chat_completions_service_url);
+            }
+        }
+        tracing::info!(
+            target = "atoma-service",
+            level = "info",
+            "Best available chat completions service URL for model: {model} is: {best_url}",
+            model = model,
+            best_url = best_url
+        );
+        if min_request_queue_time_seconds > MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
+            tracing::warn!(
+                target = "atoma-service",
+                level = "warn",
+                "Best available chat completions service URL for model: {model} has a request queue time of at least {min_request_queue_time_seconds} seconds",
+            );
+            return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
+        }
+        Ok((best_url, StatusCode::OK))
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum VllmMetricsError {
+        #[error("Failed to get metrics: {0}")]
+        GetMetricsError(#[from] reqwest::Error),
+        #[error("No chat completions service urls found for model: {0}")]
+        NoChatCompletionsServiceUrlsFound(String),
+        #[error("Invalid metrics value: {0}")]
+        InvalidMetricsValue(#[from] std::num::ParseFloatError),
+        #[error("Invalid metrics response: {0}")]
+        InvalidMetricsResponse(#[from] serde_json::Error),
+        #[error("Failed to create HTTP client: {0}")]
+        FailedToCreateHttpClient(#[from] prometheus_http_query::Error),
+        #[error("No metrics found for job: {0}")]
+        NoMetricsFound(String),
     }
 }
