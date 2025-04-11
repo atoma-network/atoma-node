@@ -129,8 +129,8 @@ async fn initialize_tokenizers(
                     revision.clone(),
                 ));
 
-                let tokenizer_filename = repo.get("tokenizer.json").unwrap_or_else(|_| {
-                    panic!("Failed to get tokenizer.json for model {model}");
+                let tokenizer_filename = repo.get("tokenizer.json").unwrap_or_else(|e| {
+                    panic!("Failed to get tokenizer.json for model {model}, with error: {e}");
                 });
 
                 Tokenizer::from_file(tokenizer_filename)
