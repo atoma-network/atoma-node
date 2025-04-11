@@ -118,7 +118,7 @@ const UNKNOWN_MODEL: &str = "unknown";
 /// - `Usage`: Token usage statistics
 /// - `Choice`: A single completion choice
 /// - `ChatCompletionsResponse`: The complete response structure
-/// - `ChatCompletionRequest`: The request body for chat completion requests        
+/// - `ChatCompletionRequest`: The request body for chat completion requests
 /// - `ChatCompletionMessage`: A message in the conversation (system, user, assistant, or tool)
 /// - `ChatCompletionResponse`: The complete response structure
 /// - `ChatCompletionChoice`: A single completion choice
@@ -1408,7 +1408,7 @@ pub mod utils {
         let response_body = match handle_confidential_compute_encryption_response(
             state,
             response_body,
-            client_encryption_metadata,
+            client_encryption_metadata.clone(),
             endpoint.clone(),
         )
         .await
@@ -1417,7 +1417,7 @@ pub mod utils {
                 // Stop the timer before returning the valid response
                 CHAT_COMPLETIONS_LATENCY_METRICS.record(
                     timer.elapsed().as_secs_f64(),
-                    &[KeyValue::new("model", model.to_owned())],
+                    &[KeyValue::new("model", model.to_owned()), KeyValue::new("privacy_level", if client_encryption_metadata.is_some() { "confidential" } else { "non-confidential" })],
                 );
                 Json(response_body).into_response()
             }
