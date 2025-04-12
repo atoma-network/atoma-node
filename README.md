@@ -98,8 +98,8 @@ service_bind_address = "0.0.0.0:3000"
 
 [atoma_sui]
 http_rpc_node_addr = "https://fullnode.testnet.sui.io:443"                              # Current RPC node address for testnet
-atoma_db = "0x7b8f40e38698deb650519a51f9c1a725bf8cfdc074d1552a4dc85976c2b414be"         # Current ATOMA DB object ID for testnet
-atoma_package_id = "0xc05bae323433740c969d8cf938c48d7559490be5f8dde158792e7a0623787013" # Current ATOMA package ID for testnet
+atoma_db = "0x02920289f426dd1f3c2572d613f7dc92be95041720864a73d44d65585530efc5"         # Current ATOMA DB object ID for testnet
+atoma_package_id = "0x8903298ba49a8e83d438e014b2cfd18404324f3a0274b9507b520d5745b85208" # Current ATOMA package ID for testnet
 usdc_package_id = "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29"  # Current USDC package ID for testnet
 request_timeout = { secs = 300, nanos = 0 }                                             # Some reference value
 max_concurrent_requests = 10                                                            # Some reference value
