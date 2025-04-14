@@ -323,3 +323,13 @@ networks:
   atoma-network:
     driver: bridge
     name: atoma-network
+
+# TODO: Remove these
+volumes:
+  postgres-data:
+  grafana_data:
+  sui-config-volume:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  atoma-local-key:
