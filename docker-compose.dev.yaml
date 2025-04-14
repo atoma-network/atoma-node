@@ -284,8 +284,9 @@ services:
     <<: *inference-service-cpu
     container_name: chat-completions
     profiles: [chat_completions_vllm_cpu]
-    image: vllm/vllm-openai:v0.8.1-cpu
-    command: --model ${CHAT_COMPLETIONS_MODEL} --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN}
+    image: vllm/vllm-openai:v0.8.1
+    platform: linux/amd64 # Explicitly set platform
+    command: --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --max-model-len ${CHAT_COMPLETIONS_MAX_MODEL_LEN} --device cpu --trust-remote-code
 
   vllm-rocm:
     <<: *inference-service-rocm
