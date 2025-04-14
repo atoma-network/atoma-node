@@ -29,7 +29,7 @@ use crate::{
         metrics::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
-            CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+            CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -244,11 +244,20 @@ impl Streamer {
         usage: &Value,
         response_hash: [u8; PAYLOAD_HASH_SIZE],
     ) -> Result<(), Error> {
+        let privacy_level = if self.streaming_encryption_metadata.is_some() {
+            "confidential"
+        } else {
+            "non-confidential"
+        };
+
         // Record the decoding phase timer
         if let Some(timer) = self.decoding_phase_timer.take() {
             CHAT_COMPLETIONS_DECODING_TIME.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", self.model.clone())],
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new("privacy_level", privacy_level),
+                ],
             );
         }
 
@@ -256,8 +265,13 @@ impl Streamer {
         let mut total_compute_units = 0;
         if let Some(prompt_tokens) = usage.get("prompt_tokens") {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
-            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                .add(prompt_tokens, &[KeyValue::new("model", self.model.clone())]);
+            CHAT_COMPLETIONS_INPUT_TOKENS_METRICS.add(
+                prompt_tokens,
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new("privacy_level", privacy_level),
+                ],
+            );
             total_compute_units += prompt_tokens;
         } else {
             error!(
@@ -271,7 +285,10 @@ impl Streamer {
             let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS.add(
                 completion_tokens,
-                &[KeyValue::new("model", self.model.clone())],
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new("privacy_level", privacy_level),
+                ],
             );
             total_compute_units += completion_tokens;
         } else {
@@ -341,6 +358,17 @@ impl Streamer {
         }
 
         self.is_final_chunk_handled = true;
+
+        CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS.record(
+            self.inter_stream_token_latency_timer
+                .unwrap()
+                .elapsed()
+                .as_secs_f64(),
+            &[
+                KeyValue::new("model", self.model.clone()),
+                KeyValue::new("privacy_level", privacy_level),
+            ],
+        );
 
         Ok(())
     }
@@ -588,7 +616,17 @@ impl Streamer {
         if let Some(timer) = self.first_token_generation_timer.take() {
             CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", self.model.clone())],
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new(
+                        "privacy_level",
+                        if self.streaming_encryption_metadata.is_some() {
+                            "confidential"
+                        } else {
+                            "non-confidential"
+                        },
+                    ),
+                ],
             );
             self.decoding_phase_timer = Some(timer);
         }
@@ -650,12 +688,37 @@ impl Streamer {
                 .client_dropped_streamer_connections
                 .remove(&self.request_id)
             {
+                info!(
+                    target = "atoma-service-streamer",
+                    level = "info",
+                    endpoint = self.endpoint,
+                    "Client dropped streamer connection, updating usage"
+                );
                 self.status = StreamStatus::Completed;
                 chunk[USAGE_KEY] = json!({
                     PROMPT_TOKENS_KEY: self.num_input_tokens,
                     COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
                     TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
                 });
+                // NOTE: At this point, we will need to re-sign the chunk, as we added the usage key.
+                // This is also the last chunk, as the connection was dropped, and therefore, there is
+                // little to no latency overhead to do it once more.
+                //
+                // 1. Remove the previous signature and response hash from the chunk
+                if let Some(obj) = chunk.as_object_mut() {
+                    obj.remove(SIGNATURE_KEY);
+                    obj.remove(RESPONSE_HASH_KEY);
+                }
+                // 2. Sign the chunk again
+                let (signature, response_hash) = self.sign_chunk(&chunk)?;
+                // 3. Update the chunk with the new signature and response hash
+                update_chunk(&mut chunk, &signature, response_hash);
+                info!(
+                    target = "atoma-service-streamer",
+                    level = "info",
+                    endpoint = self.endpoint,
+                    "Client dropped streamer connection, updating usage, chunk = {chunk}"
+                );
                 return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
             }
             Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
@@ -696,9 +759,17 @@ impl Streamer {
         // Observe the previous timer if it exists
         if let Some(timer) = self.inter_stream_token_latency_timer.take() {
             let elapsed = timer.elapsed();
+            let privacy_level = if self.streaming_encryption_metadata.is_some() {
+                "confidential"
+            } else {
+                "non-confidential"
+            };
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME.record(
                 elapsed.as_secs_f64(),
-                &[KeyValue::new("model", self.model.clone())],
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new("privacy_level", privacy_level),
+                ],
             );
         }
         // Start the timer after we've processed this chunk
@@ -823,7 +894,17 @@ impl Drop for Streamer {
         if let Some(timer) = self.decoding_phase_timer.take() {
             CHAT_COMPLETIONS_DECODING_TIME.record(
                 timer.elapsed().as_secs_f64(),
-                &[KeyValue::new("model", self.model.clone())],
+                &[
+                    KeyValue::new("model", self.model.clone()),
+                    KeyValue::new(
+                        "privacy_level",
+                        if self.streaming_encryption_metadata.is_some() {
+                            "confidential"
+                        } else {
+                            "non-confidential"
+                        },
+                    ),
+                ],
             );
         }
         let num_concurrent_requests = handle_concurrent_requests_count_decrement(

@@ -22,7 +22,7 @@ use axum::{
     response::{IntoResponse, Response, Sse},
     Extension, Json,
 };
-use hyper::HeaderMap;
+use hyper::{HeaderMap, StatusCode};
 use openai_api::{
     completion_choice::{
         ChatCompletionChoice, ChatCompletionChunkChoice, ChatCompletionChunkDelta,
@@ -43,7 +43,7 @@ use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
@@ -61,6 +61,7 @@ use crate::{
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
     request_model::{ComputeUnitsEstimate, RequestModel},
+    vllm_metrics::get_best_available_chat_completions_service_url,
     DEFAULT_MAX_TOKENS,
 };
 
@@ -117,7 +118,7 @@ const UNKNOWN_MODEL: &str = "unknown";
 /// - `Usage`: Token usage statistics
 /// - `Choice`: A single completion choice
 /// - `ChatCompletionsResponse`: The complete response structure
-/// - `ChatCompletionRequest`: The request body for chat completion requests        
+/// - `ChatCompletionRequest`: The request body for chat completion requests
 /// - `ChatCompletionMessage`: A message in the conversation (system, user, assistant, or tool)
 /// - `ChatCompletionResponse`: The complete response structure
 /// - `ChatCompletionChoice`: A single completion choice
@@ -647,7 +648,11 @@ async fn handle_non_streaming_response(
 
     CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
-
+    debug!(
+        target = "atoma-service",
+        level = "debug",
+        "Sending non-streaming chat completions request to {endpoint}"
+    );
     let response_body = utils::send_request_to_inference_service(
         state,
         &payload,
@@ -656,7 +661,11 @@ async fn handle_non_streaming_response(
         &endpoint,
     )
     .await?;
-
+    debug!(
+        target = "atoma-service",
+        level = "debug",
+        "Received non-streaming chat completions response from {endpoint}"
+    );
     let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
@@ -761,7 +770,7 @@ async fn handle_streaming_response(
     CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
 
-    let chat_completions_service_url = state
+    let chat_completions_service_urls = state
         .chat_completions_service_urls
         .get(&model.to_lowercase())
         .ok_or_else(|| {
@@ -773,6 +782,19 @@ async fn handle_streaming_response(
                 endpoint: endpoint.clone(),
             }
         })?;
+    let (chat_completions_service_url, status_code) =
+        get_best_available_chat_completions_service_url(chat_completions_service_urls, model)
+            .await
+            .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: e.to_string(),
+                endpoint: endpoint.clone(),
+            })?;
+    if status_code == StatusCode::TOO_MANY_REQUESTS {
+        return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+            message: "Chat completions service is unavailable".to_string(),
+            endpoint: endpoint.clone(),
+        });
+    }
     let client = Client::new();
     let response = client
         .post(format!(
@@ -953,11 +975,13 @@ pub mod utils {
     use std::time::Instant;
 
     use atoma_utils::constants::PAYLOAD_HASH_SIZE;
+    use hyper::StatusCode;
     use opentelemetry::KeyValue;
 
     use crate::handlers::{
         handle_concurrent_requests_count_decrement, handle_status_code_error,
         metrics::CHAT_COMPLETIONS_LATENCY_METRICS,
+        vllm_metrics::get_best_available_chat_completions_service_url,
     };
 
     use super::{
@@ -1134,7 +1158,7 @@ pub mod utils {
             .get(MODEL_KEY)
             .and_then(|m| m.as_str())
             .unwrap_or(UNKNOWN_MODEL);
-        let chat_completions_service_url = state
+        let chat_completions_service_url_services = state
             .chat_completions_service_urls
             .get(&model.to_lowercase())
             .ok_or_else(|| {
@@ -1146,6 +1170,22 @@ pub mod utils {
                     endpoint: endpoint.to_string(),
                 }
             })?;
+        let (chat_completions_service_url, status_code) =
+            get_best_available_chat_completions_service_url(
+                chat_completions_service_url_services,
+                model,
+            )
+            .await
+            .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: e.to_string(),
+                endpoint: endpoint.to_string(),
+            })?;
+        if status_code == StatusCode::TOO_MANY_REQUESTS {
+            return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: "Chat completions service is unavailable".to_string(),
+                endpoint: endpoint.to_string(),
+            });
+        }
         let response = client
         .post(format!(
             "{}{}",
@@ -1368,7 +1408,7 @@ pub mod utils {
         let response_body = match handle_confidential_compute_encryption_response(
             state,
             response_body,
-            client_encryption_metadata,
+            client_encryption_metadata.clone(),
             endpoint.clone(),
         )
         .await
@@ -1377,7 +1417,7 @@ pub mod utils {
                 // Stop the timer before returning the valid response
                 CHAT_COMPLETIONS_LATENCY_METRICS.record(
                     timer.elapsed().as_secs_f64(),
-                    &[KeyValue::new("model", model.to_owned())],
+                    &[KeyValue::new("model", model.to_owned()), KeyValue::new("privacy_level", if client_encryption_metadata.is_some() { "confidential" } else { "non-confidential" })],
                 );
                 Json(response_body).into_response()
             }
@@ -1401,10 +1441,20 @@ pub mod utils {
         // to update the stack num tokens beforehand.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Decrementing concurrent requests count for stack small id: {stack_small_id}"
+        );
         let concurrent_requests = handle_concurrent_requests_count_decrement(
             &state.concurrent_requests_per_stack,
             stack_small_id,
             "chat-completions/serve_non_streaming_response",
+        );
+        info!(
+            target = "atoma-service",
+            level = "info",
+            "Concurrent requests have been decremented. Updating stack num compute units for stack small id: {stack_small_id}"
         );
         update_stack_num_compute_units(
             &state.state_manager_sender,
