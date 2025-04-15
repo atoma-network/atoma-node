@@ -47,7 +47,7 @@ const METRICS_GOSPUBSUB_TOPIC: &str = "atoma-p2p-usage-metrics";
 const METRICS_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// The protocol name for the Kademlia DHT
-const IPFS_PROTO_NAME: StreamProtocol = StreamProtocol::new("/ipfs/kad/1.0.0");
+const KAD_PROTOCOL_NAME: StreamProtocol = StreamProtocol::new("/atoma-network/kad/1.0.0");
 
 // Well connected nodes to bootstrap the network (see https://docs.ipfs.tech/concepts/public-utilities/#amino-dht-bootstrappers)
 const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
@@ -55,12 +55,6 @@ const IPFS_BOOTSTRAP_NODES: [&str; 4] = [
     "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
     "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
     "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-];
-
-// The proxy bootstrap nodes
-const PROXY_BOOTSTRAP_NODES: [&str; 2] = [
-    "12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ",
-    "12D3KooWBLv3tmR3PY9gTSfp1yYNL3ST2v3ZpmHxgASjnycUurmC",
 ];
 
 pub type StateManagerEvent = (AtomaP2pEvent, Option<oneshot::Sender<bool>>);
@@ -131,6 +125,9 @@ pub struct AtomaP2pNode {
 
     /// Add registry field
     metrics_registry: Registry,
+
+    /// Bootstrap node peer IDs
+    bootstrap_node_peer_ids: Option<Vec<String>>,
 }
 
 impl AtomaP2pNode {
@@ -294,7 +291,7 @@ impl AtomaP2pNode {
                 )
                 .map_err(|e| AtomaP2pNodeError::InvalidConfig(e.to_string()))?;
 
-                let mut cfg = kad::Config::new(IPFS_PROTO_NAME);
+                let mut cfg = kad::Config::new(KAD_PROTOCOL_NAME);
                 cfg.set_query_timeout(Duration::from_secs(5 * 60));
                 let store = kad::store::MemoryStore::new(local_peer_id);
                 let kademlia = kad::Behaviour::with_config(local_peer_id, store, cfg);
@@ -441,31 +438,33 @@ impl AtomaP2pNode {
         }
 
         // Dial the proxy bootstrap nodes
-        for peer_id in PROXY_BOOTSTRAP_NODES {
-            match peer_id.parse::<PeerId>() {
-                // We don't need bootstrap nodes to dial themselves
-                Ok(peer_id) if peer_id != *swarm.local_peer_id() => {
-                    // add quic multiaddr
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, config.bootstrap_node_addrs[0].parse()?);
-                    // add tcp multiaddr
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, config.bootstrap_node_addrs[1].parse()?);
+        if let Some(bootstrap_node_peer_ids) = &config.bootstrap_node_peer_ids {
+            for peer_id in bootstrap_node_peer_ids {
+                match peer_id.parse::<PeerId>() {
+                    // We don't need bootstrap nodes to dial themselves
+                    Ok(peer_id) if peer_id != *swarm.local_peer_id() => {
+                        // add quic multiaddr
+                        swarm
+                            .behaviour_mut()
+                            .kademlia
+                            .add_address(&peer_id, config.bootstrap_node_addrs[0].parse()?);
+                        // add tcp multiaddr
+                        swarm
+                            .behaviour_mut()
+                            .kademlia
+                            .add_address(&peer_id, config.bootstrap_node_addrs[1].parse()?);
+                    }
+                    Err(e) => {
+                        error!(
+                            target = "atoma-p2p",
+                            event = "bootstrap_node_parse_error",
+                            peer_id = %peer_id,
+                            error = %e,
+                            "Failed to parse proxy bootstrap node address"
+                        );
+                    }
+                    _ => {}
                 }
-                Err(e) => {
-                    error!(
-                        target = "atoma-p2p",
-                        event = "bootstrap_node_parse_error",
-                        peer_id = %peer_id,
-                        error = %e,
-                        "Failed to parse proxy bootstrap node address"
-                    );
-                }
-                _ => {}
             }
         }
 
@@ -478,6 +477,7 @@ impl AtomaP2pNode {
             is_client,
             network_metrics,
             metrics_registry,
+            bootstrap_node_peer_ids: config.bootstrap_node_peer_ids,
         })
     }
 
@@ -739,13 +739,15 @@ impl AtomaP2pNode {
                                 connection_id = %connection_id,
                                 "Peer connection established"
                             );
-                            if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
-                                info!(
-                                    target = "atoma-p2p",
-                                    event = "incoming_connection_bootstrap_node",
-                                    peer_id = %peer_id,
-                                    "Incoming connection from proxy bootstrap node"
-                                );
+                            if let Some(bootstrap_node_peer_ids) = &self.bootstrap_node_peer_ids {
+                                if bootstrap_node_peer_ids.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
+                                    info!(
+                                        target = "atoma-p2p",
+                                        event = "incoming_connection_bootstrap_node",
+                                        peer_id = %peer_id,
+                                        "Incoming connection from proxy bootstrap node"
+                                    );
+                                }
                             }
                         }
                         SwarmEvent::ConnectionClosed {
@@ -802,14 +804,16 @@ impl AtomaP2pNode {
                             );
                             TOTAL_DIALS_ATTEMPTED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
                             if let Some(peer_id) = peer_id {
-                                if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
-                                    info!(
-                                        target = "atoma-p2p",
-                                        event = "dialing_bootstrap_node",
-                                        peer_id = %peer_id,
-                                        connection_id = %connection_id,
-                                        "Dialing proxy bootstrap node"
-                                    );
+                                if let Some(bootstrap_node_peer_ids) = &self.bootstrap_node_peer_ids {
+                                    if bootstrap_node_peer_ids.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
+                                        info!(
+                                            target = "atoma-p2p",
+                                            event = "dialing_bootstrap_node",
+                                            peer_id = %peer_id,
+                                            connection_id = %connection_id,
+                                            "Dialing proxy bootstrap node"
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -821,13 +825,15 @@ impl AtomaP2pNode {
                                 event = "incoming_connection",
                                 "Incoming connection"
                             );
-                            if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id.to_string() == peer_id).unwrap_or(false)) {
-                                info!(
-                                    target = "atoma-p2p",
-                                    event = "incoming_connection_bootstrap_node",
-                                    peer_id = %peer_id,
-                                    "Incoming connection from proxy bootstrap node"
-                                );
+                            if let Some(bootstrap_node_peer_ids) = &self.bootstrap_node_peer_ids {
+                                    if bootstrap_node_peer_ids.iter().any(|node| node.parse::<PeerId>().map(|id| id.to_string() == peer_id).unwrap_or(false)) {
+                                        info!(
+                                            target = "atoma-p2p",
+                                            event = "incoming_connection_bootstrap_node",
+                                            peer_id = %peer_id,
+                                            "Incoming connection from proxy bootstrap node"
+                                        );
+                                    }
                             }
                         }
                         SwarmEvent::IncomingConnectionError {
@@ -851,13 +857,15 @@ impl AtomaP2pNode {
                             );
                             TOTAL_DIALS_FAILED.add(1, &[KeyValue::new("peerId", peer_id.unwrap().to_base58())]);
                             if let Some(peer_id) = peer_id {
-                                if PROXY_BOOTSTRAP_NODES.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
-                                    error!(
-                                        target = "atoma-p2p",
-                                        event = "outgoing_connection_error_bootstrap_node",
-                                        peer_id = %peer_id,
-                                        "Outgoing connection error to proxy bootstrap node"
-                                    );
+                                if let Some(bootstrap_node_peer_ids) = &self.bootstrap_node_peer_ids {
+                                    if bootstrap_node_peer_ids.iter().any(|node| node.parse::<PeerId>().map(|id| id == peer_id).unwrap_or(false)) {
+                                        error!(
+                                            target = "atoma-p2p",
+                                            event = "outgoing_connection_error_bootstrap_node",
+                                            peer_id = %peer_id,
+                                            "Outgoing connection error to proxy bootstrap node"
+                                        );
+                                    }
                                 }
                             }
                         }
