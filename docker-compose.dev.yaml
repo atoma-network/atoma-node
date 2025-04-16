@@ -218,7 +218,28 @@ services:
       postgres-db:
         condition: service_started
         required: true
-      vllm:
+      vllm1:
+        condition: service_started
+        required: false
+      vllm2:
+        condition: service_started
+        required: false
+      vllm3:
+        condition: service_started
+        required: false
+      vllm4:
+        condition: service_started
+        required: false
+      vllm5:
+        condition: service_started
+        required: false
+      vllm6:
+        condition: service_started
+        required: false
+      vllm7:
+        condition: service_started
+        required: false
+      vllm8:
         condition: service_started
         required: false
       vllm-cpu:
@@ -253,12 +274,9 @@ services:
       postgres-db:
         condition: service_started
         required: true
-      vllm:
+      mistralrs-cpu:
         condition: service_started
-        required: false
-      vllm-cpu:
-        condition: service_started
-        required: false
+        required: true
       otel-collector:
         condition: service_started
         required: true
