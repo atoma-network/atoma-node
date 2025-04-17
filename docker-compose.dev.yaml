@@ -265,7 +265,6 @@ services:
     <<: *atoma-node-no-nvidia
     profiles:
       - no-gpu
-      - chat_completions_mistralrs_cpu
     ports:
       - "${ATOMA_SERVICE_PORT:-3000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
