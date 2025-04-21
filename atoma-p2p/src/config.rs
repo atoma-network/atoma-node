@@ -51,6 +51,10 @@ pub struct AtomaP2pNodeConfig {
     /// The list of bootstrap nodes to dial
     pub bootstrap_node_addrs: Vec<String>,
 
+    /// The list of bootstrap node peer IDs to connect to
+    /// If not provided, default IPFS bootstrap nodes will be used
+    pub bootstrap_node_peer_ids: Option<Vec<String>>,
+
     /// The path to the local key
     pub local_key: String,
 }

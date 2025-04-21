@@ -79,6 +79,11 @@ idle_connection_timeout = { secs = 60, nanos = 0 }
 listen_addrs = [ "/ip4/0.0.0.0/tcp/4001", "/ip4/0.0.0.0/udp/4001/quic-v1" ]
 # The list of bootstrap nodes to dial
 bootstrap_node_addrs = [ "/ip4/213.130.147.75/tcp/8083", "/ip4/213.130.147.75/udp/8083/quic-v1" ]
+# The list of bootstrap node peer IDs to connect to, the latter is the peer ID of the dev bootstrap node
+bootstrap_node_peer_ids = [
+    "12D3KooWBLv3tmR3PY9gTSfp1yYNL3ST2v3ZpmHxgASjnycUurmC",
+    "12D3KooWHXsXfELpyB91QUXebbLMLSQDB3kcGyogn4pogABSj1eZ",
+]
 
 # Node's small ID (assigned by Atoma smart contract)
 node_small_id = 1
