@@ -524,7 +524,7 @@ fn start_heartbeat_service(mut shutdown_receiver: watch::Receiver<bool>, heartbe
 
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(interval) => {
+                () = tokio::time::sleep(interval) => {
                     // Send heartbeat ping
                     match client.get(heartbeat_url.clone()).send().await {
                         Ok(response) => {
