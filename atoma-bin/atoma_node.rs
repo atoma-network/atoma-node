@@ -508,6 +508,7 @@ fn handle_tasks_results(
 /// # Arguments
 /// * `shutdown_receiver` - A receiver that signals when the service should shut down
 /// * `heartbeat_url` - The URL of the heartbeat service
+#[allow(clippy::redundant_pub_crate)]
 fn start_heartbeat_service(mut shutdown_receiver: watch::Receiver<bool>, heartbeat_url: String) {
     tokio::spawn(async move {
         let client = reqwest::Client::new();
