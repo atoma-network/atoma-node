@@ -66,6 +66,7 @@ impl NodeConfig {
         let service = AtomaServiceConfig::from_file_path(path);
         let state = AtomaStateManagerConfig::from_file_path(path);
         let daemon = AtomaDaemonConfig::from_file_path(path);
+
         Self {
             sui,
             p2p,
@@ -165,6 +166,13 @@ async fn main() -> Result<()> {
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
     let (p2p_event_sender, p2p_event_receiver) = flume::unbounded();
+
+    // Start the heartbeat service
+    start_heartbeat_service(
+        shutdown_receiver.clone(),
+        config.service.heartbeat_url.clone(),
+    );
+
     info!(
         target = "atoma-node-service",
         event = "keystore_path",
@@ -490,4 +498,72 @@ fn handle_tasks_results(
         "Confidential compute service terminated abruptly",
     )?;
     Ok(())
+}
+
+/// Starts a heartbeat service that pings a health check endpoint every minute.
+///
+/// This function spawns a background task that sends a GET request to a health check
+/// service at regular intervals to indicate the daemon is still running.
+///
+/// # Arguments
+/// * `shutdown_receiver` - A receiver that signals when the service should shut down
+/// * `heartbeat_url` - The URL of the heartbeat service
+fn start_heartbeat_service(mut shutdown_receiver: watch::Receiver<bool>, heartbeat_url: String) {
+    tokio::spawn(async move {
+        let client = reqwest::Client::new();
+        let interval = std::time::Duration::from_secs(60);
+
+        tracing::info!(
+            target = "atoma_daemon",
+            event = "heartbeat-service-start",
+            url = %heartbeat_url.clone(),
+            interval_secs = %interval.as_secs(),
+            "Starting heartbeat service"
+        );
+
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(interval) => {
+                    // Send heartbeat ping
+                    match client.get(heartbeat_url.clone()).send().await {
+                        Ok(response) => {
+                            if response.status().is_success() {
+                                tracing::debug!(
+                                    target = "atoma_daemon",
+                                    event = "heartbeat-ping",
+                                    status = %response.status(),
+                                    "Sent heartbeat ping successfully"
+                                );
+                            } else {
+                                tracing::warn!(
+                                    target = "atoma_daemon",
+                                    event = "heartbeat-ping-failed",
+                                    status = %response.status(),
+                                    "Heartbeat ping returned non-success status"
+                                );
+                            }
+                        },
+                        Err(e) => {
+                            tracing::error!(
+                                target = "atoma_daemon",
+                                event = "heartbeat-ping-error",
+                                error = %e,
+                                "Failed to send heartbeat ping"
+                            );
+                        }
+                    }
+                }
+                result = shutdown_receiver.changed() => {
+                    if result.is_err() || *shutdown_receiver.borrow() {
+                        tracing::info!(
+                            target = "atoma_daemon",
+                            event = "heartbeat-service-shutdown",
+                            "Heartbeat service shutting down"
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }

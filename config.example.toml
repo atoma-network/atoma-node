@@ -39,6 +39,7 @@ image_generations_service_url = "http://image-generations:80"
 models               = [ "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" ]
 revisions            = [ "main" ]
 service_bind_address = "0.0.0.0:3000"
+heartbeat_url        = "my-heartbeat-url"
 
 [atoma_sui]
 atoma_db                = "0x02920289f426dd1f3c2572d613f7dc92be95041720864a73d44d65585530efc5" # Current ATOMA DB object ID for testnet
