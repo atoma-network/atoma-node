@@ -145,6 +145,7 @@ allow-git = [
     "https://github.com/asonnino/prometheus-parser",
     "https://github.com/atoma-network/nvml-wrapper.git",
     "https://github.com/atoma-network/nvrust.git",
+    "https://github.com/hyperium/tonic.git",
     "https://github.com/zhiburt/tabled",
 ]
 
