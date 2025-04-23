@@ -1,10 +1,17 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Instant};
 
 use crate::{
     error::AtomaServiceError,
     handlers::{
-        chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
-        image_generations::IMAGE_GENERATIONS_PATH, request_model::ComputeUnitsEstimate,
+        chat_completions::CHAT_COMPLETIONS_PATH,
+        embeddings::EMBEDDINGS_PATH,
+        image_generations::IMAGE_GENERATIONS_PATH,
+        metrics::{
+            CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME,
+            SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME,
+            VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
+        },
+        request_model::ComputeUnitsEstimate,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
@@ -234,6 +241,7 @@ pub async fn signature_verification_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, AtomaServiceError> {
+    let instant = Instant::now();
     let (mut req_parts, req_body) = req.into_parts();
     let endpoint = req_parts.uri.path().to_string();
 
@@ -279,7 +287,8 @@ pub async fn signature_verification_middleware(
         .with_payload_hash(body_blake2b_hash_bytes);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
-
+    SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME
+        .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
     Ok(next.run(req).await)
 }
 
@@ -338,6 +347,7 @@ pub async fn verify_stack_permissions(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, AtomaServiceError> {
+    let instant = Instant::now();
     let (mut req_parts, req_body) = req.into_parts();
     let endpoint = req_parts.uri.path().to_string();
 
@@ -538,6 +548,8 @@ pub async fn verify_stack_permissions(
             .or_insert(0);
         *entry += 1;
     }
+    VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME
+        .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
     Ok(next.run(req).await)
 }
 
@@ -593,6 +605,7 @@ pub async fn confidential_compute_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, AtomaServiceError> {
+    let instant = Instant::now();
     let (mut req_parts, req_body) = req.into_parts();
 
     let endpoint = req_parts.uri.path().to_string();
@@ -669,6 +682,8 @@ pub async fn confidential_compute_middleware(
                 })?,
             );
             let req = Request::from_parts(req_parts, body);
+            CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME
+                .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
             Ok(next.run(req).await)
         }
         Err(e) => Err(AtomaServiceError::InternalError {
