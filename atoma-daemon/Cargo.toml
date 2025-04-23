@@ -28,6 +28,7 @@ opentelemetry-otlp = { workspace = true, features = [
 ] }
 opentelemetry_sdk = { workspace = true, features = [ "logs", "metrics", "rt-tokio", "trace" ] }
 rs_merkle = { workspace = true }
+sentry = { workspace = true, features = [ "tracing" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

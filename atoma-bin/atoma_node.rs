@@ -177,6 +177,14 @@ async fn main() -> Result<()> {
                     // Capture user IPs and potentially sensitive headers when using HTTP server integrations
                     // see https://docs.sentry.io/platforms/rust/data-management/data-collected for more info
                     send_default_pii: false,
+                    environment: Some(std::borrow::Cow::Owned(
+                        config
+                            .service
+                            .environment
+                            .clone()
+                            .unwrap_or_else(|| "development".to_string()),
+                    )),
+                    traces_sample_rate: 0.2,
                     ..Default::default()
                 },
             )))

@@ -713,6 +713,7 @@ dependencies = [
  "opentelemetry_sdk",
  "reqwest",
  "rs_merkle",
+ "sentry",
  "serde",
  "serde_json",
  "serde_yaml 0.9.34+deprecated",

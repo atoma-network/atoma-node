@@ -50,6 +50,9 @@ pub struct AtomaServiceConfig {
 
     /// The DSN for the Sentry service.
     pub sentry_dsn: Option<String>,
+
+    /// The environment for the Atoma Service.
+    pub environment: Option<String>,
 }
 
 impl AtomaServiceConfig {
