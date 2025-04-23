@@ -31,6 +31,7 @@ use axum::{
     response::Response,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use opentelemetry::KeyValue;
 use serde_json::Value;
 use sui_sdk::types::{
     base_types::SuiAddress,
@@ -276,7 +277,7 @@ pub async fn signature_verification_middleware(
     verify_signature(base64_signature, &body_blake2b_hash_bytes).map_err(|e| {
         AtomaServiceError::AuthError {
             auth_error: format!("Failed to verify signature, with error: {e}"),
-            endpoint,
+            endpoint: endpoint.clone(),
         }
     })?;
     let request_metadata = req_parts
@@ -287,8 +288,10 @@ pub async fn signature_verification_middleware(
         .with_payload_hash(body_blake2b_hash_bytes);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
-    SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME
-        .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
+    SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME.record(
+        instant.elapsed().as_secs_f64(),
+        &[KeyValue::new("endpoint", endpoint)],
+    );
     Ok(next.run(req).await)
 }
 
@@ -548,8 +551,10 @@ pub async fn verify_stack_permissions(
             .or_insert(0);
         *entry += 1;
     }
-    VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME
-        .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
+    VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
+        instant.elapsed().as_secs_f64(),
+        &[KeyValue::new("endpoint", endpoint)],
+    );
     Ok(next.run(req).await)
 }
 
@@ -682,8 +687,10 @@ pub async fn confidential_compute_middleware(
                 })?,
             );
             let req = Request::from_parts(req_parts, body);
-            CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME
-                .record(instant.elapsed().as_secs_f64(), &[endpoint.as_str()]);
+            CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME.record(
+                instant.elapsed().as_secs_f64(),
+                &[KeyValue::new("endpoint", endpoint)],
+            );
             Ok(next.run(req).await)
         }
         Err(e) => Err(AtomaServiceError::InternalError {
