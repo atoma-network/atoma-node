@@ -42,6 +42,7 @@ opentelemetry_sdk = { workspace = true, features = [ "logs", "metrics", "rt-toki
 prometheus = { workspace = true }
 prometheus-http-query = { workspace = true }
 reqwest = { workspace = true, features = [ "json" ] }
+sentry = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

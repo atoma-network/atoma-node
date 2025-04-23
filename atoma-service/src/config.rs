@@ -47,6 +47,9 @@ pub struct AtomaServiceConfig {
 
     /// The URL of the heartbeat service.
     pub heartbeat_url: String,
+
+    /// The DSN for the Sentry service.
+    pub sentry_dsn: Option<String>,
 }
 
 impl AtomaServiceConfig {
