@@ -561,9 +561,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.22"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59a194f9d963d8099596278594b3107448656ba73831c9d8c783e613ce86da64"
+checksum = "b37fc50485c4f3f736a4fb14199f6d5f5ba008d7f28fe710306c92780f004c07"
 dependencies = [
  "brotli",
  "flate2",
@@ -684,9 +684,10 @@ dependencies = [
  "config",
  "flume",
  "hex",
+ "nscq",
  "nvml-wrapper",
  "rand 0.8.5",
- "remote-attestation",
+ "remote-attestation-verifier",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -802,7 +803,6 @@ dependencies = [
  "hf-hub",
  "hyper",
  "isocountry",
- "lazy_static",
  "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -1391,9 +1391,9 @@ checksum = "f781dba93de3a5ef6dc5b17c9958b208f6f3f021623b360fb605ea51ce443f10"
 
 [[package]]
 name = "brotli"
-version = "7.0.0"
+version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc97b8f16f944bba54f0433f07e30be199b6dc2bd25937444bbad560bcea29bd"
+checksum = "cf19e729cdbd51af9a397fb9ef8ac8378007b797f8273cfbfdf45dcaa316167b"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -1402,9 +1402,9 @@ dependencies = [
 
 [[package]]
 name = "brotli-decompressor"
-version = "4.0.3"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a334ef7c9e23abf0ce748e8cd309037da93e606ad52eb372e4ce327a0dcfbdfd"
+checksum = "874bb8112abecc98cbd6d81ea4fa7e94fb9449648c93cc89aa40c81c24d7de03"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -2122,7 +2122,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.100",
 ]
 
 [[package]]
@@ -4350,14 +4350,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
 name = "libm"
-version = "0.2.11"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
+checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
 name = "libp2p"
@@ -5722,6 +5722,14 @@ name = "nonzero_ext"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
+
+[[package]]
+name = "nscq"
+version = "0.1.0"
+source = "git+https://github.com/atoma-network/nvrust.git?branch=main#1add98df60e9702f74d267132af0635139aeb7f6"
+dependencies = [
+ "libloading",
+]
 
 [[package]]
 name = "ntapi"
@@ -7218,14 +7226,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
-name = "remote-attestation"
+name = "remote-attestation-verifier"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/nvrust.git?branch=main#4418eccd685c75ea8a47dfa9f25b9777643ddeb4"
+source = "git+https://github.com/atoma-network/nvrust.git?branch=main#1add98df60e9702f74d267132af0635139aeb7f6"
 dependencies = [
  "base64 0.22.1",
  "hex",
  "jsonwebtoken",
- "nvml-wrapper",
+ "nscq",
  "once_cell",
  "rand 0.8.5",
  "reqwest",

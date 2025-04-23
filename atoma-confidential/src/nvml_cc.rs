@@ -8,7 +8,9 @@
 //! The attestation reports can be used in remote attestation protocols to establish
 //! trust with external services or validators.
 
+use nscq::NscqHandler;
 use nvml_wrapper::Nvml;
+use remote_attestation_verifier::errors::NscqError;
 
 /// The size of the nonce used for the attestation report
 const NONCE_SIZE: usize = 32;
@@ -205,6 +207,143 @@ pub fn set_cc_ready_state(index: u32, is_accepting_work: bool) -> Result<()> {
     Ok(())
 }
 
+/// Check if multi-GPU protected PCIe is enabled
+///
+/// This function checks if multi-GPU protected PCIe is enabled on the system.
+/// It returns `true` if multi-GPU protected PCIe is enabled, otherwise it returns `false`.
+///
+/// # Returns
+///
+/// * `Result<bool>` - `true` if multi-GPU protected PCIe is enabled, `false` otherwise
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+pub fn is_multi_gpu_protected_pcie_enabled(index: u32) -> Result<bool> {
+    let nvml = Nvml::init()?;
+    let device = nvml.device_by_index(index)?;
+    Ok(device.is_multi_gpu_protected_pcie_enabled()?)
+}
+
+/// Get all NVSwitch UUIDs
+///
+/// This function queries the NSCQ library to retrieve all NVSwitch UUIDs.
+///
+/// # Returns
+///
+/// * `Result<Vec<String>>` - The list of all NVSwitch UUIDs
+///
+/// # Errors
+///
+/// * `AttestationError::NscqError` - If the NSCQ library returns an error
+pub fn get_nvswitch_uuid() -> Result<Vec<String>> {
+    let nscq = NscqHandler::new().map_err(|e| AttestationError::NscqError(NscqError::from(e)))?;
+    nscq.get_all_switch_uuid()
+        .map_err(|e| AttestationError::NscqError(NscqError::from(e)))
+}
+
+/// Fetch the attestation report for a given NVSwitch UUID asynchronously,
+/// using a blocking call to avoid blocking the main thread.
+///
+/// This function offloads the blocking NVML operation to Tokio's dedicated thread pool
+/// for CPU-bound tasks, allowing the caller to continue processing other async tasks
+/// while waiting for the attestation report.
+///
+/// # Arguments
+///
+/// * `nonce` - The nonce to use for the attestation report (typically a cryptographic challenge)
+///
+/// # Returns
+///
+/// * `Result<Vec<Vec<u8>>>` - The raw attestation report for all the NvSwitches
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+pub fn fetch_nvswitch_attestation_report(nonce: [u8; NONCE_SIZE]) -> Result<Vec<Vec<u8>>> {
+    let nscq = NscqHandler::new().map_err(|e| AttestationError::NscqError(NscqError::from(e)))?;
+    let report = nscq
+        .get_all_switch_attestation_report(&nonce)
+        .map_err(|e| AttestationError::NscqError(NscqError::from(e)))?;
+    Ok(report.values().map(|v| v.to_vec()).collect())
+}
+
+/// Fetch the attestation report for a given NVSwitch UUID asynchronously,
+/// using a blocking call to avoid blocking the main thread.
+///
+/// This function offloads the blocking NVML operation to Tokio's dedicated thread pool
+/// for CPU-bound tasks, allowing the caller to continue processing other async tasks
+/// while waiting for the attestation report.
+///
+/// # Arguments
+///
+/// * `nonce` - The nonce to use for the attestation report (typically a cryptographic challenge)
+///
+/// # Returns
+///
+/// * `Result<Vec<Vec<u8>>>` - The raw attestation report for all the NvSwitches
+///
+/// # Errors
+///
+/// * `AttestationError::NvmlError` - If the NVML library returns an error
+/// * `AttestationError::JoinError` - If the spawned blocking task fails to complete
+pub async fn fetch_nvswitch_attestation_report_async(
+    nonce: [u8; NONCE_SIZE],
+) -> Result<Vec<Vec<u8>>> {
+    let join_handle = tokio::task::spawn_blocking(move || fetch_nvswitch_attestation_report(nonce));
+    join_handle.await?
+}
+
+/// Fetch the certificate chain for a given NVSwitch UUID
+///
+/// This function queries the NSCQ library to retrieve the certificate chain for a given NVSwitch UUID.
+///
+/// # Arguments
+///
+/// * `uuid` - The UUID of the NVSwitch to fetch the certificate chain for
+///
+/// # Returns
+///
+/// * `Result<Vec<Vec<u8>>>` - The raw certificate chain data for all the NvSwitches
+///
+/// # Errors
+///
+/// * `AttestationError::NscqError` - If the NSCQ library returns an error
+pub fn fetch_nvswitch_certificate_chain() -> Result<Vec<Vec<u8>>> {
+    let nscq = NscqHandler::new().map_err(|e| {
+        AttestationError::NscqError(remote_attestation_verifier::errors::NscqError::from(e))
+    })?;
+    let certificates = nscq
+        .get_all_switch_attestation_certificate_chain()
+        .map_err(|e| {
+            AttestationError::NscqError(remote_attestation_verifier::errors::NscqError::from(e))
+        })?;
+    Ok(certificates.values().cloned().collect())
+}
+
+/// Fetch the certificate chain for a given NVSwitch UUID asynchronously,
+/// using a blocking call to avoid blocking the main thread.
+///
+/// This function offloads the blocking NVML operation to Tokio's dedicated thread pool
+/// for CPU-bound tasks, allowing the caller to continue processing other async tasks
+/// while waiting for the certificate chain.
+///
+/// # Arguments
+///
+/// * `uuid` - The UUID of the NVSwitch to fetch the certificate chain for
+///
+/// # Returns
+///
+/// * `Result<Vec<Vec<u8>>>` - The raw certificate chain data for all the NvSwitches
+///
+/// # Errors
+///
+/// * `AttestationError::NscqError` - If the NSCQ library returns an error
+pub async fn fetch_nvswitch_certificate_chain_async() -> Result<Vec<Vec<u8>>> {
+    let join_handle = tokio::task::spawn_blocking(fetch_nvswitch_certificate_chain);
+    join_handle.await?
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AttestationError {
     #[error("NVML error: {0}")]
@@ -213,4 +352,6 @@ pub enum AttestationError {
     InvalidDeviceIndex(#[from] std::num::TryFromIntError),
     #[error("Join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("Nscq error: {0}")]
+    NscqError(#[from] remote_attestation_verifier::errors::NscqError),
 }

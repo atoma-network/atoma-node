@@ -48,10 +48,10 @@ hkdf                        = "0.12.4"
 http                        = "1.2"
 hyper                       = "1.6.0"
 isocountry                  = "0.3.2"
-lazy_static                 = "1.5.0"
 libp2p                      = "0.55.0"
 metrics                     = "0.23"
 metrics-exporter-prometheus = "0.14.0"
+nscq                        = { git = "https://github.com/atoma-network/nvrust.git", branch = "main", package = "nscq" }
 nvml-wrapper                = { git = "https://github.com/atoma-network/nvml-wrapper.git", branch = "main" }
 once_cell                   = "1.21.3"
 opentelemetry               = "0.27.0"
@@ -60,7 +60,7 @@ opentelemetry_sdk           = "0.27.0"
 prometheus                  = "0.13.4"
 prometheus-http-query       = "0.8.3"
 rand                        = "0.8.5"
-remote-attestation          = { git = "https://github.com/atoma-network/nvrust.git", branch = "main" }
+remote-attestation-verifier = { git = "https://github.com/atoma-network/nvrust.git", branch = "main", package = "remote-attestation-verifier" }
 reqwest                     = "0.12.12"
 rs_merkle                   = "1.4.2"
 serde                       = "1.0.219"

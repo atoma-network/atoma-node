@@ -149,7 +149,7 @@ impl AtomaStateManager {
                     match state_manager_event {
                         Ok(state_manager_event) => {
                             match handle_state_manager_event(&self, state_manager_event).await {
-                                Ok(()) => continue,
+                                Ok(()) => {}
                                 Err(e) => {
                                     tracing::error!(
                                         target = "atoma-state-manager",
@@ -170,7 +170,6 @@ impl AtomaStateManager {
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
                             // for event synchronization with the Atoma Network protocol.
-                            continue;
                         }
                     }
                 }
@@ -194,7 +193,6 @@ impl AtomaStateManager {
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
                             // for event synchronization with the Atoma Network protocol.
-                            continue;
                         }
                     }
                 }
