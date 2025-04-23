@@ -1,4 +1,5 @@
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use opentelemetry::{
     global,
     metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
@@ -6,7 +7,7 @@ use opentelemetry::{
 use sysinfo::Networks;
 
 // Add global metrics
-static GLOBAL_METER: Lazy<Meter> = Lazy::new(|| global::meter("atoma-node"));
+static GLOBAL_METER: LazyLock<Meter> = LazyLock::new(|| global::meter("atoma-node"));
 
 /// Counter metric that tracks the total number of dial attempts.
 ///
@@ -19,7 +20,7 @@ static GLOBAL_METER: Lazy<Meter> = Lazy::new(|| global::meter("atoma-node"));
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: requests (count)
-pub static TOTAL_DIALS_ATTEMPTED: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_DIALS_ATTEMPTED: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_dials")
         .with_description("The total number of dials attempted")
@@ -38,7 +39,7 @@ pub static TOTAL_DIALS_ATTEMPTED: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: dials (count)
-pub static TOTAL_DIALS_FAILED: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_DIALS_FAILED: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_dials_failed")
         .with_description("The total number of dials failed")
@@ -57,7 +58,7 @@ pub static TOTAL_DIALS_FAILED: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: connections (count)
-pub static TOTAL_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static TOTAL_CONNECTIONS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("total_connections")
         .with_description("The total number of connections")
@@ -76,7 +77,7 @@ pub static TOTAL_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: peers (count)
-pub static PEERS_CONNECTED: Lazy<Gauge<i64>> = Lazy::new(|| {
+pub static PEERS_CONNECTED: LazyLock<Gauge<i64>> = LazyLock::new(|| {
     GLOBAL_METER
         .i64_gauge("peers_connected")
         .with_description("The number of peers connected")
@@ -95,7 +96,7 @@ pub static PEERS_CONNECTED: Lazy<Gauge<i64>> = Lazy::new(|| {
 /// - Type: `UpDownCounter`
 /// - Labels: `peer_id`
 /// - Unit: `subscriptions` (count)
-pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: Lazy<UpDownCounter<i64>> = Lazy::new(|| {
+pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: LazyLock<UpDownCounter<i64>> = LazyLock::new(|| {
     GLOBAL_METER
         .i64_up_down_counter("total_gossipsub_subscriptions")
         .with_description("The total number of gossipsub subscriptions")
@@ -114,13 +115,14 @@ pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: Lazy<UpDownCounter<i64>> = Lazy::new(|
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: messages (count)
-pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: Lazy<Counter<u64>> = Lazy::new(|| {
-    GLOBAL_METER
-        .u64_counter("total_invalid_gossipsub_messages_received")
-        .with_description("The total number of invalid gossipsub messages received")
-        .with_unit("messages")
-        .build()
-});
+pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: LazyLock<Counter<u64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .u64_counter("total_invalid_gossipsub_messages_received")
+            .with_description("The total number of invalid gossipsub messages received")
+            .with_unit("messages")
+            .build()
+    });
 
 /// Counter metric that tracks the total number of gossipsub messages forwarded.
 ///
@@ -133,7 +135,7 @@ pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: Lazy<Counter<u64>> = Lazy:
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: messages (count)
-pub static TOTAL_GOSSIPSUB_MESSAGES_FORWARDED: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_GOSSIPSUB_MESSAGES_FORWARDED: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_gossipsub_messages_forwarded")
         .with_description("The total number of gossipsub messages forwarded")
@@ -152,7 +154,7 @@ pub static TOTAL_GOSSIPSUB_MESSAGES_FORWARDED: Lazy<Counter<u64>> = Lazy::new(||
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: messages (count)
-pub static TOTAL_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_GOSSIPSUB_PUBLISHES: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_gossipsub_publishes")
         .with_description("The total number of gossipsub publishes")
@@ -171,7 +173,7 @@ pub static TOTAL_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: messages (count)
-pub static TOTAL_FAILED_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_FAILED_GOSSIPSUB_PUBLISHES: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_failed_gossipsub_messages")
         .with_description("The total number of failed gossipsub messages")
@@ -190,7 +192,7 @@ pub static TOTAL_FAILED_GOSSIPSUB_PUBLISHES: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: connections (count)
-pub static TOTAL_INCOMING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static TOTAL_INCOMING_CONNECTIONS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("total_incoming_connections")
         .with_description("The total number of incoming connections")
@@ -209,7 +211,7 @@ pub static TOTAL_INCOMING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: connections (count)
-pub static TOTAL_OUTGOING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static TOTAL_OUTGOING_CONNECTIONS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("total_outgoing_connections")
         .with_description("The total number of outgoing connections")
@@ -228,7 +230,7 @@ pub static TOTAL_OUTGOING_CONNECTIONS: Lazy<Gauge<u64>> = Lazy::new(|| {
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: discoveries (count)
-pub static TOTAL_MDNS_DISCOVERIES: Lazy<Counter<u64>> = Lazy::new(|| {
+pub static TOTAL_MDNS_DISCOVERIES: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_counter("total_mdns_discoveries")
         .with_description("The total number of mDNS discoveries")
@@ -247,7 +249,7 @@ pub static TOTAL_MDNS_DISCOVERIES: Lazy<Counter<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: bytes (count)
-pub static TOTAL_STREAM_INCOMING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static TOTAL_STREAM_INCOMING_BANDWIDTH: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("total_stream_bandwidth")
         .with_description("The total number of stream bandwidth")
@@ -266,7 +268,7 @@ pub static TOTAL_STREAM_INCOMING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
 /// - Type: Gauge
 /// - Labels: `peer_id`
 /// - Unit: bytes (count)
-pub static TOTAL_STREAM_OUTGOING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static TOTAL_STREAM_OUTGOING_BANDWIDTH: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("total_stream_outgoing_bandwidth")
         .with_description("The total number of stream outgoing bandwidth")
@@ -285,7 +287,7 @@ pub static TOTAL_STREAM_OUTGOING_BANDWIDTH: Lazy<Gauge<u64>> = Lazy::new(|| {
 /// - Type: Histogram
 /// - Labels: `peer_id`
 /// - Unit: score (count)
-pub static GOSSIP_SCORE_HISTOGRAM: Lazy<Histogram<f64>> = Lazy::new(|| {
+pub static GOSSIP_SCORE_HISTOGRAM: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     GLOBAL_METER
         .f64_histogram("gossip_score_histogram")
         .with_description("The histogram of gossip scores")
@@ -300,7 +302,7 @@ pub static GOSSIP_SCORE_HISTOGRAM: Lazy<Histogram<f64>> = Lazy::new(|| {
 /// across different image generation models.
 ///
 /// # Metric Details
-pub static KAD_ROUTING_TABLE_SIZE: Lazy<Gauge<u64>> = Lazy::new(|| {
+pub static KAD_ROUTING_TABLE_SIZE: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     GLOBAL_METER
         .u64_gauge("kad_routing_table_size")
         .with_description("The size of the Kademlia routing table")
