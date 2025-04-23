@@ -438,8 +438,8 @@ pub fn handle_status_code_error(
 mod vllm_metrics {
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
-    use std::sync::LazyLock;
     use prometheus_http_query::Client;
+    use std::sync::LazyLock;
     use tracing::{info, instrument};
 
     pub type Result<T> = std::result::Result<T, VllmMetricsError>;
