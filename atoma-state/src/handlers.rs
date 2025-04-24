@@ -819,7 +819,6 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Processing update stack num compute units and claim funds"
     );
-    let entry = concurrent_requests.entry(stack_small_id);
     let (
         UpdateStackNumComputeUnitsAndClaimFunds {
             ratio,
@@ -828,28 +827,31 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             is_locked_for_claim,
         },
         concurrent_requests,
-    ) = match entry {
-        Entry::Occupied(ref entry) => {
-            let count = *entry.get();
-            (
-                state_manager
-                    .state
-                    .update_stack_num_compute_units(
-                        stack_small_id,
-                        estimated_total_compute_units,
-                        total_compute_units,
-                        RATIO_FOR_CLAIM_STACK_THRESHOLD,
-                        count as i64,
-                    )
-                    .await?,
-                count,
-            )
-        }
-        Entry::Vacant(_entry) => {
-            return Err(AtomaStateManagerError::StackNotFound);
+    ) = {
+        let entry = concurrent_requests.entry(stack_small_id);
+
+        match entry {
+            Entry::Occupied(ref entry) => {
+                let count = *entry.get();
+                (
+                    state_manager
+                        .state
+                        .update_stack_num_compute_units(
+                            stack_small_id,
+                            estimated_total_compute_units,
+                            total_compute_units,
+                            RATIO_FOR_CLAIM_STACK_THRESHOLD,
+                            count as i64,
+                        )
+                        .await?,
+                    count,
+                )
+            }
+            Entry::Vacant(_entry) => {
+                return Err(AtomaStateManagerError::StackNotFound);
+            }
         }
     };
-    drop(entry);
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
