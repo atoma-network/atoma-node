@@ -332,8 +332,6 @@ impl Subscriber {
                                     self.config.task_small_ids().as_ref(),
                                 ) {
                                     self.handle_atoma_event(atoma_event_id, atoma_event).await?;
-                                } else {
-                                    continue;
                                 }
                             }
                             Err(e) => {

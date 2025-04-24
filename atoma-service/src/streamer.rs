@@ -336,7 +336,7 @@ impl Streamer {
         }
 
         // Update stack num tokens
-        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
+        handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -347,7 +347,7 @@ impl Streamer {
             self.estimated_total_compute_units,
             total_compute_units as i64,
             &self.endpoint,
-            num_concurrent_requests,
+            &self.concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
@@ -814,7 +814,7 @@ impl Streamer {
         // will not be penalized for the failed request.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
+        handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -825,7 +825,7 @@ impl Streamer {
             self.estimated_total_compute_units,
             0,
             &self.endpoint,
-            num_concurrent_requests,
+            &self.concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
@@ -888,7 +888,7 @@ impl Drop for Streamer {
         )
     )]
     fn drop(&mut self) {
-        if self.is_final_chunk_handled {
+        if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
             return;
         }
         if let Some(timer) = self.decoding_phase_timer.take() {
@@ -907,7 +907,7 @@ impl Drop for Streamer {
                 ],
             );
         }
-        let num_concurrent_requests = handle_concurrent_requests_count_decrement(
+        handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -918,7 +918,7 @@ impl Drop for Streamer {
             self.estimated_total_compute_units,
             self.num_input_tokens + self.streamer_computed_num_tokens,
             &self.endpoint,
-            num_concurrent_requests,
+            &self.concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
