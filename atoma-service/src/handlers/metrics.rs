@@ -1,8 +1,9 @@
+use std::sync::LazyLock;
+
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, Meter, UpDownCounter},
 };
-use std::sync::LazyLock;
 
 // Add global metrics
 static GLOBAL_METER: LazyLock<Meter> = LazyLock::new(|| global::meter("atoma-node"));
@@ -449,4 +450,76 @@ pub static TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS: LazyLock<Counter<u
             .with_description("Total number of failed text embedding confidential requests")
             .with_unit("requests")
             .build()
+    });
+
+/// Counter metric that tracks successful verify_stack_permissions middleware time.
+///
+/// This metric measures the time taken by verify_stack_permissions middleware to process requests,
+/// broken down by model type. The histogram buckets range from 0.1ms to 30 seconds to
+/// capture both very fast and slow verify_stack_permissions middleware processing scenarios.
+///
+/// # Metric Details
+/// - Name: `atoma_verify_stack_permissions_middleware_time`
+/// - Type: Histogram
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+/// - Unit: seconds
+pub static VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram<f64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .f64_histogram("atoma_verify_stack_permissions_middleware_successful_time")
+            .with_description(
+                "Time taken by verify_stack_permissions middleware to process requests in seconds",
+            )
+            .with_unit("s")
+            .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+            .build()
+    });
+
+/// Counter metric that tracks successful confidential_compute_middleware middleware time.
+///
+/// This metric measures the time taken by confidential_compute_middleware middleware to process requests,
+/// broken down by model type. The histogram buckets range from 0.1ms to 30 seconds to
+/// capture both very fast and slow confidential_compute_middleware middleware processing scenarios.
+///
+/// # Metric Details
+/// - Name: `atoma_confidential_compute_middleware_middleware_time`
+/// - Type: Histogram
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+/// - Unit: seconds
+pub static CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram<f64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .f64_histogram("atoma_confidential_compute_middleware_successful_time")
+            .with_description(
+                "Time taken by confidential_compute_middleware middleware to process requests in seconds",
+            )
+            .with_unit("s")
+            .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+            .build()
+    });
+
+/// Counter metric that tracks successful signature_verification_middleware middleware time.
+///
+/// This metric measures the time taken by signature_verification_middleware middleware to process requests,
+/// broken down by model type. The histogram buckets range from 0.1ms to 30 seconds to
+/// capture both very fast and slow signature_verification_middleware middleware processing scenarios.
+///
+/// # Metric Details
+/// - Name: `atoma_signature_verification_middleware_middleware_time`
+/// - Type: Histogram
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+/// - Unit: seconds
+pub static SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram<f64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+        .f64_histogram("atoma_signature_verification_middleware_successful_time")
+        .with_description(
+            "Time taken by signature_verification_middleware middleware to process requests in seconds",
+        )
+        .with_unit("s")
+        .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+        .build()
     });

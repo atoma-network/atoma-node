@@ -1,4 +1,4 @@
-use std::process;
+use std::{process, sync::LazyLock};
 
 use anyhow::{Context, Result};
 use opentelemetry::{global, trace::TracerProvider, KeyValue};
@@ -8,7 +8,6 @@ use opentelemetry_sdk::{
     trace::{self as sdktrace, RandomIdGenerator, Sampler},
     Resource,
 };
-use std::sync::LazyLock;
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::{

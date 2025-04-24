@@ -1,8 +1,9 @@
+use std::sync::LazyLock;
+
 use opentelemetry::{
     global,
     metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
 };
-use std::sync::LazyLock;
 use sysinfo::Networks;
 
 // Add global metrics
