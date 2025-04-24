@@ -136,7 +136,7 @@ pub async fn image_generations_handler(
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
+            handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "image-generations/image_generations_handler",
@@ -147,7 +147,7 @@ pub async fn image_generations_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                concurrent_requests,
+                &state.concurrent_requests_per_stack,
             )?;
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),
@@ -258,7 +258,7 @@ pub async fn confidential_image_generations_handler(
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
             TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.clone())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
+            handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "image-generations/confidential_image_generations_handler",
@@ -269,7 +269,7 @@ pub async fn confidential_image_generations_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                concurrent_requests,
+                &state.concurrent_requests_per_stack,
             )?;
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),
