@@ -11,7 +11,7 @@ use atoma_sui::events::{
 };
 use dashmap::{DashMap, Entry};
 use tokio::sync::oneshot;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
 use crate::{
     state_manager::Result,
