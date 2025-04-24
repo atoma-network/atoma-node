@@ -828,12 +828,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         },
         concurrent_requests,
     ) = {
-        let entry = concurrent_requests.entry(stack_small_id);
-
-        let count = match &entry {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(_entry) => 0, // If it was zero it was deleted, so vacant is treated as zero
-        };
+        let count = { *concurrent_requests.entry(stack_small_id).or_insert(0) };
         (
             state_manager
                 .state
