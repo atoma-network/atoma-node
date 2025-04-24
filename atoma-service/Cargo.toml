@@ -29,7 +29,6 @@ hf-hub = { workspace = true }
 hyper = { workspace = true }
 isocountry = { workspace = true }
 lazy_static = { workspace = true }
-once_cell = { workspace = true }
 opentelemetry = { workspace = true, features = [ "logs", "metrics", "trace" ] }
 opentelemetry-otlp = { workspace = true, features = [
     "grpc-tonic",
