@@ -1568,7 +1568,7 @@ impl AtomaState {
                 SELECT
                     CAST(already_computed_units - ($2 - $3) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
                     is_confidential,
-                    is_claimed
+                    is_locked_for_claim
                 FROM stacks
                 WHERE stack_small_id = $1
             )
@@ -1585,7 +1585,7 @@ impl AtomaState {
                 s.already_computed_units as stack_computed_units,
                 (s.is_confidential = true) as is_confidential,
                 s.is_locked_for_claim as is_locked_for_claim
-                (SELECT is_claimed FROM updated) as was_claimed",
+                (SELECT is_locked_for_claim FROM updated) as was_locked_for_claim",
         )
         .bind(stack_small_id)
         .bind(estimated_total_compute_units)
