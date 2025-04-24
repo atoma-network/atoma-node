@@ -22,9 +22,9 @@ impl AtomaDaemonConfig {
     /// # Arguments
     ///
     /// * `config_file_path` - Path to the configuration file. The file should be in a format
-    ///                        supported by the `config` crate (e.g., TOML, JSON, YAML) and
-    ///                        contain an "atoma-daemon" section with the required configuration
-    ///                        parameters.
+    ///   supported by the `config` crate (e.g., TOML, JSON, YAML) and
+    ///   contain an "atoma-daemon" section with the required configuration
+    ///   parameters.
     ///
     /// # Returns
     ///

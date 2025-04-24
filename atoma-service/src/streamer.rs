@@ -888,7 +888,7 @@ impl Drop for Streamer {
         )
     )]
     fn drop(&mut self) {
-        if self.is_final_chunk_handled {
+        if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
             return;
         }
         if let Some(timer) = self.decoding_phase_timer.take() {
