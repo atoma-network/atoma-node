@@ -263,7 +263,7 @@ pub async fn chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
+            handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "chat-completions/chat_completions_handler",
@@ -274,7 +274,7 @@ pub async fn chat_completions_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                concurrent_requests,
+                &state.concurrent_requests_per_stack,
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
@@ -446,7 +446,7 @@ pub async fn confidential_chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
+            handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "chat-completions/confidential_chat_completions_handler",
@@ -457,7 +457,7 @@ pub async fn confidential_chat_completions_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                concurrent_requests,
+                &state.concurrent_requests_per_stack,
             )?;
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
@@ -1446,7 +1446,7 @@ pub mod utils {
             level = "info",
             "Decrementing concurrent requests count for stack small id: {stack_small_id}"
         );
-        let concurrent_requests = handle_concurrent_requests_count_decrement(
+        handle_concurrent_requests_count_decrement(
             &state.concurrent_requests_per_stack,
             stack_small_id,
             "chat-completions/serve_non_streaming_response",
@@ -1462,7 +1462,7 @@ pub mod utils {
             estimated_total_compute_units,
             total_compute_units,
             &endpoint,
-            concurrent_requests,
+            &state.concurrent_requests_per_stack,
         )?;
 
         Ok(response_body)
