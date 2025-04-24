@@ -848,6 +848,12 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
                 )
             }
             Entry::Vacant(_entry) => {
+                error!(
+                    target = "atoma-state-handlers",
+                    event = "handle-update-stack-num-compute-units-and-claim-funds",
+                    "Stack {} not found in concurrent requests",
+                    stack_small_id
+                );
                 return Err(AtomaStateManagerError::StackNotFound);
             }
         }
