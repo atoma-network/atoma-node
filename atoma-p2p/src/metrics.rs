@@ -1,8 +1,8 @@
-use std::sync::LazyLock;
 use opentelemetry::{
     global,
     metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
 };
+use std::sync::LazyLock;
 use sysinfo::Networks;
 
 // Add global metrics
@@ -114,13 +114,14 @@ pub static TOTAL_GOSSIPSUB_SUBSCRIPTIONS: LazyLock<UpDownCounter<i64>> = LazyLoc
 /// - Type: Counter
 /// - Labels: `peer_id`
 /// - Unit: messages (count)
-pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: LazyLock<Counter<u64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .u64_counter("total_invalid_gossipsub_messages_received")
-        .with_description("The total number of invalid gossipsub messages received")
-        .with_unit("messages")
-        .build()
-});
+pub static TOTAL_INVALID_GOSSIPSUB_MESSAGES_RECEIVED: LazyLock<Counter<u64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .u64_counter("total_invalid_gossipsub_messages_received")
+            .with_description("The total number of invalid gossipsub messages received")
+            .with_unit("messages")
+            .build()
+    });
 
 /// Counter metric that tracks the total number of gossipsub messages forwarded.
 ///

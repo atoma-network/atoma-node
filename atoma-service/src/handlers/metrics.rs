@@ -1,8 +1,8 @@
-use std::sync::LazyLock;
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, Meter, UpDownCounter},
 };
+use std::sync::LazyLock;
 
 // Add global metrics
 static GLOBAL_METER: LazyLock<Meter> = LazyLock::new(|| global::meter("atoma-node"));
@@ -83,14 +83,15 @@ pub static CHAT_COMPLETIONS_INPUT_TOKENS_METRICS: LazyLock<Counter<u64>> = LazyL
 /// - Labels: `model`
 /// - Unit: seconds
 /// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
-pub static CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME: LazyLock<Histogram<f64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .f64_histogram("atoma_chat_completions_intra_token_generation_time")
-        .with_description("Time taken to stream between each token generation phase in seconds")
-        .with_unit("s")
-        .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
-        .build()
-});
+pub static CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME: LazyLock<Histogram<f64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .f64_histogram("atoma_chat_completions_intra_token_generation_time")
+            .with_description("Time taken to stream between each token generation phase in seconds")
+            .with_unit("s")
+            .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+            .build()
+    });
 
 /// Histogram metric that tracks the time until the first token is generated in chat completions.
 ///
@@ -206,14 +207,15 @@ pub static CHAT_COMPLETIONS_LATENCY_METRICS: LazyLock<Histogram<f64>> = LazyLock
 /// - Labels: `privacy_level`
 /// - Unit: seconds
 /// - Buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]
-pub static CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .f64_histogram("atoma_chat_completions_token_latency")
-        .with_description("The latency of chat completion generation in seconds")
-        .with_unit("s")
-        .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
-        .build()
-});
+pub static CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS: LazyLock<Histogram<f64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .f64_histogram("atoma_chat_completions_token_latency")
+            .with_description("The latency of chat completion generation in seconds")
+            .with_unit("s")
+            .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
+            .build()
+    });
 
 /// Histogram metric that tracks the latency of image generation requests.
 ///
@@ -271,13 +273,14 @@ pub static TEXT_EMBEDDINGS_LATENCY_METRICS: LazyLock<Histogram<f64>> = LazyLock:
 /// - Labels:
 ///   - `model`: The model used for completion
 /// - Unit: tokens (count)
-pub static CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS: LazyLock<UpDownCounter<i64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .i64_up_down_counter("atoma_chat_completions_estimated_total_tokens")
-        .with_description("The estimated total number of tokens processed")
-        .with_unit("tokens")
-        .build()
-});
+pub static CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS: LazyLock<UpDownCounter<i64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .i64_up_down_counter("atoma_chat_completions_estimated_total_tokens")
+            .with_description("The estimated total number of tokens processed")
+            .with_unit("tokens")
+            .build()
+    });
 
 /// Counter metrics that tracks the total number of successfully completed requests (including chat completions, image generation, and text embeddings)
 ///
@@ -331,13 +334,14 @@ pub static TOTAL_FAILED_CHAT_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(||
 /// - Type: Counter
 /// - Labels: `model`
 /// - Unit: requests (count)
-pub static CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .u64_counter("atoma_total_confidential_chat_requests")
-        .with_description("Total number of confidential chat requests")
-        .with_unit("requests")
-        .build()
-});
+pub static CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS: LazyLock<Counter<u64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .u64_counter("atoma_total_confidential_chat_requests")
+            .with_description("Total number of confidential chat requests")
+            .with_unit("requests")
+            .build()
+    });
 
 /// Counter metric that tracks the total number of failed confidential chat requests.
 ///
@@ -422,13 +426,14 @@ pub static TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS: LazyLock<Counter<u64>> = LazyLo
 /// - Type: Counter
 /// - Labels: `model`
 /// - Unit: requests (count)
-pub static TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
-    GLOBAL_METER
-        .u64_counter("atoma_text_embeddings_confidential_num_requests")
-        .with_description("Total number of text embedding confidential requests")
-        .with_unit("requests")
-        .build()
-});
+pub static TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS: LazyLock<Counter<u64>> =
+    LazyLock::new(|| {
+        GLOBAL_METER
+            .u64_counter("atoma_text_embeddings_confidential_num_requests")
+            .with_description("Total number of text embedding confidential requests")
+            .with_unit("requests")
+            .build()
+    });
 
 /// Counter metric that tracks the total number of failed text embedding confidential requests.
 ///
