@@ -829,7 +829,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         },
         concurrent_requests,
     ) = match entry {
-        Entry::Occupied(entry) => {
+        Entry::Occupied(ref entry) => {
             let count = *entry.get();
             (
                 state_manager
@@ -849,6 +849,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             return Err(AtomaStateManagerError::StackNotFound);
         }
     };
+    drop(entry);
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
