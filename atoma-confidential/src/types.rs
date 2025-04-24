@@ -1,4 +1,6 @@
 use atoma_utils::constants::{NONCE_SIZE, SALT_SIZE};
+use remote_attestation_verifier::{DeviceEvidence, NvSwitchEvidence};
+use serde::{Deserialize, Serialize};
 
 /// Size of a Diffie-Hellman public key in bytes
 pub const DH_PUBLIC_KEY_SIZE: usize = 32;
@@ -80,4 +82,19 @@ pub struct ConfidentialComputeSharedSecretResponse {
     pub shared_secret: x25519_dalek::SharedSecret,
     /// Cryptographic nonce used in the encryption process
     pub nonce: [u8; NONCE_SIZE],
+}
+
+/// Combined evidence from a device and an NVSwitch
+///
+/// This enum represents the evidence from a device and an NVSwitch, which is used to verify the integrity and authenticity of the GPU hardware and its execution environment.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "evidence_type")]
+pub enum CombinedEvidence {
+    /// Evidence from a device
+    #[serde(rename = "device")]
+    Device(DeviceEvidence),
+
+    /// Evidence from an NVSwitch
+    #[serde(rename = "nvswitch")]
+    NvSwitch(NvSwitchEvidence),
 }

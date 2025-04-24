@@ -1,9 +1,8 @@
-use std::sync::LazyLock;
-
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, Meter, UpDownCounter},
 };
+use std::sync::LazyLock;
 
 // Add global metrics
 static GLOBAL_METER: LazyLock<Meter> = LazyLock::new(|| global::meter("atoma-node"));

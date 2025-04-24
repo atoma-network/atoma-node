@@ -684,9 +684,10 @@ dependencies = [
  "config",
  "flume",
  "hex",
+ "nscq",
  "nvml-wrapper",
  "rand 0.8.5",
- "remote-attestation",
+ "remote-attestation-verifier",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -801,7 +802,6 @@ dependencies = [
  "hf-hub",
  "hyper",
  "isocountry",
- "lazy_static",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -1657,7 +1657,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5746,6 +5746,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
+name = "nscq"
+version = "0.1.0"
+source = "git+https://github.com/atoma-network/nvrust.git?branch=main#1add98df60e9702f74d267132af0635139aeb7f6"
+dependencies = [
+ "libloading",
+]
+
+[[package]]
 name = "ntapi"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7251,14 +7259,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
-name = "remote-attestation"
+name = "remote-attestation-verifier"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/nvrust.git?branch=main#4418eccd685c75ea8a47dfa9f25b9777643ddeb4"
+source = "git+https://github.com/atoma-network/nvrust.git?branch=main#1add98df60e9702f74d267132af0635139aeb7f6"
 dependencies = [
  "base64 0.22.1",
  "hex",
  "jsonwebtoken",
- "nvml-wrapper",
+ "nscq",
  "once_cell",
  "rand 0.8.5",
  "reqwest",
@@ -10680,7 +10688,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -2,13 +2,15 @@ use crate::{
     key_management::{KeyManagementError, X25519KeyPairManager},
     nvml_cc::{
         check_confidential_compute_status, fetch_attestation_report_async,
-        fetch_device_certificate_chain_async, get_cc_ready_state, num_devices, set_cc_ready_state,
-        AttestationError,
+        fetch_device_certificate_chain_async, fetch_nvswitch_attestation_report_async,
+        fetch_nvswitch_certificate_chain_async, get_cc_ready_state,
+        is_multi_gpu_protected_pcie_enabled, num_devices, set_cc_ready_state, AttestationError,
     },
     types::{
-        ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
-        ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
-        ConfidentialComputeSharedSecretRequest, ConfidentialComputeSharedSecretResponse,
+        CombinedEvidence, ConfidentialComputeDecryptionRequest,
+        ConfidentialComputeDecryptionResponse, ConfidentialComputeEncryptionRequest,
+        ConfidentialComputeEncryptionResponse, ConfidentialComputeSharedSecretRequest,
+        ConfidentialComputeSharedSecretResponse,
     },
 };
 use atoma_sui::client::Client;
@@ -18,7 +20,7 @@ use atoma_utils::{
     constants::NONCE_SIZE,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
-use remote_attestation::DeviceEvidence;
+use remote_attestation_verifier::{DeviceEvidence, NvSwitchEvidence};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot, RwLock};
@@ -78,6 +80,9 @@ pub struct AtomaConfidentialCompute {
 
     /// Whether confidential computing is supported on the node
     is_cc_supported: bool,
+
+    /// Whether multi-GPU protected PCIe is enabled on the node
+    is_ppcie_enabled: bool,
 
     /// Current key rotation counter
     key_rotation_counter: u64,
@@ -140,8 +145,10 @@ impl AtomaConfidentialCompute {
         // NOTE: If the NVML library is not available, we return 0 devices
         let num_devices = num_devices().unwrap_or(0);
         let mut is_cc_supported = num_devices > 0;
+        let mut is_ppcie_enabled = num_devices == 8;
         for index in 0..num_devices {
             is_cc_supported &= check_confidential_compute_status(index).unwrap_or(false);
+            is_ppcie_enabled &= is_multi_gpu_protected_pcie_enabled(index).unwrap_or(false);
             if is_cc_supported {
                 let cc_ready_state = get_cc_ready_state(index).unwrap_or(false);
                 tracing::info!(
@@ -165,6 +172,13 @@ impl AtomaConfidentialCompute {
                 }
             }
         }
+        if is_ppcie_enabled {
+            tracing::info!(
+                target = "atoma-confidential-compute-service",
+                event = "ppcie_enabled",
+                "Multi-GPU protected PCIe is enabled for current node configuration"
+            );
+        }
         tracing::info!(
             target = "atoma-confidential-compute-service",
             event = "new_confidential_compute_service",
@@ -173,6 +187,7 @@ impl AtomaConfidentialCompute {
         Ok(Self {
             sui_client,
             is_cc_supported,
+            is_ppcie_enabled,
             key_rotation_counter,
             key_manager,
             event_receiver,
@@ -421,10 +436,36 @@ impl AtomaConfidentialCompute {
             let attestation_report =
                 fetch_attestation_report_async(device_index, *nonce_blake3_hash.as_bytes()).await?;
             let certificate_chain = fetch_device_certificate_chain_async(device_index).await?;
-            evidence_data.push(DeviceEvidence {
+            evidence_data.push(CombinedEvidence::Device(DeviceEvidence {
                 certificate: STANDARD.encode(certificate_chain),
                 evidence: STANDARD.encode(attestation_report),
-            });
+            }));
+        }
+        if self.is_ppcie_enabled {
+            let attestation_report =
+                fetch_nvswitch_attestation_report_async(*nonce_blake3_hash.as_bytes()).await?;
+            let certificate_chain = fetch_nvswitch_certificate_chain_async().await?;
+            if attestation_report.len() != certificate_chain.len() {
+                tracing::error!(
+                    target = "atoma-nvidia-cc-service",
+                    event = "attestation_report_length_mismatch",
+                    attestation_report_length = attestation_report.len(),
+                    certificate_chain_length = certificate_chain.len(),
+                    "Attestation report length mismatch"
+                );
+                return Err(AtomaConfidentialComputeError::NvSwitchLengthMismatch {
+                    attestation_report_length: attestation_report.len(),
+                    certificate_chain_length: certificate_chain.len(),
+                });
+            }
+            for (attestation_report, certificate_chain) in
+                attestation_report.iter().zip(certificate_chain.iter())
+            {
+                evidence_data.push(CombinedEvidence::NvSwitch(NvSwitchEvidence {
+                    certificate: STANDARD.encode(certificate_chain),
+                    evidence: STANDARD.encode(attestation_report),
+                }));
+            }
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
         let compressed_evidence_data = compress_bytes(&evidence_data_bytes)?;
@@ -718,4 +759,9 @@ pub enum AtomaConfidentialComputeError {
     InvalidDeviceIndex(#[from] std::num::TryFromIntError),
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+    #[error("NVSwitch attestation report length mismatch, attestation report length: {attestation_report_length}, certificate chain length: {certificate_chain_length}")]
+    NvSwitchLengthMismatch {
+        attestation_report_length: usize,
+        certificate_chain_length: usize,
+    },
 }
