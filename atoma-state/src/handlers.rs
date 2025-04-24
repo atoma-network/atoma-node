@@ -9,9 +9,9 @@ use atoma_sui::events::{
     StackSettlementTicketEvent, StackSmallId, StackTrySettleEvent, TaskDeprecationEvent,
     TaskRegisteredEvent,
 };
-use dashmap::{DashMap, Entry};
+use dashmap::DashMap;
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result,
@@ -828,35 +828,20 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         },
         concurrent_requests,
     ) = {
-        let entry = concurrent_requests.entry(stack_small_id);
-
-        match entry {
-            Entry::Occupied(ref entry) => {
-                let count = *entry.get();
-                (
-                    state_manager
-                        .state
-                        .update_stack_num_compute_units(
-                            stack_small_id,
-                            estimated_total_compute_units,
-                            total_compute_units,
-                            RATIO_FOR_CLAIM_STACK_THRESHOLD,
-                            count as i64,
-                        )
-                        .await?,
-                    count,
+        let count = { *concurrent_requests.entry(stack_small_id).or_insert(0) };
+        (
+            state_manager
+                .state
+                .update_stack_num_compute_units(
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    total_compute_units,
+                    RATIO_FOR_CLAIM_STACK_THRESHOLD,
+                    count as i64,
                 )
-            }
-            Entry::Vacant(_entry) => {
-                error!(
-                    target = "atoma-state-handlers",
-                    event = "handle-update-stack-num-compute-units-and-claim-funds",
-                    "Stack {} not found in concurrent requests",
-                    stack_small_id
-                );
-                return Err(AtomaStateManagerError::StackNotFound);
-            }
-        }
+                .await?,
+            count,
+        )
     };
     info!(
         target = "atoma-state-handlers",
