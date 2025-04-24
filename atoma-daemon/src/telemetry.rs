@@ -187,6 +187,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         .with(node_layer)
         .with(daemon_layer)
         .with(opentelemetry_layer)
+        .with(sentry::integrations::tracing::layer())
         .with(layer)
         .try_init()
         .context("Failed to set global default subscriber")?;
