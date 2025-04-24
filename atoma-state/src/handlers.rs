@@ -11,7 +11,7 @@ use atoma_sui::events::{
 };
 use dashmap::{DashMap, Entry};
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result,
@@ -819,52 +819,50 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Processing update stack num compute units and claim funds"
     );
-    let (
-        UpdateStackNumComputeUnitsAndClaimFunds {
-            ratio,
-            stack_computed_units,
-            is_confidential,
-            is_locked_for_claim,
-        },
-        concurrent_requests,
-    ) = {
-        let entry = concurrent_requests.entry(stack_small_id);
+    let entry = concurrent_requests.entry(stack_small_id);
+    // Extract the count of concurrent requests for this stack_small_id
+    let request_count = match &entry {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(_entry) => 0, // If it was zero it was deleted, so vacant is treated as zero, don't do insert, because there is no cleanup
+    };
 
-        match entry {
-            Entry::Occupied(ref entry) => {
-                let count = *entry.get();
-                (
-                    state_manager
-                        .state
-                        .update_stack_num_compute_units(
-                            stack_small_id,
-                            estimated_total_compute_units,
-                            total_compute_units,
-                            RATIO_FOR_CLAIM_STACK_THRESHOLD,
-                            count as i64,
-                        )
-                        .await?,
-                    count,
-                )
-            }
-            Entry::Vacant(_entry) => {
-                error!(
-                    target = "atoma-state-handlers",
-                    event = "handle-update-stack-num-compute-units-and-claim-funds",
-                    "Stack {} not found in concurrent requests",
-                    stack_small_id
+    let UpdateStackNumComputeUnitsAndClaimFunds {
+        ratio,
+        stack_computed_units,
+        is_confidential,
+        is_locked_for_claim,
+    } = match state_manager
+        .state
+        .update_stack_num_compute_units(
+            stack_small_id,
+            estimated_total_compute_units,
+            total_compute_units,
+            RATIO_FOR_CLAIM_STACK_THRESHOLD,
+            request_count as i64,
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            // Log detailed information about the error context
+            tracing::error!(
+                    "Failed to update stack compute units for stack_id={}: error={:?}, concurrent_requests={}",
+                    stack_small_id,
+                    err,
+                    request_count
                 );
-                return Err(AtomaStateManagerError::StackNotFound);
-            }
+            drop(entry); // Drop the lock before propagating the error
+            return Err(err);
         }
     };
+    drop(entry); // We can't drop before this point, otherwise the DB will not be updated before the lock is released. We have to drop manually, otherwise clippy will complain about the lock being held
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Stack {} has ratio {} with total compute units {} confidential state {} and is locked for claim {}",
         stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
     );
-    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
+    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && request_count == 0 {
         info!(
             target = "atoma-state-handlers",
             event = "handle-update-stack-num-compute-units-and-claim-funds",
