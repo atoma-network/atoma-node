@@ -30,7 +30,6 @@ libp2p = { workspace = true, features = [
     "tokio",
     "yamux",
 ] }
-once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }

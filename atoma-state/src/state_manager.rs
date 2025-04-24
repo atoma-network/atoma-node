@@ -149,7 +149,7 @@ impl AtomaStateManager {
                     match state_manager_event {
                         Ok(state_manager_event) => {
                             match handle_state_manager_event(&self, state_manager_event).await {
-                                Ok(()) => {}
+                                Ok(()) => (),
                                 Err(e) => {
                                     tracing::error!(
                                         target = "atoma-state-manager",
@@ -990,13 +990,13 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_public_key_rotations (
-                epoch, 
-                key_rotation_counter, 
-                node_small_id, 
-                public_key_bytes, 
+                epoch,
+                key_rotation_counter,
+                node_small_id,
+                public_key_bytes,
                 evidence_data_bytes,
                 device_type
-            ) 
+            )
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (node_small_id, device_type)
             DO UPDATE SET
@@ -1444,11 +1444,11 @@ impl AtomaState {
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, 
-                num_compute_units, price_per_one_million_compute_units, already_computed_units, 
+                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id,
+                num_compute_units, price_per_one_million_compute_units, already_computed_units,
                 in_settle_period, total_hash, num_total_messages, is_confidential,
                 is_claimed, is_locked_for_claim)
-            SELECT 
+            SELECT
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                 (SELECT security_level = 1 FROM tasks WHERE task_small_id = $4),
                 $12, $13

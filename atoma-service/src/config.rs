@@ -44,6 +44,9 @@ pub struct AtomaServiceConfig {
     ///
     /// This field specifies the address and port on which the Atoma Service will bind.
     pub service_bind_address: String,
+
+    /// The URL of the heartbeat service.
+    pub heartbeat_url: String,
 }
 
 impl AtomaServiceConfig {
