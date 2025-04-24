@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::{
     AtomaEvent, ClaimedStackEvent, NewStackSettlementAttestationEvent,
@@ -7,6 +9,7 @@ use atoma_sui::events::{
     StackSettlementTicketEvent, StackSmallId, StackTrySettleEvent, TaskDeprecationEvent,
     TaskRegisteredEvent,
 };
+use dashmap::{DashMap, Entry};
 use tokio::sync::oneshot;
 use tracing::{info, instrument};
 
@@ -809,28 +812,43 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     total_compute_units: i64,
-    concurrent_requests: u64,
+    concurrent_requests: Arc<DashMap<i64, u64>>,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Processing update stack num compute units and claim funds"
     );
-    let UpdateStackNumComputeUnitsAndClaimFunds {
-        ratio,
-        stack_computed_units,
-        is_confidential,
-        is_locked_for_claim,
-    } = state_manager
-        .state
-        .update_stack_num_compute_units(
-            stack_small_id,
-            estimated_total_compute_units,
-            total_compute_units,
-            RATIO_FOR_CLAIM_STACK_THRESHOLD,
-            concurrent_requests as i64,
-        )
-        .await?;
+    let entry = concurrent_requests.entry(stack_small_id);
+    let (
+        UpdateStackNumComputeUnitsAndClaimFunds {
+            ratio,
+            stack_computed_units,
+            is_confidential,
+            is_locked_for_claim,
+        },
+        concurrent_requests,
+    ) = match entry {
+        Entry::Occupied(entry) => {
+            let count = *entry.get();
+            (
+                state_manager
+                    .state
+                    .update_stack_num_compute_units(
+                        stack_small_id,
+                        estimated_total_compute_units,
+                        total_compute_units,
+                        RATIO_FOR_CLAIM_STACK_THRESHOLD,
+                        count as i64,
+                    )
+                    .await?,
+                count,
+            )
+        }
+        Entry::Vacant(_entry) => {
+            return Err(AtomaStateManagerError::StackNotFound);
+        }
+    };
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",

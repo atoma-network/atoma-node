@@ -842,6 +842,7 @@ dependencies = [
  "atoma-sui",
  "atoma-utils",
  "config",
+ "dashmap 6.1.0",
  "flume",
  "futures",
  "serde",

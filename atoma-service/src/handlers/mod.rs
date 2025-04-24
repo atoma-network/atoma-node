@@ -5,6 +5,8 @@ pub mod metrics;
 pub mod request_model;
 pub mod stop_streamer;
 
+use std::sync::Arc;
+
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
@@ -303,14 +305,14 @@ pub fn update_stack_num_compute_units(
     estimated_total_compute_units: i64,
     total_compute_units: i64,
     endpoint: &str,
-    concurrent_requests: u64,
+    concurrent_requests: &Arc<DashMap<i64, u64>>,
 ) -> Result<(), AtomaServiceError> {
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
             stack_small_id,
             total_compute_units,
             estimated_total_compute_units,
-            concurrent_requests,
+            concurrent_requests: Arc::clone(concurrent_requests),
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update stack num compute units event: {e}"),
@@ -353,7 +355,7 @@ pub fn handle_concurrent_requests_count_decrement(
     concurrent_requests_per_stack: &DashMap<i64, u64>,
     stack_small_id: i64,
     endpoint: &str,
-) -> u64 {
+) {
     let entry = concurrent_requests_per_stack.entry(stack_small_id);
     match entry {
         dashmap::mapref::entry::Entry::Occupied(mut occupied_entry) => {
@@ -365,7 +367,6 @@ pub fn handle_concurrent_requests_count_decrement(
                     endpoint = endpoint,
                 );
                 occupied_entry.remove();
-                0
             } else {
                 let new_count = current_count.saturating_sub(1);
                 occupied_entry.insert(new_count);
@@ -379,7 +380,6 @@ pub fn handle_concurrent_requests_count_decrement(
                     );
                     occupied_entry.remove();
                 }
-                new_count
             }
         }
         dashmap::mapref::entry::Entry::Vacant(_) => {
@@ -391,7 +391,6 @@ pub fn handle_concurrent_requests_count_decrement(
                 stack_small_id,
                 "Attempted to decrement concurrent requests for non-existent stack entry (implies count is 0).",
             );
-            0
         }
     }
 }
