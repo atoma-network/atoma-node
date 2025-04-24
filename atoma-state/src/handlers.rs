@@ -9,9 +9,9 @@ use atoma_sui::events::{
     StackSettlementTicketEvent, StackSmallId, StackTrySettleEvent, TaskDeprecationEvent,
     TaskRegisteredEvent,
 };
-use dashmap::{DashMap, Entry};
+use dashmap::DashMap;
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 use crate::{
     state_manager::Result,
