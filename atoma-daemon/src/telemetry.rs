@@ -1,7 +1,6 @@
 use std::process;
 
 use anyhow::{Context, Result};
-use once_cell::sync::Lazy;
 use opentelemetry::{global, trace::TracerProvider, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
@@ -9,6 +8,7 @@ use opentelemetry_sdk::{
     trace::{self as sdktrace, RandomIdGenerator, Sampler},
     Resource,
 };
+use std::sync::LazyLock;
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::{
@@ -37,8 +37,8 @@ const DAEMON_LOG_FILE: &str = "atoma-daemon.log";
 const DEFAULT_OTLP_ENDPOINT: &str = "http://otel-collector:4317";
 const DEFAULT_LOKI_ENDPOINT: &str = "http://loki:3100";
 
-static RESOURCE: Lazy<Resource> =
-    Lazy::new(|| Resource::new(vec![KeyValue::new("service_name", "atoma-node")]));
+static RESOURCE: LazyLock<Resource> =
+    LazyLock::new(|| Resource::new(vec![KeyValue::new("service_name", "atoma-node")]));
 
 /// Initialize metrics with OpenTelemetry SDK
 fn init_metrics(otlp_endpoint: &str) -> sdkmetrics::SdkMeterProvider {
