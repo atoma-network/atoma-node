@@ -438,7 +438,7 @@ pub fn handle_status_code_error(
 mod vllm_metrics {
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
     use prometheus_http_query::Client;
     use tracing::{info, instrument};
 
@@ -451,7 +451,7 @@ mod vllm_metrics {
     const PROMETHEUS_URL: &str = "http://prometheus:9090";
 
     /// The HTTP client for the Prometheus metrics queries
-    static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
+    static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
         Client::from(
             reqwest::Client::builder()
                 .timeout(METRICS_TIMEOUT)

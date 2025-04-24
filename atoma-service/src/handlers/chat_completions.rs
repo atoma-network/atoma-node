@@ -956,7 +956,6 @@ impl RequestModel for RequestModelChatCompletions {
                             MessageContentPart::Image { .. } => {
                                 // TODO: Ensure that for image content parts, we have a way to estimate the number of tokens,
                                 // which can depend on the size of the image and the output description.
-                                continue;
                             }
                         }
                     }
@@ -1880,6 +1879,8 @@ pub mod openai_api {
     }
 
     pub mod message_content {
+        use std::fmt::Write;
+
         use serde_json::Value;
 
         use super::{Deserialize, Deserializer, Serialize, ToSchema};
@@ -1932,7 +1933,7 @@ pub mod openai_api {
                     Self::Array(parts) => {
                         let mut content = String::new();
                         for part in parts {
-                            content.push_str(&format!("{part}\n"));
+                            content.write_str(&format!("{part}\n"))?;
                         }
                         write!(f, "{content}")
                     }

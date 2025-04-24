@@ -296,4 +296,7 @@ pub struct UpdateStackNumComputeUnitsAndClaimFunds {
 
     /// Indicates whether the stack is locked for claim
     pub is_locked_for_claim: bool,
+
+    /// Indicates whether the stack was claimed already or not
+    pub was_claimed: bool,
 }

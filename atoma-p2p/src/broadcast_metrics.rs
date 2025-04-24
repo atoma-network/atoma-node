@@ -1,9 +1,9 @@
 use std::{collections::HashMap, num::ParseFloatError, sync::Mutex};
 
 use futures::stream::{FuturesUnordered, StreamExt};
-use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use thiserror::Error;
 use tracing::instrument;
 
@@ -32,7 +32,7 @@ const TEI: &str = "tei";
 const MISTRALRS: &str = "mistralrs";
 
 /// HTTP client for the node metrics queries
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .timeout(METRICS_TIMEOUT)
         .build()
@@ -40,15 +40,16 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 });
 
 /// A simple cache for vLLM queries.
-static VLLM_QUERIES_CACHE: Lazy<Mutex<ModelQueriesCache>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static VLLM_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A simple cache for TEI queries.
-static TEI_QUERIES_CACHE: Lazy<Mutex<ModelQueriesCache>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static TEI_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A simple cache for Mistral-rs queries.
-static MISTRALRS_QUERIES_CACHE: Lazy<Mutex<ModelQueriesCache>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static MISTRALRS_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A simple cache for model queries.
 type ModelQueriesCache = HashMap<String, Vec<(String, String)>>;

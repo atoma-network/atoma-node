@@ -149,7 +149,7 @@ impl AtomaStateManager {
                     match state_manager_event {
                         Ok(state_manager_event) => {
                             match handle_state_manager_event(&self, state_manager_event).await {
-                                Ok(()) => continue,
+                                Ok(()) => (),
                                 Err(e) => {
                                     tracing::error!(
                                         target = "atoma-state-manager",
@@ -170,7 +170,6 @@ impl AtomaStateManager {
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
                             // for event synchronization with the Atoma Network protocol.
-                            continue;
                         }
                     }
                 }
@@ -194,7 +193,6 @@ impl AtomaStateManager {
                             // NOTE: We continue the loop, as the inference service might be shutting down,
                             // but we want to keep the state manager running
                             // for event synchronization with the Atoma Network protocol.
-                            continue;
                         }
                     }
                 }
@@ -1569,7 +1567,8 @@ impl AtomaState {
             "WITH updated AS (
                 SELECT
                     CAST(already_computed_units - ($2 - $3) AS FLOAT) / CAST(num_compute_units AS FLOAT) as new_ratio,
-                    is_confidential
+                    is_confidential,
+                    is_claimed
                 FROM stacks
                 WHERE stack_small_id = $1
             )
@@ -1585,7 +1584,8 @@ impl AtomaState {
                 CAST(s.already_computed_units AS FLOAT) / CAST(s.num_compute_units AS FLOAT) as ratio,
                 s.already_computed_units as stack_computed_units,
                 (s.is_confidential = true) as is_confidential,
-                s.is_locked_for_claim as is_locked_for_claim",
+                s.is_locked_for_claim as is_locked_for_claim
+                (SELECT is_claimed FROM updated) as was_claimed",
         )
         .bind(stack_small_id)
         .bind(estimated_total_compute_units)

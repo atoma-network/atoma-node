@@ -821,6 +821,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         stack_computed_units,
         is_confidential,
         is_locked_for_claim,
+        was_claimed,
     } = state_manager
         .state
         .update_stack_num_compute_units(
@@ -837,7 +838,11 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         "Stack {} has ratio {} with total compute units {} confidential state {} and is locked for claim {}",
         stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
     );
-    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
+    if is_confidential
+        && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD
+        && concurrent_requests == 0
+        && !was_claimed
+    {
         info!(
             target = "atoma-state-handlers",
             event = "handle-update-stack-num-compute-units-and-claim-funds",
