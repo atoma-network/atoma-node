@@ -502,7 +502,7 @@ impl Streamer {
     /// * Manages `chunk_buffer` for partial chunks
     /// * Manages timing metrics via `first_token_generation_timer` and `decoding_phase_timer`
     #[instrument(
-        level = "info",
+        level = "trace",
         skip_all,
         fields(
             endpoint = self.endpoint,
