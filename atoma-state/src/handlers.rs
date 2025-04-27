@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::events::{
     AtomaEvent, ClaimedStackEvent, NewStackSettlementAttestationEvent,
@@ -9,7 +7,6 @@ use atoma_sui::events::{
     StackSettlementTicketEvent, StackSmallId, StackTrySettleEvent, TaskDeprecationEvent,
     TaskRegisteredEvent,
 };
-use dashmap::{DashMap, Entry};
 use tokio::sync::oneshot;
 use tracing::{info, instrument};
 
@@ -812,19 +809,13 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
     stack_small_id: i64,
     estimated_total_compute_units: i64,
     total_compute_units: i64,
-    concurrent_requests: Arc<DashMap<i64, u64>>,
+    concurrent_requests: u64,
 ) -> Result<()> {
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Processing update stack num compute units and claim funds"
     );
-    let entry = concurrent_requests.entry(stack_small_id);
-    // Extract the count of concurrent requests for this stack_small_id
-    let request_count = match &entry {
-        Entry::Occupied(entry) => *entry.get(),
-        Entry::Vacant(_entry) => 0, // If it was zero it was deleted, so vacant is treated as zero, don't do insert, because there is no cleanup
-    };
 
     let UpdateStackNumComputeUnitsAndClaimFunds {
         ratio,
@@ -838,7 +829,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
             estimated_total_compute_units,
             total_compute_units,
             RATIO_FOR_CLAIM_STACK_THRESHOLD,
-            request_count as i64,
+            concurrent_requests as i64,
         )
         .await
     {
@@ -849,20 +840,18 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
                     "Failed to update stack compute units for stack_id={}: error={:?}, concurrent_requests={}",
                     stack_small_id,
                     err,
-                    request_count
+                    concurrent_requests
                 );
-            drop(entry); // Drop the lock before propagating the error
             return Err(err);
         }
     };
-    drop(entry); // We can't drop before this point, otherwise the DB will not be updated before the lock is released. We have to drop manually, otherwise clippy will complain about the lock being held
     info!(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Stack {} has ratio {} with total compute units {} confidential state {} and is locked for claim {}",
         stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
     );
-    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && request_count == 0 {
+    if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
         info!(
             target = "atoma-state-handlers",
             event = "handle-update-stack-num-compute-units-and-claim-funds",

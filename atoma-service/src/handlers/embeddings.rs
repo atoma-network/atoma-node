@@ -137,7 +137,7 @@ pub async fn embeddings_handler(
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            handle_concurrent_requests_count_decrement(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "embeddings/embeddings_handler",
@@ -148,7 +148,7 @@ pub async fn embeddings_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                &state.concurrent_requests_per_stack,
+                concurrent_requests,
             )?;
             Err(e)
         }
@@ -264,7 +264,7 @@ pub async fn confidential_embeddings_handler(
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            handle_concurrent_requests_count_decrement(
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &state.concurrent_requests_per_stack,
                 stack_small_id,
                 "embeddings/confidential_embeddings_handler",
@@ -275,7 +275,7 @@ pub async fn confidential_embeddings_handler(
                 estimated_total_compute_units,
                 0,
                 &endpoint,
-                &state.concurrent_requests_per_stack,
+                concurrent_requests,
             )?;
             Err(e)
         }

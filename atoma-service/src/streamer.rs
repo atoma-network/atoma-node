@@ -336,7 +336,7 @@ impl Streamer {
         }
 
         // Update stack num tokens
-        handle_concurrent_requests_count_decrement(
+        let concurrent_requests = handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -347,7 +347,7 @@ impl Streamer {
             self.estimated_total_compute_units,
             total_compute_units as i64,
             &self.endpoint,
-            &self.concurrent_requests,
+            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
@@ -814,7 +814,7 @@ impl Streamer {
         // will not be penalized for the failed request.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        handle_concurrent_requests_count_decrement(
+        let concurrent_requests = handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -825,7 +825,7 @@ impl Streamer {
             self.estimated_total_compute_units,
             0,
             &self.endpoint,
-            &self.concurrent_requests,
+            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
@@ -907,7 +907,7 @@ impl Drop for Streamer {
                 ],
             );
         }
-        handle_concurrent_requests_count_decrement(
+        let concurrent_requests = handle_concurrent_requests_count_decrement(
             &self.concurrent_requests,
             self.stack_small_id,
             &self.endpoint,
@@ -918,7 +918,7 @@ impl Drop for Streamer {
             self.estimated_total_compute_units,
             self.num_input_tokens + self.streamer_computed_num_tokens,
             &self.endpoint,
-            &self.concurrent_requests,
+            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
