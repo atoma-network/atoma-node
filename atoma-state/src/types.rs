@@ -3,10 +3,9 @@ use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreateAndUpdateEvent, StackCreatedEvent,
     StackTrySettleEvent, TaskRegisteredEvent,
 };
-use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use std::{result::Result, sync::Arc};
+use std::result::Result;
 use tokio::sync::oneshot;
 use utoipa::ToSchema;
 
@@ -261,7 +260,7 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Total number of compute units in the stack
         total_compute_units: i64,
         /// Number of concurrent requests for the stack
-        concurrent_requests: Arc<DashMap<i64, u64>>,
+        concurrent_requests: u64,
     },
     /// Represents an update to the total hash of a stack
     UpdateStackTotalHash {

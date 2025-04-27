@@ -181,7 +181,7 @@ impl Client {
             .await?;
         info!("Submitting node registration transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node registration transaction submitted successfully. Transaction digest: {:?}",
@@ -293,7 +293,7 @@ impl Client {
             .await?;
         info!("Submitting model subscription transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node model subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -395,7 +395,7 @@ impl Client {
             .await?;
         info!("Submitting node task subscription transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node task subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -505,7 +505,7 @@ impl Client {
             .await?;
         info!("Submitting node task update subscription transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node task update subscription transaction submitted successfully. Transaction digest: {:?}",
@@ -599,7 +599,7 @@ impl Client {
             .await?;
         info!("Submitting node try settle stack transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -712,7 +712,7 @@ impl Client {
 
         info!("Submitting node try settle stack transaction...");
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Node try settle stack transaction submitted successfully. Transaction digest: {:?}",
@@ -821,7 +821,7 @@ impl Client {
         info!("Submitting stack settlement attestation transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Stack settlement attestation transaction submitted successfully. Transaction digest: {:?}",
@@ -924,7 +924,7 @@ impl Client {
         info!("Submitting start attestation dispute transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Start attestation dispute transaction submitted successfully. Transaction digest: {:?}",
@@ -1021,7 +1021,7 @@ impl Client {
         info!("Submitting claim funds transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Claim funds transaction submitted successfully. Transaction digest: {:?}",
@@ -1149,7 +1149,7 @@ impl Client {
         info!("Submitted claim funds for stacks transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
 
         info!(
             "Claim funds for stacks transaction submitted successfully. Transaction digest: {:?}",
@@ -1266,7 +1266,7 @@ impl Client {
         info!("Submitting key rotation remote attestation transaction...");
 
         let tx = self.wallet_ctx.sign_transaction(&tx);
-        let response = self.wallet_ctx.execute_transaction_must_succeed(tx).await;
+        let response = self.wallet_ctx.execute_transaction_may_fail(tx).await?;
         let digest = response.digest.to_string();
         let events = response.events;
         if let Some(tx_block_events) = events {
