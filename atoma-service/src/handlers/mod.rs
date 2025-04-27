@@ -497,12 +497,18 @@ mod vllm_metrics {
         let query = format!(
             "histogram_quantile(0.90, sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])) by (le))"
         );
-        let response = client.query(&query).get().await?;
+        let response = client.query(&query).get().await.map_err(|e| {
+            tracing::error!("Failed to get metrics for job: {job} with error: {e}");
+            e
+        })?;
         response.data().as_vector().map_or_else(
             || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
             |data_vector| {
                 data_vector.first().map_or_else(
-                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    || {
+                        tracing::error!("No metrics found for job: {job}");
+                        Err(VllmMetricsError::NoMetricsFound(job.to_string()))
+                    },
                     |value| {
                         let sample = value.sample();
                         let value = sample.value();
