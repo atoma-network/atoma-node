@@ -454,14 +454,32 @@ mod vllm_metrics {
 
     /// The HTTP client for the Prometheus metrics queries
     static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-        Client::from(
-            reqwest::Client::builder()
-                .timeout(METRICS_TIMEOUT)
-                .build()
-                .expect("Failed to create HTTP client"),
-            PROMETHEUS_URL,
-        )
-        .expect("Failed to create HTTP client")
+        let client = reqwest::Client::builder()
+            .timeout(METRICS_TIMEOUT)
+            .build()
+            .expect("Failed to create HTTP client");
+
+        // Add debug logging for the Prometheus URL
+        tracing::debug!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "debug",
+            "Creating Prometheus client with URL: {}",
+            PROMETHEUS_URL
+        );
+
+        Client::from(client, PROMETHEUS_URL)
+            .map_err(|e| {
+                tracing::error!(
+                    target = "atoma-service",
+                    module = "vllm_metrics",
+                    level = "error",
+                    "Failed to create Prometheus client: {}",
+                    e
+                );
+                e
+            })
+            .expect("Failed to create HTTP client")
     });
 
     /// Retrieves the 90th percentile request queue time metric from a vLLM service.
@@ -507,15 +525,70 @@ mod vllm_metrics {
                     or vector(0)) by (le)
             )"
         );
-        let response = client.query(&query).get().await?;
+
+        // Add debug logging for the query
+        tracing::debug!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "debug",
+            "Executing Prometheus query: {}",
+            query
+        );
+
+        let response = client.query(&query).get().await.map_err(|e| {
+            tracing::error!(
+                target = "atoma-service",
+                module = "vllm_metrics",
+                level = "error",
+                "Failed to execute Prometheus query: {}",
+                e
+            );
+            e
+        })?;
+
+        // Add debug logging for the response
+        tracing::debug!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "debug",
+            "Received Prometheus response: {:?}",
+            response
+        );
+
         response.data().as_vector().map_or_else(
-            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            || {
+                tracing::error!(
+                    target = "atoma-service",
+                    module = "vllm_metrics",
+                    level = "error",
+                    "No metrics data found for job: {}",
+                    job
+                );
+                Err(VllmMetricsError::NoMetricsFound(job.to_string()))
+            },
             |data_vector| {
                 data_vector.first().map_or_else(
-                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    || {
+                        tracing::error!(
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "error",
+                            "No metrics data found in vector for job: {}",
+                            job
+                        );
+                        Err(VllmMetricsError::NoMetricsFound(job.to_string()))
+                    },
                     |value| {
                         let sample = value.sample();
                         let value = sample.value();
+                        tracing::debug!(
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "debug",
+                            "Successfully parsed metrics value: {} for job: {}",
+                            value,
+                            job
+                        );
                         Ok((chat_completions_service_url.to_string(), value))
                     },
                 )
@@ -552,47 +625,103 @@ mod vllm_metrics {
                 model.to_string(),
             ));
         }
+
+        // If we only have one URL, use it without checking metrics
+        if chat_completions_service_urls.len() == 1 {
+            tracing::info!(
+                target = "atoma-service",
+                module = "vllm_metrics",
+                level = "info",
+                "Only one chat completions service URL available, using it without metrics check: {}",
+                chat_completions_service_urls[0].0
+            );
+            return Ok((chat_completions_service_urls[0].0.clone(), StatusCode::OK));
+        }
+
         let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
         let mut best_url = chat_completions_service_urls[0].0.clone();
+        let mut has_valid_metrics = false;
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
             .map(|(chat_completions_service_url, job_name)| {
                 get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
             })
             .collect();
+
         while let Some(request_queue_time_seconds) = futures.next().await {
-            let (chat_completions_service_url, request_queue_time_seconds) =
-                match request_queue_time_seconds {
-                    Ok((chat_completions_service_url, request_queue_time_seconds)) => {
-                        info!(
-                            target = "atoma-service",
-                            module = "vllm_metrics",
-                            level = "info",
-                            "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
-                        );
-                        (chat_completions_service_url, request_queue_time_seconds)
+            match request_queue_time_seconds {
+                Ok((chat_completions_service_url, request_queue_time_seconds)) => {
+                    has_valid_metrics = true;
+                    info!(
+                        target = "atoma-service",
+                        module = "vllm_metrics",
+                        level = "info",
+                        "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
+                    );
+                    if request_queue_time_seconds < min_request_queue_time_seconds
+                        || request_queue_time_seconds.is_nan()
+                    {
+                        min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
+                            0.0
+                        } else {
+                            request_queue_time_seconds
+                        };
+                        best_url.clone_from(&chat_completions_service_url);
                     }
-                    Err(e) => {
-                        tracing::error!(
-                            target = "atoma-service",
-                            module = "vllm_metrics",
-                            level = "error",
-                            "Failed to get metrics for chat completions service url with error: {e}",
-                        );
-                        continue;
+                }
+                Err(e) => {
+                    // Log the specific error type for better debugging
+                    match e {
+                        VllmMetricsError::FailedToCreateHttpClient(e) => {
+                            tracing::warn!(
+                                target = "atoma-service",
+                                module = "vllm_metrics",
+                                level = "warn",
+                                "Failed to create HTTP client for metrics check: {e}. Will continue with other URLs."
+                            );
+                        }
+                        VllmMetricsError::GetMetricsError(e) => {
+                            tracing::warn!(
+                                target = "atoma-service",
+                                module = "vllm_metrics",
+                                level = "warn",
+                                "Failed to get metrics: {e}. Will continue with other URLs."
+                            );
+                        }
+                        VllmMetricsError::NoMetricsFound(job) => {
+                            tracing::warn!(
+                                target = "atoma-service",
+                                module = "vllm_metrics",
+                                level = "warn",
+                                "No metrics found for job: {job}. Will continue with other URLs."
+                            );
+                        }
+                        _ => {
+                            tracing::warn!(
+                                target = "atoma-service",
+                                module = "vllm_metrics",
+                                level = "warn",
+                                "Unexpected error getting metrics: {e}. Will continue with other URLs."
+                            );
+                        }
                     }
-                };
-            if request_queue_time_seconds < min_request_queue_time_seconds
-                || request_queue_time_seconds.is_nan()
-            {
-                min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
-                    0.0
-                } else {
-                    request_queue_time_seconds
-                };
-                best_url.clone_from(&chat_completions_service_url);
+                    continue;
+                }
             }
         }
+
+        // If we couldn't get any valid metrics, use the first URL as fallback
+        if !has_valid_metrics {
+            tracing::warn!(
+                target = "atoma-service",
+                module = "vllm_metrics",
+                level = "warn",
+                "Could not get valid metrics for any URL, falling back to first available URL: {}",
+                chat_completions_service_urls[0].0
+            );
+            return Ok((chat_completions_service_urls[0].0.clone(), StatusCode::OK));
+        }
+
         tracing::info!(
             target = "atoma-service",
             level = "info",
@@ -600,6 +729,7 @@ mod vllm_metrics {
             model = model,
             best_url = best_url
         );
+
         if min_request_queue_time_seconds >= MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
             tracing::warn!(
                 target = "atoma-service",
@@ -608,6 +738,7 @@ mod vllm_metrics {
             );
             return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
         }
+
         Ok((best_url, StatusCode::OK))
     }
 
