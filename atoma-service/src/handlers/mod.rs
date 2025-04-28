@@ -546,7 +546,7 @@ mod vllm_metrics {
         chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
+        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0; // Default to 2 seconds
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
                 model.to_string(),
