@@ -277,6 +277,7 @@ pub async fn chat_completions_handler(
                 concurrent_requests,
             )?;
             match e {
+                // We want to propagate the error if the inference service is unavailable
                 AtomaServiceError::ChatCompletionsServiceUnavailable { .. } => Err(e),
                 _ => Err(AtomaServiceError::InternalError {
                     message: format!("Error handling chat completions response: {}", e),
