@@ -507,10 +507,7 @@ mod vllm_metrics {
                     or vector(0)) by (le)
             )"
         );
-        let response = client.query(&query).get().await.map_err(|e| {
-            tracing::error!("Failed to get metrics for job: {job} with error: {e}");
-            e
-        })?;
+        let response = client.query(&query).get().await?;
         response.data().as_vector().map_or_else(
             || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
             |data_vector| {
