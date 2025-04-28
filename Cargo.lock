@@ -686,7 +686,7 @@ dependencies = [
  "hex",
  "nscq",
  "nvml-wrapper",
- "rand 0.8.5",
+ "rand 0.9.1",
  "remote-attestation-verifier",
  "serde",
  "serde_json",
@@ -744,7 +744,7 @@ dependencies = [
  "isocountry",
  "libp2p",
  "opentelemetry",
- "rand 0.8.5",
+ "rand 0.9.1",
  "reqwest",
  "serde",
  "serde_json",
@@ -807,7 +807,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prometheus",
  "prometheus-http-query",
- "rand 0.8.5",
+ "rand 0.9.1",
  "reqwest",
  "sentry",
  "serde",
@@ -884,7 +884,7 @@ dependencies = [
  "fastcrypto 0.1.9",
  "flate2",
  "hkdf",
- "rand 0.8.5",
+ "rand 0.9.1",
  "serde_json",
  "sha2 0.10.8",
  "sui-sdk",
@@ -2122,7 +2122,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.100",
+ "syn 1.0.109",
 ]
 
 [[package]]
