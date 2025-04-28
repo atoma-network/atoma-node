@@ -441,8 +441,11 @@ mod vllm_metrics {
 
     use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
+    use opentelemetry::KeyValue;
     use prometheus_http_query::Client;
     use tracing::{info, instrument};
+
+    use crate::handlers::metrics::CHAT_COMPLETIONS_SERVICE_UNAVAILABLE;
 
     pub type Result<T> = std::result::Result<T, VllmMetricsError>;
 
@@ -577,8 +580,23 @@ mod vllm_metrics {
                             target = "atoma-service",
                             module = "vllm_metrics",
                             level = "error",
-                            "Failed to get metrics for chat completions service url with error: {e}",
+                            "Failed to get metrics for chat completions service url with error: {e}"
                         );
+                        if let VllmMetricsError::GetMetricsError(ref err) = e {
+                            if err
+                                .to_string()
+                                .contains("Chat completions service is unavailable")
+                            {
+                                tracing::warn!(
+                                    target = "atoma-service",
+                                    module = "vllm_metrics",
+                                    level = "warn",
+                                    "Chat completions service is unavailable: {err}"
+                                );
+                                CHAT_COMPLETIONS_SERVICE_UNAVAILABLE
+                                    .add(1, &[KeyValue::new("model", model.to_string())]);
+                            }
+                        }
                         continue;
                     }
                 };
