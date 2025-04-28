@@ -464,24 +464,30 @@ mod vllm_metrics {
         .expect("Failed to create HTTP client")
     });
 
-    /// Retrieves metrics data from a chat completions service endpoint.
+    /// Retrieves the 90th percentile request queue time metric from a vLLM service.
     ///
-    /// This function sends a GET request to the specified endpoint with the provided query parameters,
-    /// and returns the metrics data as a `MetricsDataAndUrl` struct.
+    /// This function executes a Prometheus query against the configured Prometheus instance
+    /// to get the `vllm:request_queue_time_seconds` histogram for the specified `job`,
+    /// calculates the 90th percentile, and returns it along with the service URL.
     ///
     /// # Arguments
     ///
-    /// * `client` - The HTTP client to use for the request
-    /// * `query` - The Prometheus query to execute
-    /// * `endpoint` - The URL of the chat completions service endpoint
+    /// * `client` - The Prometheus HTTP query client.
+    /// * `job` - The Prometheus job name corresponding to the vLLM service instance.
+    /// * `chat_completions_service_url` - The URL of the vLLM service instance, returned alongside the metric.
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing the metrics data as a `MetricsDataAndUrl` struct.
+    /// Returns a `Result` containing a tuple `(String, f64)` on success, where:
+    ///   - The `String` is the `chat_completions_service_url` passed as input.
+    ///   - The `f64` is the calculated 90th percentile of the request queue time in seconds.
     ///
     /// # Errors
     ///
-    /// Returns a `VllmMetricsError` if the request fails or the response is not valid.
+    /// Returns a `VllmMetricsError` if:
+    ///   - The Prometheus query fails.
+    ///   - No metrics data is found for the specified job.
+    ///   - The response data cannot be parsed correctly.
     #[instrument(level = "info", skip_all, fields(job=job))]
     async fn get_metrics(
         client: &Client,
@@ -495,7 +501,11 @@ mod vllm_metrics {
             "Getting metrics for job: {job}"
         );
         let query = format!(
-            "histogram_quantile(0.90, sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])) by (le))"
+            "histogram_quantile(
+                0.90,
+                sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])
+                    or vector(0)) by (le)
+            )"
         );
         let response = client.query(&query).get().await.map_err(|e| {
             tracing::error!("Failed to get metrics for job: {job} with error: {e}");
@@ -505,10 +515,7 @@ mod vllm_metrics {
             || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
             |data_vector| {
                 data_vector.first().map_or_else(
-                    || {
-                        tracing::error!("No metrics found for job: {job}");
-                        Err(VllmMetricsError::NoMetricsFound(job.to_string()))
-                    },
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
                     |value| {
                         let sample = value.sample();
                         let value = sample.value();
@@ -596,7 +603,7 @@ mod vllm_metrics {
             model = model,
             best_url = best_url
         );
-        if min_request_queue_time_seconds > MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
+        if min_request_queue_time_seconds >= MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
