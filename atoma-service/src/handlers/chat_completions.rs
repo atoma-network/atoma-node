@@ -276,10 +276,13 @@ pub async fn chat_completions_handler(
                 &endpoint,
                 concurrent_requests,
             )?;
-            return Err(AtomaServiceError::InternalError {
-                message: format!("Error handling chat completions response: {}", e),
-                endpoint: request_metadata.endpoint_path.clone(),
-            });
+            match e {
+                AtomaServiceError::ChatCompletionsServiceUnavailable { .. } => Err(e),
+                _ => Err(AtomaServiceError::InternalError {
+                    message: format!("Error handling chat completions response: {}", e),
+                    endpoint: request_metadata.endpoint_path.clone(),
+                }),
+            }
         }
     }
 }
