@@ -450,7 +450,7 @@ mod vllm_metrics {
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
     /// Prometheus url for the atoma-node instance
-    const PROMETHEUS_URL: &str = "http://prometheus:9090/api/v1";
+    const PROMETHEUS_URL: &str = "http://prometheus:9090";
 
     /// The HTTP client for the Prometheus metrics queries
     static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
