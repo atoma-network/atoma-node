@@ -795,7 +795,7 @@ async fn handle_streaming_response(
             })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
-            message: "Chat completions service is unavailable".to_string(),
+            message: "Too many requests".to_string(),
             endpoint: endpoint.clone(),
         });
     }
@@ -1185,7 +1185,7 @@ pub mod utils {
             })?;
         if status_code == StatusCode::TOO_MANY_REQUESTS {
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
-                message: "Chat completions service is unavailable".to_string(),
+                message: "Too many requests".to_string(),
                 endpoint: endpoint.to_string(),
             });
         }
