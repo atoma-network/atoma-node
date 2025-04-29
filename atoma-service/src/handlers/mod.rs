@@ -486,7 +486,7 @@ mod vllm_metrics {
     ///   - The Prometheus query fails.
     ///   - No metrics data is found for the specified job.
     ///   - The response data cannot be parsed correctly.
-    #[instrument(level = "info", skip_all, fields(jobs_with_url=jobs_with_url.iter().map(|(job, url)| format!("{job}={url}")).collect::<Vec<_>>().join(",")))]
+    #[instrument(level = "info", skip_all, fields(jobs_with_url=jobs_with_url.iter().map(|(url, job)| format!("{job}={url}")).collect::<Vec<_>>().join(",")))]
     async fn get_metrics(
         client: &Client,
         jobs_with_url: &[(String, String)],
@@ -495,14 +495,14 @@ mod vllm_metrics {
             "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))",
             jobs = jobs_with_url
                 .iter()
-                .map(|(job, _url)| job.as_str())
+                .map(|(_url, job)| job.as_str())
                 .collect::<Vec<_>>()
                 .join("|")
         );
         let response = client.query(&query).get().await;
         jobs_with_url
             .iter()
-            .map(|(job, url)| {
+            .map(|(url, job)| {
                 response
                     .as_ref()
                     .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
