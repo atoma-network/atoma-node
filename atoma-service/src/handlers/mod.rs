@@ -499,18 +499,44 @@ mod vllm_metrics {
                 .collect::<Vec<_>>()
                 .join("|")
         );
+        tracing::info!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "info",
+            "Querying Prometheus for metrics with query: {query}",
+            query = query
+        );
         let response = client.query(&query).get().await;
         jobs_with_url
             .iter()
             .map(|(job, url)| {
                 response
                     .as_ref()
-                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .map_err(|e| {
+                        tracing::error!(
+                            target = "atoma-service",
+                            module = "vllm_metrics",
+                            level = "error",
+                            "Failed to get metrics from Prometheus client for job: {job} with error: {e}",
+                            job = job,
+                            e = e
+                        );
+                        VllmMetricsError::FailedToGetResponseFromPrometheus(e.to_string())
+                    })
                     .and_then(|response| {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| {
+                                tracing::error!(
+                                    target = "atoma-service",
+                                    module = "vllm_metrics",
+                                    level = "error",
+                                    "No metrics found for job: {job}",
+                                    job = job
+                                );
+                                VllmMetricsError::NoMetricsFound(job.to_string())
+                            })
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -518,6 +544,13 @@ mod vllm_metrics {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
+                                        tracing::error!(
+                                            target = "atoma-service",
+                                            module = "vllm_metrics",
+                                            level = "error",
+                                            "No metrics found for job: {job}",
+                                            job = job
+                                        );
                                         VllmMetricsError::NoMetricsFound(job.to_string())
                                     })
                                     .map(|value| {
@@ -619,13 +652,13 @@ mod vllm_metrics {
         GetMetricsError(#[from] reqwest::Error),
         #[error("No chat completions service urls found for model: {0}")]
         NoChatCompletionsServiceUrlsFound(String),
-        #[error("Invalid metrics value: {0}")]
-        InvalidMetricsValue(#[from] std::num::ParseFloatError),
         #[error("Invalid metrics response: {0}")]
         InvalidMetricsResponse(#[from] serde_json::Error),
         #[error("Failed to create HTTP client: {0}")]
         FailedToCreateHttpClient(#[from] prometheus_http_query::Error),
         #[error("No metrics found for job: {0}")]
         NoMetricsFound(String),
+        #[error("Failed to get response from prometheus: {0}")]
+        FailedToGetResponseFromPrometheus(String),
     }
 }
