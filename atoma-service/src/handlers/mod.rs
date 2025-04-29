@@ -439,7 +439,6 @@ pub fn handle_status_code_error(
 mod vllm_metrics {
     use std::sync::LazyLock;
 
-    use futures::{stream::FuturesUnordered, StreamExt};
     use hyper::StatusCode;
     use prometheus_http_query::Client;
     use tracing::{info, instrument};
@@ -473,54 +472,63 @@ mod vllm_metrics {
     /// # Arguments
     ///
     /// * `client` - The Prometheus HTTP query client.
-    /// * `job` - The Prometheus job name corresponding to the vLLM service instance.
-    /// * `chat_completions_service_url` - The URL of the vLLM service instance, returned alongside the metric.
+    /// * `jobs_with_url` - The Prometheus job names corresponding to the vLLM service instances alongside with the chat completions service url.
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a tuple `(String, f64)` on success, where:
+    /// Returns a vector of `Result` containing a tuple `(String, f64)` on success, where:
     ///   - The `String` is the `chat_completions_service_url` passed as input.
     ///   - The `f64` is the calculated 90th percentile of the request queue time in seconds.
     ///
     /// # Errors
     ///
-    /// Returns a `VllmMetricsError` if:
+    /// Return contains a `VllmMetricsError` if:
     ///   - The Prometheus query fails.
     ///   - No metrics data is found for the specified job.
     ///   - The response data cannot be parsed correctly.
-    #[instrument(level = "info", skip_all, fields(job=job))]
+    #[instrument(level = "info", skip_all, fields(jobs_with_url=jobs_with_url.iter().map(|(job, url)| format!("{job}={url}")).collect::<Vec<_>>().join(",")))]
     async fn get_metrics(
         client: &Client,
-        job: &str,
-        chat_completions_service_url: &str,
-    ) -> Result<(String, f64)> {
-        info!(
-            target = "atoma-service",
-            module = "vllm_metrics",
-            level = "info",
-            "Getting metrics for job: {job}"
-        );
+        jobs_with_url: &[(String, String)],
+    ) -> Vec<Result<(String, f64)>> {
         let query = format!(
-            "histogram_quantile(
-                0.90,
-                sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])
-                    or vector(0)) by (le)
-            )"
+            "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))",
+            jobs = jobs_with_url
+                .iter()
+                .map(|(job, _url)| job.as_str())
+                .collect::<Vec<_>>()
+                .join("|")
         );
-        let response = client.query(&query).get().await?;
-        response.data().as_vector().map_or_else(
-            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
-            |data_vector| {
-                data_vector.first().map_or_else(
-                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
-                    |value| {
-                        let sample = value.sample();
-                        let value = sample.value();
-                        Ok((chat_completions_service_url.to_string(), value))
-                    },
-                )
-            },
-        )
+        let response = client.query(&query).get().await;
+        jobs_with_url
+            .iter()
+            .map(|(job, url)| {
+                response
+                    .as_ref()
+                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .and_then(|response| {
+                        response
+                            .data()
+                            .as_vector()
+                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .and_then(|vector| {
+                                vector
+                                    .iter()
+                                    .find(|instant| {
+                                        instant.metric().get("job") == Some(&job.to_string())
+                                    })
+                                    .ok_or_else(|| {
+                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                    })
+                                    .map(|value| {
+                                        let sample = value.sample();
+                                        let value = sample.value();
+                                        (url.to_string(), value)
+                                    })
+                            })
+                    })
+            })
+            .collect()
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
@@ -554,34 +562,28 @@ mod vllm_metrics {
         }
         let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
         let mut best_url = chat_completions_service_urls[0].0.clone();
-        let mut futures: FuturesUnordered<_> = chat_completions_service_urls
-            .iter()
-            .map(|(chat_completions_service_url, job_name)| {
-                get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
-            })
-            .collect();
-        while let Some(request_queue_time_seconds) = futures.next().await {
-            let (chat_completions_service_url, request_queue_time_seconds) =
-                match request_queue_time_seconds {
-                    Ok((chat_completions_service_url, request_queue_time_seconds)) => {
-                        info!(
+        let metrics = get_metrics(&HTTP_CLIENT, chat_completions_service_urls).await;
+        for metric in metrics {
+            let (chat_completions_service_url, request_queue_time_seconds) = match metric {
+                Ok((chat_completions_service_url, request_queue_time_seconds)) => {
+                    info!(
                             target = "atoma-service",
                             module = "vllm_metrics",
                             level = "info",
                             "Received vLLM request queue time metrics response for {chat_completions_service_url}: {request_queue_time_seconds}"
                         );
-                        (chat_completions_service_url, request_queue_time_seconds)
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            target = "atoma-service",
-                            module = "vllm_metrics",
-                            level = "error",
-                            "Failed to get metrics for chat completions service url with error: {e}",
-                        );
-                        continue;
-                    }
-                };
+                    (chat_completions_service_url, request_queue_time_seconds)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        target = "atoma-service",
+                        module = "vllm_metrics",
+                        level = "error",
+                        "Failed to get metrics for chat completions service url with error: {e}",
+                    );
+                    continue;
+                }
+            };
             if request_queue_time_seconds < min_request_queue_time_seconds
                 || request_queue_time_seconds.is_nan()
             {
