@@ -512,21 +512,19 @@ mod vllm_metrics {
                             .as_vector()
                             .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
                             .and_then(|vector| {
-                                let x = vector
+                                vector
                                     .iter()
                                     .find(|instant| {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
                                         VllmMetricsError::NoMetricsFound(job.to_string())
-                                    });
-                                dbg!(&x);
-                                let x = x.map(|value| {
-                                    let sample = value.sample();
-                                    let value = sample.value();
-                                    (url.to_string(), value)
-                                });
-                                x
+                                    })
+                                    .map(|value| {
+                                        let sample = value.sample();
+                                        let value = sample.value();
+                                        (url.to_string(), value)
+                                    })
                             })
                     })
             })
