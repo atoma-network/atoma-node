@@ -438,12 +438,14 @@ pub fn handle_status_code_error(
 }
 
 pub mod vllm_metrics {
+    use opentelemetry::KeyValue;
     use std::sync::Arc;
     use std::sync::LazyLock;
     use std::time::Duration;
     use tokio::sync::RwLock;
     use tokio::time;
 
+    use crate::handlers::metrics::CHAT_COMPLETIONS_TOO_MANY_REQUESTS;
     use hyper::StatusCode;
     use prometheus_http_query::Client;
     use tracing::{info, instrument};
@@ -628,6 +630,7 @@ pub mod vllm_metrics {
                 level = "warn",
                 "Best available chat completions service URL for model: {model} has a request queue time of at least {min_request_queue_time_seconds} seconds",
             );
+            CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
             return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
         }
         Ok((best_url, StatusCode::OK))
