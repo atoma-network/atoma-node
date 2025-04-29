@@ -17,7 +17,6 @@ pub struct ComputeUnitsEstimate {
 ///
 /// This trait provides a common interface for processing various types of AI model requests
 /// and estimating their computational costs.
-///
 pub trait RequestModel {
     /// Constructs a new request model instance by parsing the provided JSON request.
     ///
