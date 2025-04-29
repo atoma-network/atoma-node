@@ -502,14 +502,22 @@ pub mod vllm_metrics {
     static METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
 
     /// Start the background task to update metrics every 30 seconds
-    pub fn start_metrics_updater(chat_completions_service_urls: Vec<(String, String)>) {
+    pub fn start_metrics_updater(
+        chat_completions_service_urls: Vec<(String, String)>,
+        metrics_update_interval: Option<u64>,
+    ) {
         let chat_completions_service_urls = Arc::new(chat_completions_service_urls);
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(30));
+            let metrics_interval = metrics_update_interval.unwrap_or(30);
+            let mut interval = time::interval(Duration::from_secs(metrics_interval));
             loop {
                 interval.tick().await;
                 let metrics = get_metrics(&HTTP_CLIENT, &chat_completions_service_urls).await;
-                METRICS_CACHE.update_metrics(metrics).await;
+                if metrics.iter().any(std::result::Result::is_ok) {
+                    METRICS_CACHE.update_metrics(metrics).await;
+                } else {
+                    tracing::warn!("Failed to retrieve any valid metrics, not updating cache");
+                }
             }
         });
     }

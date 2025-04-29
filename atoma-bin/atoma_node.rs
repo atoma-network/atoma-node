@@ -403,7 +403,10 @@ async fn main() -> Result<()> {
         }
     }
 
-    start_metrics_updater(chat_completions_service_urls);
+    start_metrics_updater(
+        chat_completions_service_urls,
+        config.service.metrics_update_interval,
+    );
 
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
