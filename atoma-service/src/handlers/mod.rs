@@ -618,7 +618,7 @@ pub mod vllm_metrics {
 
             // Handle NaN case first
             if request_queue_time_seconds.is_nan() {
-                continue;
+                min_request_queue_time_seconds = 0.0;
             }
 
             // Update min time and best URL if we found a better option
