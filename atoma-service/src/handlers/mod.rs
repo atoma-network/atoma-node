@@ -606,7 +606,7 @@ pub mod vllm_metrics {
                     (chat_completions_service_url, request_queue_time_seconds)
                 }
                 Err(e) => {
-                    tracing::error!(
+                    tracing::warn!(
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "error",
@@ -615,9 +615,14 @@ pub mod vllm_metrics {
                     continue;
                 }
             };
+
+            // Handle NaN case first
             if request_queue_time_seconds.is_nan() {
-                min_request_queue_time_seconds = 0.0;
-            } else if request_queue_time_seconds < min_request_queue_time_seconds {
+                continue;
+            }
+
+            // Update min time and best URL if we found a better option
+            if request_queue_time_seconds < min_request_queue_time_seconds {
                 debug!(
                     target = "atoma-service",
                     module = "vllm_metrics",
@@ -628,6 +633,12 @@ pub mod vllm_metrics {
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
+
+        // If we never found valid metrics, default to 0.0
+        if min_request_queue_time_seconds == f64::INFINITY {
+            min_request_queue_time_seconds = 0.0;
+        }
+
         tracing::info!(
             target = "atoma-service",
             level = "info",
