@@ -15,7 +15,7 @@
 pub(crate) mod components;
 pub mod config;
 pub mod error;
-pub(crate) mod handlers;
+pub mod handlers;
 pub mod middleware;
 pub mod server;
 pub mod streamer;

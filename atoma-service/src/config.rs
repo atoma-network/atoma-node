@@ -53,6 +53,9 @@ pub struct AtomaServiceConfig {
 
     /// The environment for the Atoma Service.
     pub environment: Option<String>,
+
+    /// The interval for updating the metrics.
+    pub metrics_update_interval: Option<u64>,
 }
 
 impl AtomaServiceConfig {
