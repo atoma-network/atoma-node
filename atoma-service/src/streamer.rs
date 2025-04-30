@@ -356,7 +356,7 @@ impl Streamer {
                 self.estimated_total_compute_units,
                 total_compute_units as i64,
                 &self.endpoint,
-                &self.concurrent_requests,
+                concurrent_requests,
             ) {
                 error!(
                     target = "atoma-service-streamer",
