@@ -444,6 +444,7 @@ pub mod vllm_metrics {
     use std::time::Duration;
     use tokio::sync::RwLock;
     use tokio::time;
+    use tracing::debug;
 
     use crate::handlers::metrics::CHAT_COMPLETIONS_TOO_MANY_REQUESTS;
     use hyper::StatusCode;
@@ -581,7 +582,7 @@ pub mod vllm_metrics {
             ));
         }
 
-        let mut min_request_queue_time_seconds = MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS;
+        let mut min_request_queue_time_seconds = f64::INFINITY;
         let mut best_url = chat_completions_service_urls[0].0.clone();
 
         // Get cached metrics
@@ -614,14 +615,17 @@ pub mod vllm_metrics {
                     continue;
                 }
             };
-            if request_queue_time_seconds < min_request_queue_time_seconds
-                || request_queue_time_seconds.is_nan()
-            {
-                min_request_queue_time_seconds = if request_queue_time_seconds.is_nan() {
-                    0.0
-                } else {
-                    request_queue_time_seconds
-                };
+            if request_queue_time_seconds.is_nan() {
+                continue;
+            }
+            if request_queue_time_seconds < min_request_queue_time_seconds {
+                debug!(
+                    target = "atoma-service",
+                    module = "vllm_metrics",
+                    level = "debug",
+                    "Updating best chat completions service url to {chat_completions_service_url} with request queue time {request_queue_time_seconds}"
+                );
+                min_request_queue_time_seconds = request_queue_time_seconds;
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
