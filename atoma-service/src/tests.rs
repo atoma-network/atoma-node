@@ -341,6 +341,7 @@ mod middleware {
                 keystore: Arc::new(keystore),
                 address_index: 0,
                 stack_retrieve_sender,
+                fiat_allowed: vec![],
             },
             public_key,
             signature,

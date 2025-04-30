@@ -43,6 +43,8 @@ const SIGNATURE_KEY: &str = "signature";
 /// Key for the usage in the response body
 pub const USAGE_KEY: &str = "usage";
 
+pub const ONE_MILLION: i64 = 1_000_000;
+
 /// Updates response signature and stack hash state
 ///
 /// # Arguments
@@ -65,7 +67,7 @@ pub async fn sign_response_and_update_stack_hash(
     response_body: &mut Value,
     payload_hash: [u8; 32],
     state: &AppState,
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     endpoint: String,
 ) -> Result<(), AtomaServiceError> {
     // Sign the response body byte content and add the base64 encoded signature to the response body
@@ -79,25 +81,25 @@ pub async fn sign_response_and_update_stack_hash(
     response_body[SIGNATURE_KEY] = json!(signature);
     response_body[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
 
-    // Update the stack total hash
-    let total_hash = blake2b_hash(&[payload_hash, response_hash].concat());
-    let total_hash_bytes: [u8; 32] = total_hash
-        .as_slice()
-        .try_into()
-        .expect("Invalid BLAKE2b hash length");
-
     // Send the update stack total hash event to the state manager
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash: total_hash_bytes,
-        })
-        .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Error updating stack total hash: {}", e),
-            endpoint: endpoint.clone(),
-        })?;
-
+    if let Some(stack_small_id) = stack_small_id {
+        // Update the stack total hash
+        let total_hash = blake2b_hash(&[payload_hash, response_hash].concat());
+        let total_hash_bytes: [u8; 32] = total_hash
+            .as_slice()
+            .try_into()
+            .expect("Invalid BLAKE2b hash length");
+        state
+            .state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
+                stack_small_id,
+                total_hash: total_hash_bytes,
+            })
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error updating stack total hash: {}", e),
+                endpoint: endpoint.clone(),
+            })?;
+    }
     Ok(())
 }
 
@@ -315,6 +317,25 @@ pub fn update_stack_num_compute_units(
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update stack num compute units event: {e}"),
+            endpoint: endpoint.to_string(),
+        })
+}
+
+pub fn update_fiat_amount(
+    state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
+    user_address: String,
+    estimated_total_amount: i64,
+    total_amount: i64,
+    endpoint: &str,
+) -> Result<(), AtomaServiceError> {
+    state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
+            user_address,
+            total_amount,
+            estimated_total_amount,
+        })
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error sending update fiat amount event: {e}"),
             endpoint: endpoint.to_string(),
         })
 }
