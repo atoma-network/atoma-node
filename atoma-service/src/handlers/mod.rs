@@ -616,9 +616,8 @@ pub mod vllm_metrics {
                 }
             };
             if request_queue_time_seconds.is_nan() {
-                continue;
-            }
-            if request_queue_time_seconds < min_request_queue_time_seconds {
+                min_request_queue_time_seconds = 0.0;
+            } else if request_queue_time_seconds < min_request_queue_time_seconds {
                 debug!(
                     target = "atoma-service",
                     module = "vllm_metrics",
