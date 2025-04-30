@@ -361,7 +361,7 @@ mod middleware {
     fn test_request_metadata() {
         let request_metadata = RequestMetadata::default();
 
-        assert_eq!(request_metadata.stack_small_id, Some(0));
+        assert_eq!(request_metadata.stack_small_id, None);
         assert_eq!(request_metadata.estimated_total_compute_units, 0);
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
