@@ -619,6 +619,8 @@ pub mod vllm_metrics {
             // Handle NaN case first
             if request_queue_time_seconds.is_nan() {
                 min_request_queue_time_seconds = 0.0;
+                best_url.clone_from(&chat_completions_service_url);
+                break;
             }
 
             // Update min time and best URL if we found a better option
