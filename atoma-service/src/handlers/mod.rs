@@ -71,7 +71,7 @@ pub async fn sign_response_and_update_stack_hash(
     response_body: &mut Value,
     payload_hash: [u8; 32],
     state: &AppState,
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     endpoint: String,
 ) -> Result<(), AtomaServiceError> {
     // Sign the response body byte content and add the base64 encoded signature to the response body
@@ -302,6 +302,87 @@ pub fn update_stack_num_compute_units(
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update stack num compute units event: {e}"),
+            endpoint: endpoint.to_string(),
+        })
+}
+
+/// Updates the fiat amount for a user in the state manager.
+///
+/// This function sends an update event to the state manager to record the fiat amount
+/// associated with a user's request. It calculates the estimated total amount based on
+/// the estimated compute units and the price per million compute units.
+///
+/// # Arguments
+///
+/// * `state_manager_sender` - The channel to send events to the state manager
+/// * `user_address` - The address of the user for whom the fiat amount is being updated
+/// * `estimated_total_compute_units` - The estimated number of compute units for the request
+/// * `total_amount` - The total amount in fiat currency
+/// * `price_per_one_million_compute_units` - The price per million compute units
+/// * `endpoint` - The API endpoint path where the request was received
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the update was successful, or an `AtomaServiceError` if the update failed.
+///
+/// # Errors
+///
+/// Returns `AtomaServiceError::InternalError` if:
+/// - Failed to send the update event to the state manager
+/// - Failed to receive confirmation from the state manager
+/// - The state manager returned an error during the update
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crate::AppState;
+///
+/// async fn handle_request(state: &AppState, user_address: String) -> Result<(), AtomaServiceError> {
+///     // When a request is made, update the fiat amount for the user
+///     update_fiat_amount(
+///         &state.state_manager_sender,
+///         user_address,
+///         100, // estimated units
+///         10, // total amount
+///         0.01, // price per million compute units
+///         "/v1/chat/completions"
+///     ).await?;
+///     Ok(())
+/// }
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        user_address,
+        estimated_total_compute_units,
+        total_amount,
+        price_per_one_million_compute_units,
+        endpoint
+    ),
+    err
+)]
+pub fn update_fiat_amount(
+    state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
+    user_address: String,
+    estimated_total_compute_units: i64,
+    total_amount: i64,
+    price_per_one_million_compute_units: i64,
+    endpoint: &str,
+) -> Result<(), AtomaServiceError> {
+    let estimated_total_amount = (estimated_total_compute_units as u128
+        * price_per_one_million_compute_units as u128
+        / ONE_MILLION) as i64;
+    let total_amount =
+        (total_amount as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
+    state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
+            user_address,
+            total_amount,
+            estimated_total_amount,
+        })
+        .map_err(|e| AtomaServiceError::InternalError {
+            message: format!("Error sending update fiat amount event: {e}"),
             endpoint: endpoint.to_string(),
         })
 }

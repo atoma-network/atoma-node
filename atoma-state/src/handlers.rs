@@ -758,6 +758,43 @@ pub(crate) async fn handle_state_manager_event(
             )
             .await?;
         }
+        AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
+            stack_small_id,
+            total_hash,
+        } => {
+            state_manager
+                .state
+                .update_stack_total_hash(stack_small_id, total_hash)
+                .await?;
+        }
+        AtomaAtomaStateManagerEvent::GetModelPricing {
+            model,
+            result_sender,
+        } => {
+            let result = state_manager.state.get_model_pricing(model).await;
+            result_sender
+                .send(result)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
+        AtomaAtomaStateManagerEvent::LockFiatAmount {
+            user_address,
+            amount,
+        } => {
+            state_manager
+                .state
+                .lock_fiat_amount(user_address, amount)
+                .await?;
+        }
+        AtomaAtomaStateManagerEvent::UpdateFiatAmount {
+            user_address,
+            estimated_total_amount,
+            total_amount,
+        } => {
+            state_manager
+                .state
+                .update_fiat_amount(user_address, estimated_total_amount, total_amount)
+                .await?;
+        }
     }
     Ok(())
 }

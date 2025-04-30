@@ -5,7 +5,7 @@ use crate::{
             CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
         },
-        sign_response_and_update_stack_hash, update_stack_num_compute_units,
+        sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::EncryptionMetadata,
     server::AppState,
@@ -209,6 +209,8 @@ pub async fn chat_completions_handler(
     let RequestMetadata {
         stack_small_id,
         estimated_total_compute_units,
+        price_per_one_million_compute_units,
+        user_address,
         num_input_tokens,
         payload_hash,
         client_encryption_metadata,
@@ -237,6 +239,8 @@ pub async fn chat_completions_handler(
         endpoint.clone(),
         payload_hash,
         stack_small_id,
+        price_per_one_million_compute_units,
+        user_address.clone(),
         is_stream,
         payload.clone(),
         num_input_tokens,
@@ -265,19 +269,30 @@ pub async fn chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "chat-completions/chat_completions_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "chat-completions/chat_completions_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             match e {
                 // We want to propagate the error if the inference service is unavailable
                 AtomaServiceError::ChatCompletionsServiceUnavailable { .. } => Err(e),
@@ -394,6 +409,8 @@ pub async fn confidential_chat_completions_handler(
         stack_small_id,
         num_input_tokens,
         estimated_total_compute_units,
+        user_address,
+        price_per_one_million_compute_units,
         payload_hash,
         client_encryption_metadata,
         ..
@@ -426,6 +443,8 @@ pub async fn confidential_chat_completions_handler(
         endpoint.clone(),
         payload_hash,
         stack_small_id,
+        price_per_one_million_compute_units,
+        user_address.clone(),
         is_stream,
         payload.clone(),
         num_input_tokens,
@@ -455,19 +474,30 @@ pub async fn confidential_chat_completions_handler(
             // will not be penalized for the request.
             //
             // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "chat-completions/confidential_chat_completions_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "chat-completions/confidential_chat_completions_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             return Err(AtomaServiceError::InternalError {
                 message: format!("Error handling chat completions response: {}", e),
                 endpoint: request_metadata.endpoint_path.clone(),
@@ -535,7 +565,9 @@ async fn handle_response(
     state: &AppState,
     endpoint: String,
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
+    price_per_one_million_compute_units: i64,
+    user_address: String,
     is_stream: bool,
     payload: Value,
     num_input_tokens: i64,
@@ -559,6 +591,8 @@ async fn handle_response(
             stack_small_id,
             num_input_tokens,
             estimated_total_compute_units,
+            price_per_one_million_compute_units,
+            user_address,
             payload_hash,
             streaming_encryption_metadata,
             endpoint,
@@ -571,6 +605,8 @@ async fn handle_response(
             payload,
             stack_small_id,
             estimated_total_compute_units,
+            price_per_one_million_compute_units,
+            user_address,
             payload_hash,
             client_encryption_metadata,
             endpoint,
@@ -640,11 +676,14 @@ async fn handle_response(
     ),
     err
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_non_streaming_response(
     state: &AppState,
     payload: Value,
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     estimated_total_compute_units: i64,
+    price_per_one_million_compute_units: i64,
+    user_address: String,
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: String,
@@ -682,6 +721,8 @@ async fn handle_non_streaming_response(
         response_body,
         stack_small_id,
         estimated_total_compute_units,
+        price_per_one_million_compute_units,
+        user_address,
         total_compute_units,
         payload_hash,
         client_encryption_metadata,
@@ -744,9 +785,11 @@ async fn handle_non_streaming_response(
 async fn handle_streaming_response(
     state: &AppState,
     mut payload: Value,
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     num_input_tokens: i64,
     estimated_total_compute_units: i64,
+    price_per_one_million_compute_units: i64,
+    user_address: String,
     payload_hash: [u8; 32],
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
     endpoint: String,
@@ -816,7 +859,7 @@ async fn handle_streaming_response(
         .map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
-                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                     payload_hash,
                     stack_small_id,
                     e
@@ -851,6 +894,8 @@ async fn handle_streaming_response(
         endpoint,
         request_id,
         timer,
+        price_per_one_million_compute_units,
+        user_address,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -1050,7 +1095,7 @@ pub mod utils {
         state: &AppState,
         client_encryption_metadata: Option<EncryptionMetadata>,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
-        stack_small_id: i64,
+        stack_small_id: Option<i64>,
         endpoint: &str,
     ) -> Result<Option<StreamingEncryptionMetadata>, AtomaServiceError> {
         let streaming_encryption_metadata = if let Some(client_encryption_metadata) =
@@ -1068,7 +1113,7 @@ pub mod utils {
                 .map_err(|e| {
                     AtomaServiceError::InternalError {
                         message: format!(
-                            "Error sending encryption request, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                            "Error sending encryption request, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                             payload_hash,
                             stack_small_id,
                             e
@@ -1082,7 +1127,7 @@ pub mod utils {
             } = receiver.await.map_err(|e| {
                 AtomaServiceError::InternalError {
                     message: format!(
-                        "Error receiving encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                        "Error receiving encryption response, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                         payload_hash,
                         stack_small_id,
                         e
@@ -1158,7 +1203,7 @@ pub mod utils {
     pub async fn send_request_to_inference_service(
         state: &AppState,
         payload: &Value,
-        stack_small_id: i64,
+        stack_small_id: Option<i64>,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         endpoint: &str,
     ) -> Result<Value, AtomaServiceError> {
@@ -1206,7 +1251,7 @@ pub mod utils {
         .map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
-                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                     payload_hash,
                     stack_small_id,
                     e
@@ -1226,7 +1271,7 @@ pub mod utils {
         response.json::<Value>().await.map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
-                    "Error reading response body, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    "Error reading response body, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                     payload_hash,
                     stack_small_id,
                     e
@@ -1373,8 +1418,10 @@ pub mod utils {
     pub async fn serve_non_streaming_response(
         state: &AppState,
         mut response_body: Value,
-        stack_small_id: i64,
+        stack_small_id: Option<i64>,
         estimated_total_compute_units: i64,
+        price_per_one_million_compute_units: i64,
+        user_address: String,
         total_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         client_encryption_metadata: Option<EncryptionMetadata>,
@@ -1404,7 +1451,7 @@ pub mod utils {
         {
             return Err(AtomaServiceError::InternalError {
                 message: format!(
-                    "Error updating state manager, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    "Error updating state manager, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                     payload_hash,
                     stack_small_id,
                     e
@@ -1433,7 +1480,7 @@ pub mod utils {
             Err(e) => {
                 return Err(AtomaServiceError::InternalError {
                     message: format!(
-                        "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                        "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                         payload_hash,
                         stack_small_id,
                         e
@@ -1450,29 +1497,40 @@ pub mod utils {
         // to update the stack num tokens beforehand.
         //
         // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        info!(
-            target = "atoma-service",
-            level = "info",
-            "Decrementing concurrent requests count for stack small id: {stack_small_id}"
-        );
-        let concurrent_requests = handle_concurrent_requests_count_decrement(
-            &state.concurrent_requests_per_stack,
-            stack_small_id,
-            "chat-completions/serve_non_streaming_response",
-        );
-        info!(
-            target = "atoma-service",
-            level = "info",
-            "Concurrent requests have been decremented. Updating stack num compute units for stack small id: {stack_small_id}"
-        );
-        update_stack_num_compute_units(
-            &state.state_manager_sender,
-            stack_small_id,
-            estimated_total_compute_units,
-            total_compute_units,
-            &endpoint,
-            concurrent_requests,
-        )?;
+        if let Some(stack_small_id) = stack_small_id {
+            info!(
+                target = "atoma-service",
+                level = "info",
+                "Decrementing concurrent requests count for stack small id: {stack_small_id}"
+            );
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &state.concurrent_requests_per_stack,
+                stack_small_id,
+                "chat-completions/serve_non_streaming_response",
+            );
+            info!(
+                target = "atoma-service",
+                level = "info",
+                "Concurrent requests have been decremented. Updating stack num compute units for stack small id: {stack_small_id}"
+            );
+            update_stack_num_compute_units(
+                &state.state_manager_sender,
+                stack_small_id,
+                estimated_total_compute_units,
+                total_compute_units,
+                &endpoint,
+                concurrent_requests,
+            )?;
+        } else {
+            update_fiat_amount(
+                &state.state_manager_sender,
+                user_address,
+                estimated_total_compute_units,
+                total_compute_units,
+                price_per_one_million_compute_units,
+                &endpoint,
+            )?;
+        }
 
         Ok(response_body)
     }

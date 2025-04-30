@@ -257,6 +257,29 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Number of concurrent requests for the stack
         concurrent_requests: u64,
     },
+    /// Represents an update to the amount of fiat currency for a user to be locked
+    LockFiatAmount {
+        /// User address
+        user_address: String,
+        /// Amount in fiat currency
+        amount: i64,
+    },
+    /// Represents an update to the amount of fiat currency for a user, after the inference is done
+    UpdateFiatAmount {
+        /// User address
+        user_address: String,
+        /// Estimated total amount in fiat currency
+        estimated_total_amount: i64,
+        /// Total amount in fiat currency
+        total_amount: i64,
+    },
+    /// Represents an update to the total hash of a stack
+    UpdateStackTotalHash {
+        /// Unique small integer identifier for the stack
+        stack_small_id: i64,
+        /// Total hash of the stack
+        total_hash: [u8; 32],
+    },
     /// Gets an available stack with enough compute units for a given stack and public key
     GetAvailableStackWithComputeUnits {
         /// Unique small integer identifier for the stack
@@ -267,6 +290,13 @@ pub enum AtomaAtomaStateManagerEvent {
         total_num_compute_units: i64,
         /// Oneshot channel to send the result back to the sender channel
         result_sender: oneshot::Sender<Result<StackAvailability, AtomaStateManagerError>>,
+    },
+    /// Gets the pricing for a model
+    GetModelPricing {
+        /// Model name
+        model: String,
+        /// Oneshot channel to send the result back to the sender channel
+        result_sender: oneshot::Sender<Result<Option<i64>, AtomaStateManagerError>>,
     },
 }
 

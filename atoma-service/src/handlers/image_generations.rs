@@ -9,7 +9,7 @@ use crate::{
             TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS,
         },
-        update_stack_num_compute_units,
+        update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
@@ -108,6 +108,8 @@ pub async fn image_generations_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
+        price_per_one_million_compute_units,
+        user_address,
         ..
     } = request_metadata;
 
@@ -136,19 +138,30 @@ pub async fn image_generations_handler(
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "image-generations/image_generations_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "image-generations/image_generations_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),
                 endpoint: endpoint.to_string(),
@@ -235,6 +248,8 @@ pub async fn confidential_image_generations_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
+        price_per_one_million_compute_units,
+        user_address,
         ..
     } = request_metadata;
 
@@ -252,25 +267,60 @@ pub async fn confidential_image_generations_handler(
     {
         Ok(response) => {
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "image-generations/confidential_image_generations_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
             TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
                 .add(1, &[KeyValue::new("model", model.clone())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "image-generations/confidential_image_generations_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "image-generations/confidential_image_generations_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Err(AtomaServiceError::InternalError {
                 message: format!("Error handling image generations response: {}", e),
                 endpoint: endpoint.to_string(),
@@ -322,7 +372,7 @@ async fn handle_image_generations_response(
     state: &AppState,
     payload: Value,
     payload_hash: [u8; 32],
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,
     timer: Instant,
@@ -395,7 +445,7 @@ async fn handle_image_generations_response(
         Err(e) => {
             Err(AtomaServiceError::InternalError {
                 message: format!(
-                    "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {}, with error: {}",
+                    "Error handling confidential compute encryption response, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
                     payload_hash,
                     stack_small_id,
                     e
