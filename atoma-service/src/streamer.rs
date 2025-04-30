@@ -365,23 +365,21 @@ impl Streamer {
                     e
                 );
             }
-        } else {
-            if let Err(e) = update_fiat_amount(
-                &self.state_manager_sender,
-                self.user_address.clone(),
-                self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                    / ONE_MILLION,
-                total_compute_units as i64 * self.price_per_one_million_compute_units / ONE_MILLION,
-                &self.endpoint,
-            ) {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error updating fiat amount: {}",
-                    e
-                );
-            }
+        } else if let Err(e) = update_fiat_amount(
+            &self.state_manager_sender,
+            self.user_address.clone(),
+            self.estimated_total_compute_units * self.price_per_one_million_compute_units
+                / ONE_MILLION,
+            total_compute_units as i64 * self.price_per_one_million_compute_units / ONE_MILLION,
+            &self.endpoint,
+        ) {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
+                e
+            );
         }
 
         self.is_final_chunk_handled = true;
@@ -862,23 +860,21 @@ impl Streamer {
                     e
                 );
             }
-        } else {
-            if let Err(e) = update_fiat_amount(
-                &self.state_manager_sender,
-                self.user_address.clone(),
-                self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                    / ONE_MILLION,
-                0,
-                &self.endpoint,
-            ) {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error updating fiat amount: {}",
-                    e
-                );
-            }
+        } else if let Err(e) = update_fiat_amount(
+            &self.state_manager_sender,
+            self.user_address.clone(),
+            self.estimated_total_compute_units * self.price_per_one_million_compute_units
+                / ONE_MILLION,
+            0,
+            &self.endpoint,
+        ) {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
+                e
+            );
         }
     }
 }
@@ -974,25 +970,23 @@ impl Drop for Streamer {
                     e
                 );
             }
-        } else {
-            if let Err(e) = update_fiat_amount(
-                &self.state_manager_sender,
-                self.user_address.clone(),
-                self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                    / ONE_MILLION,
-                (self.num_input_tokens + self.streamer_computed_num_tokens)
-                    * self.price_per_one_million_compute_units
-                    / ONE_MILLION,
-                &self.endpoint,
-            ) {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error updating fiat amount: {}",
-                    e
-                );
-            }
+        } else if let Err(e) = update_fiat_amount(
+            &self.state_manager_sender,
+            self.user_address.clone(),
+            self.estimated_total_compute_units * self.price_per_one_million_compute_units
+                / ONE_MILLION,
+            (self.num_input_tokens + self.streamer_computed_num_tokens)
+                * self.price_per_one_million_compute_units
+                / ONE_MILLION,
+            &self.endpoint,
+        ) {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
+                e
+            );
         }
         self.status = StreamStatus::Completed;
     }

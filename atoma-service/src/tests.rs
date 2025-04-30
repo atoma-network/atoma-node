@@ -361,13 +361,15 @@ mod middleware {
     fn test_request_metadata() {
         let request_metadata = RequestMetadata::default();
 
-        assert_eq!(request_metadata.stack_small_id, 0);
+        assert_eq!(request_metadata.stack_small_id, Some(0));
         assert_eq!(request_metadata.estimated_total_compute_units, 0);
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
-        let request_metadata = request_metadata.with_stack_info(1, 100, 200);
+        let request_metadata = request_metadata
+            .with_stack_info(1)
+            .with_tokens_information(100, 200);
 
-        assert_eq!(request_metadata.stack_small_id, 1);
+        assert_eq!(request_metadata.stack_small_id, Some(1));
         assert_eq!(request_metadata.num_input_tokens, 100);
         assert_eq!(request_metadata.estimated_total_compute_units, 200);
 
@@ -779,7 +781,7 @@ mod middleware {
                 .get::<RequestMetadata>()
                 .expect("Metadata should be set");
 
-            assert_eq!(metadata.stack_small_id, 1);
+            assert_eq!(metadata.stack_small_id, Some(1));
             // The exact token count will depend on your tokenizer, but we can verify it's non-zero
             assert!(metadata.estimated_total_compute_units > 0);
 
@@ -1108,13 +1110,15 @@ mod middleware {
 
         // Create initial RequestMetadata with some existing values
         let initial_metadata = RequestMetadata {
-            stack_small_id: 42,
+            stack_small_id: Some(42),
             num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
+            price_per_one_million_compute_units: 0,
+            user_address: "0x1".to_string(),
         };
 
         let mut req = Request::builder()
@@ -1140,7 +1144,7 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // Verify that the payload hash was updated but other fields preserved
-            assert_eq!(metadata.stack_small_id, 42);
+            assert_eq!(metadata.stack_small_id, Some(42));
             assert_eq!(metadata.estimated_total_compute_units, 100);
             assert_ne!(metadata.payload_hash, [0u8; 32]);
             assert_eq!(
@@ -1734,13 +1738,15 @@ mod middleware {
 
         // Create initial RequestMetadata
         let initial_metadata = RequestMetadata {
-            stack_small_id: 42,
+            stack_small_id: Some(42),
             num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
+            price_per_one_million_compute_units: 0,
+            user_address: "0x1".to_string(),
         };
 
         let mut req = Request::builder()
@@ -1760,7 +1766,7 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // Verify that the metadata was updated correctly
-            assert_eq!(metadata.stack_small_id, 42); // Original value preserved
+            assert_eq!(metadata.stack_small_id, Some(42)); // Original value preserved
             assert_eq!(metadata.estimated_total_compute_units, 100); // Original value preserved
             assert_ne!(metadata.payload_hash, [0u8; 32]); // Updated with new hash
             assert!(metadata.client_encryption_metadata.is_some()); // Updated with encryption metadata
