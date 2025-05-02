@@ -223,7 +223,7 @@ services:
       # - SGLANG_USE_MODELSCOPE: true
     entrypoint: python3 -m sglang.launch_server
     command:
-      --model-path deepseek-ai/DeepSeek-V3-0324 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/DeepSeek-V3-0324-NextN --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 8 --enable-dp-attention --tp 8 --dp 8 --enable-metrics --enable-ep-moe --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1
+      --model-path deepseek-ai/DeepSeek-V3-0324 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/DeepSeek-V3-0324-NextN --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 8 --enable-dp-attention --dp 8 --enable-metrics --enable-ep-moe --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1
       --host 0.0.0.0
       --port 30000
     ulimits:
