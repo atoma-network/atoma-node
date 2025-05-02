@@ -12,11 +12,13 @@ use tracing::instrument;
 
 use crate::constants::{
     IMAGE_GENERATION_LATENCY_QUERY, IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY,
-    TEI_EMBEDDINGS_BATCH_SIZE_QUERY, TEI_EMBEDDINGS_BATCH_TOKENS_QUERY,
-    TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY, TEI_EMBEDDINGS_INPUT_LENGTH_QUERY,
-    TEI_EMBEDDINGS_QUEUE_DURATION_QUERY, VLLM_CPU_CACHE_USAGE_PERC_QUERY,
-    VLLM_GPU_CACHE_USAGE_PERC_QUERY, VLLM_RUNNING_REQUESTS_QUERY, VLLM_TIME_PER_OUTPUT_TOKEN_QUERY,
-    VLLM_TIME_TO_FIRST_TOKEN_QUERY, VLLM_WAITING_REQUESTS_QUERY,
+    SGLANG_AVG_QUEUE_LATENCY_QUERY, SGLANG_RUNNING_REQUESTS_QUERY,
+    SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY, SGLANG_TIME_TO_FIRST_TOKEN_QUERY,
+    SGLANG_WAITING_REQUESTS_QUERY, TEI_EMBEDDINGS_BATCH_SIZE_QUERY,
+    TEI_EMBEDDINGS_BATCH_TOKENS_QUERY, TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY,
+    TEI_EMBEDDINGS_INPUT_LENGTH_QUERY, TEI_EMBEDDINGS_QUEUE_DURATION_QUERY,
+    VLLM_CPU_CACHE_USAGE_PERC_QUERY, VLLM_GPU_CACHE_USAGE_PERC_QUERY, VLLM_RUNNING_REQUESTS_QUERY,
+    VLLM_TIME_PER_OUTPUT_TOKEN_QUERY, VLLM_TIME_TO_FIRST_TOKEN_QUERY, VLLM_WAITING_REQUESTS_QUERY,
 };
 
 /// Metrics delta time, in seconds
@@ -27,6 +29,9 @@ const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// vLLM serving engine
 const VLLM: &str = "vllm";
+
+/// SGLANG serving engine
+const SGLANG: &str = "sglang";
 
 /// TEI serving engine
 const TEI: &str = "tei";
@@ -46,6 +51,10 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 static VLLM_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// A simple cache for SGLANG queries.
+static SGLANG_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// A simple cache for TEI queries.
 static TEI_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -57,7 +66,7 @@ static MISTRALRS_QUERIES_CACHE: LazyLock<Mutex<ModelQueriesCache>> =
 /// A simple cache for model queries.
 type ModelQueriesCache = HashMap<String, Vec<(String, String)>>;
 
-/// Structure to store the usage metrics for the node   
+/// Structure to store the usage metrics for the node
 ///
 /// This data is collected from the system and the GPU
 /// to be sent across the p2p network, for efficient request routing.
@@ -108,6 +117,10 @@ pub struct ChatCompletionsMetrics {
     /// Number of requests waiting to be processed,
     /// counted over the previous \Delta time
     pub num_waiting_requests: u32,
+
+    /// Average request queue latency, in seconds,
+    /// computed as the percentile 95 over the previous
+    pub avg_request_queue_latency: Option<f64>,
 }
 
 /// Structure to store the usage metrics for the node
@@ -185,12 +198,19 @@ macro_rules! impl_metrics_collector {
 }
 
 impl_metrics_collector!(ChatCompletionsMetrics, {
+    // VLLM metrics
     VLLM_TIME_TO_FIRST_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_to_first_token = value,
     VLLM_TIME_PER_OUTPUT_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_per_output_token = value,
     VLLM_GPU_CACHE_USAGE_PERC_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.gpu_kv_cache_usage_perc = value,
     VLLM_CPU_CACHE_USAGE_PERC_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.cpu_kv_cache_usage_perc = value,
     VLLM_RUNNING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
     VLLM_WAITING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_waiting_requests = u32::try_from(value as i64).unwrap_or(0),
+    // SGLANG metrics
+    SGLANG_TIME_TO_FIRST_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_to_first_token = value,
+    SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_per_output_token = value,
+    SGLANG_RUNNING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
+    SGLANG_WAITING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_waiting_requests = u32::try_from(value as i64).unwrap_or(0),
+    SGLANG_AVG_QUEUE_LATENCY_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.avg_request_queue_latency = Some(value),
 });
 
 impl_metrics_collector!(EmbeddingsMetrics, {
@@ -414,6 +434,16 @@ pub async fn compute_node_metrics(
                         ModelMetrics::ImageGeneration(metrics),
                     ))
                 }
+                SGLANG => {
+                    let queries = get_cached_sglang_metrics_queries(model_name);
+                    let metrics =
+                        collect_metrics::<ChatCompletionsMetrics>(model_name, &queries, endpoint)
+                            .await?;
+                    Ok((
+                        model_name.to_string(),
+                        ModelMetrics::ChatCompletions(metrics),
+                    ))
+                }
                 _ => Err(NodeMetricsError::VllmMetricsError(
                     VllmMetricsError::UnknownQuery(format!("Unknown serving engine: {engine}")),
                 )),
@@ -496,6 +526,32 @@ fn get_cached_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
     queries
 }
 
+/// Gets the cached SGLANG metrics queries for a specific model
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model for which to get the queries
+///
+/// # Returns
+///
+/// Returns the cached queries for the given model
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let model_name = "llama-7b";
+/// let queries = get_cached_sglang_metrics_queries(model_name);
+/// ```
+fn get_cached_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+    let mut cache = SGLANG_QUERIES_CACHE.lock().unwrap();
+    if let Some(queries) = cache.get(model_name) {
+        return queries.clone();
+    }
+    let queries = get_sglang_metrics_queries(model_name);
+    cache.insert(model_name.to_string(), queries.clone());
+    queries
+}
+
 /// Generates Prometheus queries for vLLM metrics for a specific model
 ///
 /// This function creates a vector of Prometheus query strings to fetch metrics related to
@@ -546,6 +602,55 @@ fn get_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
          format!("avg_over_time(vllm:running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
         (VLLM_WAITING_REQUESTS_QUERY.to_string(),
          format!("avg_over_time(vllm:waiting_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
+    ]
+}
+
+/// Generates Prometheus queries for SGLANG metrics for a specific model
+///
+/// This function creates a vector of Prometheus query strings to fetch metrics related to
+/// SGLANG performance and resource usage. The queries include measurements for:
+/// - Time to first token (prefill phase latency)
+/// - Time per output token (excluding first token)
+/// - Number of currently running requests
+/// - Number of waiting requests
+/// - Average request queue latency
+///
+/// The metrics are averaged over a time window defined by `METRICS_DELTA_TIME`.
+/// Each query includes an "or 0" fallback to handle cases where no data is available.
+///
+/// # Arguments
+///
+/// * `model_name` - The name of the model for which to generate metrics queries
+///
+/// # Returns
+///
+/// Returns a vector of tuples, where each tuple contains:
+/// - A query identifier string (defined in constants)
+/// - The corresponding Prometheus query string
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let model_name = "llama-7b";
+/// let queries = get_vllm_metrics_queries(model_name);
+/// // Returns queries like:
+/// // rate(vllm:time_to_first_token_seconds_sum{model_name="llama-7b"}[30m]) /
+/// // rate(vllm:time_to_first_token_seconds_count{model_name="llama-7b"}[30m])
+fn get_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
+    let delta = format!("{delta_minutes}m");
+
+    vec![
+         (SGLANG_TIME_TO_FIRST_TOKEN_QUERY.to_string(),
+         format!("(rate(sglang:time_to_first_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(sglang:time_to_first_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+        (SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY.to_string(),
+         format!("(rate(sglang:time_per_output_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(sglang:time_per_output_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+        (SGLANG_RUNNING_REQUESTS_QUERY.to_string(),
+         format!("avg_over_time(sglang:num_running_reqs{{model_name=\"{model_name}\"}}{delta}) or 0")),
+        (SGLANG_WAITING_REQUESTS_QUERY.to_string(),
+         format!("avg_over_time(sglang:num_queue_reqs{{model_name=\"{model_name}\"}}{delta}) or 0")),
+        (SGLANG_AVG_QUEUE_LATENCY_QUERY.to_string(),
+         format!("avg_over_time(sglang:avg_request_queue_latency{{model_name=\"{model_name}\"}}{delta}) or 0")),
     ]
 }
 
@@ -685,12 +790,24 @@ fn get_image_generation_metrics_queries(model_name: &str) -> Vec<(String, String
 pub enum NodeMetricsError {
     #[error("Failed to fetch vLLM production metrics: {0}")]
     VllmMetricsError(#[from] VllmMetricsError),
+    #[error("Failed to fetch SGLANG production metrics: {0}")]
+    SglangMetricsError(#[from] SglangMetricsError),
     #[error("Request failed: {0}")]
     RequestError(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum VllmMetricsError {
+    #[error("Failed to parse Prometheus response: {0}")]
+    ParseError(#[from] ParseFloatError),
+    #[error("Unknown query: {0}")]
+    UnknownQuery(String),
+    #[error("Query failed with status: {0}")]
+    QueryFailed(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SglangMetricsError {
     #[error("Failed to parse Prometheus response: {0}")]
     ParseError(#[from] ParseFloatError),
     #[error("Unknown query: {0}")]
