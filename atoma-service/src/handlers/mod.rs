@@ -489,7 +489,7 @@ mod vllm_metrics {
     ///   - No metrics data is found for the specified job.
     ///   - The response data cannot be parsed correctly.
     #[instrument(level = "info", skip_all, fields(job=job))]
-    async fn get_metrics(
+    async fn get_vllm_request_queue_time_seconds(
         client: &Client,
         job: &str,
         chat_completions_service_url: &str,
@@ -504,6 +504,65 @@ mod vllm_metrics {
             "histogram_quantile(
                 0.90,
                 sum(rate(vllm:request_queue_time_seconds_bucket{{job=\"{job}\"}}[30s])
+                    or vector(0)) by (le)
+            )"
+        );
+        let response = client.query(&query).get().await?;
+        response.data().as_vector().map_or_else(
+            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            |data_vector| {
+                data_vector.first().map_or_else(
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    |value| {
+                        let sample = value.sample();
+                        let value = sample.value();
+                        Ok((chat_completions_service_url.to_string(), value))
+                    },
+                )
+            },
+        )
+    }
+
+    /// Retrieves the 90th percentile request queue time metric from a vLLM service.
+    ///
+    /// This function executes a Prometheus query against the configured Prometheus instance
+    /// to get the `vllm:request_queue_time_seconds` histogram for the specified `job`,
+    /// calculates the 90th percentile, and returns it along with the service URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - The Prometheus HTTP query client.
+    /// * `job` - The Prometheus job name corresponding to the vLLM service instance.
+    /// * `chat_completions_service_url` - The URL of the vLLM service instance, returned alongside the metric.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a tuple `(String, f64)` on success, where:
+    ///   - The `String` is the `chat_completions_service_url` passed as input.
+    ///   - The `f64` is the calculated 90th percentile of the request queue time in seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if:
+    ///   - The Prometheus query fails.
+    ///   - No metrics data is found for the specified job.
+    ///   - The response data cannot be parsed correctly.
+    #[instrument(level = "info", skip_all, fields(job=job))]
+    async fn get_sglang_request_queue_latency(
+        client: &Client,
+        job: &str,
+        chat_completions_service_url: &str,
+    ) -> Result<(String, f64)> {
+        info!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "info",
+            "Getting metrics for job: {job}"
+        );
+        let query = format!(
+            "histogram_quantile(
+                0.90,
+                sum(rate(sglang:avg_request_queue_latency{{job=\"{job}\"}}[30s])
                     or vector(0)) by (le)
             )"
         );
@@ -557,7 +616,34 @@ mod vllm_metrics {
         let mut futures: FuturesUnordered<_> = chat_completions_service_urls
             .iter()
             .map(|(chat_completions_service_url, job_name)| {
-                get_metrics(&HTTP_CLIENT, job_name, chat_completions_service_url)
+                let vllm_future = get_vllm_request_queue_time_seconds(
+                    &HTTP_CLIENT,
+                    job_name,
+                    chat_completions_service_url,
+                );
+                let sglang_future = get_sglang_request_queue_latency(
+                    &HTTP_CLIENT,
+                    job_name,
+                    chat_completions_service_url,
+                );
+
+                async move {
+                    let vllm_result = vllm_future.await;
+                    let sglang_result = sglang_future.await;
+
+                    // Return the best result (lowest value) or the one that succeeded
+                    match (vllm_result, sglang_result) {
+                        (Ok((url1, value1)), Ok((url2, value2))) => {
+                            if value1 <= value2 {
+                                Ok((url1, value1))
+                            } else {
+                                Ok((url2, value2))
+                            }
+                        }
+                        (Ok(result), Err(_)) | (Err(_), Ok(result)) => Ok(result),
+                        (Err(e), Err(_)) => Err(e), // Return the first error if both fail
+                    }
+                }
             })
             .collect();
         while let Some(request_queue_time_seconds) = futures.next().await {

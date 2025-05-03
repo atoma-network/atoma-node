@@ -204,41 +204,6 @@ services:
       tempo:
         condition: service_healthy
         required: true
-  sglang:
-    image: lmsysorg/sglang:latest
-    container_name: sglang
-    volumes:
-      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-      # If you use modelscope, you need mount this directory
-      # - ${HOME}/.cache/modelscope:/root/.cache/modelscope
-    restart: always
-    network_mode: host # required by RDMA
-    privileged: true # required by RDMA
-    # Or you can only publish port 30000
-    ports:
-      - 30000:30000
-    environment:
-      HF_TOKEN: ${HF_TOKEN}
-      # if you use modelscope to download model, you need set this environment
-      # - SGLANG_USE_MODELSCOPE: true
-    entrypoint: python3 -m sglang.launch_server
-    command:
-      --model-path deepseek-ai/DeepSeek-V3-0324 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/DeepSeek-V3-0324-NextN --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 8 --enable-dp-attention --dp 8 --enable-metrics --enable-ep-moe --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1
-      --host 0.0.0.0
-      --port 30000
-    ulimits:
-      memlock: -1
-      stack: 67108864
-    ipc: host
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:30000/health || exit 1"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
 
   atoma-node:
     <<: *atoma-node
@@ -296,6 +261,23 @@ services:
         condition: service_started
         required: true
 
+  atoma-node-sglang:
+    <<: *atoma-node
+    profiles:
+      - gpu
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
+      - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
+    depends_on:
+      postgres-db:
+        condition: service_started
+        required: true
+      otel-collector:
+        condition: service_started
+        required: true
+
   atoma-node-no-nvidia:
     <<: *atoma-node-no-nvidia
     profiles:
@@ -318,6 +300,38 @@ services:
       otel-collector:
         condition: service_started
         required: true
+
+  sglang:
+    container_name: sglang
+    profiles: [chat_completions_sglang]
+    image: lmsysorg/sglang:latest
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    restart: always
+    network_mode: host # required by RDMA
+    privileged: true # required by RDMA
+    ports:
+      - 8000:8000
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    entrypoint: python3 -m sglang.launch_server
+    command:
+      --model-path deepseek-ai/DeepSeek-V3-0324 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/DeepSeek-V3-0324-NextN --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 8 --enable-dp-attention --dp 8 --enable-metrics --enable-ep-moe --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1
+      --host 0.0.0.0
+      --port 8000
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
 
   vllm1:
     <<: *inference-service-cuda
