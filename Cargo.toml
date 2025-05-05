@@ -26,7 +26,7 @@ atoma-p2p                   = { path = "./atoma-p2p" }
 atoma-state                 = { path = "./atoma-state" }
 atoma-sui                   = { path = "./atoma-sui" }
 atoma-utils                 = { path = "./atoma-utils" }
-axum                        = "0.8.3"
+axum                        = "0.8.4"
 base64                      = "0.22.1"
 blake2                      = "0.10.6"
 blake3                      = "1.8.2"

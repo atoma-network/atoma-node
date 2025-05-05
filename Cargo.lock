@@ -704,7 +704,7 @@ dependencies = [
  "atoma-state",
  "atoma-sui",
  "atoma-utils",
- "axum 0.8.3",
+ "axum 0.8.4",
  "blake2",
  "clap",
  "config",
@@ -790,7 +790,7 @@ dependencies = [
  "atoma-state",
  "atoma-sui",
  "atoma-utils",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "clap",
  "config",
@@ -879,7 +879,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "axum 0.8.3",
+ "axum 0.8.4",
  "blake2",
  "fastcrypto 0.1.9",
  "flate2",
@@ -952,9 +952,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
+checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
 dependencies = [
  "axum-core 0.5.2",
  "axum-macros",
@@ -5543,7 +5543,7 @@ version = "0.7.0"
 source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.47.0#f3e72b60708b682f1d286b8d218977c4338e39d9"
 dependencies = [
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "dashmap 5.5.3",
  "futures",
  "once_cell",
@@ -9040,7 +9040,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.21.7",
  "bcs",
  "bytes",
@@ -9135,7 +9135,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.47.0#f3e72b60708b
 dependencies = [
  "anyhow",
  "arc-swap",
- "axum 0.8.3",
+ "axum 0.8.4",
  "axum-server",
  "ed25519",
  "fastcrypto 0.1.8",
@@ -9753,7 +9753,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85839f0b32fd242bb3209262371d07feda6d780d16ee9d2bc88581b89da1549b"
 dependencies = [
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "bytes",
  "h2",
@@ -10382,7 +10382,7 @@ version = "9.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29519b3c485df6b13f4478ac909a491387e9ef70204487c3b64b53749aec0be"
 dependencies = [
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "mime_guess",
  "regex",
