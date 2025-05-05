@@ -575,7 +575,10 @@ pub async fn verify_stack_permissions(
         );
         Ok(next.run(req).await)
     } else {
-        if !state.fiat_allowed.contains(&sui_address.to_string()) {
+        if !state
+            .fiat_allowed_addresses
+            .contains(&sui_address.to_string())
+        {
             // The stack was not found and the address is not enabled for fiat.
             return Err(AtomaServiceError::MissingHeader {
                 header: atoma_utils::constants::STACK_SMALL_ID.to_string(),

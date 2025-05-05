@@ -9,7 +9,7 @@ use crate::{
             TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS,
         },
-        update_fiat_amount, update_stack_num_compute_units, ONE_MILLION,
+        update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
@@ -156,9 +156,9 @@ pub async fn image_generations_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }
@@ -291,9 +291,9 @@ pub async fn confidential_image_generations_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }

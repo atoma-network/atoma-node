@@ -6,7 +6,6 @@ use crate::{
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
-        ONE_MILLION,
     },
     middleware::EncryptionMetadata,
     server::AppState,
@@ -286,9 +285,9 @@ pub async fn chat_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }
@@ -488,9 +487,9 @@ pub async fn confidential_chat_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }
@@ -1030,7 +1029,7 @@ pub mod utils {
     use crate::handlers::{
         handle_concurrent_requests_count_decrement, handle_status_code_error,
         metrics::CHAT_COMPLETIONS_LATENCY_METRICS, update_fiat_amount,
-        vllm_metrics::get_best_available_chat_completions_service_url, ONE_MILLION,
+        vllm_metrics::get_best_available_chat_completions_service_url,
     };
 
     use super::{
@@ -1520,8 +1519,9 @@ pub mod utils {
             update_fiat_amount(
                 &state.state_manager_sender,
                 user_address,
-                estimated_total_compute_units * price_per_one_million_compute_units / ONE_MILLION,
-                total_compute_units * price_per_one_million_compute_units / ONE_MILLION,
+                estimated_total_compute_units,
+                total_compute_units,
+                price_per_one_million_compute_units,
                 &endpoint,
             )?;
         }

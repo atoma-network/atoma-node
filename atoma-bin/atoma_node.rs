@@ -372,7 +372,7 @@ async fn main() -> Result<()> {
             .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
         address_index,
-        fiat_allowed: config.service.fiat_allowed,
+        fiat_allowed_addresses: config.service.fiat_allowed_addresses,
     };
 
     // Extract chat_completions_service_urls for metrics updater

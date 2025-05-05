@@ -31,7 +31,7 @@ use crate::{
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
         },
-        update_fiat_amount, update_stack_num_compute_units, ONE_MILLION, USAGE_KEY,
+        update_fiat_amount, update_stack_num_compute_units, USAGE_KEY,
     },
     server::utils,
 };
@@ -368,9 +368,9 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                / ONE_MILLION,
-            total_compute_units as i64 * self.price_per_one_million_compute_units / ONE_MILLION,
+            self.estimated_total_compute_units,
+            total_compute_units as i64,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
         ) {
             error!(
@@ -863,9 +863,9 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                / ONE_MILLION,
+            self.estimated_total_compute_units,
             0,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
         ) {
             error!(
@@ -973,11 +973,9 @@ impl Drop for Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units * self.price_per_one_million_compute_units
-                / ONE_MILLION,
-            (self.num_input_tokens + self.streamer_computed_num_tokens)
-                * self.price_per_one_million_compute_units
-                / ONE_MILLION,
+            self.estimated_total_compute_units,
+            self.num_input_tokens + self.streamer_computed_num_tokens,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
         ) {
             error!(

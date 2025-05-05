@@ -12,7 +12,6 @@ use crate::{
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
-        ONE_MILLION,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
@@ -158,9 +157,9 @@ pub async fn embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }
@@ -298,9 +297,9 @@ pub async fn confidential_embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units * price_per_one_million_compute_units
-                        / ONE_MILLION,
+                    estimated_total_compute_units,
                     0,
+                    price_per_one_million_compute_units,
                     &endpoint,
                 )?;
             }

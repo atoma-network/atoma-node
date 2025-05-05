@@ -1,5 +1,5 @@
 mod middleware {
-    use atoma_confidential::AtomaConfidentialCompute;
+    ui atoma_confidential::AtomaConfidentialCompute;
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
@@ -341,7 +341,7 @@ mod middleware {
                 keystore: Arc::new(keystore),
                 address_index: 0,
                 stack_retrieve_sender,
-                fiat_allowed: vec![],
+                fiat_allowed_addresses: vec![],
             },
             public_key,
             signature,
