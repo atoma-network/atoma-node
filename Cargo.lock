@@ -298,7 +298,7 @@ dependencies = [
  "blake2",
  "derivative",
  "digest 0.10.7",
- "sha2 0.10.8",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -704,7 +704,7 @@ dependencies = [
  "atoma-state",
  "atoma-sui",
  "atoma-utils",
- "axum 0.8.3",
+ "axum 0.8.4",
  "blake2",
  "clap",
  "config",
@@ -791,7 +791,7 @@ dependencies = [
  "atoma-state",
  "atoma-sui",
  "atoma-utils",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "clap",
  "config",
@@ -880,14 +880,14 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "axum 0.8.3",
+ "axum 0.8.4",
  "blake2",
  "fastcrypto 0.1.9",
  "flate2",
  "hkdf",
  "rand 0.8.5",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "sui-sdk",
  "thiserror 2.0.12",
  "tokio",
@@ -953,9 +953,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
+checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
 dependencies = [
  "axum-core 0.5.2",
  "axum-macros",
@@ -1202,7 +1202,7 @@ dependencies = [
  "pbkdf2",
  "rand_core 0.6.4",
  "ripemd",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "subtle",
  "zeroize",
 ]
@@ -1532,9 +1532,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -1658,7 +1658,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2483,7 +2483,7 @@ dependencies = [
  "ed25519",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "subtle",
  "zeroize",
 ]
@@ -2709,7 +2709,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "sha3",
  "signature 2.2.0",
  "static_assertions",
@@ -2760,7 +2760,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "sha3",
  "signature 2.2.0",
  "static_assertions",
@@ -4332,7 +4332,7 @@ dependencies = [
  "cfg-if",
  "ecdsa 0.14.8",
  "elliptic-curve 0.12.3",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "sha3",
 ]
 
@@ -4531,7 +4531,7 @@ dependencies = [
  "quick-protobuf-codec",
  "rand 0.8.5",
  "regex",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "tracing",
  "web-time",
 ]
@@ -4571,7 +4571,7 @@ dependencies = [
  "quick-protobuf",
  "rand 0.8.5",
  "ring",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tracing",
  "zeroize",
@@ -4596,7 +4596,7 @@ dependencies = [
  "quick-protobuf",
  "quick-protobuf-codec",
  "rand 0.8.5",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "smallvec",
  "thiserror 2.0.12",
  "tracing",
@@ -5544,7 +5544,7 @@ version = "0.7.0"
 source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.47.0#f3e72b60708b682f1d286b8d218977c4338e39d9"
 dependencies = [
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "dashmap 5.5.3",
  "futures",
  "once_cell",
@@ -6218,7 +6218,7 @@ dependencies = [
  "ecdsa 0.16.9",
  "elliptic-curve 0.13.8",
  "primeorder",
- "sha2 0.10.8",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6230,7 +6230,7 @@ dependencies = [
  "ecdsa 0.16.9",
  "elliptic-curve 0.13.8",
  "primeorder",
- "sha2 0.10.8",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6346,7 +6346,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "strum 0.25.0",
  "typeshare",
  "zeroize",
@@ -6466,7 +6466,7 @@ checksum = "7f9f832470494906d1fca5329f8ab5791cc60beb230c74815dff541cbd2b5ca0"
 dependencies = [
  "once_cell",
  "pest",
- "sha2 0.10.8",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -7420,7 +7420,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb09b49230ba22e8c676e7b75dfe2887dea8121f18b530ae0ba519ce442d2b21"
 dependencies = [
- "sha2 0.10.8",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -7438,7 +7438,7 @@ dependencies = [
  "pkcs1 0.4.1",
  "pkcs8 0.9.0",
  "rand_core 0.6.4",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "signature 2.2.0",
  "subtle",
  "zeroize",
@@ -7512,7 +7512,7 @@ version = "8.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d55b95147fe01265d06b3955db798bdaed52e60e2211c41137701b3aba8e21"
 dependencies = [
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "walkdir",
 ]
 
@@ -8233,9 +8233,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -8421,7 +8421,7 @@ dependencies = [
  "rand_core 0.6.4",
  "ring",
  "rustc_version",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "subtle",
 ]
 
@@ -8539,7 +8539,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "smallvec",
  "thiserror 2.0.12",
  "tokio",
@@ -8576,7 +8576,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "sqlx-core",
  "sqlx-mysql",
  "sqlx-postgres",
@@ -8620,7 +8620,7 @@ dependencies = [
  "rsa 0.9.8",
  "serde",
  "sha1",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -8657,7 +8657,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -9041,7 +9041,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.21.7",
  "bcs",
  "bytes",
@@ -9136,7 +9136,7 @@ source = "git+https://github.com/mystenlabs/sui?tag=testnet-v1.47.0#f3e72b60708b
 dependencies = [
  "anyhow",
  "arc-swap",
- "axum 0.8.3",
+ "axum 0.8.4",
  "axum-server",
  "ed25519",
  "fastcrypto 0.1.8",
@@ -9513,7 +9513,7 @@ dependencies = [
  "pbkdf2",
  "rand 0.8.5",
  "rustc-hash 1.1.0",
- "sha2 0.10.8",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "unicode-normalization",
  "wasm-bindgen",
@@ -9754,7 +9754,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85839f0b32fd242bb3209262371d07feda6d780d16ee9d2bc88581b89da1549b"
 dependencies = [
  "async-trait",
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "bytes",
  "h2",
@@ -10383,7 +10383,7 @@ version = "9.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29519b3c485df6b13f4478ac909a491387e9ef70204487c3b64b53749aec0be"
 dependencies = [
- "axum 0.8.3",
+ "axum 0.8.4",
  "base64 0.22.1",
  "mime_guess",
  "regex",
@@ -10689,7 +10689,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
