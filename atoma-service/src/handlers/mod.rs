@@ -336,9 +336,9 @@ pub fn update_fiat_amount(
 ) -> Result<(), AtomaServiceError> {
     let estimated_total_amount = (estimated_total_compute_units as u128
         * price_per_one_million_compute_units as u128
-        / ONE_MILLION as u128) as i64;
-    let total_amount = (total_amount as u128 * price_per_one_million_compute_units as u128
-        / ONE_MILLION as u128) as i64;
+        / ONE_MILLION) as i64;
+    let total_amount =
+        (total_amount as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,

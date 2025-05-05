@@ -1,5 +1,5 @@
 mod middleware {
-    ui atoma_confidential::AtomaConfidentialCompute;
+    use atoma_confidential::AtomaConfidentialCompute;
     use atoma_state::{
         types::{AtomaAtomaStateManagerEvent, Stack, Task},
         AtomaStateManager,
