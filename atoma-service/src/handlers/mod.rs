@@ -540,11 +540,11 @@ pub mod vllm_metrics {
             "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))"
         );
 
-        let gpu_cache_query =
-            format!("sum by(job) (rate(vllm:gpu_cache_usage_perc{{job=~\"{jobs}\"}}[30s]))");
+        let ttft_query =
+            format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[30s])))");
 
         let queue_time_response = client.query(&queue_time_query).get().await;
-        let gpu_cache_response = client.query(&gpu_cache_query).get().await;
+        let gpu_cache_response = client.query(&ttft_query).get().await;
 
         jobs_with_url
             .iter()
@@ -610,7 +610,7 @@ pub mod vllm_metrics {
         model: &str,
     ) -> Result<(String, StatusCode)> {
         const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0; // Default to 2 seconds
-        const MAX_ALLOWED_GPU_CACHE_USAGE: f64 = 50.0; // Default to 50%
+        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 4.0; // Default to 4 seconds
 
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
@@ -619,7 +619,7 @@ pub mod vllm_metrics {
         }
 
         let mut min_request_queue_time_seconds = f64::INFINITY;
-        let mut min_gpu_cache_usage = f64::INFINITY;
+        let mut min_time_to_first_token_seconds = f64::INFINITY;
         let mut best_url = chat_completions_service_urls[0].0.clone();
 
         // Get cached metrics
@@ -632,33 +632,35 @@ pub mod vllm_metrics {
         };
 
         for metric in metrics {
-            let (chat_completions_service_url, (request_queue_time_seconds, gpu_cache_usage)) =
-                match metric {
-                    Ok((
-                        chat_completions_service_url,
-                        (request_queue_time_seconds, gpu_cache_usage),
-                    )) => {
-                        info!(
+            let (
+                chat_completions_service_url,
+                (request_queue_time_seconds, time_to_first_token_seconds),
+            ) = match metric {
+                Ok((
+                    chat_completions_service_url,
+                    (request_queue_time_seconds, time_to_first_token_seconds),
+                )) => {
+                    info!(
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "info",
-                        "Received vLLM metrics response for {chat_completions_service_url}: queue_time={request_queue_time_seconds}, gpu_cache_usage={gpu_cache_usage}"
+                        "Received vLLM metrics response for {chat_completions_service_url}: queue_time={request_queue_time_seconds}, time_to_first_token_seconds={time_to_first_token_seconds}"
                     );
-                        (
-                            chat_completions_service_url,
-                            (request_queue_time_seconds, gpu_cache_usage),
-                        )
-                    }
-                    Err(e) => {
-                        tracing::warn!(
+                    (
+                        chat_completions_service_url,
+                        (request_queue_time_seconds, time_to_first_token_seconds),
+                    )
+                }
+                Err(e) => {
+                    tracing::warn!(
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "error",
                         "Failed to get metrics for chat completions service url with error: {e}",
                     );
-                        continue;
-                    }
-                };
+                    continue;
+                }
+            };
 
             // Handle NaN case first
             if request_queue_time_seconds.is_nan() {
@@ -668,27 +670,27 @@ pub mod vllm_metrics {
             }
 
             // Filter out instances with GPU cache usage above threshold
-            if gpu_cache_usage > MAX_ALLOWED_GPU_CACHE_USAGE {
+            if time_to_first_token_seconds > MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS {
                 continue;
             }
 
-            if gpu_cache_usage < min_gpu_cache_usage {
-                min_gpu_cache_usage = gpu_cache_usage;
+            if time_to_first_token_seconds < min_time_to_first_token_seconds {
+                min_time_to_first_token_seconds = time_to_first_token_seconds;
             }
 
             // Update min time and best URL if we found a better option
             if request_queue_time_seconds < min_request_queue_time_seconds
                 || (request_queue_time_seconds == min_request_queue_time_seconds
-                    && gpu_cache_usage < min_gpu_cache_usage)
+                    && time_to_first_token_seconds < min_time_to_first_token_seconds)
             {
                 debug!(
                     target = "atoma-service",
                     module = "vllm_metrics",
                     level = "debug",
-                    "Updating best chat completions service url to {chat_completions_service_url} with request queue time {request_queue_time_seconds} and GPU cache usage {gpu_cache_usage}"
+                    "Updating best chat completions service url to {chat_completions_service_url} with request queue time {request_queue_time_seconds} and time to first token {time_to_first_token_seconds}"
                 );
                 min_request_queue_time_seconds = request_queue_time_seconds;
-                min_gpu_cache_usage = gpu_cache_usage;
+                min_time_to_first_token_seconds = time_to_first_token_seconds;
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
