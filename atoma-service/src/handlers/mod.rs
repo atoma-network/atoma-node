@@ -685,7 +685,6 @@ pub mod vllm_metrics {
                     "Updating best chat completions service url to {chat_completions_service_url} with request queue time {request_queue_time_seconds} and time to first token {time_to_first_token_seconds}"
                 );
                 min_request_queue_time_seconds = request_queue_time_seconds;
-                min_time_to_first_token_seconds = time_to_first_token_seconds;
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
