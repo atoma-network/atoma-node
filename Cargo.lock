@@ -744,6 +744,7 @@ dependencies = [
  "isocountry",
  "libp2p",
  "opentelemetry",
+ "prometheus-http-query",
  "rand 0.8.5",
  "reqwest",
  "serde",

@@ -47,7 +47,7 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 )]
 pub fn usage_metrics_timer_task(
     country: Option<String>,
-    metrics_endpoints: HashMap<String, (String, String)>,
+    metrics_endpoints: HashMap<String, (String, Vec<String>)>,
     is_client: bool,
     node_public_url: Option<String>,
     node_small_id: Option<u64>,

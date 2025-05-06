@@ -95,18 +95,21 @@ node_small_id = 1
 public_url = "https://<PUBLIC_URL>"
 # required, replace this with the country (ISO 3166-1 alpha-2) of the node (https://www.iso.org/obp/ui/#search/code/
 country = ""
-# List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, metrics_endpoint)
-# (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ("vllm", "http://chat-completions:8000/metrics")`)
-metrics_endpoints = { "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" = [
-    "http://chat-completions1:8000/metrics",
-    "http://chat-completions2:8000/metrics",
-    "http://chat-completions3:8000/metrics",
-    "http://chat-completions4:8000/metrics",
-    "http://chat-completions5:8000/metrics",
-    "http://chat-completions6:8000/metrics",
-    "http://chat-completions7:8000/metrics",
-    "http://chat-completions8:8000/metrics",
+# List of endpoints serving metrics to collect, in the form of a map of model name to a tuple of (serving_engine, job_names)
+# (e.g. `"meta-llama/Llama-3.2-3B-Instruct" = ["vllm", ["vllm1", "vllm2", "vllm3", "vllm4"]]`)
+[atoma_p2p.metrics_endpoints]
+"Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" = [
     "vllm",
-] }
+    [
+        "vllm1",
+        "vllm2",
+        "vllm3",
+        "vllm4",
+        "vllm5",
+        "vllm6",
+        "vllm7",
+        "vllm8",
+    ],
+]
 # The path to the local key
 local_key = "/app/data/local_key"
