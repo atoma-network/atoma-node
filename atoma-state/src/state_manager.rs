@@ -1928,7 +1928,7 @@ impl AtomaState {
                      (user_address, overcharged_unsettled_amount, num_requests)
                      VALUES ($1, $2, 1) 
                      ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2 AND num_requests = fiat_balance.num_requests + 1;")
+                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2, num_requests = fiat_balance.num_requests + 1;")
             .bind(user_address)
             .bind(estimated_total_amount)
             .execute(&self.db)
@@ -1985,7 +1985,7 @@ impl AtomaState {
         .bind(user_address)
         .bind(estimated_total_amount)
         .bind(total_amount)
-        .bind(total_amount == 0) // If total amount is 0 then the request was unsuccessful so we need to decrement the num_requests
+        .bind(i64::from(total_amount == 0)) // If total amount is 0 then the request was unsuccessful so we need to decrement the num_requests
         .execute(&self.db)
         .await?;
         Ok(())

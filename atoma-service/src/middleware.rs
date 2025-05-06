@@ -12,6 +12,7 @@ use crate::{
             VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
         },
         request_model::ComputeUnitsEstimate,
+        ONE_MILLION,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
@@ -611,6 +612,19 @@ pub async fn verify_stack_permissions(
             })?
             .ok_or_else(|| AtomaServiceError::ModelError {
                 model_error: format!("No pricing found for model {model}"),
+                endpoint: endpoint.clone(),
+            })?;
+
+        state
+            .state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::LockFiatAmount {
+                user_address: sui_address.to_string(),
+                amount: ((max_total_compute_units as u128
+                    * price_per_one_million_compute_units as u128)
+                    / ONE_MILLION) as i64,
+            })
+            .map_err(|err| AtomaServiceError::InternalError {
+                message: format!("Failed to lock fiat amount: {}", err),
                 endpoint: endpoint.clone(),
             })?;
 
