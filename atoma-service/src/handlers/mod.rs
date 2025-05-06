@@ -523,7 +523,7 @@ pub mod vllm_metrics {
         });
     }
 
-    /// Retrieves both request queue time and GPU cache usage metrics from a vLLM service.
+    /// Retrieves both request queue time and TTFT metrics from a vLLM service.
     #[instrument(level = "info", skip_all, fields(jobs_with_url=jobs_with_url.iter().map(|(url, job)| format!("{job}={url}")).collect::<Vec<_>>().join(",")))]
     async fn get_metrics(
         client: &Client,
