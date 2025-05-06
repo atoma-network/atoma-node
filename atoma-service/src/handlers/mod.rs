@@ -438,7 +438,6 @@ pub fn handle_status_code_error(
 }
 
 pub mod vllm_metrics {
-    use core::f64;
     use opentelemetry::KeyValue;
     use std::sync::Arc;
     use std::sync::LazyLock;
@@ -490,7 +489,7 @@ pub mod vllm_metrics {
             }
         }
 
-        async fn get_metrics(&self) -> Option<Vec<Result<(String, (f64, f64))>>> {
+        async fn get_metrics(&self) -> Option<MetricsVec> {
             self.metrics.read().await.clone()
         }
 
@@ -543,8 +542,10 @@ pub mod vllm_metrics {
         let ttft_query =
             format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[30s])))");
 
-        let queue_time_response = client.query(&queue_time_query).get().await;
-        let gpu_cache_response = client.query(&ttft_query).get().await;
+        let (queue_time_response, ttft_response) = tokio::join!(
+            client.query(&queue_time_query).get(),
+            client.query(&ttft_query).get()
+        );
 
         jobs_with_url
             .iter()
@@ -573,7 +574,7 @@ pub mod vllm_metrics {
                             })
                     });
 
-                let gpu_cache = gpu_cache_response
+                let ttft = ttft_response
                     .as_ref()
                     .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
@@ -597,7 +598,7 @@ pub mod vllm_metrics {
                             })
                     });
 
-                queue_time.and_then(|qt| gpu_cache.map(|gc| (url.to_string(), (qt, gc))))
+                queue_time.and_then(|qt| ttft.map(|gc| (url.to_string(), (qt, gc))))
             })
             .collect()
     }
@@ -610,7 +611,6 @@ pub mod vllm_metrics {
         model: &str,
     ) -> Result<(String, StatusCode)> {
         const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0; // Default to 2 seconds
-        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 4.0; // Default to 4 seconds
 
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
@@ -667,11 +667,6 @@ pub mod vllm_metrics {
                 min_request_queue_time_seconds = 0.0;
                 best_url.clone_from(&chat_completions_service_url);
                 break;
-            }
-
-            // Filter out instances with GPU cache usage above threshold
-            if time_to_first_token_seconds > MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS {
-                continue;
             }
 
             if time_to_first_token_seconds < min_time_to_first_token_seconds {
