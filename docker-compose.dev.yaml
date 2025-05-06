@@ -291,11 +291,9 @@ services:
       - 8000:8000
     environment:
       HF_TOKEN: ${HF_TOKEN}
+      CUDA_VISIBLE_DEVICES: 0
     entrypoint: python3 -m sglang.launch_server
-    command:
-      --model-path mistralai/Mistral-7B-Instruct-v0.2 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/Mistral-7B-Instruct-v0.2 --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 8 --enable-dp-attention --dp 8 --enable-metrics --enable-ep-moe --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1
-      --host 0.0.0.0
-      --port 8000
+    command: --model-path mistralai/Mistral-7B-Instruct-v0.2 --speculative-algorithm EAGLE --speculative-draft-model-path lmsys/Mistral-7B-Instruct-v0.2 --speculative-num-steps 1 --speculative-eagle-topk 1 --speculative-num-draft-tokens 2 --trust-remote-code --tp 1 --dp 1 --enable-metrics --api-key ${HF_TOKEN} --attention-backend fa3 --enable-torch-compile --torch-compile-max-bs 1 --host 0.0.0.0
     ulimits:
       memlock: -1
       stack: 67108864
