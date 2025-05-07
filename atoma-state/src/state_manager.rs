@@ -16,6 +16,7 @@ use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{oneshot, RwLock};
+use tracing::instrument;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -1574,6 +1575,7 @@ impl AtomaState {
             UPDATE stacks s
             SET
                 already_computed_units = already_computed_units - ($2 - $3),
+                num_total_messages = num_total_messages + $6,
                 is_locked_for_claim = (
                     SELECT (u.is_confidential = true AND u.new_ratio > $4 AND $5 = 0)
                     FROM updated u
@@ -1590,6 +1592,7 @@ impl AtomaState {
         .bind(total_compute_units)
         .bind(ratio_for_claim_stacks)
         .bind(concurrent_requests)
+        .bind(i64::from(total_compute_units > 0)) // If total amount is greater than 0 then the request was successful
         .fetch_optional(&self.db)
         .await?;
 
@@ -1825,8 +1828,7 @@ impl AtomaState {
     ) -> Result<()> {
         let rows_affected = sqlx::query(
             "UPDATE stacks
-            SET total_hash = total_hash || $1,
-                num_total_messages = num_total_messages + 1
+            SET total_hash = total_hash || $1
             WHERE stack_small_id = $2",
         )
         .bind(&new_hash[..])
@@ -1839,6 +1841,154 @@ impl AtomaState {
             return Err(AtomaStateManagerError::StackNotFound);
         }
 
+        Ok(())
+    }
+
+    /// Retrieves the pricing for a specific model.
+    ///
+    /// This method fetches the `price_per_one_million_compute_units` field from the `tasks` table
+    /// for the given model name.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The name of the model whose pricing is to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<i64>>`: A result containing either:
+    ///   - `Ok(Some(i64))`: The price per one million compute units for the specified model.
+    ///   - `Ok(None)`: If no pricing information is found for the model.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_model_pricing(state_manager: &AtomaStateManager, model: String) -> Result<Option<i64>, AtomaStateManagerError> {
+    ///    state_manager.get_model_pricing(model).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(model = %model)
+    )]
+    pub async fn get_model_pricing(&self, model: String) -> Result<Option<i64>> {
+        let pricing = sqlx::query(
+            "select price_per_one_million_compute_units from tasks inner join node_subscriptions on tasks.task_small_id=node_subscriptions.task_small_id where model_name=$1 limit 1;",
+        ).bind(model).fetch_optional(&self.db).await?;
+        Ok(pricing.map(|row| row.get(0)))
+    }
+
+    /// Inserts or updates the fiat amount for a user.
+    ///
+    /// This method inserts a new entry into the `fiat_balance` table for the specified user address
+    /// with the given estimated total amount. If an entry already exists, it updates the existing
+    /// entry by adding the estimated total amount to the `overcharged_unsettled_amount` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_address` - The unique address of the user whose fiat amount is to be updated.
+    /// * `estimated_total_amount` - The estimated total amount to be added to the user's balance.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn lock_fiat_amount(state_manager: &AtomaStateManager, user_address: String, estimated_total_amount: i64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.lock_fiat_amount(user_address, estimated_total_amount).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount)
+    )]
+    pub async fn lock_fiat_amount(
+        &self,
+        user_address: String,
+        estimated_total_amount: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO fiat_balance 
+                     (user_address, overcharged_unsettled_amount)
+                     VALUES ($1, $2) 
+                     ON CONFLICT (user_address) DO UPDATE
+                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2;")
+            .bind(user_address)
+            .bind(estimated_total_amount)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    /// Updates the fiat amount for a user.
+    ///
+    /// This method updates the `overcharged_unsettled_amount` and `already_debited_amount` fields
+    /// in the `fiat_balance` table for the specified user address.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_address` - The unique address of the user whose fiat amount is to be updated.
+    /// * `estimated_total_amount` - The estimated total amount to be deducted from the user's balance.
+    /// * `total_amount` - The total amount to be added to the user's already debited amount.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_fiat_amount(state_manager: &AtomaStateManager, user_address: String, estimated_total_amount: i64, total_amount: i64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_fiat_amount(user_address, estimated_total_amount, total_amount).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount, total_amount = %total_amount)
+    )]
+    pub async fn update_fiat_amount(
+        &self,
+        user_address: String,
+        estimated_total_amount: i64,
+        total_amount: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE fiat_balance 
+                  SET overcharged_unsettled_amount = overcharged_unsettled_amount - $2,
+                      already_debited_amount = already_debited_amount + $3,
+                      num_requests = num_requests + $4;",
+        )
+        .bind(user_address)
+        .bind(estimated_total_amount)
+        .bind(total_amount)
+        .bind(i64::from(total_amount > 0)) // If total amount is greater than 0 then the request was successful
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 

@@ -470,24 +470,24 @@ pub static TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS: LazyLock<Counter<u
             .build()
     });
 
-/// Counter metric that tracks successful verify_stack_permissions middleware time.
+/// Counter metric that tracks successful verify_permissions middleware time.
 ///
-/// This metric measures the time taken by verify_stack_permissions middleware to process requests,
+/// This metric measures the time taken by verify_permissions middleware to process requests,
 /// broken down by model type. The histogram buckets range from 0.1ms to 30 seconds to
-/// capture both very fast and slow verify_stack_permissions middleware processing scenarios.
+/// capture both very fast and slow verify_permissions middleware processing scenarios.
 ///
 /// # Metric Details
-/// - Name: `atoma_verify_stack_permissions_middleware_time`
+/// - Name: `atoma_verify_permissions_middleware_time`
 /// - Type: Histogram
 /// - Labels: `model`
 /// - Labels: `privacy_level`
 /// - Unit: seconds
-pub static VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram<f64>> =
+pub static VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram<f64>> =
     LazyLock::new(|| {
         GLOBAL_METER
-            .f64_histogram("atoma_verify_stack_permissions_middleware_successful_time")
+            .f64_histogram("atoma_verify_permissions_middleware_successful_time")
             .with_description(
-                "Time taken by verify_stack_permissions middleware to process requests in seconds",
+                "Time taken by verify_permissions middleware to process requests in seconds",
             )
             .with_unit("s")
             .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
