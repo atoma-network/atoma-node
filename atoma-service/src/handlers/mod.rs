@@ -9,6 +9,7 @@ pub mod stop_streamer;
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
+use atoma_p2p::constants::ONE_MILLION;
 use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use dashmap::DashMap;
@@ -42,9 +43,6 @@ const SIGNATURE_KEY: &str = "signature";
 
 /// Key for the usage in the response body
 pub const USAGE_KEY: &str = "usage";
-
-/// One million, used for computing fiat amounts
-pub const ONE_MILLION: u128 = 1_000_000;
 
 /// Updates response signature and stack hash state
 ///

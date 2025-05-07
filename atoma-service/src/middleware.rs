@@ -12,12 +12,12 @@ use crate::{
             VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
         },
         request_model::ComputeUnitsEstimate,
-        ONE_MILLION,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
 };
 use atoma_confidential::types::{ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE};
+use atoma_p2p::constants::ONE_MILLION;
 use atoma_state::types::{AtomaAtomaStateManagerEvent, StackAvailability};
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},

@@ -36,3 +36,6 @@ pub const IMAGE_GENERATION_LATENCY_QUERY: &str = "mistral:image_generation_laten
 
 /// Number of running requests query
 pub const IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY: &str = "mistral:running_requests";
+
+/// One million, used for computing fiat amounts
+pub const ONE_MILLION: u128 = 1_000_000;
