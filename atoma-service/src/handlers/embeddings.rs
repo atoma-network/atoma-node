@@ -273,6 +273,30 @@ pub async fn confidential_embeddings_handler(
                 ],
             );
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "embeddings/confidential_embeddings_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Ok(response)
         }
         Err(e) => {

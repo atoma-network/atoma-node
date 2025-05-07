@@ -1575,6 +1575,7 @@ impl AtomaState {
             UPDATE stacks s
             SET
                 already_computed_units = already_computed_units - ($2 - $3),
+                num_total_messages = num_total_messages + $6,
                 is_locked_for_claim = (
                     SELECT (u.is_confidential = true AND u.new_ratio > $4 AND $5 = 0)
                     FROM updated u
@@ -1591,6 +1592,7 @@ impl AtomaState {
         .bind(total_compute_units)
         .bind(ratio_for_claim_stacks)
         .bind(concurrent_requests)
+        .bind(i64::from(total_compute_units > 0)) // If total amount is greater than 0 then the request was successful
         .fetch_optional(&self.db)
         .await?;
 
@@ -1826,8 +1828,7 @@ impl AtomaState {
     ) -> Result<()> {
         let rows_affected = sqlx::query(
             "UPDATE stacks
-            SET total_hash = total_hash || $1,
-                num_total_messages = num_total_messages + 1
+            SET total_hash = total_hash || $1
             WHERE stack_small_id = $2",
         )
         .bind(&new_hash[..])
@@ -1925,10 +1926,10 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO fiat_balance 
-                     (user_address, overcharged_unsettled_amount, num_requests)
+                     (user_address, overcharged_unsettled_amount)
                      VALUES ($1, $2, 1) 
                      ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2, num_requests = fiat_balance.num_requests + 1;")
+                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2;")
             .bind(user_address)
             .bind(estimated_total_amount)
             .execute(&self.db)
@@ -1978,14 +1979,14 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE fiat_balance 
-                  SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount - $2,
-                      already_debited_amount = fiat_balance.already_debited_amount + $3,
-                      num_requests = fiat_balance.num_requests - $4;",
+                  SET overcharged_unsettled_amount = overcharged_unsettled_amount - $2,
+                      already_debited_amount = already_debited_amount + $3,
+                      num_requests = num_requests + $4;",
         )
         .bind(user_address)
         .bind(estimated_total_amount)
         .bind(total_amount)
-        .bind(i64::from(total_amount == 0)) // If total amount is 0 then the request was unsuccessful so we need to decrement the num_requests
+        .bind(i64::from(total_amount > 0)) // If total amount is greater than 0 then the request was successful
         .execute(&self.db)
         .await?;
         Ok(())
