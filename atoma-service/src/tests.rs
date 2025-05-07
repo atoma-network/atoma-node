@@ -341,7 +341,7 @@ mod middleware {
                 keystore: Arc::new(keystore),
                 address_index: 0,
                 stack_retrieve_sender,
-                addresses_that_are_allowed_to_pay_by_fiat: vec![],
+                whitelist_sui_addresses_for_fiat: vec![],
             },
             public_key,
             signature,

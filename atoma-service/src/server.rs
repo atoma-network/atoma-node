@@ -200,7 +200,7 @@ pub struct AppState {
     pub address_index: usize,
 
     /// The Sui address of the clients that are allowed to use fiat.
-    pub addresses_that_are_allowed_to_pay_by_fiat: Vec<String>,
+    pub whitelist_sui_addresses_for_fiat: Vec<String>,
 }
 
 /// Creates and configures the main router for the application.

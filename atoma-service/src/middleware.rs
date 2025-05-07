@@ -554,7 +554,7 @@ async fn generate_fiat_request(
     model: &str,
 ) -> Result<Request<Body>, AtomaServiceError> {
     if !state
-        .addresses_that_are_allowed_to_pay_by_fiat
+        .whitelist_sui_addresses_for_fiat
         .contains(&sui_address.to_string())
     {
         // The stack was not found and the address is not enabled for fiat.
