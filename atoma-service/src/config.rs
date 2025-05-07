@@ -58,7 +58,7 @@ pub struct AtomaServiceConfig {
     pub metrics_update_interval: Option<u64>,
 
     /// List of allowed sui addresses for fiat payments.
-    pub fiat_allowed_addresses: Vec<String>,
+    pub addresses_that_are_allowed_to_pay_by_fiat: Vec<String>,
 }
 
 impl AtomaServiceConfig {

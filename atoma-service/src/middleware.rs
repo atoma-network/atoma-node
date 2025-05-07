@@ -577,7 +577,7 @@ pub async fn verify_stack_permissions(
         Ok(next.run(req).await)
     } else {
         if !state
-            .fiat_allowed_addresses
+            .addresses_that_are_allowed_to_pay_by_fiat
             .contains(&sui_address.to_string())
         {
             // The stack was not found and the address is not enabled for fiat.
