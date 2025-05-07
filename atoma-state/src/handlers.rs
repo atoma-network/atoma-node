@@ -758,15 +758,6 @@ pub(crate) async fn handle_state_manager_event(
             )
             .await?;
         }
-        AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash,
-        } => {
-            state_manager
-                .state
-                .update_stack_total_hash(stack_small_id, total_hash)
-                .await?;
-        }
     }
     Ok(())
 }
@@ -1007,7 +998,7 @@ async fn handle_node_key_rotation_event(
 /// async fn example(state_manager: &AtomaStateManager) {
 ///     let node_small_id = 123;
 ///     let sui_address = "0x123...".to_string();
-///     
+///
 ///     handle_node_small_id_ownership_verification_event(
 ///         state_manager,
 ///         node_small_id,
@@ -1069,7 +1060,7 @@ async fn handle_node_small_id_ownership_verification_event(
 ///         badge_id: /* ... */
 ///     };
 ///     let node_sui_address = "0x123...".to_string();
-///     
+///
 ///     handle_node_registered_event(
 ///         state_manager,
 ///         event,

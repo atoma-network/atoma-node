@@ -8,7 +8,7 @@ use tracing::{error, info};
 use utoipa::OpenApi;
 
 use crate::{
-    calculate_node_index, compute_committed_stack_proof,
+    calculate_node_index,
     types::{
         NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest,
         NodeClaimFundsResponse, NodeClaimStacksFundsRequest, NodeClaimStacksFundsResponse,
@@ -18,7 +18,7 @@ use crate::{
         NodeTaskUpdateSubscriptionRequest, NodeTaskUpdateSubscriptionResponse,
         NodeTrySettleStacksRequest, NodeTrySettleStacksResponse,
     },
-    CommittedStackProof, DaemonState,
+    DaemonState,
 };
 
 pub const NODES_PATH: &str = "/nodes";
@@ -340,32 +340,16 @@ pub async fn nodes_try_settle_stacks(
         gas_price,
     } = value;
 
-    let total_hashes = daemon_state
-        .atoma_state
-        .get_all_total_hashes(&stack_small_ids)
-        .await
-        .map_err(|_| {
-            error!("Failed to get stack total hash");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
     let mut tx_digests: Vec<String> = Vec::with_capacity(stack_small_ids.len());
-    for (stack_small_id, total_hash) in stack_small_ids.iter().zip(total_hashes.iter()) {
-        let CommittedStackProof {
-            root: committed_stack_proof,
-            leaf: stack_merkle_leaf,
-        } = compute_committed_stack_proof(total_hash, 0)?;
-
+    for &stack_small_id in &stack_small_ids {
         let tx_digest = daemon_state
             .client
             .write()
             .await
             .submit_try_settle_stack_tx(
-                *stack_small_id as u64,
+                stack_small_id as u64,
                 node_badge_id,
                 num_claimed_compute_units,
-                committed_stack_proof,
-                stack_merkle_leaf,
                 gas,
                 gas_budget,
                 gas_price,
@@ -415,15 +399,6 @@ pub async fn nodes_submit_attestations(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let total_hashes = daemon_state
-        .atoma_state
-        .get_all_total_hashes(&stack_small_ids)
-        .await
-        .map_err(|_| {
-            error!("Failed to get stack total hash");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
     let node_small_ids = if let Some(node_small_id) = node_small_id {
         vec![node_small_id]
     } else {
@@ -435,9 +410,7 @@ pub async fn nodes_submit_attestations(
     };
 
     let mut tx_digests = Vec::new();
-    for (stack_settlement_ticket, total_hash) in
-        stack_settlement_tickets.iter().zip(total_hashes.iter())
-    {
+    for stack_settlement_ticket in &stack_settlement_tickets {
         let stack_small_id = stack_settlement_ticket.stack_small_id;
         let attestation_nodes: Vec<i64> = serde_json::from_str(
             &stack_settlement_ticket.requested_attestation_nodes,
@@ -450,14 +423,6 @@ pub async fn nodes_submit_attestations(
         let attestation_node_indices = calculate_node_index(&node_small_ids, &attestation_nodes)?;
 
         for attestation_node_index in attestation_node_indices {
-            let CommittedStackProof {
-                root: committed_stack_proof,
-                leaf: stack_merkle_leaf,
-            } = compute_committed_stack_proof(
-                total_hash,
-                attestation_node_index.attestation_node_index as u64 + 1,
-            )?;
-
             let node_small_id = node_small_ids[attestation_node_index.node_small_id_index];
             let node_badge_id = daemon_state
                 .node_badges
@@ -478,8 +443,6 @@ pub async fn nodes_submit_attestations(
                 .submit_stack_settlement_attestation_tx(
                     stack_small_id as u64,
                     Some(node_badge_id),
-                    committed_stack_proof,
-                    stack_merkle_leaf,
                     gas,
                     gas_budget,
                     gas_price,

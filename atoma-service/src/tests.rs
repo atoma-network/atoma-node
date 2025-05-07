@@ -171,7 +171,6 @@ mod middleware {
             price_per_one_million_compute_units: 1,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 1,
             is_claimed: false,
             is_locked_for_claim: locked,

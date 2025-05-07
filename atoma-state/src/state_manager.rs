@@ -1446,7 +1446,7 @@ impl AtomaState {
             "INSERT INTO stacks
                 (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id,
                 num_compute_units, price_per_one_million_compute_units, already_computed_units,
-                in_settle_period, total_hash, num_total_messages, is_confidential,
+                in_settle_period, num_total_messages, is_confidential,
                 is_claimed, is_locked_for_claim)
             SELECT
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
@@ -1465,7 +1465,6 @@ impl AtomaState {
         .bind(stack.price_per_one_million_compute_units)
         .bind(stack.already_computed_units)
         .bind(stack.in_settle_period)
-        .bind(stack.total_hash)
         .bind(stack.num_total_messages)
         .bind(stack.is_claimed)
         .bind(stack.is_locked_for_claim)
@@ -1779,165 +1778,6 @@ impl AtomaState {
             .await?;
         tx.commit().await?;
         Ok(())
-    }
-
-    /// Updates the total hash and increments the total number of messages for a stack.
-    ///
-    /// This method updates the `total_hash` field in the `stacks` table by appending a new hash
-    /// to the existing hash and increments the `num_total_messages` field by 1 for the specified `stack_small_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `stack_small_id` - The unique small identifier of the stack to update.
-    /// * `new_hash` - A 32-byte array representing the new hash to append to the existing total hash.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database transaction fails to begin, execute, or commit.
-    /// - The specified stack is not found.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
-    ///
-    /// async fn update_hash(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
-    ///     let stack_small_id = 1;
-    ///     let new_hash = [0u8; 32]; // Example hash
-    ///
-    ///     state_manager.update_stack_total_hash(stack_small_id, new_hash).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id, new_hash = ?new_hash)
-    )]
-    pub async fn update_stack_total_hash(
-        &self,
-        stack_small_id: i64,
-        new_hash: [u8; 32],
-    ) -> Result<()> {
-        let rows_affected = sqlx::query(
-            "UPDATE stacks
-            SET total_hash = total_hash || $1,
-                num_total_messages = num_total_messages + 1
-            WHERE stack_small_id = $2",
-        )
-        .bind(&new_hash[..])
-        .bind(stack_small_id)
-        .execute(&self.db)
-        .await?
-        .rows_affected();
-
-        if rows_affected == 0 {
-            return Err(AtomaStateManagerError::StackNotFound);
-        }
-
-        Ok(())
-    }
-
-    /// Retrieves the total hash for a specific stack.
-    ///
-    /// This method fetches the `total_hash` field from the `stacks` table for the given `stack_small_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `stack_small_id` - The unique small identifier of the stack whose total hash is to be retrieved.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<Vec<u8>>`: A result containing either:
-    ///   - `Ok(Vec<u8>)`: A byte vector representing the total hash of the stack.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database query fails to execute.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
-    ///
-    /// async fn get_total_hash(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Vec<u8>, AtomaStateManagerError> {
-    ///     state_manager.get_stack_total_hash(stack_small_id).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id)
-    )]
-    pub async fn get_stack_total_hash(&self, stack_small_id: i64) -> Result<Vec<u8>> {
-        let total_hash = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT total_hash FROM stacks WHERE stack_small_id = $1",
-        )
-        .bind(stack_small_id)
-        .fetch_one(&self.db)
-        .await?;
-        Ok(total_hash)
-    }
-
-    /// Retrieves the total hashes for multiple stacks in a single query.
-    ///
-    /// This method efficiently fetches the `total_hash` field from the `stacks` table for all
-    /// provided stack IDs in a single database query.
-    ///
-    /// # Arguments
-    ///
-    /// * `stack_small_ids` - A slice of stack IDs whose total hashes should be retrieved.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<Vec<Vec<u8>>>`: A result containing either:
-    ///   - `Ok(Vec<Vec<u8>>)`: A vector of byte vectors, where each inner vector represents
-    ///     the total hash of a stack. The order corresponds to the order of results returned
-    ///     by the database query.
-    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The database query fails to execute.
-    /// - There's an issue retrieving the hash data from the result rows.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
-    ///
-    /// async fn get_hashes(state_manager: &AtomaStateManager) -> Result<Vec<Vec<u8>>, AtomaStateManagerError> {
-    ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to fetch hashes for
-    ///     state_manager.get_all_total_hashes(stack_ids).await
-    /// }
-    /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_ids = ?stack_small_ids)
-    )]
-    pub async fn get_all_total_hashes(&self, stack_small_ids: &[i64]) -> Result<Vec<Vec<u8>>> {
-        let mut query_builder = build_query_with_in(
-            "SELECT total_hash FROM stacks",
-            "stack_small_id",
-            stack_small_ids,
-            None,
-        );
-
-        Ok(query_builder
-            .build()
-            .fetch_all(&self.db)
-            .await?
-            .iter()
-            .map(|row| row.get("total_hash"))
-            .collect())
     }
 
     /// Updates a stack settlement ticket with attestation commitments.
@@ -2912,7 +2752,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -2960,7 +2799,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 30,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3047,7 +2885,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3103,7 +2940,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3156,7 +2992,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3221,7 +3056,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3320,7 +3154,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3440,7 +3273,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -3633,81 +3465,6 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn test_update_stack_total_hash() {
-        let state_manager = setup_test_db().await;
-
-        // Setup: Insert necessary task and subscription
-        let task = Task {
-            task_small_id: 1,
-            task_id: "task1".to_string(),
-            role: 1,
-            model_name: Some("model1".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: Some(100),
-            deprecated_at_epoch: None,
-            security_level: 1,
-            minimum_reputation_score: Some(50),
-        };
-        state_manager.insert_new_task(task).await.unwrap();
-        state_manager
-            .subscribe_node_to_task(1, 1, 100, 1000)
-            .await
-            .unwrap();
-
-        // Insert a stack
-        let stack = Stack {
-            owner_address: "0x123".to_string(),
-            stack_small_id: 1,
-            stack_id: "stack1".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 10,
-            price_per_one_million_compute_units: 1000,
-            already_computed_units: 0,
-            in_settle_period: false,
-            total_hash: vec![],
-            num_total_messages: 0,
-            is_claimed: false,
-            is_locked_for_claim: false,
-        };
-        state_manager.insert_new_stack(stack).await.unwrap();
-
-        // Update the total hash
-        let new_hash = [42u8; 32];
-        state_manager
-            .update_stack_total_hash(1, new_hash)
-            .await
-            .unwrap();
-
-        // Verify the update
-        let updated_stack = state_manager.get_stack(1).await.unwrap();
-        assert_eq!(updated_stack.total_hash.len(), 32);
-        assert_eq!(updated_stack.total_hash, new_hash);
-        assert_eq!(updated_stack.num_total_messages, 1);
-
-        // Update the total hash again
-        let new_hash = [84; 32];
-        state_manager
-            .update_stack_total_hash(1, new_hash)
-            .await
-            .unwrap();
-
-        // Verify the update
-        let updated_stack = state_manager.get_stack(1).await.unwrap();
-        assert_eq!(updated_stack.total_hash.len(), 64);
-        assert_eq!(updated_stack.total_hash[0..32], [42u8; 32]);
-        assert_eq!(updated_stack.total_hash[32..64], [84u8; 32]);
-        assert_eq!(updated_stack.num_total_messages, 2);
-
-        // Test updating non-existent stack
-        let result = state_manager.update_stack_total_hash(999, new_hash).await;
-        assert!(matches!(result, Err(AtomaStateManagerError::StackNotFound)));
-
-        truncate_tables(&state_manager.db).await;
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
     async fn test_get_all_node_subscriptions() {
         let state_manager = setup_test_db().await;
 
@@ -3851,7 +3608,6 @@ mod tests {
                 price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
-                total_hash: vec![1, 2, 3],
                 num_total_messages: 1,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -3866,7 +3622,6 @@ mod tests {
                 price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
-                total_hash: vec![4, 5, 6],
                 num_total_messages: 2,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -3881,7 +3636,6 @@ mod tests {
                 price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
-                total_hash: vec![7, 8, 9],
                 num_total_messages: 3,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -3988,7 +3742,6 @@ mod tests {
         assert_eq!(stack.price_per_one_million_compute_units, 3000);
         assert_eq!(stack.already_computed_units, 100);
         assert!(!stack.in_settle_period);
-        assert_eq!(stack.total_hash, vec![7, 8, 9]);
         assert_eq!(stack.num_total_messages, 3);
 
         // Test 8: Verify stacks with different states (in_settle_period)
@@ -4044,7 +3797,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4060,7 +3812,6 @@ mod tests {
             price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4129,7 +3880,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4145,7 +3895,6 @@ mod tests {
             price_per_one_million_compute_units: 2000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4218,7 +3967,6 @@ mod tests {
                 already_computed_units: 90,
                 price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4234,7 +3982,6 @@ mod tests {
                 already_computed_units: 50,
                 price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4250,7 +3997,6 @@ mod tests {
                 already_computed_units: 95,
                 price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4266,7 +4012,6 @@ mod tests {
                 already_computed_units: 100,
                 price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4375,7 +4120,6 @@ mod tests {
             already_computed_units: 0,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4393,7 +4137,6 @@ mod tests {
             already_computed_units: i64::MAX / 2 + i64::MAX / 4,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4459,7 +4202,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4543,7 +4285,6 @@ mod tests {
             price_per_one_million_compute_units: 1000,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -4660,7 +4401,6 @@ mod tests {
                 price_per_one_million_compute_units: 1000,
                 already_computed_units: 0,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4675,7 +4415,6 @@ mod tests {
                 price_per_one_million_compute_units: 2000,
                 already_computed_units: 50,
                 in_settle_period: true,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4690,7 +4429,6 @@ mod tests {
                 price_per_one_million_compute_units: 3000,
                 already_computed_units: 100,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4777,139 +4515,6 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn test_get_all_total_hashes() {
-        let state_manager = setup_test_db().await;
-        truncate_tables(&state_manager.db).await;
-        // Setup: Create a Task
-        let task = Task {
-            task_small_id: 1,
-            task_id: "task1".to_string(),
-            role: 1,
-            model_name: Some("model1".to_string()),
-            is_deprecated: false,
-            valid_until_epoch: Some(100),
-            deprecated_at_epoch: None,
-            security_level: 1,
-            minimum_reputation_score: Some(50),
-        };
-        state_manager.insert_new_task(task).await.unwrap();
-
-        state_manager
-            .subscribe_node_to_task(1, 1, 100, 1000)
-            .await
-            .unwrap();
-
-        // Test case 1: Empty input
-        let result = state_manager.get_all_total_hashes(&[]).await.unwrap();
-        assert!(result.is_empty(), "Empty input should return empty result");
-
-        // Test case 2: Single stack
-        let hash1 = vec![1u8; 32];
-        let stack1 = Stack {
-            owner_address: "owner1".to_string(),
-            stack_small_id: 1,
-            stack_id: "stack1".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 100,
-            price_per_one_million_compute_units: 1000,
-            already_computed_units: 0,
-            in_settle_period: false,
-            is_claimed: false,
-            is_locked_for_claim: false,
-            total_hash: hash1.clone(),
-            num_total_messages: 0,
-        };
-        state_manager.insert_new_stack(stack1).await.unwrap();
-
-        let result = state_manager.get_all_total_hashes(&[1]).await.unwrap();
-        assert_eq!(result.len(), 1, "Should return single hash");
-        assert_eq!(result[0], hash1, "Hash should match inserted value");
-
-        // Test case 3: Multiple stacks with different hash sizes
-        let hash2 = vec![2u8; 64]; // Double size hash
-        let hash3 = vec![3u8; 32]; // 32 bytes hash
-
-        let stack2 = Stack {
-            owner_address: "owner2".to_string(),
-            stack_small_id: 2,
-            stack_id: "stack2".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 200,
-            price_per_one_million_compute_units: 2000,
-            already_computed_units: 0,
-            in_settle_period: false,
-            is_claimed: false,
-            is_locked_for_claim: false,
-            total_hash: hash2.clone(),
-            num_total_messages: 0,
-        };
-
-        let stack3 = Stack {
-            owner_address: "owner3".to_string(),
-            stack_small_id: 3,
-            stack_id: "stack3".to_string(),
-            task_small_id: 1,
-            selected_node_id: 1,
-            num_compute_units: 300,
-            price_per_one_million_compute_units: 3000,
-            already_computed_units: 0,
-            in_settle_period: false,
-            is_claimed: false,
-            is_locked_for_claim: false,
-            total_hash: hash3.clone(),
-            num_total_messages: 0,
-        };
-
-        state_manager.insert_new_stack(stack2).await.unwrap();
-        state_manager.insert_new_stack(stack3).await.unwrap();
-
-        let result = state_manager
-            .get_all_total_hashes(&[1, 2, 3])
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 3, "Should return three hashes");
-        assert_eq!(result[0], hash1, "First hash should match");
-        assert_eq!(result[1], hash2, "Second hash should match");
-        assert_eq!(result[2], hash3, "Third hash should match");
-
-        // Test case 4: Non-existent stacks
-        let result = state_manager
-            .get_all_total_hashes(&[999, 1000])
-            .await
-            .unwrap();
-        assert!(
-            result.is_empty(),
-            "Non-existent stacks should return empty result"
-        );
-
-        // Test case 5: Mix of existing and non-existing stacks
-        let result = state_manager
-            .get_all_total_hashes(&[1, 999, 2])
-            .await
-            .unwrap();
-        assert_eq!(
-            result.len(),
-            2,
-            "Should return only existing stacks' hashes"
-        );
-        assert_eq!(result[0], hash1, "First hash should match");
-        assert_eq!(result[1], hash2, "Second hash should match");
-
-        // Test case 6: Duplicate stack IDs
-        let result = state_manager
-            .get_all_total_hashes(&[1, 1, 1])
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 1, "Duplicate IDs should return single result");
-        assert_eq!(result[0], hash1, "Hash should match for duplicate IDs");
-
-        truncate_tables(&state_manager.db).await;
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
     async fn test_get_stack_settlement_tickets() {
         let state_manager = setup_test_db().await;
 
@@ -4947,7 +4552,6 @@ mod tests {
                 price_per_one_million_compute_units: 1000,
                 already_computed_units: 50,
                 in_settle_period: true,
-                total_hash: vec![],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4962,7 +4566,6 @@ mod tests {
                 price_per_one_million_compute_units: 2000,
                 already_computed_units: 150,
                 in_settle_period: true,
-                total_hash: vec![],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -4977,7 +4580,6 @@ mod tests {
                 price_per_one_million_compute_units: 3000,
                 already_computed_units: 250,
                 in_settle_period: true,
-                total_hash: vec![],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -5341,7 +4943,6 @@ mod tests {
             selected_node_id: 1,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -5403,7 +5004,6 @@ mod tests {
                 selected_node_id: 1,
                 price_per_one_million_compute_units: 1000,
                 in_settle_period: false,
-                total_hash: vec![0; 32],
                 num_total_messages: 0,
                 is_claimed: false,
                 is_locked_for_claim: false,
@@ -5475,7 +5075,6 @@ mod tests {
             selected_node_id: 1,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -5543,7 +5142,6 @@ mod tests {
             selected_node_id: 1,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -5609,7 +5207,6 @@ mod tests {
             selected_node_id: 1,
             price_per_one_million_compute_units: 1000,
             in_settle_period: false,
-            total_hash: vec![0; 32],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
