@@ -218,7 +218,7 @@ services:
       postgres-db:
         condition: service_healthy
     volumes:
-      - ./db-maintenance:/scripts
+      - ./scripts/db-maintenance:/scripts
       - postgres-data:/var/lib/postgresql/data:ro
       - ./s3-archives:/s3-archives
     environment:
