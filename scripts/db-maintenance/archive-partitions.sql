@@ -244,8 +244,8 @@ SELECT
 	*
 FROM
 	archive_old_data(
-		24,
-		-- Keep 24 months of data in PostgreSQL
+		1,
+		-- Keep 1 month of data in PostgreSQL
 		'your-s3-bucket-name',
 		-- Replace with your S3 bucket
 		'database-archives' -- S3 prefix
