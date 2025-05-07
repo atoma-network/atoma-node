@@ -832,6 +832,16 @@ impl Streamer {
     }
 
     /// Updates balance (stack or fiat) when an error occurs
+    #[instrument(
+        level = "error",
+        skip_all,
+        fields(
+            endpoint = self.endpoint,
+            stack_small_id = self.stack_small_id,
+            estimated_total_compute_units = self.estimated_total_compute_units,
+            payload_hash = hex::encode(self.payload_hash)
+        )
+    )]
     fn update_balance_on_error(&self) {
         if let Some(stack_small_id) = self.stack_small_id {
             // NOTE: We need to update the stack number of tokens as the service failed to generate
