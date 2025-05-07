@@ -1448,10 +1448,10 @@ impl AtomaState {
                 num_compute_units, price_per_one_million_compute_units, already_computed_units,
                 in_settle_period, num_total_messages, is_confidential,
                 is_claimed, is_locked_for_claim)
-            SELECT
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 (SELECT security_level = 1 FROM tasks WHERE task_small_id = $4),
-                $12, $13
+                $11, $12)
             ON CONFLICT (stack_small_id) DO UPDATE
             SET already_computed_units = stacks.already_computed_units + $8
             WHERE stacks.stack_small_id = $2;",
