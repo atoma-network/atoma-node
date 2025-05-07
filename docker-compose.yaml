@@ -90,6 +90,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./scripts/db-maintenance:/docker-entrypoint-initdb.d
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     env_file: .env
@@ -100,6 +101,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command: >
+      bash -c "
+        apt-get update &&
+        apt-get install -y postgresql-13-partman &&
+        docker-entrypoint.sh postgres
+      "
 
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -204,6 +211,41 @@ services:
       tempo:
         condition: service_healthy
         required: true
+  postgres-maintenance:
+    image: postgres:13
+    platform: ${PLATFORM:-}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    volumes:
+      - ./scripts/db-maintenance:/scripts
+      - postgres-data:/var/lib/postgresql/data:ro
+      - ./s3-archives:/s3-archives
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGHOST=postgres-db
+      - PGPORT=5432
+    env_file: .env
+    networks:
+      - atoma-network
+    command: /bin/bash -c "sleep 30 && /scripts/run-maintenance.sh"
+    profiles:
+      - maintenance
+
+  postgres-cron:
+    image: mcuadros/ofelia:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: daemon --docker
+    environment:
+      - DOCKER_COMPOSE_PROJECT=atoma-network
+    networks:
+      - atoma-network
+    restart: always
+    depends_on:
+      - postgres-db
 
   atoma-node:
     <<: *atoma-node
@@ -303,7 +345,7 @@ services:
       - CUDA_VISIBLE_DEVICES=1
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm2:
     <<: *inference-service-cuda
     container_name: chat-completions2
@@ -368,7 +410,7 @@ services:
     <<: *inference-service-cuda
     container_name: chat-completions5
     profiles: [chat_completions_vllm]
-    image: vllm/vllm-openai:v0.8.1  
+    image: vllm/vllm-openai:v0.8.1
     environment:
       # Backend for attention computation
       # Available options:
@@ -397,7 +439,7 @@ services:
       # - "XFORMERS": use XFormers
       # - "ROCM_FLASH": use ROCmFlashAttention
       # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
-      - VLLM_ATTENTION_BACKEND=FLASH_ATTN 
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
       - VLLM_FLASH_ATTN_VERSION=3
       - VLLM_USE_V1=1
       - CUDA_VISIBLE_DEVICES=6
@@ -443,7 +485,7 @@ services:
       - CUDA_VISIBLE_DEVICES=8
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm-cpu:
     <<: *inference-service-cpu
     container_name: chat-completions
