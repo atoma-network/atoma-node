@@ -54,7 +54,7 @@ use crate::{
     },
     middleware::{
         confidential_compute_middleware, signature_verification_middleware,
-        verify_stack_permissions,
+        verify_permissions,
     },
 };
 
@@ -264,7 +264,7 @@ pub fn create_router(app_state: AppState) -> Router {
                     ))
                     .layer(from_fn_with_state(
                         app_state.clone(),
-                        verify_stack_permissions,
+                        verify_permissions,
                     )),
             ),
         )
@@ -274,7 +274,7 @@ pub fn create_router(app_state: AppState) -> Router {
                     .layer(from_fn(signature_verification_middleware))
                     .layer(from_fn_with_state(
                         app_state.clone(),
-                        verify_stack_permissions,
+                        verify_permissions,
                     )),
             ),
         )

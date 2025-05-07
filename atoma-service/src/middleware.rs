@@ -9,7 +9,7 @@ use crate::{
         metrics::{
             CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME,
             SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME,
-            VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
+            VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
         },
         request_model::ComputeUnitsEstimate,
     },
@@ -506,7 +506,7 @@ async fn generate_request_from_stack(
             .or_insert(0);
         *entry += 1;
     }
-    VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
+    VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
         instant.elapsed().as_secs_f64(),
         &[KeyValue::new("endpoint", endpoint)],
     );
@@ -529,6 +529,7 @@ async fn generate_request_from_stack(
 /// * `request_type` - The type of request.
 /// * `body_bytes` - The body bytes of the request.
 /// * `model` - The model for the request.
+/// * `instant` - The instant when the request was created.
 ///
 /// # Returns
 /// * `Ok(Request<Body>)` - The generated request.
@@ -552,6 +553,7 @@ async fn generate_fiat_request(
     request_type: RequestType,
     body_bytes: Bytes,
     model: &str,
+    instant: Instant,
 ) -> Result<Request<Body>, AtomaServiceError> {
     if !state
         .whitelist_sui_addresses_for_fiat
@@ -617,6 +619,11 @@ async fn generate_fiat_request(
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
+    VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
+        instant.elapsed().as_secs_f64(),
+        &[KeyValue::new("endpoint", endpoint)],
+    );
+
     Ok(req)
 }
 
@@ -670,7 +677,7 @@ async fn generate_fiat_request(
     ),
     err
 )]
-pub async fn verify_stack_permissions(
+pub async fn verify_permissions(
     state: State<AppState>,
     req: Request<Body>,
     next: Next,
@@ -781,6 +788,7 @@ pub async fn verify_stack_permissions(
             request_type,
             body_bytes,
             model,
+            instant,
         )
         .await?
     };

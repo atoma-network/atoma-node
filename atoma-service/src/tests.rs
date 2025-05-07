@@ -38,7 +38,7 @@ mod middleware {
         },
         middleware::{
             confidential_compute_middleware, signature_verification_middleware,
-            verify_stack_permissions, RequestMetadata, RequestType,
+            verify_permissions, RequestMetadata, RequestType,
         },
         server::AppState,
     };
@@ -418,7 +418,7 @@ mod middleware {
 
         // Build a router with the middleware applied
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state.clone(), verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state.clone(), verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -463,7 +463,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -506,7 +506,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -549,7 +549,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -596,7 +596,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -642,7 +642,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -689,7 +689,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -732,7 +732,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -792,7 +792,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(check_metadata_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -863,7 +863,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(verify_token_count))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1214,7 +1214,7 @@ mod middleware {
             .route(EMBEDDINGS_PATH, post(verify_embeddings_compute_units))
             .layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1295,7 +1295,7 @@ mod middleware {
             )
             .layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1379,7 +1379,7 @@ mod middleware {
             .route(EMBEDDINGS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");

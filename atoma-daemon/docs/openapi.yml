@@ -877,6 +877,8 @@ components:
       - in_settle_period
       - total_hash
       - num_total_messages
+      - is_claimed
+      - is_locked_for_claim
       properties:
         already_computed_units:
           type: integer
@@ -885,6 +887,12 @@ components:
         in_settle_period:
           type: boolean
           description: Indicates whether the stack is currently in the settle period
+        is_claimed:
+          type: boolean
+          description: Indicates whether the stack is claimed (for testing purposes)
+        is_locked_for_claim:
+          type: boolean
+          description: Indicates whether the stack is locked for claim (for testing purposes)
         num_compute_units:
           type: integer
           format: int64
