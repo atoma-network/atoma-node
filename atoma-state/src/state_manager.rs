@@ -1927,7 +1927,7 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO fiat_balance 
                      (user_address, overcharged_unsettled_amount)
-                     VALUES ($1, $2, 1) 
+                     VALUES ($1, $2) 
                      ON CONFLICT (user_address) DO UPDATE
                         SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2;")
             .bind(user_address)
