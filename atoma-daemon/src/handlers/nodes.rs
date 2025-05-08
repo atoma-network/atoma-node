@@ -8,7 +8,6 @@ use tracing::{error, info};
 use utoipa::OpenApi;
 
 use crate::{
-    calculate_node_index,
     types::{
         NodeAttestationProofRequest, NodeAttestationProofResponse, NodeClaimFundsRequest,
         NodeClaimFundsResponse, NodeClaimStacksFundsRequest, NodeClaimStacksFundsResponse,
@@ -31,8 +30,6 @@ pub const NODES_PATH: &str = "/nodes";
         nodes_task_subscribe,
         nodes_task_update_subscription,
         nodes_task_unsubscribe,
-        nodes_try_settle_stacks,
-        nodes_submit_attestations,
         nodes_claim_funds
     ),
     components(schemas(
@@ -80,14 +77,6 @@ pub fn nodes_router() -> Router<DaemonState> {
         .route(
             &format!("{NODES_PATH}/task-unsubscribe"),
             delete(nodes_task_unsubscribe),
-        )
-        .route(
-            &format!("{NODES_PATH}/try-settle-stacks"),
-            post(nodes_try_settle_stacks),
-        )
-        .route(
-            &format!("{NODES_PATH}/submit-attestations"),
-            post(nodes_submit_attestations),
         )
         .route(
             &format!("{NODES_PATH}/claim-funds"),
@@ -311,151 +300,6 @@ pub async fn nodes_task_unsubscribe(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(NodeTaskUnsubscriptionResponse { tx_digest }))
-}
-
-/// Create try settle stacks transaction
-///
-/// Create try settle stacks transaction
-///
-/// Attempts to settle stacks for a node.
-#[utoipa::path(
-    post,
-    path = "/try-settle-stacks",
-    request_body = NodeTrySettleStacksRequest,
-    responses(
-        (status = OK, description = "Node try settle stacks successful", body = NodeTrySettleStacksResponse),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit try settle stacks")
-    )
-)]
-pub async fn nodes_try_settle_stacks(
-    State(daemon_state): State<DaemonState>,
-    Json(value): Json<NodeTrySettleStacksRequest>,
-) -> Result<Json<NodeTrySettleStacksResponse>, StatusCode> {
-    let NodeTrySettleStacksRequest {
-        stack_small_ids,
-        num_claimed_compute_units,
-        node_badge_id,
-        gas,
-        gas_budget,
-        gas_price,
-    } = value;
-
-    let mut tx_digests: Vec<String> = Vec::with_capacity(stack_small_ids.len());
-    for &stack_small_id in &stack_small_ids {
-        let tx_digest = daemon_state
-            .client
-            .write()
-            .await
-            .submit_try_settle_stack_tx(
-                stack_small_id as u64,
-                node_badge_id,
-                num_claimed_compute_units,
-                gas,
-                gas_budget,
-                gas_price,
-            )
-            .await
-            .map_err(|_| {
-                error!("Failed to submit node try settle stack tx");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-        tx_digests.push(tx_digest);
-    }
-    Ok(Json(NodeTrySettleStacksResponse { tx_digests }))
-}
-
-/// Create attestation proof transaction
-///
-/// Create attestation proof transaction
-///
-/// Submits attestations for stack settlement.
-#[utoipa::path(
-    post,
-    path = "/submit-attestations",
-    request_body = NodeAttestationProofRequest,
-    responses(
-        (status = OK, description = "Node attestation proof successful", body = NodeAttestationProofResponse),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to submit attestation proof")
-    )
-)]
-pub async fn nodes_submit_attestations(
-    State(daemon_state): State<DaemonState>,
-    Json(value): Json<NodeAttestationProofRequest>,
-) -> Result<Json<NodeAttestationProofResponse>, StatusCode> {
-    let NodeAttestationProofRequest {
-        stack_small_ids,
-        node_small_id,
-        gas,
-        gas_budget,
-        gas_price,
-    } = value;
-
-    let stack_settlement_tickets = daemon_state
-        .atoma_state
-        .get_stack_settlement_tickets(&stack_small_ids)
-        .await
-        .map_err(|_| {
-            error!("Failed to get stacks");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let node_small_ids = if let Some(node_small_id) = node_small_id {
-        vec![node_small_id]
-    } else {
-        daemon_state
-            .node_badges
-            .iter()
-            .map(|(_, id)| *id as i64)
-            .collect::<Vec<i64>>()
-    };
-
-    let mut tx_digests = Vec::new();
-    for stack_settlement_ticket in &stack_settlement_tickets {
-        let stack_small_id = stack_settlement_ticket.stack_small_id;
-        let attestation_nodes: Vec<i64> = serde_json::from_str(
-            &stack_settlement_ticket.requested_attestation_nodes,
-        )
-        .map_err(|_| {
-            error!("Failed to parse attestation nodes");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        let attestation_node_indices = calculate_node_index(&node_small_ids, &attestation_nodes)?;
-
-        for attestation_node_index in attestation_node_indices {
-            let node_small_id = node_small_ids[attestation_node_index.node_small_id_index];
-            let node_badge_id = daemon_state
-                .node_badges
-                .iter()
-                .find_map(|(nb, ns)| {
-                    if *ns as i64 == node_small_id {
-                        Some(*nb)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-
-            let tx_digest = daemon_state
-                .client
-                .write()
-                .await
-                .submit_stack_settlement_attestation_tx(
-                    stack_small_id as u64,
-                    Some(node_badge_id),
-                    gas,
-                    gas_budget,
-                    gas_price,
-                )
-                .await
-                .map_err(|_| {
-                    error!("Failed to submit node attestation proof tx");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-            tx_digests.push(tx_digest);
-        }
-    }
-    Ok(Json(NodeAttestationProofResponse { tx_digests }))
 }
 
 /// Create claim funds transaction
