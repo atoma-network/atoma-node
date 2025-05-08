@@ -179,6 +179,24 @@ services:
       timeout: 5s
       retries: 5
 
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    ports:
+      - "9101:9100"
+    networks:
+      - atoma-network
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.119.0
     platform: ${PLATFORM:-}
@@ -303,7 +321,7 @@ services:
       - CUDA_VISIBLE_DEVICES=1
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm2:
     <<: *inference-service-cuda
     container_name: chat-completions2
@@ -368,7 +386,7 @@ services:
     <<: *inference-service-cuda
     container_name: chat-completions5
     profiles: [chat_completions_vllm]
-    image: vllm/vllm-openai:v0.8.1  
+    image: vllm/vllm-openai:v0.8.1
     environment:
       # Backend for attention computation
       # Available options:
@@ -397,7 +415,7 @@ services:
       # - "XFORMERS": use XFormers
       # - "ROCM_FLASH": use ROCmFlashAttention
       # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
-      - VLLM_ATTENTION_BACKEND=FLASH_ATTN 
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
       - VLLM_FLASH_ATTN_VERSION=3
       - VLLM_USE_V1=1
       - CUDA_VISIBLE_DEVICES=6
@@ -443,7 +461,7 @@ services:
       - CUDA_VISIBLE_DEVICES=8
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm-cpu:
     <<: *inference-service-cpu
     container_name: chat-completions
