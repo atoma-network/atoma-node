@@ -5,6 +5,7 @@ use std::{
 };
 
 use futures::stream::{FuturesUnordered, StreamExt};
+use prometheus_http_query::Client;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,15 +18,15 @@ use crate::constants::{
     SGLANG_WAITING_REQUESTS_QUERY, TEI_EMBEDDINGS_BATCH_SIZE_QUERY,
     TEI_EMBEDDINGS_BATCH_TOKENS_QUERY, TEI_EMBEDDINGS_INFERENCE_DURATION_QUERY,
     TEI_EMBEDDINGS_INPUT_LENGTH_QUERY, TEI_EMBEDDINGS_QUEUE_DURATION_QUERY,
-    VLLM_CPU_CACHE_USAGE_PERC_QUERY, VLLM_GPU_CACHE_USAGE_PERC_QUERY, VLLM_RUNNING_REQUESTS_QUERY,
-    VLLM_TIME_PER_OUTPUT_TOKEN_QUERY, VLLM_TIME_TO_FIRST_TOKEN_QUERY, VLLM_WAITING_REQUESTS_QUERY,
+    VLLM_GPU_CACHE_USAGE_PERC_QUERY, VLLM_RUNNING_REQUESTS_QUERY, VLLM_TIME_PER_OUTPUT_TOKEN_QUERY,
+    VLLM_TIME_TO_FIRST_TOKEN_QUERY, VLLM_WAITING_REQUESTS_QUERY,
 };
 
 /// Metrics delta time, in seconds
-pub const METRICS_DELTA_TIME: std::time::Duration = std::time::Duration::from_secs(30);
+pub const METRICS_DELTA_TIME: u64 = 30;
 
 /// Metrics timeout, in seconds
-const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// vLLM serving engine
 const VLLM: &str = "vllm";
@@ -39,12 +40,19 @@ const TEI: &str = "tei";
 /// Mistral-rs serving engine
 const MISTRALRS: &str = "mistralrs";
 
-/// HTTP client for the node metrics queries
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(METRICS_TIMEOUT)
-        .build()
-        .expect("Failed to create HTTP client")
+/// Prometheus url for the atoma-node instance
+const PROMETHEUS_URL: &str = "http://prometheus:9090";
+
+/// The HTTP client for the Prometheus metrics queries
+static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::from(
+        reqwest::Client::builder()
+            .timeout(METRICS_TIMEOUT)
+            .build()
+            .expect("Failed to create HTTP client"),
+        PROMETHEUS_URL,
+    )
+    .expect("Failed to create HTTP client")
 });
 
 /// A simple cache for vLLM queries.
@@ -97,10 +105,6 @@ pub struct ChatCompletionsMetrics {
     /// GPU KV cache usage percentage,
     /// computed as the average over the previous \Delta time
     pub gpu_kv_cache_usage_perc: f64,
-
-    /// CPU KV cache usage percentage,
-    /// computed as the average over the previous \Delta time
-    pub cpu_kv_cache_usage_perc: f64,
 
     /// Time to first token (prefill phase), in seconds,
     /// computed as the percentile 95 over the previous \Delta time
@@ -202,7 +206,6 @@ impl_metrics_collector!(ChatCompletionsMetrics, {
     VLLM_TIME_TO_FIRST_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_to_first_token = value,
     VLLM_TIME_PER_OUTPUT_TOKEN_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.time_per_output_token = value,
     VLLM_GPU_CACHE_USAGE_PERC_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.gpu_kv_cache_usage_perc = value,
-    VLLM_CPU_CACHE_USAGE_PERC_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.cpu_kv_cache_usage_perc = value,
     VLLM_RUNNING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_running_requests = u32::try_from(value as i64).unwrap_or(0),
     VLLM_WAITING_REQUESTS_QUERY => |s: &mut ChatCompletionsMetrics, value: f64| s.num_waiting_requests = u32::try_from(value as i64).unwrap_or(0),
     // SGLANG metrics
@@ -282,7 +285,6 @@ pub struct MetricsResult {
 ///
 /// * `model_name` - The name of the model for which to collect metrics
 /// * `queries` - A slice of tuples containing (query_name, query_string) pairs to execute
-/// * `endpoint` - The URL of the Prometheus metrics endpoint
 ///
 /// # Returns
 ///
@@ -324,24 +326,17 @@ pub struct MetricsResult {
 pub async fn collect_metrics<T: Default + MetricsCollector + Send>(
     model_name: &str,
     queries: &[(String, String)],
-    endpoint: &str,
 ) -> Result<T, NodeMetricsError> {
     let mut metrics = T::default();
     let mut futures: FuturesUnordered<_> = queries
         .iter()
-        .map(|(_, query)| get_metrics(&HTTP_CLIENT, query, endpoint))
+        .map(|(_, query)| get_metrics(&HTTP_CLIENT, query))
         .collect();
 
     while let Some(result) = futures.next().await {
         match result {
-            Ok((query, data)) => {
-                metrics.set_metrics_value(
-                    &query,
-                    data.result[0].value.1.parse::<f64>().map_err(|e| {
-                        tracing::error!("Failed to parse metric value for {}: {}", query, e);
-                        NodeMetricsError::VllmMetricsError(VllmMetricsError::ParseError(e))
-                    })?,
-                );
+            Ok((query, metric_value)) => {
+                metrics.set_metrics_value(&query, metric_value);
             }
             Err(e) => {
                 tracing::error!("Failed to fetch metrics with error: {}", e);
@@ -401,54 +396,51 @@ pub async fn collect_metrics<T: Default + MetricsCollector + Send>(
     fields(metrics_endpoints = %metrics_endpoints.len())
 )]
 pub async fn compute_node_metrics(
-    metrics_endpoints: &HashMap<String, (String, String)>,
+    metrics_endpoints: &HashMap<String, (String, Vec<String>)>,
 ) -> Result<NodeMetrics, NodeMetricsError> {
-    let futures = metrics_endpoints
-        .iter()
-        .map(|(model_name, (engine, endpoint))| async move {
-            match engine.as_str() {
-                VLLM => {
-                    let queries = get_cached_vllm_metrics_queries(model_name);
-                    let metrics =
-                        collect_metrics::<ChatCompletionsMetrics>(model_name, &queries, endpoint)
-                            .await?;
-                    Ok((
-                        model_name.to_string(),
-                        ModelMetrics::ChatCompletions(metrics),
-                    ))
+    let futures =
+        metrics_endpoints
+            .iter()
+            .map(|(model_name, (engine, jobs_for_model))| async move {
+                match engine.as_str() {
+                    VLLM => {
+                        let queries = get_cached_vllm_metrics_queries(model_name, jobs_for_model);
+                        let metrics =
+                            collect_metrics::<ChatCompletionsMetrics>(model_name, &queries).await?;
+                        Ok((
+                            model_name.to_string(),
+                            ModelMetrics::ChatCompletions(metrics),
+                        ))
+                    }
+                    TEI => {
+                        let queries = get_cached_tei_metrics_queries(model_name);
+                        let metrics =
+                            collect_metrics::<EmbeddingsMetrics>(model_name, &queries).await?;
+                        Ok((model_name.to_string(), ModelMetrics::Embeddings(metrics)))
+                    }
+                    MISTRALRS => {
+                        let queries = get_cached_image_generation_metrics_queries(model_name);
+                        let metrics =
+                            collect_metrics::<ImageGenerationMetrics>(model_name, &queries).await?;
+                        Ok((
+                            model_name.to_string(),
+                            ModelMetrics::ImageGeneration(metrics),
+                        ))
+                    }
+                    SGLANG => {
+                        let queries = get_cached_sglang_metrics_queries(model_name, jobs_for_model);
+                        let metrics =
+                            collect_metrics::<ChatCompletionsMetrics>(model_name, &queries).await?;
+                        Ok((
+                            model_name.to_string(),
+                            ModelMetrics::ChatCompletions(metrics),
+                        ))
+                    }
+                    _ => Err(NodeMetricsError::VllmMetricsError(
+                        VllmMetricsError::UnknownQuery(format!("Unknown serving engine: {engine}")),
+                    )),
                 }
-                TEI => {
-                    let queries = get_cached_tei_metrics_queries(model_name);
-                    let metrics =
-                        collect_metrics::<EmbeddingsMetrics>(model_name, &queries, endpoint)
-                            .await?;
-                    Ok((model_name.to_string(), ModelMetrics::Embeddings(metrics)))
-                }
-                MISTRALRS => {
-                    let queries = get_cached_image_generation_metrics_queries(model_name);
-                    let metrics =
-                        collect_metrics::<ImageGenerationMetrics>(model_name, &queries, endpoint)
-                            .await?;
-                    Ok((
-                        model_name.to_string(),
-                        ModelMetrics::ImageGeneration(metrics),
-                    ))
-                }
-                SGLANG => {
-                    let queries = get_cached_sglang_metrics_queries(model_name);
-                    let metrics =
-                        collect_metrics::<ChatCompletionsMetrics>(model_name, &queries, endpoint)
-                            .await?;
-                    Ok((
-                        model_name.to_string(),
-                        ModelMetrics::ChatCompletions(metrics),
-                    ))
-                }
-                _ => Err(NodeMetricsError::VllmMetricsError(
-                    VllmMetricsError::UnknownQuery(format!("Unknown serving engine: {engine}")),
-                )),
-            }
-        });
+            });
     let results = futures::future::try_join_all(futures).await?;
     let model_metrics = results.into_iter().collect();
 
@@ -490,21 +482,26 @@ pub async fn compute_node_metrics(
 ///
 /// let (query, metrics) = get_metrics(&client, query, endpoint).await?;
 /// ```
-async fn get_metrics(
-    client: &reqwest::Client,
-    query: &str,
-    endpoint: &str,
-) -> Result<(String, MetricsData), NodeMetricsError> {
-    let response: MetricsResponse = client
-        .get(endpoint)
-        .query(&[("query", query)])
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-
-    Ok((query.to_string(), response.data))
+async fn get_metrics(client: &Client, query: &str) -> Result<(String, f64), NodeMetricsError> {
+    let result = client.query(query).get().await?;
+    let value = result
+        .data()
+        .as_vector()
+        .ok_or_else(|| VllmMetricsError::NoMetricsFound(query.to_string()))
+        .and_then(|vector| {
+            vector
+                .first()
+                .ok_or_else(|| VllmMetricsError::NoMetricsFound(query.to_string()))
+        })
+        .and_then(|instant| {
+            instant
+                .sample()
+                .value()
+                .to_string()
+                .parse::<f64>()
+                .map_err(VllmMetricsError::ParseError)
+        })?;
+    Ok((query.to_string(), value))
 }
 
 /// Gets the cached vLLM metrics queries for a specific model
@@ -512,16 +509,20 @@ async fn get_metrics(
 /// # Arguments
 ///
 /// * `model_name` - The name of the model for which to get the queries
+/// * `jobs_for_model` - A vector of strings representing the jobs for which to get the queries
 ///
 /// # Returns
 ///
 /// Returns the cached queries for the given model
-fn get_cached_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+fn get_cached_vllm_metrics_queries(
+    model_name: &str,
+    jobs_for_model: &[String],
+) -> Vec<(String, String)> {
     let mut cache = VLLM_QUERIES_CACHE.lock().unwrap();
     if let Some(queries) = cache.get(model_name) {
         return queries.clone();
     }
-    let queries = get_vllm_metrics_queries(model_name);
+    let queries = get_vllm_metrics_queries(jobs_for_model);
     cache.insert(model_name.to_string(), queries.clone());
     queries
 }
@@ -542,12 +543,15 @@ fn get_cached_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 /// let model_name = "llama-7b";
 /// let queries = get_cached_sglang_metrics_queries(model_name);
 /// ```
-fn get_cached_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> {
+fn get_cached_sglang_metrics_queries(
+    model_name: &str,
+    jobs_for_model: &[String],
+) -> Vec<(String, String)> {
     let mut cache = SGLANG_QUERIES_CACHE.lock().unwrap();
     if let Some(queries) = cache.get(model_name) {
         return queries.clone();
     }
-    let queries = get_sglang_metrics_queries(model_name);
+    let queries = get_sglang_metrics_queries(jobs_for_model);
     cache.insert(model_name.to_string(), queries.clone());
     queries
 }
@@ -559,7 +563,6 @@ fn get_cached_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> 
 /// - Time to first token (prefill phase latency)
 /// - Time per output token (excluding first token)
 /// - GPU KV cache usage percentage
-/// - CPU KV cache usage percentage
 /// - Number of currently running requests
 /// - Number of waiting requests
 ///
@@ -568,40 +571,28 @@ fn get_cached_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> 
 ///
 /// # Arguments
 ///
-/// * `model_name` - The name of the model for which to generate metrics queries
+/// * `jobs` - A vector of strings representing the jobs for which to generate metrics queries
 ///
 /// # Returns
 ///
 /// Returns a vector of tuples, where each tuple contains:
 /// - A query identifier string (defined in constants)
 /// - The corresponding Prometheus query string
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let model_name = "llama-7b";
-/// let queries = get_vllm_metrics_queries(model_name);
-/// // Returns queries like:
-/// // rate(vllm:time_to_first_token_seconds_sum{model_name="llama-7b"}[30m]) /
-/// // rate(vllm:time_to_first_token_seconds_count{model_name="llama-7b"}[30m])
-/// ```
-fn get_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
-    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.;
-    let delta = format!("[{delta_minutes}m]");
+fn get_vllm_metrics_queries(jobs: &[String]) -> Vec<(String, String)> {
+    let delta = format!("[{METRICS_DELTA_TIME}s:]");
+    let jobs = jobs.join("|");
 
     vec![
         (VLLM_TIME_TO_FIRST_TOKEN_QUERY.to_string(),
-         format!("(rate(vllm:time_to_first_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(vllm:time_to_first_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+         format!("histogram_quantile(0.90, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
         (VLLM_TIME_PER_OUTPUT_TOKEN_QUERY.to_string(),
-         format!("(rate(vllm:time_per_output_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(vllm:time_per_output_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+         format!("histogram_quantile(0.90, sum by (le) (rate(vllm:time_per_output_token_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
         (VLLM_GPU_CACHE_USAGE_PERC_QUERY.to_string(),
-         format!("avg_over_time(vllm:gpu_cache_usage_perc{{model_name=\"{model_name}\"}}{delta}) or 0")),
-        (VLLM_CPU_CACHE_USAGE_PERC_QUERY.to_string(),
-         format!("avg_over_time(vllm:cpu_cache_usage_perc{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("avg_over_time(avg(vllm:gpu_cache_usage_perc{{job=~\"{jobs}\"}}{delta}))")),
         (VLLM_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(vllm:running_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("avg_over_time(sum(vllm:num_requests_running{{job=~\"{jobs}\"}}{delta}))")),
         (VLLM_WAITING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(vllm:waiting_requests{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("histogram_quantile(0.90, sum by (le) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
     ]
 }
 
@@ -636,21 +627,21 @@ fn get_vllm_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 /// // Returns queries like:
 /// // rate(vllm:time_to_first_token_seconds_sum{model_name="llama-7b"}[30m]) /
 /// // rate(vllm:time_to_first_token_seconds_count{model_name="llama-7b"}[30m])
-fn get_sglang_metrics_queries(model_name: &str) -> Vec<(String, String)> {
-    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
-    let delta = format!("{delta_minutes}m");
+fn get_sglang_metrics_queries(jobs: &[String]) -> Vec<(String, String)> {
+    let delta = format!("[{METRICS_DELTA_TIME}s:]");
+    let jobs = jobs.join("|");
 
     vec![
-         (SGLANG_TIME_TO_FIRST_TOKEN_QUERY.to_string(),
-         format!("(rate(sglang:time_to_first_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(sglang:time_to_first_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+        (SGLANG_TIME_TO_FIRST_TOKEN_QUERY.to_string(),
+         format!("histogram_quantile(0.90, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
         (SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY.to_string(),
-         format!("(rate(sglang:time_per_output_token_seconds_sum{{model_name=\"{model_name}\"}}{delta}) / rate(sglang:time_per_output_token_seconds_count{{model_name=\"{model_name}\"}}{delta})) or 0")),
+         format!("histogram_quantile(0.90, sum by (le) (rate(sglang:inter_token_latency_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
         (SGLANG_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(sglang:num_running_reqs{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("avg_over_time(sum(sglang:num_running_reqs{{job=~\"{jobs}\"}}{delta}))")),
         (SGLANG_WAITING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(sglang:num_queue_reqs{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("avg_over_time(sum(sglang:num_queue_reqs{{job=~\"{jobs}\"}}{delta}))")),
         (SGLANG_AVG_QUEUE_LATENCY_QUERY.to_string(),
-         format!("avg_over_time(sglang:avg_request_queue_latency{{model_name=\"{model_name}\"}}{delta}) or 0")),
+         format!("histogram_quantile(0.90, sum by (le) (rate(sglang:avg_request_queue_latency_bucket{{job=~\"{jobs}\"}}{delta})))")),
     ]
 }
 
@@ -710,8 +701,7 @@ fn get_cached_tei_metrics_queries(model_name: &str) -> Vec<(String, String)> {
 /// // rate(atoma_text_embeddings_latency_count{model_name="all-MiniLM-L6-v2"}[30m])
 /// ```
 fn get_tei_metrics_queries() -> Vec<(String, String)> {
-    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
-    let delta = format!("{delta_minutes}m");
+    let delta = format!("[{METRICS_DELTA_TIME}s:]");
 
     vec![
         (TEI_EMBEDDINGS_QUEUE_DURATION_QUERY.to_string(),
@@ -775,8 +765,7 @@ fn get_cached_image_generation_metrics_queries(model_name: &str) -> Vec<(String,
 /// // rate(mistral:image_generation_latency_seconds_count{model_name="stable-diffusion-xl"}[30m])
 /// ```
 fn get_image_generation_metrics_queries(model_name: &str) -> Vec<(String, String)> {
-    let delta_minutes = METRICS_DELTA_TIME.as_secs_f64() / 60.0;
-    let delta = format!("{delta_minutes}m");
+    let delta = format!("[{METRICS_DELTA_TIME}s:]");
 
     vec![
         (IMAGE_GENERATION_LATENCY_QUERY.to_string(),
@@ -794,6 +783,8 @@ pub enum NodeMetricsError {
     SglangMetricsError(#[from] SglangMetricsError),
     #[error("Request failed: {0}")]
     RequestError(#[from] reqwest::Error),
+    #[error("Prometheus error: {0}")]
+    PrometheusError(#[from] prometheus_http_query::Error),
 }
 
 #[derive(Debug, Error)]
@@ -804,6 +795,8 @@ pub enum VllmMetricsError {
     UnknownQuery(String),
     #[error("Query failed with status: {0}")]
     QueryFailed(String),
+    #[error("No metrics found for job: {0}")]
+    NoMetricsFound(String),
 }
 
 #[derive(Debug, Error)]

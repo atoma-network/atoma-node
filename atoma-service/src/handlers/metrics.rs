@@ -217,6 +217,25 @@ pub static CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS: LazyLock<Histogram<f64>> 
             .build()
     });
 
+/// Counter metric that tracks the number of times the chat completions service is unavailable.
+///
+/// This metric counts the number of times the chat completions service is unavailable,
+/// broken down by model type. This helps monitor the availability of the chat completions service.
+///
+/// # Metric Details
+/// - Name: `atoma_chat_completions_service_unavailable`
+/// - Description: The number of times the chat completions service is unavailable
+/// - Unit: requests (count)
+/// - Labels: `model`
+/// - Type: Counter
+pub static CHAT_COMPLETIONS_TOO_MANY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_chat_completions_too_many_requests")
+        .with_description("The number of times the chat completions service is unavailable")
+        .with_unit("requests")
+        .build()
+});
+
 /// Histogram metric that tracks the latency of image generation requests.
 ///
 /// This metric measures the time taken to generate images, broken down by model type.
