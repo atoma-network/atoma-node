@@ -38,7 +38,7 @@ pub const IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY: &str = "mistral:running_r
 pub const SGLANG_TIME_TO_FIRST_TOKEN_QUERY: &str = "sglang:time_to_first_token_seconds";
 
 /// Time per output token query
-pub const SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY: &str = "sglang:time_per_output_token_seconds";
+pub const SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY: &str = "sglang:inter_token_latency_seconds";
 
 /// Running requests query
 pub const SGLANG_RUNNING_REQUESTS_QUERY: &str = "sglang:num_running_reqs";
