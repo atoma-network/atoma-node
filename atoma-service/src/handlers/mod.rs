@@ -43,6 +43,12 @@ const SIGNATURE_KEY: &str = "signature";
 /// Key for the usage in the response body
 pub const USAGE_KEY: &str = "usage";
 
+/// Key for the prompt tokens in the usage in the response body
+pub const PROMPT_TOKENS_KEY: &str = "prompt_tokens";
+
+/// Key for the completion tokens in the usage in the response body
+pub const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
+
 /// Updates response signature and stack hash state
 ///
 /// # Arguments

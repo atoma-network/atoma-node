@@ -249,14 +249,14 @@ pub async fn chat_completions_handler(
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
                 estimated_total_compute_units,
-                &[KeyValue::new("model", model.to_owned())],
+                &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
-            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_CHAT_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_FAILED_CHAT_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -412,9 +412,10 @@ pub async fn confidential_chat_completions_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or(UNKNOWN_MODEL);
 
-    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS
+        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
 
     let endpoint = request_metadata.endpoint_path.clone();
 
@@ -435,15 +436,15 @@ pub async fn confidential_chat_completions_handler(
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
                 estimated_total_compute_units,
-                &[KeyValue::new("model", model.to_owned())],
+                &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
-            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
-                .add(1, &[KeyValue::new("model", model.to_owned())]);
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+                .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
             // This will ensure that the stack number of tokens is not updated, and the stack
@@ -648,9 +649,9 @@ async fn handle_non_streaming_response(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or(UNKNOWN_MODEL);
 
-    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
     let timer = Instant::now();
     debug!(
         target = "atoma-service",
@@ -771,7 +772,7 @@ async fn handle_streaming_response(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or(UNKNOWN_MODEL);
-    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
     let timer = Instant::now();
 
     let chat_completions_service_urls = state
@@ -984,7 +985,8 @@ pub mod utils {
     use crate::handlers::{
         handle_concurrent_requests_count_decrement, handle_status_code_error,
         metrics::CHAT_COMPLETIONS_LATENCY_METRICS,
-        vllm_metrics::get_best_available_chat_completions_service_url,
+        vllm_metrics::get_best_available_chat_completions_service_url, COMPLETION_TOKENS_KEY,
+        PROMPT_TOKENS_KEY, USAGE_KEY,
     };
 
     use super::{
@@ -1281,18 +1283,18 @@ pub mod utils {
     /// ```
     pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
         let mut total_compute_units = 0;
-        if let Some(usage) = response_body.get("usage") {
-            if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+        if let Some(usage) = response_body.get(USAGE_KEY) {
+            if let Some(prompt_tokens) = usage.get(PROMPT_TOKENS_KEY) {
                 let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
                 CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
-                    .add(prompt_tokens, &[KeyValue::new("model", model.to_owned())]);
+                    .add(prompt_tokens, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                 total_compute_units += prompt_tokens;
             }
-            if let Some(completion_tokens) = usage.get("completion_tokens") {
+            if let Some(completion_tokens) = usage.get(COMPLETION_TOKENS_KEY) {
                 let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
                 CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS.add(
                     completion_tokens,
-                    &[KeyValue::new("model", model.to_owned())],
+                    &[KeyValue::new(MODEL_KEY, model.to_owned())],
                 );
                 total_compute_units += completion_tokens;
             }
@@ -1420,7 +1422,7 @@ pub mod utils {
                 // Stop the timer before returning the valid response
                 CHAT_COMPLETIONS_LATENCY_METRICS.record(
                     timer.elapsed().as_secs_f64(),
-                    &[KeyValue::new("model", model.to_owned()), KeyValue::new("privacy_level", if client_encryption_metadata.is_some() { "confidential" } else { "non-confidential" })],
+                    &[KeyValue::new(MODEL_KEY, model.to_owned()), KeyValue::new("privacy_level", if client_encryption_metadata.is_some() { "confidential" } else { "non-confidential" })],
                 );
                 Json(response_body).into_response()
             }
