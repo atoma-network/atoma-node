@@ -261,6 +261,26 @@ services:
         condition: service_started
         required: true
 
+  atoma-node-sglang:
+    <<: *atoma-node
+    profiles:
+      - gpu
+    ports:
+      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
+      - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
+    depends_on:
+      sglang:
+        condition: service_started
+        required: true
+      postgres-db:
+        condition: service_started
+        required: true
+      otel-collector:
+        condition: service_started
+        required: true
+
   atoma-node-no-nvidia:
     <<: *atoma-node-no-nvidia
     profiles:
@@ -284,6 +304,36 @@ services:
         condition: service_started
         required: true
 
+  sglang:
+    container_name: sglang
+    profiles: [chat_completions_sglang]
+    image: lmsysorg/sglang:latest
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    restart: always
+    network_mode: host # required by RDMA
+    privileged: true # required by RDMA
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    entrypoint: python3 -m sglang.launch_server
+    command:
+      --model-path ${SGLANG_MODEL_PATH} --tp 8 --enable-dp-attention --dp 8 --trust-remote-code --max-running-requests 128
+      --host 0.0.0.0
+      --port 3000
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
   vllm1:
     <<: *inference-service-cuda
     container_name: chat-completions1
@@ -303,7 +353,7 @@ services:
       - CUDA_VISIBLE_DEVICES=1
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm2:
     <<: *inference-service-cuda
     container_name: chat-completions2
@@ -368,7 +418,7 @@ services:
     <<: *inference-service-cuda
     container_name: chat-completions5
     profiles: [chat_completions_vllm]
-    image: vllm/vllm-openai:v0.8.1  
+    image: vllm/vllm-openai:v0.8.1
     environment:
       # Backend for attention computation
       # Available options:
@@ -397,7 +447,7 @@ services:
       # - "XFORMERS": use XFormers
       # - "ROCM_FLASH": use ROCmFlashAttention
       # - "FLASHINFER": use flashinfer (recommended for fp8 quantized models)
-      - VLLM_ATTENTION_BACKEND=FLASH_ATTN 
+      - VLLM_ATTENTION_BACKEND=FLASH_ATTN
       - VLLM_FLASH_ATTN_VERSION=3
       - VLLM_USE_V1=1
       - CUDA_VISIBLE_DEVICES=6
@@ -443,7 +493,7 @@ services:
       - CUDA_VISIBLE_DEVICES=8
     ipc: host
     command: ${VLLM_ENGINE_ARGS}
-  
+
   vllm-cpu:
     <<: *inference-service-cpu
     container_name: chat-completions

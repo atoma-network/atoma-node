@@ -503,6 +503,12 @@ pub mod vllm_metrics {
     static METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
 
     /// Start the background task to update metrics every 30 seconds
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls` - A vector of tuples containing the chat completions service URL and the job name.
+    /// * `metrics_update_interval` - The interval in seconds to update the metrics.
+    #[instrument(level = "info", skip_all)]
     pub fn start_metrics_updater(
         chat_completions_service_urls: Vec<(String, String)>,
         metrics_update_interval: Option<u64>,
@@ -601,6 +607,65 @@ pub mod vllm_metrics {
                 queue_time.and_then(|qt| ttft.map(|gc| (url.to_string(), (qt, gc))))
             })
             .collect()
+    }
+
+    /// Retrieves the 90th percentile request queue time metric from a vLLM service.
+    ///
+    /// This function executes a Prometheus query against the configured Prometheus instance
+    /// to get the `vllm:request_queue_time_seconds` histogram for the specified `job`,
+    /// calculates the 90th percentile, and returns it along with the service URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - The Prometheus HTTP query client.
+    /// * `job` - The Prometheus job name corresponding to the vLLM service instance.
+    /// * `chat_completions_service_url` - The URL of the vLLM service instance, returned alongside the metric.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a tuple `(String, f64)` on success, where:
+    ///   - The `String` is the `chat_completions_service_url` passed as input.
+    ///   - The `f64` is the calculated 90th percentile of the request queue time in seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `VllmMetricsError` if:
+    ///   - The Prometheus query fails.
+    ///   - No metrics data is found for the specified job.
+    ///   - The response data cannot be parsed correctly.
+    #[instrument(level = "info", skip_all, fields(job=job))]
+    async fn get_sglang_request_queue_latency(
+        client: &Client,
+        job: &str,
+        chat_completions_service_url: &str,
+    ) -> Result<(String, f64)> {
+        info!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "info",
+            "Getting metrics for job: {job}"
+        );
+        let query = format!(
+            "histogram_quantile(
+                0.90,
+                sum(rate(sglang:avg_request_queue_latency{{job=\"{job}\"}}[30s])
+                    or vector(0)) by (le)
+            )"
+        );
+        let response = client.query(&query).get().await?;
+        response.data().as_vector().map_or_else(
+            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+            |data_vector| {
+                data_vector.first().map_or_else(
+                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
+                    |value| {
+                        let sample = value.sample();
+                        let value = sample.value();
+                        Ok((chat_completions_service_url.to_string(), value))
+                    },
+                )
+            },
+        )
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
