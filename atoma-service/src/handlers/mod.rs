@@ -1,11 +1,11 @@
 #![allow(clippy::duplicate_mod)]
 pub mod chat_completions;
+pub mod completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
 pub mod request_model;
 pub mod stop_streamer;
-pub mod completions;
 
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,

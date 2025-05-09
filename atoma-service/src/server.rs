@@ -42,6 +42,10 @@ use crate::{
             chat_completions_handler, confidential_chat_completions_handler, CHAT_COMPLETIONS_PATH,
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
         },
+        completions::{
+            completions_handler, confidential_completions_handler, COMPLETIONS_PATH,
+            CONFIDENTIAL_COMPLETIONS_PATH,
+        },
         embeddings::{
             confidential_embeddings_handler, embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH,
             EMBEDDINGS_PATH,
@@ -233,6 +237,10 @@ pub fn create_router(app_state: AppState) -> Router {
             post(confidential_chat_completions_handler),
         )
         .route(
+            CONFIDENTIAL_COMPLETIONS_PATH,
+            post(confidential_completions_handler),
+        )
+        .route(
             CONFIDENTIAL_EMBEDDINGS_PATH,
             post(confidential_embeddings_handler),
         )
@@ -243,6 +251,7 @@ pub fn create_router(app_state: AppState) -> Router {
 
     let regular_routes = Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(COMPLETIONS_PATH, post(completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
         .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler));
 
