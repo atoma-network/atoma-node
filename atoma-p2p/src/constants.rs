@@ -7,9 +7,6 @@ pub const VLLM_TIME_PER_OUTPUT_TOKEN_QUERY: &str = "vllm:time_per_output_token_s
 /// GPU cache usage percentage query
 pub const VLLM_GPU_CACHE_USAGE_PERC_QUERY: &str = "vllm:gpu_cache_usage_perc";
 
-/// CPU cache usage percentage query
-pub const VLLM_CPU_CACHE_USAGE_PERC_QUERY: &str = "vllm:cpu_cache_usage_perc";
-
 /// Running requests query
 pub const VLLM_RUNNING_REQUESTS_QUERY: &str = "vllm:running_requests";
 
