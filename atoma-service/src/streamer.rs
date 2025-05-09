@@ -29,6 +29,7 @@ use crate::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+            TOTAL_COMPLETED_REQUESTS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -61,6 +62,9 @@ const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
 
 /// The total tokens key
 const TOTAL_TOKENS_KEY: &str = "total_tokens";
+
+/// The model key
+const MODEL_KEY: &str = "model";
 
 /// The nonce key
 const NONCE_KEY: &str = "nonce";
@@ -864,6 +868,7 @@ impl Drop for Streamer {
     )]
     fn drop(&mut self) {
         if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, self.model.clone())]);
             return;
         }
         if let Some(timer) = self.decoding_phase_timer.take() {
