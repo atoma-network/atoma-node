@@ -438,7 +438,9 @@ pub async fn confidential_chat_completions_handler(
                 estimated_total_compute_units,
                 &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
-            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            if !is_stream {
+                TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            }
             Ok(response)
         }
         Err(e) => {
