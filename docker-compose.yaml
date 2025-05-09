@@ -40,6 +40,15 @@ x-inference-service-cuda: &inference-service-cuda
   env_file: .env
   networks:
     - atoma-network
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "100m"
+      max-file: "3"
+  environment:
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    - OTEL_SERVICE_NAME=vllm
+    - OTEL_LOGS_EXPORTER=otlp
 
 # Base configuration for Atoma services
 x-atoma-node-no-nvidia: &atoma-node-no-nvidia
@@ -135,7 +144,7 @@ services:
       - grafana_data:/var/lib/grafana
     env_file: .env
     environment:
-      - GF_SERVER_ROOT_URL=http://${GRAFANA_DOMAIN}:${GRAFANA_PORT:-30001}/
+      - GF_SERVER_ROOT_URL=http://localhost:30001/
     networks:
       - atoma-network
     healthcheck:
