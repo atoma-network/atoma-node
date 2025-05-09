@@ -271,6 +271,9 @@ services:
       - "${ATOMA_P2P_PORT:-4001}:4001/udp"
       - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
     depends_on:
+      sglang:
+        condition: service_started
+        required: true
       postgres-db:
         condition: service_started
         required: true
