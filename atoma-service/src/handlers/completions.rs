@@ -651,6 +651,7 @@ async fn handle_response(
     ),
     err
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_non_streaming_response(
     state: &AppState,
     payload: Value,
