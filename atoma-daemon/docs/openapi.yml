@@ -160,31 +160,6 @@ paths:
                 $ref: '#/components/schemas/NodeRegistrationResponse'
         '500':
           description: Failed to submit registration transaction
-  /nodes/submit-attestations:
-    post:
-      tags:
-      - Nodes
-      summary: Create attestation proof transaction
-      description: |-
-        Create attestation proof transaction
-
-        Submits attestations for stack settlement.
-      operationId: nodes_submit_attestations
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NodeAttestationProofRequest'
-        required: true
-      responses:
-        '200':
-          description: Node attestation proof successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NodeAttestationProofResponse'
-        '500':
-          description: Failed to submit attestation proof
   /nodes/task-subscribe:
     post:
       tags:
@@ -257,31 +232,6 @@ paths:
                 $ref: '#/components/schemas/NodeTaskUpdateSubscriptionResponse'
         '500':
           description: Failed to submit task update subscription
-  /nodes/try-settle-stacks:
-    post:
-      tags:
-      - Nodes
-      summary: Create try settle stacks transaction
-      description: |-
-        Create try settle stacks transaction
-
-        Attempts to settle stacks for a node.
-      operationId: nodes_try_settle_stacks
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NodeTrySettleStacksRequest'
-        required: true
-      responses:
-        '200':
-          description: Node try settle stacks successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NodeTrySettleStacksResponse'
-        '500':
-          description: Failed to submit try settle stacks
   /stacks/stacks/nodes/{node_id}:
     get:
       tags:
@@ -875,8 +825,9 @@ components:
       - price_per_one_million_compute_units
       - already_computed_units
       - in_settle_period
-      - total_hash
       - num_total_messages
+      - is_claimed
+      - is_locked_for_claim
       properties:
         already_computed_units:
           type: integer
@@ -885,6 +836,12 @@ components:
         in_settle_period:
           type: boolean
           description: Indicates whether the stack is currently in the settle period
+        is_claimed:
+          type: boolean
+          description: Indicates whether the stack is claimed (for testing purposes)
+        is_locked_for_claim:
+          type: boolean
+          description: Indicates whether the stack is locked for claim (for testing purposes)
         num_compute_units:
           type: integer
           format: int64
@@ -915,15 +872,6 @@ components:
           type: integer
           format: int64
           description: Small integer identifier of the associated task
-        total_hash:
-          type: array
-          items:
-            type: integer
-            format: int32
-            minimum: 0
-          description: |-
-            Joint concatenation of Blake2b hashes of each payload and response pairs that was already processed
-            by the node for this stack.
     StackAttestationDispute:
       type: object
       description: Represents a dispute in the stack attestation process

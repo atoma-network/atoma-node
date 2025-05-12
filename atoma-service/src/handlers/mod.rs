@@ -1,5 +1,6 @@
 #![allow(clippy::duplicate_mod)]
 pub mod chat_completions;
+pub mod completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
@@ -9,7 +10,6 @@ pub mod stop_streamer;
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
-use atoma_utils::hashing::blake2b_hash;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use dashmap::DashMap;
 use flume::Sender;
@@ -42,6 +42,12 @@ const SIGNATURE_KEY: &str = "signature";
 
 /// Key for the usage in the response body
 pub const USAGE_KEY: &str = "usage";
+
+/// Key for the prompt tokens in the usage in the response body
+pub const PROMPT_TOKENS_KEY: &str = "prompt_tokens";
+
+/// Key for the completion tokens in the usage in the response body
+pub const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
 
 /// Updates response signature and stack hash state
 ///
@@ -78,25 +84,6 @@ pub async fn sign_response_and_update_stack_hash(
         )?;
     response_body[SIGNATURE_KEY] = json!(signature);
     response_body[RESPONSE_HASH_KEY] = json!(STANDARD.encode(response_hash));
-
-    // Update the stack total hash
-    let total_hash = blake2b_hash(&[payload_hash, response_hash].concat());
-    let total_hash_bytes: [u8; 32] = total_hash
-        .as_slice()
-        .try_into()
-        .expect("Invalid BLAKE2b hash length");
-
-    // Send the update stack total hash event to the state manager
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash: total_hash_bytes,
-        })
-        .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Error updating stack total hash: {}", e),
-            endpoint: endpoint.clone(),
-        })?;
 
     Ok(())
 }

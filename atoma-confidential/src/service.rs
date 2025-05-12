@@ -252,7 +252,7 @@ impl AtomaConfidentialCompute {
                 service_shared_secret_receiver,
                 shutdown_signal,
             )?;
-            if service.is_cc_supported {
+            if service.is_cc_supported || service.is_ppcie_enabled {
                 tracing::info!(
                     target = "atoma-confidential-compute-service",
                     event = "submit_nvidia_cc_attestation",

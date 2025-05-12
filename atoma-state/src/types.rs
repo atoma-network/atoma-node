@@ -69,9 +69,6 @@ pub struct Stack {
     pub already_computed_units: i64,
     /// Indicates whether the stack is currently in the settle period
     pub in_settle_period: bool,
-    /// Joint concatenation of Blake2b hashes of each payload and response pairs that was already processed
-    /// by the node for this stack.
-    pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
     pub num_total_messages: i64,
     /// Indicates whether the stack is claimed (for testing purposes)
@@ -92,7 +89,6 @@ impl From<StackCreatedEvent> for Stack {
             price_per_one_million_compute_units: event.price_per_one_million_compute_units as i64,
             already_computed_units: 0,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 0,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -112,7 +108,6 @@ impl From<StackCreateAndUpdateEvent> for Stack {
             price_per_one_million_compute_units: event.price_per_one_million_compute_units as i64,
             already_computed_units: event.already_computed_units,
             in_settle_period: false,
-            total_hash: vec![],
             num_total_messages: 1,
             is_claimed: false,
             is_locked_for_claim: false,
@@ -261,13 +256,6 @@ pub enum AtomaAtomaStateManagerEvent {
         total_compute_units: i64,
         /// Number of concurrent requests for the stack
         concurrent_requests: u64,
-    },
-    /// Represents an update to the total hash of a stack
-    UpdateStackTotalHash {
-        /// Unique small integer identifier for the stack
-        stack_small_id: i64,
-        /// Total hash of the stack
-        total_hash: [u8; 32],
     },
     /// Gets an available stack with enough compute units for a given stack and public key
     GetAvailableStackWithComputeUnits {

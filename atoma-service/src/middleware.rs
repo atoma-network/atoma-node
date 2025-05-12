@@ -4,6 +4,7 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH,
+        completions::COMPLETIONS_PATH,
         embeddings::EMBEDDINGS_PATH,
         image_generations::IMAGE_GENERATIONS_PATH,
         metrics::{
@@ -94,6 +95,7 @@ pub struct RequestMetadata {
 pub enum RequestType {
     #[default]
     ChatCompletions,
+    Completions,
     Embeddings,
     ImageGenerations,
     NonInference,
@@ -357,6 +359,7 @@ pub async fn verify_stack_permissions(
     // Get request path to determine type
     let request_type = match req_parts.uri.path() {
         CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
+        COMPLETIONS_PATH => RequestType::Completions,
         EMBEDDINGS_PATH => RequestType::Embeddings,
         IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
         _ => RequestType::NonInference,
@@ -705,6 +708,7 @@ pub mod utils {
 
     use crate::handlers::{
         chat_completions::RequestModelChatCompletions,
+        completions::RequestModelCompletions,
         embeddings::RequestModelEmbeddings,
         image_generations::RequestModelImageGenerations,
         request_model::{ComputeUnitsEstimate, RequestModel},
@@ -863,6 +867,19 @@ pub mod utils {
         match request_type {
             RequestType::ChatCompletions => {
                 let request_model = RequestModelChatCompletions::new(body_json)?;
+                let tokenizer_index =
+                    state
+                        .models
+                        .iter()
+                        .position(|m| m == model)
+                        .ok_or_else(|| AtomaServiceError::InvalidBody {
+                            message: "Model not supported".to_string(),
+                            endpoint: endpoint.to_string(),
+                        })?;
+                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+            }
+            RequestType::Completions => {
+                let request_model = RequestModelCompletions::new(body_json)?;
                 let tokenizer_index =
                     state
                         .models

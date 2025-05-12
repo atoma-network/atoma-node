@@ -9,7 +9,6 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     encryption::encrypt_plaintext,
-    hashing::blake2b_hash,
 };
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
@@ -30,6 +29,7 @@ use crate::{
             CHAT_COMPLETIONS_DECODING_TIME, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_INTER_TOKEN_GENERATION_TIME, CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS,
             CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
+            TOTAL_COMPLETED_REQUESTS,
         },
         update_stack_num_compute_units, USAGE_KEY,
     },
@@ -62,6 +62,9 @@ const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
 
 /// The total tokens key
 const TOTAL_TOKENS_KEY: &str = "total_tokens";
+
+/// The model key
+const MODEL_KEY: &str = "model";
 
 /// The nonce key
 const NONCE_KEY: &str = "nonce";
@@ -310,30 +313,6 @@ impl Streamer {
             "Handle final chunk: Total compute units: {}",
             total_compute_units,
         );
-
-        // Calculate and update total hash
-        let total_hash = blake2b_hash(&[self.payload_hash, response_hash].concat());
-        let total_hash_bytes: [u8; 32] = total_hash
-            .as_slice()
-            .try_into()
-            .expect("Invalid BLAKE2b hash length");
-
-        // Update stack total hash
-        if let Err(e) =
-            self.state_manager_sender
-                .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-                    stack_small_id: self.stack_small_id,
-                    total_hash: total_hash_bytes,
-                })
-        {
-            error!(
-                target = "atoma-service-streamer",
-                level = "error",
-                endpoint = self.endpoint,
-                "Error updating stack total hash: {}",
-                e
-            );
-        }
 
         // Update stack num tokens
         let concurrent_requests = handle_concurrent_requests_count_decrement(
@@ -889,6 +868,7 @@ impl Drop for Streamer {
     )]
     fn drop(&mut self) {
         if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, self.model.clone())]);
             return;
         }
         if let Some(timer) = self.decoding_phase_timer.take() {
