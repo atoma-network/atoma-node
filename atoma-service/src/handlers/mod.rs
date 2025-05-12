@@ -10,6 +10,7 @@ pub mod stop_streamer;
 use atoma_confidential::types::{
     ConfidentialComputeEncryptionRequest, ConfidentialComputeEncryptionResponse,
 };
+use atoma_p2p::constants::ONE_MILLION;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use dashmap::DashMap;
 use flume::Sender;
