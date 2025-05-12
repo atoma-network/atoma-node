@@ -72,7 +72,7 @@ sqlx                        = "0.8.4"
 sui-keys                    = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.47.0" }
 sui-sdk                     = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.47.0" }
 sysinfo                     = "0.33.1"
-tempfile                    = "3.18.0"
+tempfile                    = "3.20.0"
 thiserror                   = "2.0.12"
 tokenizers                  = "0.21.0"
 tokio                       = "1.44.2"
