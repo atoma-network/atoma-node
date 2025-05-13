@@ -37,8 +37,8 @@ mod middleware {
             image_generations::IMAGE_GENERATIONS_PATH,
         },
         middleware::{
-            confidential_compute_middleware, signature_verification_middleware,
-            verify_stack_permissions, RequestMetadata, RequestType,
+            confidential_compute_middleware, signature_verification_middleware, verify_permissions,
+            RequestMetadata, RequestType,
         },
         server::AppState,
     };
@@ -340,6 +340,7 @@ mod middleware {
                 keystore: Arc::new(keystore),
                 address_index: 0,
                 stack_retrieve_sender,
+                whitelist_sui_addresses_for_fiat: vec![],
             },
             public_key,
             signature,
@@ -359,13 +360,15 @@ mod middleware {
     fn test_request_metadata() {
         let request_metadata = RequestMetadata::default();
 
-        assert_eq!(request_metadata.stack_small_id, 0);
+        assert_eq!(request_metadata.stack_small_id, None);
         assert_eq!(request_metadata.estimated_total_compute_units, 0);
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
-        let request_metadata = request_metadata.with_stack_info(1, 100, 200);
+        let request_metadata = request_metadata
+            .with_stack_info(1)
+            .with_tokens_information(100, 200);
 
-        assert_eq!(request_metadata.stack_small_id, 1);
+        assert_eq!(request_metadata.stack_small_id, Some(1));
         assert_eq!(request_metadata.num_input_tokens, 100);
         assert_eq!(request_metadata.estimated_total_compute_units, 200);
 
@@ -414,7 +417,7 @@ mod middleware {
 
         // Build a router with the middleware applied
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state.clone(), verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state.clone(), verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -459,7 +462,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -502,7 +505,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -545,7 +548,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -592,7 +595,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -638,7 +641,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -685,7 +688,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -728,7 +731,7 @@ mod middleware {
             .unwrap();
 
         let mut app = Router::new().route("/", post(test_handler)).layer(
-            axum::middleware::from_fn_with_state(app_state, verify_stack_permissions),
+            axum::middleware::from_fn_with_state(app_state, verify_permissions),
         );
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -777,7 +780,7 @@ mod middleware {
                 .get::<RequestMetadata>()
                 .expect("Metadata should be set");
 
-            assert_eq!(metadata.stack_small_id, 1);
+            assert_eq!(metadata.stack_small_id, Some(1));
             // The exact token count will depend on your tokenizer, but we can verify it's non-zero
             assert!(metadata.estimated_total_compute_units > 0);
 
@@ -788,7 +791,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(check_metadata_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -859,7 +862,7 @@ mod middleware {
             .route(CHAT_COMPLETIONS_PATH, post(verify_token_count))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1106,13 +1109,15 @@ mod middleware {
 
         // Create initial RequestMetadata with some existing values
         let initial_metadata = RequestMetadata {
-            stack_small_id: 42,
+            stack_small_id: Some(42),
             num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
+            price_per_one_million_compute_units: 0,
+            user_address: "0x1".to_string(),
         };
 
         let mut req = Request::builder()
@@ -1138,7 +1143,7 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // Verify that the payload hash was updated but other fields preserved
-            assert_eq!(metadata.stack_small_id, 42);
+            assert_eq!(metadata.stack_small_id, Some(42));
             assert_eq!(metadata.estimated_total_compute_units, 100);
             assert_ne!(metadata.payload_hash, [0u8; 32]);
             assert_eq!(
@@ -1208,7 +1213,7 @@ mod middleware {
             .route(EMBEDDINGS_PATH, post(verify_embeddings_compute_units))
             .layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1289,7 +1294,7 @@ mod middleware {
             )
             .layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1373,7 +1378,7 @@ mod middleware {
             .route(EMBEDDINGS_PATH, post(test_handler))
             .layer(axum::middleware::from_fn_with_state(
                 app_state,
-                verify_stack_permissions,
+                verify_permissions,
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
@@ -1732,13 +1737,15 @@ mod middleware {
 
         // Create initial RequestMetadata
         let initial_metadata = RequestMetadata {
-            stack_small_id: 42,
+            stack_small_id: Some(42),
             num_input_tokens: 50,
             estimated_total_compute_units: 100,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
+            price_per_one_million_compute_units: 0,
+            user_address: "0x1".to_string(),
         };
 
         let mut req = Request::builder()
@@ -1758,7 +1765,7 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // Verify that the metadata was updated correctly
-            assert_eq!(metadata.stack_small_id, 42); // Original value preserved
+            assert_eq!(metadata.stack_small_id, Some(42)); // Original value preserved
             assert_eq!(metadata.estimated_total_compute_units, 100); // Original value preserved
             assert_ne!(metadata.payload_hash, [0u8; 32]); // Updated with new hash
             assert!(metadata.client_encryption_metadata.is_some()); // Updated with encryption metadata

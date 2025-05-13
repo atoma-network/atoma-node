@@ -11,7 +11,7 @@ use crate::{
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS,
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS,
         },
-        sign_response_and_update_stack_hash, update_stack_num_compute_units,
+        sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::{EncryptionMetadata, RequestMetadata},
     server::AppState,
@@ -104,6 +104,8 @@ pub async fn embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
+        price_per_one_million_compute_units,
+        user_address,
         ..
     } = request_metadata;
 
@@ -137,19 +139,30 @@ pub async fn embeddings_handler(
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "embeddings/embeddings_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "embeddings/embeddings_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Err(e)
         }
     }
@@ -234,6 +247,8 @@ pub async fn confidential_embeddings_handler(
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
+        price_per_one_million_compute_units,
+        user_address,
         ..
     } = request_metadata;
 
@@ -258,25 +273,60 @@ pub async fn confidential_embeddings_handler(
                 ],
             );
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "embeddings/confidential_embeddings_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    estimated_total_compute_units,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Ok(response)
         }
         Err(e) => {
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
                 .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
             TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            let concurrent_requests = handle_concurrent_requests_count_decrement(
-                &state.concurrent_requests_per_stack,
-                stack_small_id,
-                "embeddings/confidential_embeddings_handler",
-            );
-            update_stack_num_compute_units(
-                &state.state_manager_sender,
-                stack_small_id,
-                estimated_total_compute_units,
-                0,
-                &endpoint,
-                concurrent_requests,
-            )?;
+            if let Some(stack_small_id) = stack_small_id {
+                let concurrent_requests = handle_concurrent_requests_count_decrement(
+                    &state.concurrent_requests_per_stack,
+                    stack_small_id,
+                    "embeddings/confidential_embeddings_handler",
+                );
+                update_stack_num_compute_units(
+                    &state.state_manager_sender,
+                    stack_small_id,
+                    estimated_total_compute_units,
+                    0,
+                    &endpoint,
+                    concurrent_requests,
+                )?;
+            } else {
+                update_fiat_amount(
+                    &state.state_manager_sender,
+                    user_address,
+                    estimated_total_compute_units,
+                    0,
+                    price_per_one_million_compute_units,
+                    &endpoint,
+                )?;
+            }
             Err(e)
         }
     }
@@ -341,7 +391,7 @@ pub async fn confidential_embeddings_handler(
 async fn handle_embeddings_response(
     state: &AppState,
     payload: &Value,
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     payload_hash: [u8; 32],
     client_encryption_metadata: Option<EncryptionMetadata>,
     endpoint: &str,

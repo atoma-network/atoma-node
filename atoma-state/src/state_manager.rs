@@ -16,6 +16,7 @@ use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{oneshot, RwLock};
+use tracing::instrument;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -1573,6 +1574,7 @@ impl AtomaState {
             UPDATE stacks s
             SET
                 already_computed_units = already_computed_units - ($2 - $3),
+                num_total_messages = num_total_messages + $6,
                 is_locked_for_claim = (
                     SELECT (u.is_confidential = true AND u.new_ratio > $4 AND $5 = 0)
                     FROM updated u
@@ -1589,6 +1591,7 @@ impl AtomaState {
         .bind(total_compute_units)
         .bind(ratio_for_claim_stacks)
         .bind(concurrent_requests)
+        .bind(i64::from(total_compute_units > 0)) // If total amount is greater than 0 then the request was successful
         .fetch_optional(&self.db)
         .await?;
 
@@ -1778,6 +1781,312 @@ impl AtomaState {
             .await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Updates the total hash and increments the total number of messages for a stack.
+    ///
+    /// This method updates the `total_hash` field in the `stacks` table by appending a new hash
+    /// to the existing hash and increments the `num_total_messages` field by 1 for the specified `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack to update.
+    /// * `new_hash` - A 32-byte array representing the new hash to append to the existing total hash.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database transaction fails to begin, execute, or commit.
+    /// - The specified stack is not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_hash(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    ///     let stack_small_id = 1;
+    ///     let new_hash = [0u8; 32]; // Example hash
+    ///
+    ///     state_manager.update_stack_total_hash(stack_small_id, new_hash).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id, new_hash = ?new_hash)
+    )]
+    pub async fn update_stack_total_hash(
+        &self,
+        stack_small_id: i64,
+        new_hash: [u8; 32],
+    ) -> Result<()> {
+        let rows_affected = sqlx::query(
+            "UPDATE stacks
+            SET total_hash = total_hash || $1
+            WHERE stack_small_id = $2",
+        )
+        .bind(&new_hash[..])
+        .bind(stack_small_id)
+        .execute(&self.db)
+        .await?
+        .rows_affected();
+
+        if rows_affected == 0 {
+            return Err(AtomaStateManagerError::StackNotFound);
+        }
+
+        Ok(())
+    }
+
+    /// Retrieves the pricing for a specific model.
+    ///
+    /// This method fetches the `price_per_one_million_compute_units` field from the `tasks` table
+    /// for the given model name.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The name of the model whose pricing is to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<i64>>`: A result containing either:
+    ///   - `Ok(Some(i64))`: The price per one million compute units for the specified model.
+    ///   - `Ok(None)`: If no pricing information is found for the model.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_model_pricing(state_manager: &AtomaStateManager, model: String) -> Result<Option<i64>, AtomaStateManagerError> {
+    ///    state_manager.get_model_pricing(model).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(model = %model)
+    )]
+    pub async fn get_model_pricing(&self, model: String) -> Result<Option<i64>> {
+        let pricing = sqlx::query(
+            "select price_per_one_million_compute_units from tasks inner join node_subscriptions on tasks.task_small_id=node_subscriptions.task_small_id where model_name=$1 limit 1;",
+        ).bind(model).fetch_optional(&self.db).await?;
+        Ok(pricing.map(|row| row.get(0)))
+    }
+
+    /// Inserts or updates the fiat amount for a user.
+    ///
+    /// This method inserts a new entry into the `fiat_balance` table for the specified user address
+    /// with the given estimated total amount. If an entry already exists, it updates the existing
+    /// entry by adding the estimated total amount to the `overcharged_unsettled_amount` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_address` - The unique address of the user whose fiat amount is to be updated.
+    /// * `estimated_total_amount` - The estimated total amount to be added to the user's balance.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn lock_fiat_amount(state_manager: &AtomaStateManager, user_address: String, estimated_total_amount: i64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.lock_fiat_amount(user_address, estimated_total_amount).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount)
+    )]
+    pub async fn lock_fiat_amount(
+        &self,
+        user_address: String,
+        estimated_total_amount: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO fiat_balance 
+                     (user_address, overcharged_unsettled_amount)
+                     VALUES ($1, $2) 
+                     ON CONFLICT (user_address) DO UPDATE
+                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2;")
+            .bind(user_address)
+            .bind(estimated_total_amount)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    /// Updates the fiat amount for a user.
+    ///
+    /// This method updates the `overcharged_unsettled_amount` and `already_debited_amount` fields
+    /// in the `fiat_balance` table for the specified user address.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_address` - The unique address of the user whose fiat amount is to be updated.
+    /// * `estimated_total_amount` - The estimated total amount to be deducted from the user's balance.
+    /// * `total_amount` - The total amount to be added to the user's already debited amount.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_fiat_amount(state_manager: &AtomaStateManager, user_address: String, estimated_total_amount: i64, total_amount: i64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_fiat_amount(user_address, estimated_total_amount, total_amount).await
+    /// }
+    /// ```
+    #[instrument(
+        level = "trace",
+        skip_all,
+        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount, total_amount = %total_amount)
+    )]
+    pub async fn update_fiat_amount(
+        &self,
+        user_address: String,
+        estimated_total_amount: i64,
+        total_amount: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE fiat_balance 
+                  SET overcharged_unsettled_amount = overcharged_unsettled_amount - $2,
+                      already_debited_amount = already_debited_amount + $3,
+                      num_requests = num_requests + $4;",
+        )
+        .bind(user_address)
+        .bind(estimated_total_amount)
+        .bind(total_amount)
+        .bind(i64::from(total_amount > 0)) // If total amount is greater than 0 then the request was successful
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Retrieves the total hash for a specific stack.
+    ///
+    /// This method fetches the `total_hash` field from the `stacks` table for the given `stack_small_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_id` - The unique small identifier of the stack whose total hash is to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<u8>>`: A result containing either:
+    ///   - `Ok(Vec<u8>)`: A byte vector representing the total hash of the stack.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_total_hash(state_manager: &AtomaStateManager, stack_small_id: i64) -> Result<Vec<u8>, AtomaStateManagerError> {
+    ///     state_manager.get_stack_total_hash(stack_small_id).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_id = %stack_small_id)
+    )]
+    pub async fn get_stack_total_hash(&self, stack_small_id: i64) -> Result<Vec<u8>> {
+        let total_hash = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT total_hash FROM stacks WHERE stack_small_id = $1",
+        )
+        .bind(stack_small_id)
+        .fetch_one(&self.db)
+        .await?;
+        Ok(total_hash)
+    }
+
+    /// Retrieves the total hashes for multiple stacks in a single query.
+    ///
+    /// This method efficiently fetches the `total_hash` field from the `stacks` table for all
+    /// provided stack IDs in a single database query.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack_small_ids` - A slice of stack IDs whose total hashes should be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Vec<u8>>>`: A result containing either:
+    ///   - `Ok(Vec<Vec<u8>>)`: A vector of byte vectors, where each inner vector represents
+    ///     the total hash of a stack. The order corresponds to the order of results returned
+    ///     by the database query.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - There's an issue retrieving the hash data from the result rows.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_hashes(state_manager: &AtomaStateManager) -> Result<Vec<Vec<u8>>, AtomaStateManagerError> {
+    ///     let stack_ids = &[1, 2, 3]; // IDs of stacks to fetch hashes for
+    ///     state_manager.get_all_total_hashes(stack_ids).await
+    /// }
+    /// ```
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(stack_small_ids = ?stack_small_ids)
+    )]
+    pub async fn get_all_total_hashes(&self, stack_small_ids: &[i64]) -> Result<Vec<Vec<u8>>> {
+        let mut query_builder = build_query_with_in(
+            "SELECT total_hash FROM stacks",
+            "stack_small_id",
+            stack_small_ids,
+            None,
+        );
+
+        Ok(query_builder
+            .build()
+            .fetch_all(&self.db)
+            .await?
+            .iter()
+            .map(|row| row.get("total_hash"))
+            .collect())
     }
 
     /// Updates a stack settlement ticket with attestation commitments.

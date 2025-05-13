@@ -48,3 +48,6 @@ pub const SGLANG_AVG_QUEUE_LATENCY_QUERY: &str = "sglang:avg_request_queue_laten
 
 /// Waiting requests query
 pub const SGLANG_WAITING_REQUESTS_QUERY: &str = "sglang:num_queue_reqs";
+
+/// One million, used for computing fiat amounts
+pub const ONE_MILLION: u128 = 1_000_000;
