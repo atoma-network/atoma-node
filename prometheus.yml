@@ -3,15 +3,15 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: "atoma-node-confidential"
+  - job_name: "atoma-node"
     metrics_path: "/metrics"
     static_configs:
-      - targets: ["atoma-node-confidential:3000"]
+      - targets: ["atoma-node:3000"]
 
-  - job_name: "atoma-node-non-confidential"
+  - job_name: "atoma-node-sglang"
     metrics_path: "/metrics"
     static_configs:
-      - targets: ["atoma-node-non-confidential:3000"]
+      - targets: ["atoma-node-sglang:50000"]
 
   - job_name: "vllm1"
     metrics_path: "/metrics"
@@ -61,6 +61,11 @@ scrape_configs:
       - action: labelmap
         regex: ^(atoma|libp2p)_(.+)$
         replacement: $1_$2
+
+  - job_name: "sglang"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["sglang:3000"]
 
   - job_name: "node-exporter"
     scrape_interval: 10s

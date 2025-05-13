@@ -5,7 +5,8 @@ use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{
-    config::AtomaServiceConfig, handlers::vllm_metrics::start_metrics_updater, server::AppState,
+    config::AtomaServiceConfig, handlers::inference_service_metrics::start_metrics_updater,
+    server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};

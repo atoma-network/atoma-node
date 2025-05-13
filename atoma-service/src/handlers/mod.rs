@@ -506,7 +506,7 @@ pub fn handle_status_code_error(
     }
 }
 
-pub mod vllm_metrics {
+pub mod inference_service_metrics {
     use opentelemetry::KeyValue;
     use std::sync::Arc;
     use std::sync::LazyLock;
