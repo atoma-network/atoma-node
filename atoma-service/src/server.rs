@@ -57,8 +57,7 @@ use crate::{
         stop_streamer::stop_streamer_handler,
     },
     middleware::{
-        confidential_compute_middleware, signature_verification_middleware,
-        verify_stack_permissions,
+        confidential_compute_middleware, signature_verification_middleware, verify_permissions,
     },
 };
 
@@ -202,6 +201,9 @@ pub struct AppState {
     /// signing operations, allowing the application to manage multiple
     /// addresses and keys efficiently.
     pub address_index: usize,
+
+    /// The Sui address of the clients that are allowed to use fiat.
+    pub whitelist_sui_addresses_for_fiat: Vec<String>,
 }
 
 /// Creates and configures the main router for the application.
@@ -268,20 +270,14 @@ pub fn create_router(app_state: AppState) -> Router {
                         app_state.clone(),
                         confidential_compute_middleware,
                     ))
-                    .layer(from_fn_with_state(
-                        app_state.clone(),
-                        verify_stack_permissions,
-                    )),
+                    .layer(from_fn_with_state(app_state.clone(), verify_permissions)),
             ),
         )
         .merge(
             regular_routes.layer(
                 ServiceBuilder::new()
                     .layer(from_fn(signature_verification_middleware))
-                    .layer(from_fn_with_state(
-                        app_state.clone(),
-                        verify_stack_permissions,
-                    )),
+                    .layer(from_fn_with_state(app_state.clone(), verify_permissions)),
             ),
         )
         .merge(public_routes)
