@@ -756,9 +756,9 @@ pub mod inference_service_metrics {
             "Getting metrics for jobs: {jobs}"
         );
         let request_queue_latency = format!(
-            "histogram_quantile(
+            "quantile_over_time(
                 0.90,
-                sum(rate(sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s])
+                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
                     or vector(0)) by (le)
             )"
         );
