@@ -582,15 +582,32 @@ pub mod inference_service_metrics {
         chat_completions_service_urls: Vec<(String, String)>,
         metrics_update_interval: Option<u64>,
     ) {
-        let chat_completions_service_urls = Arc::new(chat_completions_service_urls);
+        type ChatCompletionsServiceUrls = Vec<(String, String)>;
+        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
+            ChatCompletionsServiceUrls,
+            ChatCompletionsServiceUrls,
+        ) = chat_completions_service_urls
+            .iter()
+            .cloned()
+            .partition(|(_, job)| job.contains("vllm"));
+        let vllm_chat_completions_service_urls = Arc::new(vllm_chat_completions_service_urls);
+        let sglang_chat_completions_service_urls = Arc::new(sglang_chat_completions_service_urls);
         tokio::spawn(async move {
             let metrics_interval = metrics_update_interval.unwrap_or(30);
             let mut interval = time::interval(Duration::from_secs(metrics_interval));
             loop {
                 interval.tick().await;
-                let metrics = get_metrics(&HTTP_CLIENT, &chat_completions_service_urls).await;
-                if metrics.iter().any(std::result::Result::is_ok) {
-                    METRICS_CACHE.update_metrics(metrics).await;
+                let vllm_metrics =
+                    get_metrics(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await;
+                let sglang_metrics =
+                    get_metrics(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await;
+                if vllm_metrics.iter().any(std::result::Result::is_ok) {
+                    METRICS_CACHE.update_metrics(vllm_metrics).await;
+                } else {
+                    tracing::warn!("Failed to retrieve any valid metrics, not updating cache");
+                }
+                if sglang_metrics.iter().any(std::result::Result::is_ok) {
+                    METRICS_CACHE.update_metrics(sglang_metrics).await;
                 } else {
                     tracing::warn!("Failed to retrieve any valid metrics, not updating cache");
                 }
@@ -599,7 +616,17 @@ pub mod inference_service_metrics {
     }
 
     /// Retrieves both request queue time and TTFT metrics from a vLLM service.
-    #[instrument(level = "info", skip_all, fields(jobs_with_url=jobs_with_url.iter().map(|(url, job)| format!("{job}={url}")).collect::<Vec<_>>().join(",")))]
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(
+            jobs_with_url=jobs_with_url
+                .iter()
+                .map(|(url, job)| format!("{job}={url}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    )]
     async fn get_metrics(
         client: &Client,
         jobs_with_url: &[(String, String)],
@@ -702,39 +729,100 @@ pub mod inference_service_metrics {
     ///   - The Prometheus query fails.
     ///   - No metrics data is found for the specified job.
     ///   - The response data cannot be parsed correctly.
-    #[instrument(level = "info", skip_all, fields(job=job))]
+    #[instrument(
+        level = "info",
+        skip_all,
+        fields(
+            jobs = jobs_with_url
+                .iter()
+                .map(|(url, job)| format!("{job}={url}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    )]
     async fn get_sglang_request_queue_latency(
         client: &Client,
-        job: &str,
-        chat_completions_service_url: &str,
-    ) -> Result<(String, f64)> {
+        jobs_with_url: &[(String, String)],
+    ) -> Vec<Result<(String, (f64, f64))>> {
+        let jobs = jobs_with_url
+            .iter()
+            .map(|(_url, job)| job.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
         info!(
             target = "atoma-service",
-            module = "vllm_metrics",
+            module = "sglang_metrics",
             level = "info",
-            "Getting metrics for job: {job}"
+            "Getting metrics for jobs: {jobs}"
         );
-        let query = format!(
+        let request_queue_latency = format!(
             "histogram_quantile(
                 0.90,
-                sum(rate(sglang:avg_request_queue_latency{{job=\"{job}\"}}[30s])
+                sum(rate(sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s])
                     or vector(0)) by (le)
             )"
         );
-        let response = client.query(&query).get().await?;
-        response.data().as_vector().map_or_else(
-            || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
-            |data_vector| {
-                data_vector.first().map_or_else(
-                    || Err(VllmMetricsError::NoMetricsFound(job.to_string())),
-                    |value| {
-                        let sample = value.sample();
-                        let value = sample.value();
-                        Ok((chat_completions_service_url.to_string(), value))
-                    },
-                )
-            },
-        )
+        let ttft = format!(
+            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds{{job=\"{jobs}\"}}[30s])))",
+        );
+        let (queue_latency_response, ttft_response) = tokio::join!(
+            client.query(&request_queue_latency).get(),
+            client.query(&ttft).get()
+        );
+        jobs_with_url
+            .iter()
+            .map(|(url, job)| {
+                let queue_latency = queue_latency_response
+                    .as_ref()
+                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .and_then(|response| {
+                        response
+                            .data()
+                            .as_vector()
+                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .and_then(|vector| {
+                                vector
+                                    .iter()
+                                    .find(|instant| {
+                                        instant.metric().get("job") == Some(&job.to_string())
+                                    })
+                                    .ok_or_else(|| {
+                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                    })
+                                    .map(|value| {
+                                        let sample = value.sample();
+                                        sample.value()
+                                    })
+                            })
+                    });
+
+                let ttft = ttft_response
+                    .as_ref()
+                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .and_then(|response| {
+                        response
+                            .data()
+                            .as_vector()
+                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .and_then(|vector| {
+                                vector
+                                    .iter()
+                                    .find(|instant| {
+                                        instant.metric().get("job") == Some(&job.to_string())
+                                    })
+                                    .ok_or_else(|| {
+                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                    })
+                                    .map(|value| {
+                                        let sample = value.sample();
+                                        sample.value()
+                                    })
+                            })
+                    });
+
+                queue_latency.and_then(|ql| ttft.map(|gc| (url.to_string(), (ql, gc))))
+            })
+            .collect()
     }
 
     /// Retrieves the best available chat completions service URL for a given model.
@@ -745,27 +833,42 @@ pub mod inference_service_metrics {
         model: &str,
     ) -> Result<(String, StatusCode)> {
         const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0; // Default to 2 seconds
+        type ChatCompletionsServiceUrls = Vec<(String, String)>;
 
         if chat_completions_service_urls.is_empty() {
             return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
                 model.to_string(),
             ));
         }
+        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
+            ChatCompletionsServiceUrls,
+            ChatCompletionsServiceUrls,
+        ) = chat_completions_service_urls
+            .iter()
+            .cloned()
+            .partition(|(_, job)| job.contains("vllm"));
 
         let mut min_request_queue_time_seconds = f64::INFINITY;
         let mut min_time_to_first_token_seconds = f64::INFINITY;
         let mut best_url = chat_completions_service_urls[0].0.clone();
 
         // Get cached metrics
-        let metrics = match METRICS_CACHE.get_metrics().await {
+        let vllm_metrics = match METRICS_CACHE.get_metrics().await {
             Some(metrics) => metrics,
             None => {
                 // If no cached metrics, get them directly
-                get_metrics(&HTTP_CLIENT, chat_completions_service_urls).await
+                get_metrics(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await
+            }
+        };
+        let sglang_metrics = match METRICS_CACHE.get_metrics().await {
+            Some(metrics) => metrics,
+            None => {
+                // If no cached metrics, get them directly
+                get_metrics(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await
             }
         };
 
-        for metric in metrics {
+        for metric in vllm_metrics.into_iter().chain(sglang_metrics.into_iter()) {
             let (
                 chat_completions_service_url,
                 (request_queue_time_seconds, time_to_first_token_seconds),
