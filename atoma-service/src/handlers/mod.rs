@@ -598,9 +598,9 @@ pub mod inference_service_metrics {
             loop {
                 interval.tick().await;
                 let vllm_metrics =
-                    get_metrics(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await;
+                    get_metrics_vllm(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await;
                 let sglang_metrics =
-                    get_metrics(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await;
+                    get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await;
                 if vllm_metrics.iter().any(std::result::Result::is_ok) {
                     METRICS_CACHE.update_metrics(vllm_metrics).await;
                 } else {
@@ -627,7 +627,7 @@ pub mod inference_service_metrics {
                 .join(",")
         )
     )]
-    async fn get_metrics(
+    async fn get_metrics_vllm(
         client: &Client,
         jobs_with_url: &[(String, String)],
     ) -> Vec<Result<(String, (f64, f64))>> {
@@ -705,23 +705,22 @@ pub mod inference_service_metrics {
             .collect()
     }
 
-    /// Retrieves the 90th percentile request queue time metric from a vLLM service.
+    /// Retrieves the average request queue time metric from a sglang service and time to first token metric from a SgLang service.
     ///
     /// This function executes a Prometheus query against the configured Prometheus instance
-    /// to get the `vllm:request_queue_time_seconds` histogram for the specified `job`,
-    /// calculates the 90th percentile, and returns it along with the service URL.
+    /// to get the `sglang:avg_request_queue_latency` histogram for the specified `job`,
+    /// calculates the average, and returns it along with the service URL.
     ///
     /// # Arguments
     ///
     /// * `client` - The Prometheus HTTP query client.
-    /// * `job` - The Prometheus job name corresponding to the vLLM service instance.
-    /// * `chat_completions_service_url` - The URL of the vLLM service instance, returned alongside the metric.
+    /// * `jobs_with_url` - A vector of tuples containing the job name and the service URL.
     ///
     /// # Returns
     ///
     /// Returns a `Result` containing a tuple `(String, f64)` on success, where:
-    ///   - The `String` is the `chat_completions_service_url` passed as input.
-    ///   - The `f64` is the calculated 90th percentile of the request queue time in seconds.
+    ///   - The `String` is the `job` passed as input.
+    ///   - The `f64` is the calculated average of the request queue time in seconds.
     ///
     /// # Errors
     ///
@@ -740,7 +739,7 @@ pub mod inference_service_metrics {
                 .join(",")
         )
     )]
-    async fn get_sglang_request_queue_latency(
+    async fn get_metrics_sglang(
         client: &Client,
         jobs_with_url: &[(String, String)],
     ) -> Vec<Result<(String, (f64, f64))>> {
@@ -857,14 +856,14 @@ pub mod inference_service_metrics {
             Some(metrics) => metrics,
             None => {
                 // If no cached metrics, get them directly
-                get_metrics(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await
+                get_metrics_vllm(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await
             }
         };
         let sglang_metrics = match METRICS_CACHE.get_metrics().await {
             Some(metrics) => metrics,
             None => {
                 // If no cached metrics, get them directly
-                get_metrics(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await
+                get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await
             }
         };
 
