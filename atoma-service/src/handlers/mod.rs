@@ -759,7 +759,7 @@ pub mod inference_service_metrics {
             "quantile_over_time(
                 0.90,
                 sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
-                    or vector(0)) by (le)
+                    or vector(0)
             )"
         );
         let ttft = format!(
