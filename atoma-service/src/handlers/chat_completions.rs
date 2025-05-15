@@ -1421,7 +1421,7 @@ pub mod utils {
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, estimated_total_tokens, payload_hash, endpoint),
+        fields(stack_small_id, estimated_total_tokens = estimated_input_tokens + estimated_output_tokens, payload_hash, endpoint),
         err
     )]
     #[allow(clippy::too_many_arguments)]
