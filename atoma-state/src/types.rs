@@ -261,17 +261,23 @@ pub enum AtomaAtomaStateManagerEvent {
     LockFiatAmount {
         /// User address
         user_address: String,
-        /// Amount in fiat currency
-        amount: i64,
+        /// Amount to be locked in fiat currency for input
+        estimated_input_amount: i64,
+        /// Amount to be locked in fiat currency for output
+        estimated_output_amount: i64,
     },
     /// Represents an update to the amount of fiat currency for a user, after the inference is done
     UpdateFiatAmount {
         /// User address
         user_address: String,
-        /// Estimated total amount in fiat currency
-        estimated_total_amount: i64,
-        /// Total amount in fiat currency
-        total_amount: i64,
+        /// Estimated total amount for input in fiat currency
+        estimated_input_amount: i64,
+        /// Total amount for input in fiat currency
+        input_amount: i64,
+        /// Estimated total amount for output in fiat currency
+        estimated_output_amount: i64,
+        /// Total amount for output in fiat currency
+        output_amount: i64,
     },
     /// Represents an update to the total hash of a stack
     UpdateStackTotalHash {

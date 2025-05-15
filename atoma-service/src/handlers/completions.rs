@@ -182,7 +182,7 @@ pub async fn completions_handler(
 ) -> Result<Response<Body>, AtomaServiceError> {
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        estimated_output_compute_units,
         num_input_tokens,
         payload_hash,
         client_encryption_metadata,
@@ -218,7 +218,7 @@ pub async fn completions_handler(
         is_stream,
         payload.clone(),
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_compute_units,
         client_encryption_metadata,
         headers,
     )
@@ -226,7 +226,7 @@ pub async fn completions_handler(
     {
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
-                estimated_total_compute_units,
+                num_input_tokens + estimated_output_compute_units,
                 &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
             if !is_stream {
@@ -252,7 +252,7 @@ pub async fn completions_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -261,7 +261,9 @@ pub async fn completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -382,7 +384,7 @@ pub async fn confidential_completions_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_compute_units,
         payload_hash,
         client_encryption_metadata,
         user_address,
@@ -422,7 +424,7 @@ pub async fn confidential_completions_handler(
         is_stream,
         payload.clone(),
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_compute_units,
         client_encryption_metadata,
         headers,
     )
@@ -430,7 +432,7 @@ pub async fn confidential_completions_handler(
     {
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
-                estimated_total_compute_units,
+                num_input_tokens + estimated_output_compute_units,
                 &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
             if !is_stream {
@@ -458,7 +460,7 @@ pub async fn confidential_completions_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -467,7 +469,9 @@ pub async fn confidential_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -546,7 +550,7 @@ async fn handle_response(
     is_stream: bool,
     payload: Value,
     num_input_tokens: i64,
-    estimated_total_compute_units: i64,
+    estimated_output_compute_units: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     headers: HeaderMap,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -565,7 +569,7 @@ async fn handle_response(
             payload,
             stack_small_id,
             num_input_tokens,
-            estimated_total_compute_units,
+            estimated_output_compute_units,
             price_per_one_million_compute_units,
             user_address,
             payload_hash,
@@ -579,7 +583,8 @@ async fn handle_response(
             state,
             payload,
             stack_small_id,
-            estimated_total_compute_units,
+            num_input_tokens,
+            estimated_output_compute_units,
             price_per_one_million_compute_units,
             user_address,
             payload_hash,
@@ -656,6 +661,7 @@ async fn handle_non_streaming_response(
     state: &AppState,
     payload: Value,
     stack_small_id: Option<i64>,
+    num_input_tokens: i64,
     estimated_total_compute_units: i64,
     price_per_one_million_compute_units: i64,
     user_address: String,
@@ -689,16 +695,19 @@ async fn handle_non_streaming_response(
         level = "debug",
         "Received non-streaming chat completions response from {endpoint}"
     );
-    let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
+    let (input_compute_units, output_compute_units) =
+        utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
         state,
         response_body,
         stack_small_id,
+        num_input_tokens,
         estimated_total_compute_units,
         price_per_one_million_compute_units,
         user_address,
-        total_compute_units,
+        input_compute_units,
+        output_compute_units,
         payload_hash,
         client_encryption_metadata,
         endpoint,
@@ -762,7 +771,7 @@ async fn handle_streaming_response(
     mut payload: Value,
     stack_small_id: Option<i64>,
     num_input_tokens: i64,
-    estimated_total_compute_units: i64,
+    estimated_output_compute_units: i64,
     price_per_one_million_compute_units: i64,
     user_address: String,
     payload_hash: [u8; 32],
@@ -860,7 +869,7 @@ async fn handle_streaming_response(
         state.client_dropped_streamer_connections.clone(),
         stack_small_id,
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_compute_units,
         payload_hash,
         state.keystore.clone(),
         state.address_index,
@@ -955,6 +964,7 @@ impl RequestModel for RequestModelCompletions {
                     })?;
                 Ok(ComputeUnitsEstimate {
                     num_input_compute_units,
+                    max_output_compute_units: self.max_completion_tokens,
                     max_total_compute_units: self.max_completion_tokens,
                 })
             }
@@ -969,6 +979,7 @@ impl RequestModel for RequestModelCompletions {
                     .sum();
                 Ok(ComputeUnitsEstimate {
                     num_input_compute_units,
+                    max_output_compute_units: self.max_completion_tokens,
                     max_total_compute_units: self.max_completion_tokens,
                 })
             }
@@ -976,6 +987,7 @@ impl RequestModel for RequestModelCompletions {
                 let num_input_compute_units = tokens.len() as u64;
                 Ok(ComputeUnitsEstimate {
                     num_input_compute_units,
+                    max_output_compute_units: self.max_completion_tokens,
                     max_total_compute_units: self.max_completion_tokens,
                 })
             }
@@ -984,6 +996,7 @@ impl RequestModel for RequestModelCompletions {
                     token_arrays.iter().map(|tokens| tokens.len() as u64).sum();
                 Ok(ComputeUnitsEstimate {
                     num_input_compute_units,
+                    max_output_compute_units: self.max_completion_tokens,
                     max_total_compute_units: self.max_completion_tokens,
                 })
             }
@@ -1297,14 +1310,15 @@ pub mod utils {
     /// let total = extract_total_num_tokens(&response_body, "gpt-4");
     /// assert_eq!(total, 30);
     /// ```
-    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
-        let mut total_compute_units = 0;
+    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> (i64, i64) {
+        let mut input_compute_units = 0;
+        let mut output_compute_units = 0;
         if let Some(usage) = response_body.get(USAGE_KEY) {
             if let Some(prompt_tokens) = usage.get(PROMPT_TOKENS_KEY) {
                 let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
                 CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
                     .add(prompt_tokens, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                total_compute_units += prompt_tokens;
+                input_compute_units += prompt_tokens;
             }
             if let Some(completion_tokens) = usage.get(COMPLETION_TOKENS_KEY) {
                 let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
@@ -1312,10 +1326,10 @@ pub mod utils {
                     completion_tokens,
                     &[KeyValue::new(MODEL_KEY, model.to_owned())],
                 );
-                total_compute_units += completion_tokens;
+                output_compute_units += completion_tokens;
             }
         }
-        total_compute_units as i64
+        (input_compute_units as i64, output_compute_units as i64)
     }
 
     /// Processes and serves a non-streaming chat completion response by handling signature verification,
@@ -1386,10 +1400,12 @@ pub mod utils {
         state: &AppState,
         mut response_body: Value,
         stack_small_id: Option<i64>,
-        estimated_total_compute_units: i64,
+        num_input_tokens: i64,
+        estimated_output_compute_units: i64,
         price_per_one_million_compute_units: i64,
         user_address: String,
-        total_compute_units: i64,
+        input_compute_units: i64,
+        output_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         client_encryption_metadata: Option<EncryptionMetadata>,
         endpoint: String,
@@ -1401,10 +1417,10 @@ pub mod utils {
             level = "info",
             endpoint = "handle_non_streaming_response",
             stack_small_id = stack_small_id,
-            estimated_total_compute_units = estimated_total_compute_units,
+            estimated_total_compute_units = num_input_tokens + estimated_output_compute_units,
             payload_hash = hex::encode(payload_hash),
             "Total compute units: {}",
-            total_compute_units,
+            input_compute_units + output_compute_units,
         );
 
         if let Err(e) = sign_response_and_update_stack_hash(
@@ -1483,8 +1499,8 @@ pub mod utils {
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
-                estimated_total_compute_units,
-                total_compute_units,
+                estimated_output_compute_units,
+                input_compute_units + output_compute_units,
                 &endpoint,
                 concurrent_requests,
             )?;
@@ -1492,8 +1508,10 @@ pub mod utils {
             update_fiat_amount(
                 &state.state_manager_sender,
                 user_address,
-                estimated_total_compute_units,
-                total_compute_units,
+                num_input_tokens,
+                input_compute_units,
+                estimated_output_compute_units,
+                output_compute_units,
                 price_per_one_million_compute_units,
                 &endpoint,
             )?;

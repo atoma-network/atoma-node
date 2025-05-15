@@ -366,21 +366,30 @@ pub fn update_stack_num_compute_units(
 pub fn update_fiat_amount(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     user_address: String,
-    estimated_total_compute_units: i64,
-    total_amount: i64,
+    estimated_input_compute_units: i64,
+    input_compute_units: i64,
+    estimated_output_compute_units: i64,
+    output_compute_units: i64,
     price_per_one_million_compute_units: i64,
     endpoint: &str,
 ) -> Result<(), AtomaServiceError> {
-    let estimated_total_amount = (estimated_total_compute_units as u128
+    let estimated_input_amount = (estimated_input_compute_units as u128
         * price_per_one_million_compute_units as u128
         / ONE_MILLION) as i64;
-    let total_amount =
-        (total_amount as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
+    let input_amount = (input_compute_units as u128 * price_per_one_million_compute_units as u128
+        / ONE_MILLION) as i64;
+    let estimated_output_amount = (estimated_output_compute_units as u128
+        * price_per_one_million_compute_units as u128
+        / ONE_MILLION) as i64;
+    let output_amount = (output_compute_units as u128 * price_per_one_million_compute_units as u128
+        / ONE_MILLION) as i64;
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
-            total_amount,
-            estimated_total_amount,
+            estimated_input_amount,
+            input_amount,
+            estimated_output_amount,
+            output_amount,
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update fiat amount event: {e}"),

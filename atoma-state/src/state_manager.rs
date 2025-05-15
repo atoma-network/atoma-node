@@ -1916,21 +1916,24 @@ impl AtomaState {
     #[instrument(
         level = "trace",
         skip_all,
-        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount)
+        fields(%user_address, estimated_total_amount = estimated_total_input_amount + estimated_total_completions_amount)
     )]
     pub async fn lock_fiat_amount(
         &self,
         user_address: String,
-        estimated_total_amount: i64,
+        estimated_total_input_amount: i64,
+        estimated_total_completions_amount: i64,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO fiat_balance 
-                     (user_address, overcharged_unsettled_amount)
-                     VALUES ($1, $2) 
+                     (user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
+                     VALUES ($1, $2, $3) 
                      ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_amount = fiat_balance.overcharged_unsettled_amount + $2;")
+                        SET overcharged_unsettled_input_amount = fiat_balance.overcharged_unsettled_input_amount + $2,
+                            overcharged_unsettled_completions_amount = fiat_balance.overcharged_unsettled_completions_amount + $3;")
             .bind(user_address)
-            .bind(estimated_total_amount)
+            .bind(estimated_total_input_amount)
+            .bind(estimated_total_completions_amount)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -1968,24 +1971,29 @@ impl AtomaState {
     #[instrument(
         level = "trace",
         skip_all,
-        fields(user_address = %user_address, estimated_total_amount = %estimated_total_amount, total_amount = %total_amount)
+        fields(%user_address, %estimated_input_amount, %input_amount, %estimated_output_amount, %output_amount)
     )]
     pub async fn update_fiat_amount(
         &self,
         user_address: String,
-        estimated_total_amount: i64,
-        total_amount: i64,
+        estimated_input_amount: i64,
+        input_amount: i64,
+        estimated_output_amount: i64,
+        output_amount: i64,
     ) -> Result<()> {
         sqlx::query(
             "UPDATE fiat_balance 
-                  SET overcharged_unsettled_amount = overcharged_unsettled_amount - $2,
-                      already_debited_amount = already_debited_amount + $3,
-                      num_requests = num_requests + $4;",
+                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $3,
+                      already_debited_input_amount = already_debited_input_amount + $2,
+                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $5,
+                      already_debited_completions_amount = already_debited_completions_amount + $4;",
         )
         .bind(user_address)
-        .bind(estimated_total_amount)
-        .bind(total_amount)
-        .bind(i64::from(total_amount > 0)) // If total amount is greater than 0 then the request was successful
+        .bind(estimated_input_amount)
+        .bind(input_amount)
+        .bind(estimated_output_amount)
+        .bind(output_amount)
+        .bind(i64::from(output_amount > 0)) // If total amount is greater than 0 then the request was successful
         .execute(&self.db)
         .await?;
         Ok(())

@@ -100,7 +100,8 @@ pub async fn embeddings_handler(
 
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        num_input_tokens,
+        estimated_output_compute_units,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
@@ -148,7 +149,7 @@ pub async fn embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -157,7 +158,9 @@ pub async fn embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -243,7 +246,8 @@ pub async fn confidential_embeddings_handler(
 
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        num_input_tokens,
+        estimated_output_compute_units,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
@@ -282,8 +286,8 @@ pub async fn confidential_embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     &endpoint,
                     concurrent_requests,
                 )?;
@@ -291,8 +295,10 @@ pub async fn confidential_embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    num_input_tokens,
+                    estimated_output_compute_units,
+                    estimated_output_compute_units,
                     price_per_one_million_compute_units,
                     &endpoint,
                 )?;
@@ -312,7 +318,7 @@ pub async fn confidential_embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -321,7 +327,9 @@ pub async fn confidential_embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -529,6 +537,7 @@ impl RequestModel for RequestModelEmbeddings {
 
         Ok(ComputeUnitsEstimate {
             num_input_compute_units: total_units,
+            max_output_compute_units: 0,
             max_total_compute_units: total_units,
         })
     }

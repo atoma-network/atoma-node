@@ -77,7 +77,7 @@ pub struct RequestMetadata {
     /// The number of input tokens
     pub num_input_tokens: i64,
     /// The estimated total number of compute units
-    pub estimated_total_compute_units: i64,
+    pub estimated_output_compute_units: i64,
     /// The price per one million compute units
     pub price_per_one_million_compute_units: i64,
     /// User address that sent the request
@@ -117,10 +117,10 @@ impl RequestMetadata {
     pub const fn with_tokens_information(
         mut self,
         num_input_tokens: i64,
-        estimated_total_compute_units: i64,
+        estimated_output_compute_units: i64,
     ) -> Self {
         self.num_input_tokens = num_input_tokens;
-        self.estimated_total_compute_units = estimated_total_compute_units;
+        self.estimated_output_compute_units = estimated_output_compute_units;
         self
     }
 
@@ -548,7 +548,7 @@ async fn generate_fiat_request(
     endpoint: String,
     state: State<AppState>,
     sui_address: SuiAddress,
-    max_total_compute_units: i64,
+    max_output_compute_units: i64,
     num_input_compute_units: i64,
     mut req_parts: Parts,
     request_type: RequestType,
@@ -599,7 +599,10 @@ async fn generate_fiat_request(
         .state_manager_sender
         .send(AtomaAtomaStateManagerEvent::LockFiatAmount {
             user_address: sui_address.to_string(),
-            amount: ((max_total_compute_units as u128
+            estimated_input_amount: ((num_input_compute_units as u128
+                * price_per_one_million_compute_units as u128)
+                / ONE_MILLION) as i64,
+            estimated_output_amount: ((max_output_compute_units as u128
                 * price_per_one_million_compute_units as u128)
                 / ONE_MILLION) as i64,
         })
@@ -615,7 +618,7 @@ async fn generate_fiat_request(
         .unwrap_or_default()
         .with_user_address(sui_address.to_string())
         .with_price_per_one_million_compute_units(price_per_one_million_compute_units)
-        .with_tokens_information(num_input_compute_units, max_total_compute_units)
+        .with_tokens_information(num_input_compute_units, max_output_compute_units)
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -753,10 +756,12 @@ pub async fn verify_permissions(
 
     let ComputeUnitsEstimate {
         num_input_compute_units,
+        max_output_compute_units,
         max_total_compute_units,
     } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
 
     let max_total_compute_units = max_total_compute_units as i64;
+    let max_output_compute_units = max_output_compute_units as i64;
     let num_input_compute_units = num_input_compute_units as i64;
 
     let stack_small_id = req_parts
@@ -783,7 +788,7 @@ pub async fn verify_permissions(
             endpoint,
             state,
             sui_address,
-            max_total_compute_units,
+            max_output_compute_units,
             num_input_compute_units,
             req_parts,
             request_type,
@@ -1145,6 +1150,7 @@ pub mod utils {
             }
             RequestType::NonInference => Ok(ComputeUnitsEstimate {
                 num_input_compute_units: 0,
+                max_output_compute_units: 0,
                 max_total_compute_units: 0,
             }),
         }

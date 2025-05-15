@@ -104,7 +104,8 @@ pub async fn image_generations_handler(
 
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        num_input_tokens,
+        estimated_output_compute_units,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
@@ -147,7 +148,7 @@ pub async fn image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -156,7 +157,9 @@ pub async fn image_generations_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -244,7 +247,8 @@ pub async fn confidential_image_generations_handler(
 
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        num_input_tokens,
+        estimated_output_compute_units,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
@@ -276,8 +280,8 @@ pub async fn confidential_image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     &endpoint,
                     concurrent_requests,
                 )?;
@@ -285,8 +289,10 @@ pub async fn confidential_image_generations_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    num_input_tokens,
+                    estimated_output_compute_units,
+                    estimated_output_compute_units,
                     price_per_one_million_compute_units,
                     &endpoint,
                 )?;
@@ -306,7 +312,7 @@ pub async fn confidential_image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_compute_units,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -315,7 +321,9 @@ pub async fn confidential_image_generations_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
+                    0,
+                    estimated_output_compute_units,
                     0,
                     price_per_one_million_compute_units,
                     &endpoint,
@@ -517,7 +525,8 @@ impl RequestModel for RequestModelImageGenerations {
 
         // Calculate compute units based on number of images and pixel count
         Ok(ComputeUnitsEstimate {
-            num_input_compute_units: self.n * width * height,
+            num_input_compute_units: 0,
+            max_output_compute_units: self.n * width * height,
             max_total_compute_units: self.n * width * height,
         })
     }

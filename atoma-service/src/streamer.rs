@@ -101,8 +101,8 @@ pub struct Streamer {
     status: StreamStatus,
     /// The stack small id for the request
     stack_small_id: Option<i64>,
-    /// The estimated total compute units for the request
-    estimated_total_compute_units: i64,
+    /// The estimated output compute units for the request
+    estimated_output_compute_units: i64,
     /// The request payload hash
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
     /// The sender for the state manager
@@ -169,7 +169,7 @@ impl Streamer {
         client_dropped_streamer_connections: Arc<DashSet<String>>,
         stack_small_id: Option<i64>,
         num_input_tokens: i64,
-        estimated_total_compute_units: i64,
+        estimated_output_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         keystore: Arc<FileBasedKeystore>,
         address_index: usize,
@@ -187,7 +187,7 @@ impl Streamer {
             stream: Box::pin(stream),
             status: StreamStatus::NotStarted,
             stack_small_id,
-            estimated_total_compute_units,
+            estimated_output_compute_units,
             payload_hash,
             state_manager_sender,
             keystore,
@@ -246,7 +246,7 @@ impl Streamer {
         fields(
             endpoint = "handle_final_chunk",
             stack_small_id = self.stack_small_id,
-            estimated_total_compute_units = self.estimated_total_compute_units,
+            estimated_output_compute_units = self.estimated_output_compute_units,
             payload_hash = hex::encode(self.payload_hash)
         ),
         err
@@ -274,7 +274,8 @@ impl Streamer {
         }
 
         // Get total tokens
-        let mut total_compute_units = 0;
+        let mut input_compute_units = 0;
+        let mut output_compute_units = 0;
         if let Some(prompt_tokens) = usage.get("prompt_tokens") {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_INPUT_TOKENS_METRICS.add(
@@ -284,7 +285,7 @@ impl Streamer {
                     KeyValue::new("privacy_level", privacy_level),
                 ],
             );
-            total_compute_units += prompt_tokens;
+            input_compute_units += prompt_tokens;
         } else {
             error!(
                 target = "atoma-service-streamer",
@@ -302,7 +303,7 @@ impl Streamer {
                     KeyValue::new("privacy_level", privacy_level),
                 ],
             );
-            total_compute_units += completion_tokens;
+            output_compute_units += completion_tokens;
         } else {
             error!(
                 target = "atoma-service-streamer",
@@ -317,10 +318,11 @@ impl Streamer {
             level = "info",
             endpoint = self.endpoint,
             stack_small_id = self.stack_small_id,
-            estimated_total_compute_units = self.estimated_total_compute_units,
+            estimated_total_compute_units =
+                self.num_input_tokens + self.estimated_output_compute_units,
             payload_hash = hex::encode(self.payload_hash),
             "Handle final chunk: Total compute units: {}",
-            total_compute_units,
+            input_compute_units + output_compute_units,
         );
 
         if let Some(stack_small_id) = self.stack_small_id {
@@ -357,8 +359,8 @@ impl Streamer {
             if let Err(e) = update_stack_num_compute_units(
                 &self.state_manager_sender,
                 stack_small_id,
-                self.estimated_total_compute_units,
-                total_compute_units as i64,
+                self.num_input_tokens + self.estimated_output_compute_units,
+                (input_compute_units + output_compute_units) as i64,
                 &self.endpoint,
                 concurrent_requests,
             ) {
@@ -372,8 +374,10 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units,
-            total_compute_units as i64,
+            self.num_input_tokens,
+            input_compute_units as i64,
+            self.estimated_output_compute_units,
+            output_compute_units as i64,
             self.price_per_one_million_compute_units,
             &self.endpoint,
         ) {
@@ -536,7 +540,7 @@ impl Streamer {
         fields(
             endpoint = self.endpoint,
             stack_small_id = self.stack_small_id,
-            estimated_total_compute_units = self.estimated_total_compute_units,
+            estimated_total_compute_units = self.num_input_tokens + self.estimated_output_compute_units,
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
@@ -842,7 +846,7 @@ impl Streamer {
         fields(
             endpoint = self.endpoint,
             stack_small_id = self.stack_small_id,
-            estimated_total_compute_units = self.estimated_total_compute_units,
+            estimated_total_compute_units = self.num_input_tokens + self.estimated_output_compute_units,
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
@@ -862,7 +866,7 @@ impl Streamer {
             if let Err(e) = update_stack_num_compute_units(
                 &self.state_manager_sender,
                 stack_small_id,
-                self.estimated_total_compute_units,
+                self.num_input_tokens + self.estimated_output_compute_units,
                 0,
                 &self.endpoint,
                 concurrent_requests,
@@ -877,7 +881,9 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units,
+            self.num_input_tokens,
+            0,
+            self.estimated_output_compute_units,
             0,
             self.price_per_one_million_compute_units,
             &self.endpoint,
@@ -939,7 +945,7 @@ impl Drop for Streamer {
         fields(
             endpoint = self.endpoint,
             stack_small_id = self.stack_small_id,
-            estimated_total_compute_units = self.estimated_total_compute_units,
+            estimated_total_compute_units = self.num_input_tokens + self.estimated_output_compute_units,
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
@@ -973,7 +979,7 @@ impl Drop for Streamer {
             if let Err(e) = update_stack_num_compute_units(
                 &self.state_manager_sender,
                 stack_small_id,
-                self.estimated_total_compute_units,
+                self.num_input_tokens + self.estimated_output_compute_units,
                 self.num_input_tokens + self.streamer_computed_num_tokens,
                 &self.endpoint,
                 concurrent_requests,
@@ -988,8 +994,10 @@ impl Drop for Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
-            self.estimated_total_compute_units,
-            self.num_input_tokens + self.streamer_computed_num_tokens,
+            self.num_input_tokens,
+            self.num_input_tokens,
+            self.estimated_output_compute_units,
+            self.streamer_computed_num_tokens,
             self.price_per_one_million_compute_units,
             &self.endpoint,
         ) {

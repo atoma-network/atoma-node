@@ -778,21 +778,34 @@ pub(crate) async fn handle_state_manager_event(
         }
         AtomaAtomaStateManagerEvent::LockFiatAmount {
             user_address,
-            amount,
+            estimated_input_amount,
+            estimated_output_amount,
         } => {
             state_manager
                 .state
-                .lock_fiat_amount(user_address, amount)
+                .lock_fiat_amount(
+                    user_address,
+                    estimated_input_amount,
+                    estimated_output_amount,
+                )
                 .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
-            estimated_total_amount,
-            total_amount,
+            estimated_input_amount,
+            input_amount,
+            estimated_output_amount,
+            output_amount,
         } => {
             state_manager
                 .state
-                .update_fiat_amount(user_address, estimated_total_amount, total_amount)
+                .update_fiat_amount(
+                    user_address,
+                    estimated_input_amount,
+                    input_amount,
+                    estimated_output_amount,
+                    output_amount,
+                )
                 .await?;
         }
     }
