@@ -777,29 +777,29 @@ pub mod inference_service_metrics {
             level = "info",
             "Getting metrics for jobs: {jobs}"
         );
-        let request_queue_latency = format!(
+        let num_running_requests = format!(
             "quantile_over_time(
                 0.90,
-                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
             )"
         );
         let ttft = format!(
-            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds{{job=\"{jobs}\"}}[30s])))",
+            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))",
         );
-        let (queue_latency_response, ttft_response) = tokio::join!(
-            client.query(&request_queue_latency).get(),
+        let (num_running_request_response, ttft_response) = tokio::join!(
+            client.query(&num_running_requests).get(),
             client.query(&ttft).get()
         );
         info!(
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
-            "Received sglang metrics response for {jobs}: {queue_latency_response:?}, {ttft_response:?}"
+            "Received sglang metrics response for {jobs}: {num_running_request_response:?}, {ttft_response:?}"
         );
         jobs_with_url
             .iter()
             .map(|(url, job)| {
-                let queue_latency = queue_latency_response
+                let num_running_requests = num_running_request_response
                     .as_ref()
                     .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
@@ -851,7 +851,7 @@ pub mod inference_service_metrics {
                             })
                     });
 
-                queue_latency.and_then(|ql| ttft.map(|gc| (url.to_string(), (ql, gc))))
+                num_running_requests.and_then(|ql| ttft.map(|gc| (url.to_string(), (ql, gc))))
             })
             .collect()
     }
@@ -863,7 +863,7 @@ pub mod inference_service_metrics {
         chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS: f64 = 2.0; // Default to 2 seconds
+        const MAX_ALLOWED_NUM_RUNNING_REQUESTS: f64 = 5.0; // Default to 5 requests
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
 
         if chat_completions_service_urls.is_empty() {
@@ -885,7 +885,7 @@ pub mod inference_service_metrics {
             .cloned()
             .partition(|(_, job)| job.contains("vllm"));
 
-        let mut min_request_queue_time_seconds = f64::INFINITY;
+        let mut min_num_running_requests = f64::MAX;
         let mut min_time_to_first_token_seconds = f64::INFINITY;
         let mut best_url = chat_completions_service_urls[0].0.clone();
 
@@ -921,39 +921,37 @@ pub mod inference_service_metrics {
         };
 
         for metric in vllm_metrics.into_iter().chain(sglang_metrics.into_iter()) {
-            let (
-                chat_completions_service_url,
-                (request_queue_time_seconds, time_to_first_token_seconds),
-            ) = match metric {
-                Ok((
-                    chat_completions_service_url,
-                    (request_queue_time_seconds, time_to_first_token_seconds),
-                )) => {
-                    info!(
+            let (chat_completions_service_url, (num_running_requests, time_to_first_token_seconds)) =
+                match metric {
+                    Ok((
+                        chat_completions_service_url,
+                        (num_running_requests, time_to_first_token_seconds),
+                    )) => {
+                        info!(
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "info",
-                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}: queue_time={request_queue_time_seconds}, time_to_first_token_seconds={time_to_first_token_seconds}"
+                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}: num_running_requests={num_running_requests}, time_to_first_token_seconds={time_to_first_token_seconds}"
                     );
-                    (
-                        chat_completions_service_url,
-                        (request_queue_time_seconds, time_to_first_token_seconds),
-                    )
-                }
-                Err(e) => {
-                    tracing::warn!(
+                        (
+                            chat_completions_service_url,
+                            (num_running_requests, time_to_first_token_seconds),
+                        )
+                    }
+                    Err(e) => {
+                        tracing::warn!(
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "error",
                         "Failed to get metrics for chat completions service url with error: {e}",
                     );
-                    continue;
-                }
-            };
+                        continue;
+                    }
+                };
 
             // Handle NaN case first
-            if request_queue_time_seconds.is_nan() {
-                min_request_queue_time_seconds = 0.0;
+            if num_running_requests.is_nan() {
+                min_num_running_requests = 0.0;
                 best_url.clone_from(&chat_completions_service_url);
                 break;
             }
@@ -963,24 +961,24 @@ pub mod inference_service_metrics {
             }
 
             // Update min time and best URL if we found a better option
-            if request_queue_time_seconds < min_request_queue_time_seconds
-                || (request_queue_time_seconds == min_request_queue_time_seconds
+            if num_running_requests < min_num_running_requests
+                || (num_running_requests == min_num_running_requests
                     && time_to_first_token_seconds < min_time_to_first_token_seconds)
             {
                 debug!(
                     target = "atoma-service",
                     module = "vllm_metrics",
                     level = "debug",
-                    "Updating best chat completions service url to {chat_completions_service_url} with request queue time {request_queue_time_seconds} and time to first token {time_to_first_token_seconds}"
+                    "Updating best chat completions service url to {chat_completions_service_url} with num running requests in queue of {num_running_requests} and time to first token {time_to_first_token_seconds}"
                 );
-                min_request_queue_time_seconds = request_queue_time_seconds;
+                min_num_running_requests = num_running_requests;
                 best_url.clone_from(&chat_completions_service_url);
             }
         }
 
         // If we never found valid metrics, default to 0.0
-        if min_request_queue_time_seconds == f64::INFINITY {
-            min_request_queue_time_seconds = 0.0;
+        if min_num_running_requests == f64::MAX {
+            min_num_running_requests = 0.0;
         }
 
         tracing::info!(
@@ -990,11 +988,11 @@ pub mod inference_service_metrics {
             model = model,
             best_url = best_url
         );
-        if min_request_queue_time_seconds > MAX_ALLOWED_REQUEST_QUEUE_TIME_SECONDS {
+        if min_num_running_requests > MAX_ALLOWED_NUM_RUNNING_REQUESTS {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
-                "Best available chat completions service URL for model: {model} has a request queue time of at least {min_request_queue_time_seconds} seconds",
+                "Best available chat completions service URL for model: {model} has a num running requests in queue of at least {min_num_running_requests} requests",
             );
             CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
             return Ok((best_url, StatusCode::TOO_MANY_REQUESTS));
