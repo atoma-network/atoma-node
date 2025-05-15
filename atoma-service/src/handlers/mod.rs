@@ -520,7 +520,7 @@ pub mod inference_service_metrics {
     use prometheus_http_query::Client;
     use tracing::{info, instrument};
 
-    pub type Result<T> = std::result::Result<T, VllmMetricsError>;
+    pub type Result<T> = std::result::Result<T, ChatCompletionsMetricsError>;
     type MetricValue = (String, (f64, f64));
     type MetricResult = Result<MetricValue>;
     type MetricsVec = Vec<MetricResult>;
@@ -671,12 +671,12 @@ pub mod inference_service_metrics {
             .map(|(url, job)| {
                 let queue_time = queue_time_response
                     .as_ref()
-                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -684,7 +684,7 @@ pub mod inference_service_metrics {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
-                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                        ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
                                     })
                                     .map(|value| {
                                         let sample = value.sample();
@@ -695,12 +695,12 @@ pub mod inference_service_metrics {
 
                 let ttft = ttft_response
                     .as_ref()
-                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -708,7 +708,7 @@ pub mod inference_service_metrics {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
-                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                        ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
                                     })
                                     .map(|value| {
                                         let sample = value.sample();
@@ -741,7 +741,7 @@ pub mod inference_service_metrics {
     ///
     /// # Errors
     ///
-    /// Returns a `VllmMetricsError` if:
+    /// Returns a `ChatCompletionsMetricsError` if:
     ///   - The Prometheus query fails.
     ///   - No metrics data is found for the specified job.
     ///   - The response data cannot be parsed correctly.
@@ -795,12 +795,12 @@ pub mod inference_service_metrics {
             .map(|(url, job)| {
                 let queue_latency = queue_latency_response
                     .as_ref()
-                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -808,7 +808,7 @@ pub mod inference_service_metrics {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
-                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                        ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
                                     })
                                     .map(|value| {
                                         let sample = value.sample();
@@ -819,12 +819,12 @@ pub mod inference_service_metrics {
 
                 let ttft = ttft_response
                     .as_ref()
-                    .map_err(|_| VllmMetricsError::NoMetricsFound(job.to_string()))
+                    .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                     .and_then(|response| {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| VllmMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -832,7 +832,7 @@ pub mod inference_service_metrics {
                                         instant.metric().get("job") == Some(&job.to_string())
                                     })
                                     .ok_or_else(|| {
-                                        VllmMetricsError::NoMetricsFound(job.to_string())
+                                        ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
                                     })
                                     .map(|value| {
                                         let sample = value.sample();
@@ -857,7 +857,7 @@ pub mod inference_service_metrics {
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
 
         if chat_completions_service_urls.is_empty() {
-            return Err(VllmMetricsError::NoChatCompletionsServiceUrlsFound(
+            return Err(ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(
                 model.to_string(),
             ));
         }
@@ -985,7 +985,7 @@ pub mod inference_service_metrics {
     }
 
     #[derive(Debug, thiserror::Error, Clone)]
-    pub enum VllmMetricsError {
+    pub enum ChatCompletionsMetricsError {
         #[error("Failed to get metrics: {0}")]
         GetMetricsError(String),
         #[error("No chat completions service urls found for model: {0}")]
@@ -1001,25 +1001,25 @@ pub mod inference_service_metrics {
     }
 
     // From implementations to handle conversions from error types to our cloneable error type
-    impl From<reqwest::Error> for VllmMetricsError {
+    impl From<reqwest::Error> for ChatCompletionsMetricsError {
         fn from(err: reqwest::Error) -> Self {
             Self::GetMetricsError(err.to_string())
         }
     }
 
-    impl From<std::num::ParseFloatError> for VllmMetricsError {
+    impl From<std::num::ParseFloatError> for ChatCompletionsMetricsError {
         fn from(err: std::num::ParseFloatError) -> Self {
             Self::InvalidMetricsValue(err.to_string())
         }
     }
 
-    impl From<serde_json::Error> for VllmMetricsError {
+    impl From<serde_json::Error> for ChatCompletionsMetricsError {
         fn from(err: serde_json::Error) -> Self {
             Self::InvalidMetricsResponse(err.to_string())
         }
     }
 
-    impl From<prometheus_http_query::Error> for VllmMetricsError {
+    impl From<prometheus_http_query::Error> for ChatCompletionsMetricsError {
         fn from(err: prometheus_http_query::Error) -> Self {
             Self::FailedToCreateHttpClient(err.to_string())
         }
