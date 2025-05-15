@@ -779,7 +779,20 @@ pub mod inference_service_metrics {
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
-            "Getting metrics for jobs: {jobs}"
+            "Getting metrics for jobs: {jobs}" // jobs = "http://host.docker.internal:3000"
+        );
+        info!(
+            target = "atoma-service",
+            module = "sglang_metrics",
+            level = "info",
+            "prometheus queries: 
+            
+            quantile_over_time(
+                0.90,
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
+            )
+            
+            histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))"
         );
         let num_running_requests = format!(
             "quantile_over_time(
