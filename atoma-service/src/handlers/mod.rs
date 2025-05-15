@@ -897,18 +897,26 @@ pub mod inference_service_metrics {
         );
 
         // Get cached metrics
-        let vllm_metrics = match METRICS_CACHE.get_metrics().await {
-            Some(metrics) => metrics,
-            None => {
-                // If no cached metrics, get them directly
-                get_metrics_vllm(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await
+        let vllm_metrics = if vllm_chat_completions_service_urls.is_empty() {
+            vec![]
+        } else {
+            match METRICS_CACHE.get_metrics().await {
+                Some(metrics) => metrics,
+                None => {
+                    // If no cached metrics, get them directly
+                    get_metrics_vllm(&HTTP_CLIENT, &vllm_chat_completions_service_urls).await
+                }
             }
         };
-        let sglang_metrics = match METRICS_CACHE.get_metrics().await {
-            Some(metrics) => metrics,
-            None => {
-                // If no cached metrics, get them directly
-                get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await
+        let sglang_metrics = if sglang_chat_completions_service_urls.is_empty() {
+            vec![]
+        } else {
+            match METRICS_CACHE.get_metrics().await {
+                Some(metrics) => metrics,
+                None => {
+                    // If no cached metrics, get them directly
+                    get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await
+                }
             }
         };
 
@@ -925,7 +933,7 @@ pub mod inference_service_metrics {
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "info",
-                        "Received vLLM metrics response for {chat_completions_service_url}: queue_time={request_queue_time_seconds}, time_to_first_token_seconds={time_to_first_token_seconds}"
+                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}: queue_time={request_queue_time_seconds}, time_to_first_token_seconds={time_to_first_token_seconds}"
                     );
                     (
                         chat_completions_service_url,

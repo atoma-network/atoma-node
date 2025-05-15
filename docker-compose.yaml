@@ -346,7 +346,7 @@ services:
       HF_TOKEN: ${HF_TOKEN}
     entrypoint: python3 -m sglang.launch_server
     command:
-      --model-path ${SGLANG_MODEL_PATH} --tp 8 --enable-dp-attention --dp 8 --trust-remote-code --max-running-requests 128
+      --model-path ${SGLANG_MODEL_PATH} --tp 8 --enable-dp-attention --dp 8 --trust-remote-code --max-running-requests 128 --enable-metrics
       --host 0.0.0.0
       --port 3000
     ulimits:
