@@ -339,8 +339,6 @@ services:
     image: lmsysorg/sglang:latest
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    networks:
-      - atoma-network
     restart: always
     network_mode: host # required by RDMA
     privileged: true # required by RDMA
