@@ -636,7 +636,12 @@ pub mod inference_service_metrics {
             .map(|(_url, job)| job.as_str())
             .collect::<Vec<_>>()
             .join("|");
-
+        info!(
+            target = "atoma-service",
+            module = "vllm_metrics",
+            level = "info",
+            "Getting metrics for jobs: {jobs}"
+        );
         let queue_time_query = format!(
             "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))"
         );
@@ -767,6 +772,12 @@ pub mod inference_service_metrics {
         let (queue_latency_response, ttft_response) = tokio::join!(
             client.query(&request_queue_latency).get(),
             client.query(&ttft).get()
+        );
+        info!(
+            target = "atoma-service",
+            module = "sglang_metrics",
+            level = "info",
+            "Received sglang metrics response for {jobs}: {queue_latency_response:?}, {ttft_response:?}"
         );
         jobs_with_url
             .iter()
