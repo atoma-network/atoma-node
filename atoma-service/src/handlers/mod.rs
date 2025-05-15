@@ -363,6 +363,7 @@ pub fn update_stack_num_compute_units(
     ),
     err
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn update_fiat_amount(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     user_address: String,
