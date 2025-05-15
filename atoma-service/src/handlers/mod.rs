@@ -583,6 +583,12 @@ pub mod inference_service_metrics {
         metrics_update_interval: Option<u64>,
     ) {
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Starting metrics updater with {chat_completions_service_urls:?}"
+        );
         let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
             ChatCompletionsServiceUrls,
             ChatCompletionsServiceUrls,
@@ -590,6 +596,12 @@ pub mod inference_service_metrics {
             .iter()
             .cloned()
             .partition(|(_, job)| job.contains("vllm"));
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+        );
         let vllm_chat_completions_service_urls = Arc::new(vllm_chat_completions_service_urls);
         let sglang_chat_completions_service_urls = Arc::new(sglang_chat_completions_service_urls);
         tokio::spawn(async move {
@@ -604,12 +616,12 @@ pub mod inference_service_metrics {
                 if vllm_metrics.iter().any(std::result::Result::is_ok) {
                     METRICS_CACHE.update_metrics(vllm_metrics).await;
                 } else {
-                    tracing::warn!("Failed to retrieve any valid metrics, not updating cache");
+                    tracing::warn!("Failed to retrieve any valid vLLM metrics, not updating cache");
                 }
                 if sglang_metrics.iter().any(std::result::Result::is_ok) {
                     METRICS_CACHE.update_metrics(sglang_metrics).await;
                 } else {
-                    tracing::warn!("Failed to retrieve any valid metrics, not updating cache");
+                    tracing::warn!("Failed to retrieve any valid SgLang metrics, not updating cache");
                 }
             }
         });
@@ -763,7 +775,6 @@ pub mod inference_service_metrics {
             "quantile_over_time(
                 0.90,
                 sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
-                    or vector(0)
             )"
         );
         let ttft = format!(
@@ -850,6 +861,12 @@ pub mod inference_service_metrics {
                 model.to_string(),
             ));
         }
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Getting best available chat completions service URL for model: {model} and urls: {chat_completions_service_urls:?}"
+        );
         let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
             ChatCompletionsServiceUrls,
             ChatCompletionsServiceUrls,
@@ -861,6 +878,13 @@ pub mod inference_service_metrics {
         let mut min_request_queue_time_seconds = f64::INFINITY;
         let mut min_time_to_first_token_seconds = f64::INFINITY;
         let mut best_url = chat_completions_service_urls[0].0.clone();
+
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+        );
 
         // Get cached metrics
         let vllm_metrics = match METRICS_CACHE.get_metrics().await {
