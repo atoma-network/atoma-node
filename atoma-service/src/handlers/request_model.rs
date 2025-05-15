@@ -6,13 +6,13 @@ use crate::error::AtomaServiceError;
 /// A struct that contains the estimated number of compute units needed for a
 /// request and the maximum number of compute units that can be used for the request.
 #[derive(Debug, Clone)]
-pub struct ComputeUnitsEstimate {
+pub struct TokensEstimate {
     /// The number of compute units needed for the input tokens
-    pub num_input_compute_units: u64,
+    pub num_input_tokens: u64,
     /// The number of compute units needed for the output tokens
-    pub max_output_compute_units: u64,
+    pub max_output_tokens: u64,
     /// The maximum total number of compute units that can be used for the request
-    pub max_total_compute_units: u64,
+    pub max_total_tokens: u64,
 }
 
 /// A trait for parsing and handling AI model requests across different endpoints (chat, embeddings, images).
@@ -50,8 +50,8 @@ pub trait RequestModel {
     /// # Warning
     /// This method assumes that the tokenizer has been correctly retrieved from the `ProxyState` for
     /// the associated model, as obtained by calling `get_model` on `Self`.
-    fn get_compute_units_estimate(
+    fn get_tokens_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<ComputeUnitsEstimate, AtomaServiceError>;
+    ) -> Result<TokensEstimate, AtomaServiceError>;
 }

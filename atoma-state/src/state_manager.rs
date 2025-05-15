@@ -1529,8 +1529,8 @@ impl AtomaState {
     /// # Arguments
     ///
     /// * `stack_small_id` - The unique small identifier of the stack to update.
-    /// * `estimated_total_compute_units` - The estimated total number of compute units.
-    /// * `total_compute_units` - The total number of compute units.
+    /// * `estimated_total_tokens` - The estimated total number of tokens.
+    /// * `total_tokens` - The total number of tokens.
     ///
     /// # Returns
     ///
@@ -1546,20 +1546,20 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn update_stack_num_compute_units(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_compute_units: i64, total_compute_units: i64) -> Result<(), AtomaStateManagerError> {
-    ///     state_manager.update_stack_num_compute_units(stack_small_id, estimated_total_compute_units, total_compute_units).await
+    /// async fn update_stack_num_compute_units(state_manager: &AtomaStateManager, stack_small_id: i64, estimated_total_tokens: i64, total_tokens: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_stack_num_compute_units(stack_small_id, estimated_total_tokens, total_tokens).await
     /// }
     /// ```
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, estimated_total_compute_units = %estimated_total_compute_units, total_compute_units = %total_compute_units)
+        fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
     )]
     pub async fn update_stack_num_compute_units(
         &self,
         stack_small_id: i64,
-        estimated_total_compute_units: i64,
-        total_compute_units: i64,
+        estimated_total_tokens: i64,
+        total_tokens: i64,
         ratio_for_claim_stacks: f64,
         concurrent_requests: i64,
     ) -> Result<UpdateStackNumComputeUnitsAndClaimFunds> {
@@ -1587,11 +1587,11 @@ impl AtomaState {
                 s.is_locked_for_claim as is_locked_for_claim",
         )
         .bind(stack_small_id)
-        .bind(estimated_total_compute_units)
-        .bind(total_compute_units)
+        .bind(estimated_total_tokens)
+        .bind(total_tokens)
         .bind(ratio_for_claim_stacks)
         .bind(concurrent_requests)
-        .bind(i64::from(total_compute_units > 0)) // If total amount is greater than 0 then the request was successful
+        .bind(i64::from(total_tokens > 0)) // If total amount is greater than 0 then the request was successful
         .fetch_optional(&self.db)
         .await?;
 
@@ -1983,10 +1983,12 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE fiat_balance 
-                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $3,
-                      already_debited_input_amount = already_debited_input_amount + $2,
-                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $5,
-                      already_debited_completions_amount = already_debited_completions_amount + $4;",
+                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $2,
+                      already_debited_input_amount = already_debited_input_amount + $3,
+                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $4,
+                      already_debited_completions_amount = already_debited_completions_amount + $5,
+                      num_requests = num_requests + $6;
+                  WHERE user_address = $1",
         )
         .bind(user_address)
         .bind(estimated_input_amount)

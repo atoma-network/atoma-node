@@ -27,7 +27,7 @@ use utoipa::OpenApi;
 
 use super::{
     handle_status_code_error,
-    request_model::{ComputeUnitsEstimate, RequestModel},
+    request_model::{RequestModel, TokensEstimate},
 };
 
 /// The path for confidential embeddings requests
@@ -101,11 +101,11 @@ pub async fn embeddings_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_output_compute_units,
+        estimated_output_tokens,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address,
         ..
     } = request_metadata;
@@ -149,7 +149,7 @@ pub async fn embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -160,9 +160,9 @@ pub async fn embeddings_handler(
                     user_address,
                     num_input_tokens,
                     0,
-                    estimated_output_compute_units,
+                    estimated_output_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -247,11 +247,11 @@ pub async fn confidential_embeddings_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_output_compute_units,
+        estimated_output_tokens,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address,
         ..
     } = request_metadata;
@@ -286,8 +286,8 @@ pub async fn confidential_embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
+                    num_input_tokens + estimated_output_tokens,
                     &endpoint,
                     concurrent_requests,
                 )?;
@@ -297,9 +297,9 @@ pub async fn confidential_embeddings_handler(
                     user_address,
                     num_input_tokens,
                     num_input_tokens,
-                    estimated_output_compute_units,
-                    estimated_output_compute_units,
-                    price_per_one_million_compute_units,
+                    estimated_output_tokens,
+                    estimated_output_tokens,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -318,7 +318,7 @@ pub async fn confidential_embeddings_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -329,9 +329,9 @@ pub async fn confidential_embeddings_handler(
                     user_address,
                     num_input_tokens,
                     0,
-                    estimated_output_compute_units,
+                    estimated_output_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -355,7 +355,7 @@ pub async fn confidential_embeddings_handler(
 /// * `state` - Application state containing service URLs and shared resources
 /// * `payload` - The original embedding request payload to be forwarded
 /// * `stack_small_id` - Unique identifier for the stack making the request
-/// * `estimated_total_compute_units` - Expected computational cost of the request
+/// * `estimated_total_tokens` - Expected computational cost of the request
 /// * `payload_hash` - 32-byte hash of the original request payload
 /// * `client_encryption_metadata` - Optional encryption details for confidential compute
 /// * `endpoint` - The API endpoint path being called
@@ -494,10 +494,10 @@ impl RequestModel for RequestModelEmbeddings {
         })
     }
 
-    fn get_compute_units_estimate(
+    fn get_tokens_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
+    ) -> Result<TokensEstimate, AtomaServiceError> {
         let Some(tokenizer) = tokenizer else {
             return Err(AtomaServiceError::InternalError {
                 message: "Tokenizer is required for current model, but is not currently available"
@@ -535,10 +535,10 @@ impl RequestModel for RequestModelEmbeddings {
             }
         };
 
-        Ok(ComputeUnitsEstimate {
-            num_input_compute_units: total_units,
-            max_output_compute_units: 0,
-            max_total_compute_units: total_units,
+        Ok(TokensEstimate {
+            num_input_tokens: total_units,
+            max_output_tokens: 0,
+            max_total_tokens: total_units,
         })
     }
 }

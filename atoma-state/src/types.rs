@@ -247,13 +247,13 @@ pub struct Node {
 
 pub enum AtomaAtomaStateManagerEvent {
     /// Represents an update to the number of compute units in a stack
-    UpdateStackNumComputeUnits {
+    UpdateStackNumTokens {
         /// Unique small integer identifier for the stack
         stack_small_id: i64,
-        /// Estimated total number of compute units in the stack
-        estimated_total_compute_units: i64,
-        /// Total number of compute units in the stack
-        total_compute_units: i64,
+        /// Estimated total number of tokens in the stack
+        estimated_total_tokens: i64,
+        /// Total number of tokens in the stack
+        total_tokens: i64,
         /// Number of concurrent requests for the stack
         concurrent_requests: u64,
     },
@@ -293,7 +293,7 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Sui address of the user
         sui_address: String,
         /// Total number of compute units
-        total_num_compute_units: i64,
+        total_num_tokens: i64,
         /// Oneshot channel to send the result back to the sender channel
         result_sender: oneshot::Sender<Result<StackAvailability, AtomaStateManagerError>>,
     },

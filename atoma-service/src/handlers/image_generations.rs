@@ -25,7 +25,7 @@ use utoipa::OpenApi;
 
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
-    request_model::{ComputeUnitsEstimate, RequestModel},
+    request_model::{RequestModel, TokensEstimate},
     sign_response_and_update_stack_hash,
 };
 
@@ -105,11 +105,11 @@ pub async fn image_generations_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_output_compute_units,
+        estimated_output_tokens,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address,
         ..
     } = request_metadata;
@@ -148,7 +148,7 @@ pub async fn image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -159,9 +159,9 @@ pub async fn image_generations_handler(
                     user_address,
                     num_input_tokens,
                     0,
-                    estimated_output_compute_units,
+                    estimated_output_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -248,11 +248,11 @@ pub async fn confidential_image_generations_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_output_compute_units,
+        estimated_output_tokens,
         payload_hash,
         client_encryption_metadata,
         endpoint_path: endpoint,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address,
         ..
     } = request_metadata;
@@ -280,8 +280,8 @@ pub async fn confidential_image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
+                    num_input_tokens + estimated_output_tokens,
                     &endpoint,
                     concurrent_requests,
                 )?;
@@ -291,9 +291,9 @@ pub async fn confidential_image_generations_handler(
                     user_address,
                     num_input_tokens,
                     num_input_tokens,
-                    estimated_output_compute_units,
-                    estimated_output_compute_units,
-                    price_per_one_million_compute_units,
+                    estimated_output_tokens,
+                    estimated_output_tokens,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -312,7 +312,7 @@ pub async fn confidential_image_generations_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    num_input_tokens + estimated_output_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -323,9 +323,9 @@ pub async fn confidential_image_generations_handler(
                     user_address,
                     num_input_tokens,
                     0,
-                    estimated_output_compute_units,
+                    estimated_output_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -351,7 +351,7 @@ pub async fn confidential_image_generations_handler(
 /// * `payload` - The JSON payload containing the image generation request parameters
 /// * `payload_hash` - A 32-byte hash of the original request payload
 /// * `stack_small_id` - Identifier for the current stack
-/// * `estimated_total_compute_units` - Expected computational cost of the operation
+/// * `estimated_total_tokens` - Expected computational cost of the operation
 /// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
 /// * `endpoint` - The API endpoint path being accessed
 /// * `timer` - Prometheus histogram timer for measuring request duration
@@ -499,10 +499,10 @@ impl RequestModel for RequestModelImageGenerations {
         })
     }
 
-    fn get_compute_units_estimate(
+    fn get_tokens_estimate(
         &self,
         _tokenizer: Option<&Tokenizer>,
-    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
+    ) -> Result<TokensEstimate, AtomaServiceError> {
         // Parse dimensions from size string (e.g., "1024x1024")
         let dimensions: Vec<u64> = self
             .size
@@ -524,10 +524,10 @@ impl RequestModel for RequestModelImageGenerations {
         let height = dimensions[1];
 
         // Calculate compute units based on number of images and pixel count
-        Ok(ComputeUnitsEstimate {
-            num_input_compute_units: 0,
-            max_output_compute_units: self.n * width * height,
-            max_total_compute_units: self.n * width * height,
+        Ok(TokensEstimate {
+            num_input_tokens: 0,
+            max_output_tokens: self.n * width * height,
+            max_total_tokens: self.n * width * height,
         })
     }
 }

@@ -11,7 +11,7 @@ use crate::{
             SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME,
             VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
         },
-        request_model::ComputeUnitsEstimate,
+        request_model::TokensEstimate,
     },
     server::AppState,
     types::ConfidentialComputeRequest,
@@ -76,10 +76,10 @@ pub struct RequestMetadata {
     pub stack_small_id: Option<i64>,
     /// The number of input tokens
     pub num_input_tokens: i64,
-    /// The estimated total number of compute units
-    pub estimated_output_compute_units: i64,
-    /// The price per one million compute units
-    pub price_per_one_million_compute_units: i64,
+    /// The estimated total number of tokens
+    pub estimated_output_tokens: i64,
+    /// The price per one million tokens
+    pub price_per_one_million_tokens: i64,
     /// User address that sent the request
     pub user_address: String,
     /// The payload hash
@@ -117,20 +117,20 @@ impl RequestMetadata {
     pub const fn with_tokens_information(
         mut self,
         num_input_tokens: i64,
-        estimated_output_compute_units: i64,
+        estimated_output_tokens: i64,
     ) -> Self {
         self.num_input_tokens = num_input_tokens;
-        self.estimated_output_compute_units = estimated_output_compute_units;
+        self.estimated_output_tokens = estimated_output_tokens;
         self
     }
 
-    /// Create a new `RequestMetadata` with the given price per one million compute units
+    /// Create a new `RequestMetadata` with the given price per one million tokens
     ///
     /// # Arguments
-    /// * `price_per_one_million_compute_units` - The price per one million compute units
+    /// * `price_per_one_million_tokens` - The price per one million tokens
     ///
     /// # Returns
-    /// Returns self with the updated price per one million compute units for method chaining
+    /// Returns self with the updated price per one million tokens for method chaining
     ///
     /// # Example
     ///
@@ -138,14 +138,14 @@ impl RequestMetadata {
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default()
-    ///     .with_price_per_one_million_compute_units(100000);
+    ///     .with_price_per_one_million_tokens(100000);
     /// ```
     #[must_use]
-    pub const fn with_price_per_one_million_compute_units(
+    pub const fn with_price_per_one_million_tokens(
         mut self,
-        price_per_one_million_compute_units: i64,
+        price_per_one_million_tokens: i64,
     ) -> Self {
-        self.price_per_one_million_compute_units = price_per_one_million_compute_units;
+        self.price_per_one_million_tokens = price_per_one_million_tokens;
         self
     }
 
@@ -362,8 +362,8 @@ pub async fn signature_verification_middleware(
 /// * `endpoint` - The endpoint of the request.
 /// * `state` - The application state.
 /// * `sui_address` - The Sui address of the user.
-/// * `max_total_compute_units` - The maximum total compute units for the request.
-/// * `num_input_compute_units` - The number of input compute units.
+/// * `max_total_tokens` - The maximum total tokens for the request.
+/// * `num_input_tokens` - The number of input tokens.
 /// * `req_parts` - The request parts.
 /// * `request_type` - The type of request.
 /// * `body_bytes` - The body bytes of the request.
@@ -386,8 +386,8 @@ async fn generate_request_from_stack(
     endpoint: String,
     state: State<AppState>,
     sui_address: SuiAddress,
-    max_total_compute_units: i64,
-    num_input_compute_units: i64,
+    max_total_tokens: i64,
+    num_input_tokens: i64,
     mut req_parts: Parts,
     request_type: RequestType,
     body_bytes: Bytes,
@@ -411,7 +411,7 @@ async fn generate_request_from_stack(
             AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
                 stack_small_id,
                 sui_address: sui_address.to_string(),
-                total_num_compute_units: max_total_compute_units,
+                total_num_tokens: max_total_tokens,
                 result_sender,
             },
         )
@@ -423,13 +423,13 @@ async fn generate_request_from_stack(
         .await
         .map_err(|e| AtomaServiceError::AuthError {
             auth_error: format!(
-                "Failed to get available stack with enough compute units, with error: {e}"
+                "Failed to get available stack with enough tokens, with error: {e}"
             ),
             endpoint: endpoint.clone(),
         })?
         .map_err(|err| AtomaServiceError::AuthError {
             auth_error: format!(
-                "Failed to get available stack with enough compute units, with error: {err}"
+                "Failed to get available stack with enough tokens, with error: {err}"
             ),
             endpoint: endpoint.clone(),
         })?;
@@ -459,7 +459,7 @@ async fn generate_request_from_stack(
             utils::request_blockchain_for_stack(
                 &state,
                 tx_digest,
-                max_total_compute_units,
+                max_total_tokens,
                 stack_small_id,
                 endpoint.clone(),
             )
@@ -495,7 +495,7 @@ async fn generate_request_from_stack(
         .cloned()
         .unwrap_or_default()
         .with_stack_info(stack_small_id)
-        .with_tokens_information(num_input_compute_units, max_total_compute_units)
+        .with_tokens_information(num_input_tokens, max_total_tokens)
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -524,8 +524,8 @@ async fn generate_request_from_stack(
 /// * `endpoint` - The endpoint of the request.
 /// * `state` - The application state.
 /// * `sui_address` - The Sui address of the user.
-/// * `max_total_compute_units` - The maximum total compute units for the request.
-/// * `num_input_compute_units` - The number of input compute units.
+/// * `max_total_tokens` - The maximum total tokens for the request.
+/// * `num_input_tokens` - The number of input tokens.
 /// * `req_parts` - The request parts.
 /// * `request_type` - The type of request.
 /// * `body_bytes` - The body bytes of the request.
@@ -548,8 +548,8 @@ async fn generate_fiat_request(
     endpoint: String,
     state: State<AppState>,
     sui_address: SuiAddress,
-    max_output_compute_units: i64,
-    num_input_compute_units: i64,
+    max_output_tokens: i64,
+    num_input_tokens: i64,
     mut req_parts: Parts,
     request_type: RequestType,
     body_bytes: Bytes,
@@ -580,7 +580,7 @@ async fn generate_fiat_request(
             endpoint: endpoint.clone(),
         })?;
 
-    let price_per_one_million_compute_units = result_receiver
+    let price_per_one_million_tokens = result_receiver
         .await
         .map_err(|_| AtomaServiceError::InternalError {
             message: "Failed to get model pricing".to_string(),
@@ -599,11 +599,11 @@ async fn generate_fiat_request(
         .state_manager_sender
         .send(AtomaAtomaStateManagerEvent::LockFiatAmount {
             user_address: sui_address.to_string(),
-            estimated_input_amount: ((num_input_compute_units as u128
-                * price_per_one_million_compute_units as u128)
+            estimated_input_amount: ((num_input_tokens as u128
+                * price_per_one_million_tokens as u128)
                 / ONE_MILLION) as i64,
-            estimated_output_amount: ((max_output_compute_units as u128
-                * price_per_one_million_compute_units as u128)
+            estimated_output_amount: ((max_output_tokens as u128
+                * price_per_one_million_tokens as u128)
                 / ONE_MILLION) as i64,
         })
         .map_err(|err| AtomaServiceError::InternalError {
@@ -617,8 +617,8 @@ async fn generate_fiat_request(
         .cloned()
         .unwrap_or_default()
         .with_user_address(sui_address.to_string())
-        .with_price_per_one_million_compute_units(price_per_one_million_compute_units)
-        .with_tokens_information(num_input_compute_units, max_output_compute_units)
+        .with_price_per_one_million_tokens(price_per_one_million_tokens)
+        .with_tokens_information(num_input_tokens, max_output_tokens)
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -656,7 +656,7 @@ async fn generate_fiat_request(
 /// # Extensions
 /// This middleware adds a `RequestMetadata` extension to the request containing:
 /// - `stack_small_id`: The ID of the stack being used
-/// - `estimated_total_compute_units`: The total number of compute units calculated for the request
+/// - `estimated_total_tokens`: The total number of tokens calculated for the request
 ///
 /// This metadata can be accessed by downstream handlers using `req.extensions()`.
 ///
@@ -754,15 +754,15 @@ pub async fn verify_permissions(
         });
     }
 
-    let ComputeUnitsEstimate {
-        num_input_compute_units,
-        max_output_compute_units,
-        max_total_compute_units,
-    } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+    let TokensEstimate {
+        num_input_tokens,
+        max_output_tokens,
+        max_total_tokens,
+    } = utils::calculate_tokens(&body_json, request_type, &state, model, &endpoint)?;
 
-    let max_total_compute_units = max_total_compute_units as i64;
-    let max_output_compute_units = max_output_compute_units as i64;
-    let num_input_compute_units = num_input_compute_units as i64;
+    let max_total_tokens = max_total_tokens as i64;
+    let max_output_tokens = max_output_tokens as i64;
+    let num_input_tokens = num_input_tokens as i64;
 
     let stack_small_id = req_parts
         .headers
@@ -775,8 +775,8 @@ pub async fn verify_permissions(
             endpoint,
             state,
             sui_address,
-            max_total_compute_units,
-            num_input_compute_units,
+            max_total_tokens,
+            num_input_tokens,
             req_parts,
             request_type,
             body_bytes,
@@ -788,8 +788,8 @@ pub async fn verify_permissions(
             endpoint,
             state,
             sui_address,
-            max_output_compute_units,
-            num_input_compute_units,
+            max_output_tokens,
+            num_input_tokens,
             req_parts,
             request_type,
             body_bytes,
@@ -951,7 +951,7 @@ pub mod utils {
         completions::RequestModelCompletions,
         embeddings::RequestModelEmbeddings,
         image_generations::RequestModelImageGenerations,
-        request_model::{ComputeUnitsEstimate, RequestModel},
+        request_model::{RequestModel, TokensEstimate},
     };
 
     use super::{
@@ -1097,13 +1097,13 @@ pub mod utils {
     /// - `RequestModelChatCompletions`
     /// - `RequestModelEmbeddings`
     /// - `RequestModelImageGenerations`
-    pub fn calculate_compute_units(
+    pub fn calculate_tokens(
         body_json: &Value,
         request_type: RequestType,
         state: &AppState,
         model: &str,
         endpoint: &str,
-    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
+    ) -> Result<TokensEstimate, AtomaServiceError> {
         match request_type {
             RequestType::ChatCompletions => {
                 let request_model = RequestModelChatCompletions::new(body_json)?;
@@ -1116,7 +1116,7 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+                request_model.get_tokens_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::Completions => {
                 let request_model = RequestModelCompletions::new(body_json)?;
@@ -1129,7 +1129,7 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+                request_model.get_tokens_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::Embeddings => {
                 let request_model = RequestModelEmbeddings::new(body_json)?;
@@ -1142,16 +1142,16 @@ pub mod utils {
                             message: "Model not supported".to_string(),
                             endpoint: endpoint.to_string(),
                         })?;
-                request_model.get_compute_units_estimate(Some(&state.tokenizers[tokenizer_index]))
+                request_model.get_tokens_estimate(Some(&state.tokenizers[tokenizer_index]))
             }
             RequestType::ImageGenerations => {
                 let request_model = RequestModelImageGenerations::new(body_json)?;
-                request_model.get_compute_units_estimate(None)
+                request_model.get_tokens_estimate(None)
             }
-            RequestType::NonInference => Ok(ComputeUnitsEstimate {
-                num_input_compute_units: 0,
-                max_output_compute_units: 0,
-                max_total_compute_units: 0,
+            RequestType::NonInference => Ok(TokensEstimate {
+                num_input_tokens: 0,
+                max_output_tokens: 0,
+                max_total_tokens: 0,
             }),
         }
     }

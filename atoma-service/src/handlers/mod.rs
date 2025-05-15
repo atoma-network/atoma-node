@@ -235,7 +235,7 @@ pub async fn handle_confidential_compute_encryption_response(
 ///
 /// * `state` - Application state containing the state manager channel
 /// * `stack_small_id` - Unique identifier for the stack being updated
-/// * `estimated_total_compute_units` - The estimated number of compute units that would have been used
+/// * `estimated_total_tokens` - The estimated number of tokens that would have been used
 /// * `endpoint` - The API endpoint path where the request was received
 ///
 /// # Returns
@@ -253,8 +253,8 @@ pub async fn handle_confidential_compute_encryption_response(
 ///
 /// This function is instrumented with info-level tracing that includes:
 /// - stack_small_id
-/// - estimated_total_compute_units
-/// - total_compute_units (always 0 for error cases)
+/// - estimated_total_tokens
+/// - total_tokens (always 0 for error cases)
 /// - payload_hash
 /// - endpoint
 ///
@@ -279,8 +279,8 @@ pub async fn handle_confidential_compute_encryption_response(
     skip_all,
     fields(
         stack_small_id,
-        estimated_total_compute_units,
-        total_compute_units,
+        estimated_total_tokens,
+        total_tokens,
         payload_hash,
         endpoint
     ),
@@ -289,16 +289,16 @@ pub async fn handle_confidential_compute_encryption_response(
 pub fn update_stack_num_compute_units(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
-    total_compute_units: i64,
+    estimated_total_tokens: i64,
+    total_tokens: i64,
     endpoint: &str,
     concurrent_requests: u64,
 ) -> Result<(), AtomaServiceError> {
     state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
             stack_small_id,
-            total_compute_units,
-            estimated_total_compute_units,
+            total_tokens,
+            estimated_total_tokens,
             concurrent_requests,
         })
         .map_err(|e| AtomaServiceError::InternalError {
@@ -317,7 +317,7 @@ pub fn update_stack_num_compute_units(
 ///
 /// * `state_manager_sender` - The channel to send events to the state manager
 /// * `user_address` - The address of the user for whom the fiat amount is being updated
-/// * `estimated_total_compute_units` - The estimated number of compute units for the request
+/// * `estimated_total_tokens` - The estimated number of tokens for the request
 /// * `total_amount` - The total amount in fiat currency
 /// * `price_per_one_million_compute_units` - The price per million compute units
 /// * `endpoint` - The API endpoint path where the request was received
@@ -356,7 +356,7 @@ pub fn update_stack_num_compute_units(
     skip_all,
     fields(
         user_address,
-        estimated_total_compute_units,
+        estimated_total_tokens,
         total_amount,
         price_per_one_million_compute_units,
         endpoint
@@ -367,23 +367,23 @@ pub fn update_stack_num_compute_units(
 pub fn update_fiat_amount(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     user_address: String,
-    estimated_input_compute_units: i64,
-    input_compute_units: i64,
-    estimated_output_compute_units: i64,
-    output_compute_units: i64,
+    estimated_input_tokens: i64,
+    input_tokens: i64,
+    estimated_output_tokens: i64,
+    output_tokens: i64,
     price_per_one_million_compute_units: i64,
     endpoint: &str,
 ) -> Result<(), AtomaServiceError> {
-    let estimated_input_amount = (estimated_input_compute_units as u128
+    let estimated_input_amount = (estimated_input_tokens as u128
         * price_per_one_million_compute_units as u128
         / ONE_MILLION) as i64;
-    let input_amount = (input_compute_units as u128 * price_per_one_million_compute_units as u128
-        / ONE_MILLION) as i64;
-    let estimated_output_amount = (estimated_output_compute_units as u128
+    let input_amount =
+        (input_tokens as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
+    let estimated_output_amount = (estimated_output_tokens as u128
         * price_per_one_million_compute_units as u128
         / ONE_MILLION) as i64;
-    let output_amount = (output_compute_units as u128 * price_per_one_million_compute_units as u128
-        / ONE_MILLION) as i64;
+    let output_amount =
+        (output_tokens as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
