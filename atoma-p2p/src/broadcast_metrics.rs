@@ -637,11 +637,11 @@ fn get_sglang_metrics_queries(jobs: &[String]) -> Vec<(String, String)> {
         (SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY.to_string(),
          format!("histogram_quantile(0.90, sum by (le) (rate(sglang:inter_token_latency_seconds_bucket{{job=~\"{jobs}\"}}{delta})))")),
         (SGLANG_RUNNING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(sum(sglang:num_running_reqs{{job=~\"{jobs}\"}}{delta}))")),
+         format!("quantile_over_time(0.90, sglang:num_running_reqs{{job=~\"{jobs}\"}}{delta})")),
         (SGLANG_WAITING_REQUESTS_QUERY.to_string(),
-         format!("avg_over_time(sum(sglang:num_queue_reqs{{job=~\"{jobs}\"}}{delta}))")),
+         format!("quantile_over_time(0.90, sglang:num_queue_reqs{{job=~\"{jobs}\"}}{delta})")),
         (SGLANG_AVG_QUEUE_LATENCY_QUERY.to_string(),
-         format!("histogram_quantile(0.90, sum by (le) (rate(sglang:avg_request_queue_latency_bucket{{job=~\"{jobs}\"}}{delta})))")),
+         format!("quantile_over_time(0.90, sglang:avg_request_queue_latency_bucket{{job=~\"{jobs}\"}}{delta})")),
     ]
 }
 
