@@ -621,7 +621,9 @@ pub mod inference_service_metrics {
                 if sglang_metrics.iter().any(std::result::Result::is_ok) {
                     METRICS_CACHE.update_metrics(sglang_metrics).await;
                 } else {
-                    tracing::warn!("Failed to retrieve any valid SgLang metrics, not updating cache");
+                    tracing::warn!(
+                        "Failed to retrieve any valid SgLang metrics, not updating cache"
+                    );
                 }
             }
         });
@@ -676,7 +678,9 @@ pub mod inference_service_metrics {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| {
+                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                            })
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -700,7 +704,9 @@ pub mod inference_service_metrics {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| {
+                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                            })
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -800,7 +806,9 @@ pub mod inference_service_metrics {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| {
+                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                            })
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -824,7 +832,9 @@ pub mod inference_service_metrics {
                         response
                             .data()
                             .as_vector()
-                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                            .ok_or_else(|| {
+                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                            })
                             .and_then(|vector| {
                                 vector
                                     .iter()
@@ -857,9 +867,9 @@ pub mod inference_service_metrics {
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
 
         if chat_completions_service_urls.is_empty() {
-            return Err(ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(
-                model.to_string(),
-            ));
+            return Err(
+                ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
+            );
         }
         info!(
             target = "atoma-service",
