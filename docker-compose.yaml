@@ -302,7 +302,7 @@ services:
     depends_on:
       sglang:
         condition: service_started
-        required: true
+        required: false
       postgres-db:
         condition: service_started
         required: true

@@ -569,7 +569,11 @@ pub mod inference_service_metrics {
 
     /// Global metrics cache
     #[allow(clippy::redundant_closure)]
-    static METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
+    static VLLM_METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
+
+    /// Global metrics cache
+    #[allow(clippy::redundant_closure)]
+    static SGLANG_METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
 
     /// Start the background task to update metrics every 30 seconds
     ///
@@ -614,12 +618,12 @@ pub mod inference_service_metrics {
                 let sglang_metrics =
                     get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls).await;
                 if vllm_metrics.iter().any(std::result::Result::is_ok) {
-                    METRICS_CACHE.update_metrics(vllm_metrics).await;
+                    VLLM_METRICS_CACHE.update_metrics(vllm_metrics).await;
                 } else {
                     tracing::warn!("Failed to retrieve any valid vLLM metrics, not updating cache");
                 }
                 if sglang_metrics.iter().any(std::result::Result::is_ok) {
-                    METRICS_CACHE.update_metrics(sglang_metrics).await;
+                    SGLANG_METRICS_CACHE.update_metrics(sglang_metrics).await;
                 } else {
                     tracing::warn!(
                         "Failed to retrieve any valid SgLang metrics, not updating cache"
@@ -900,7 +904,7 @@ pub mod inference_service_metrics {
         let vllm_metrics = if vllm_chat_completions_service_urls.is_empty() {
             vec![]
         } else {
-            match METRICS_CACHE.get_metrics().await {
+            match VLLM_METRICS_CACHE.get_metrics().await {
                 Some(metrics) => metrics,
                 None => {
                     // If no cached metrics, get them directly
@@ -911,7 +915,7 @@ pub mod inference_service_metrics {
         let sglang_metrics = if sglang_chat_completions_service_urls.is_empty() {
             vec![]
         } else {
-            match METRICS_CACHE.get_metrics().await {
+            match SGLANG_METRICS_CACHE.get_metrics().await {
                 Some(metrics) => metrics,
                 None => {
                     // If no cached metrics, get them directly
