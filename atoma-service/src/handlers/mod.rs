@@ -731,7 +731,7 @@ pub mod inference_service_metrics {
             .map(|(_model, _url, job)| job.as_str())
             .collect::<Vec<_>>()
             .join("|");
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "vllm_metrics",
             level = "info",
@@ -837,13 +837,13 @@ pub mod inference_service_metrics {
             .map(|(_model, _url, job)| job.as_str())
             .collect::<Vec<_>>()
             .join("|");
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
             "Getting metrics for jobs: {jobs}" // jobs = "http://host.docker.internal:3000"
         );
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
@@ -888,7 +888,7 @@ pub mod inference_service_metrics {
             client.query(&num_running_requests).get(),
             client.query(&ttft).get()
         );
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
@@ -942,7 +942,7 @@ pub mod inference_service_metrics {
                 ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
             );
         }
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",
@@ -958,7 +958,7 @@ pub mod inference_service_metrics {
 
         let mut min_time_to_first_token_seconds = f64::INFINITY;
 
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",
@@ -996,7 +996,7 @@ pub mod inference_service_metrics {
             )
             .await
         };
-        info!(
+        tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",

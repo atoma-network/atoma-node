@@ -382,7 +382,7 @@ async fn main() -> Result<()> {
             .iter()
             .flat_map(|(model, urls)| {
                 urls.iter()
-                    .map(move |(url, job)| (model.clone(), url.clone(), job.clone()))
+                    .map(move |(url, job)| (model.to_lowercase(), url.clone(), job.clone()))
             })
             .collect(),
         config.service.metrics_update_interval,
