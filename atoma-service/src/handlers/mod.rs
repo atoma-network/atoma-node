@@ -687,20 +687,21 @@ pub mod inference_service_metrics {
             .as_ref()
             .map_err(|_| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
             .and_then(|response| {
-                response
-                    .data()
-                    .as_vector()
-                    .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
-            })
-            .and_then(|vector| {
-                vector
-                    .iter()
-                    .find(|instant| instant.metric().get("job") == Some(&job.to_string()))
-                    .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
-                    .map(|value| {
-                        let sample = value.sample();
-                        sample.value()
-                    })
+                response.data().as_vector().map_or_else(
+                    || Ok(-1.0),
+                    |vector| {
+                        vector
+                            .iter()
+                            .find(|instant| instant.metric().get("job") == Some(&job.to_string()))
+                            .ok_or_else(|| {
+                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                            })
+                            .map(|value| {
+                                let sample = value.sample();
+                                sample.value()
+                            })
+                    },
+                )
             })
     }
 
@@ -886,7 +887,7 @@ pub mod inference_service_metrics {
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
-            "Received sglang metrics response for {jobs}: 
+            "Received sglang metrics response for {jobs}:\n 
                 waiting_queue_time: {waiting_queue_time_response:?}, 
                 num_queue_requests: {num_queue_requests_response:?}, 
                 num_running_requests: {num_running_requests_response:?}, 
@@ -1130,9 +1131,19 @@ pub mod inference_service_metrics {
         let best_metrics = best_ttft_metrics
             .iter()
             .min_by(|a, b| {
-                a.waiting_queue_time
-                    .partial_cmp(&b.waiting_queue_time)
-                    .unwrap()
+                let a_predicate = a.waiting_queue_time == -1.0;
+                let b_predicate = b.waiting_queue_time == -1.0;
+
+                match (a_predicate, b_predicate) {
+                    (true | false, true) | (true, false) => a
+                        .num_queue_requests
+                        .partial_cmp(&b.num_queue_requests)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (false, false) => a
+                        .waiting_queue_time
+                        .partial_cmp(&b.waiting_queue_time)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                }
             })
             .unwrap();
 
