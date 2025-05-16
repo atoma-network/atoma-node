@@ -996,6 +996,12 @@ pub mod inference_service_metrics {
             )
             .await
         };
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Received vLLM metrics: {vllm_metrics:?}, SgLang metrics: {sglang_metrics:?}"
+        );
 
         let mut metrics_results = Vec::new();
         for metric in vllm_metrics.into_iter().chain(sglang_metrics.into_iter()) {
