@@ -376,37 +376,15 @@ async fn main() -> Result<()> {
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
     };
 
-    // Extract chat_completions_service_urls for metrics updater
-    let mut chat_completions_service_urls: Vec<(String, String)> = Vec::new();
-
-    // Iterate over models and chat_completions_service_urls in app_state
-    for model in app_state.models.iter() {
-        if let Some(service_urls) = app_state
-            .chat_completions_service_urls
-            .get(&model.to_lowercase())
-        {
-            for (url, _) in service_urls {
-                chat_completions_service_urls.push((model.clone(), url.clone()));
-            }
-            info!(
-                target = "atoma-node-service",
-                event = "model_service_urls",
-                model = model,
-                urls_count = service_urls.len(),
-                "Configured chat completions service URLs for model"
-            );
-        } else {
-            warn!(
-                target = "atoma-node-service",
-                event = "missing_service_urls",
-                model = model,
-                "No chat completions service URLs configured for model"
-            );
-        }
-    }
-
     start_metrics_updater(
-        chat_completions_service_urls,
+        app_state
+            .chat_completions_service_urls
+            .iter()
+            .flat_map(|(model, urls)| {
+                urls.iter()
+                    .map(move |(url, job)| (model.clone(), url.clone(), job.clone()))
+            })
+            .collect(),
         config.service.metrics_update_interval,
     );
 
