@@ -693,13 +693,13 @@ pub mod inference_service_metrics {
                         vector
                             .iter()
                             .find(|instant| instant.metric().get("job") == Some(&job.to_string()))
-                            .ok_or_else(|| {
-                                ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
-                            })
-                            .map(|value| {
-                                let sample = value.sample();
-                                sample.value()
-                            })
+                            .map_or_else(
+                                || Ok(-1.0),
+                                |value| {
+                                    let sample = value.sample();
+                                    Ok(sample.value())
+                                },
+                            )
                     },
                 )
             })
