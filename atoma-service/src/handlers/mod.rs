@@ -646,7 +646,12 @@ pub mod inference_service_metrics {
                     let sglang_metrics =
                         get_metrics_sglang(&HTTP_CLIENT, &sglang_chat_completions_service_urls)
                             .await;
-
+                    info!(
+                        target = "atoma-service",
+                        module = "inference_service_metrics",
+                        level = "info",
+                        "Received SgLang metrics response for {sglang_chat_completions_service_urls:?}, {sglang_metrics:?}"
+                    );
                     if sglang_metrics.iter().any(std::result::Result::is_ok) {
                         SGLANG_METRICS_CACHE.update_metrics(sglang_metrics).await;
                     } else {
