@@ -31,6 +31,7 @@ libp2p = { workspace = true, features = [
     "yamux",
 ] }
 opentelemetry = { workspace = true }
+prometheus-http-query = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }

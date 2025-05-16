@@ -4,13 +4,12 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH,
-        completions::COMPLETIONS_PATH,
         embeddings::EMBEDDINGS_PATH,
         image_generations::IMAGE_GENERATIONS_PATH,
         metrics::{
             CONFIDENTIAL_COMPUTE_MIDDLEWARE_SUCCESSFUL_TIME,
             SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME,
-            VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
+            VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME,
         },
         request_model::ComputeUnitsEstimate,
     },
@@ -18,6 +17,7 @@ use crate::{
     types::ConfidentialComputeRequest,
 };
 use atoma_confidential::types::{ConfidentialComputeDecryptionRequest, DH_PUBLIC_KEY_SIZE};
+use atoma_p2p::constants::ONE_MILLION;
 use atoma_state::types::{AtomaAtomaStateManagerEvent, StackAvailability};
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
@@ -25,9 +25,9 @@ use atoma_utils::{
     verify_signature,
 };
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::State,
-    http::{HeaderValue, Request},
+    http::{request::Parts, HeaderValue, Request},
     middleware::Next,
     response::Response,
 };
@@ -73,11 +73,15 @@ pub struct EncryptionMetadata {
 #[derive(Clone, Debug, Default)]
 pub struct RequestMetadata {
     /// The stack small ID
-    pub stack_small_id: i64,
+    pub stack_small_id: Option<i64>,
     /// The number of input tokens
     pub num_input_tokens: i64,
     /// The estimated total number of compute units
     pub estimated_total_compute_units: i64,
+    /// The price per one million compute units
+    pub price_per_one_million_compute_units: i64,
+    /// User address that sent the request
+    pub user_address: String,
     /// The payload hash
     pub payload_hash: [u8; 32],
     /// The type of request
@@ -104,15 +108,65 @@ pub enum RequestType {
 impl RequestMetadata {
     /// Create a new `RequestMetadata` with the given stack info
     #[must_use]
-    pub const fn with_stack_info(
+    pub const fn with_stack_info(mut self, stack_small_id: i64) -> Self {
+        self.stack_small_id = Some(stack_small_id);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_tokens_information(
         mut self,
-        stack_small_id: i64,
         num_input_tokens: i64,
         estimated_total_compute_units: i64,
     ) -> Self {
-        self.stack_small_id = stack_small_id;
         self.num_input_tokens = num_input_tokens;
         self.estimated_total_compute_units = estimated_total_compute_units;
+        self
+    }
+
+    /// Create a new `RequestMetadata` with the given price per one million compute units
+    ///
+    /// # Arguments
+    /// * `price_per_one_million_compute_units` - The price per one million compute units
+    ///
+    /// # Returns
+    /// Returns self with the updated price per one million compute units for method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///     .with_price_per_one_million_compute_units(100000);
+    /// ```
+    #[must_use]
+    pub const fn with_price_per_one_million_compute_units(
+        mut self,
+        price_per_one_million_compute_units: i64,
+    ) -> Self {
+        self.price_per_one_million_compute_units = price_per_one_million_compute_units;
+        self
+    }
+
+    /// Create a new `RequestMetadata` with the given user address
+    ///
+    /// # Arguments
+    /// * `user_address` - The user address that sent the request
+    ///
+    /// # Returns
+    /// Returns self with the updated user address for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default()
+    ///    .with_user_address("0x1234567890abcdef".to_string());
+    /// ```
+    #[must_use]
+    pub fn with_user_address(mut self, user_address: String) -> Self {
+        self.user_address = user_address;
         self
     }
 
@@ -297,107 +351,48 @@ pub async fn signature_verification_middleware(
     Ok(next.run(req).await)
 }
 
-/// Middleware for verifying stack permissions and compute units usage.
+/// Generates a fiat request for the given parameters.
 ///
-/// This middleware performs several checks to ensure that the incoming request
-/// is authorized to use the specified model and has sufficient compute units available.
+/// This function is used to create a request for the fiat payment system.
+/// It checks if the user is allowed to pay by fiat and locks the amount
+/// for the request.
 ///
-/// # Steps:
-/// 1. Extracts and validates the public key and stack ID from request headers.
-/// 2. Parses the request body to extract the model and messages.
-/// 3. Verifies that the requested model is supported.
-/// 4. Calculates the total number of compute units required for the request.
-/// 5. Checks if the user has an available stack with sufficient compute units.
+/// # Arguments
+/// * `stack_small_id` - The ID of the stack being used for this request.
+/// * `endpoint` - The endpoint of the request.
+/// * `state` - The application state.
+/// * `sui_address` - The Sui address of the user.
+/// * `max_total_compute_units` - The maximum total compute units for the request.
+/// * `num_input_compute_units` - The number of input compute units.
+/// * `req_parts` - The request parts.
+/// * `request_type` - The type of request.
+/// * `body_bytes` - The body bytes of the request.
+/// * `instant` - The instant when the request was created.
 ///
-/// # Headers
-/// The middleware expects the following custom headers:
-/// - `X-Stack-Small-Id`: The ID of the stack being used for this request.
-///
-/// # Request Body
-/// The body should be a JSON object containing:
-/// - `model`: The name of the AI model to be used.
-/// - `messages`: An array of message objects, each containing a "content" field.
-/// - `max_tokens`: The maximum number of tokens for the AI's response.
-///
-/// # Extensions
-/// This middleware adds a `RequestMetadata` extension to the request containing:
-/// - `stack_small_id`: The ID of the stack being used
-/// - `estimated_total_compute_units`: The total number of compute units calculated for the request
-///
-/// This metadata can be accessed by downstream handlers using `req.extensions()`.
-///
-/// # Errors
-/// Returns a `BAD_REQUEST` status code if:
-/// - Required headers are missing or invalid.
-/// - The request body is invalid or missing required fields.
-/// - The requested model is not supported.
-///
-/// Returns an `UNAUTHORIZED` status code if:
-/// - There's no available stack with sufficient compute units.
-/// - Fetching available stacks fails.
-///
-/// # Security Note
-/// This middleware is crucial for ensuring that users only consume resources they're
-/// authorized to use and have sufficient compute units for their requests.
+/// # Returns
+/// * `Ok(Request<Body>)` - The generated request.
+/// * `Err(AtomaServiceError)` - An error occurred while generating the request.
 #[instrument(
     level = "info",
     skip_all,
     fields(
-        endpoint = %req.uri().path(),
+        endpoint = %endpoint,
     ),
     err
 )]
-pub async fn verify_stack_permissions(
+#[allow(clippy::too_many_arguments)]
+async fn generate_request_from_stack(
+    stack_small_id: HeaderValue,
+    endpoint: String,
     state: State<AppState>,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response, AtomaServiceError> {
-    let instant = Instant::now();
-    let (mut req_parts, req_body) = req.into_parts();
-    let endpoint = req_parts.uri.path().to_string();
-
-    // Get request path to determine type
-    let request_type = match req_parts.uri.path() {
-        CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
-        COMPLETIONS_PATH => RequestType::Completions,
-        EMBEDDINGS_PATH => RequestType::Embeddings,
-        IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
-        _ => RequestType::NonInference,
-    };
-
-    let base64_signature = req_parts
-        .headers
-        .get(atoma_utils::constants::SIGNATURE)
-        .ok_or_else(|| AtomaServiceError::MissingHeader {
-            header: atoma_utils::constants::SIGNATURE.to_string(),
-            endpoint: endpoint.clone(),
-        })?
-        .to_str()
-        .map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Failed to convert signature to string, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let signature =
-        Signature::from_str(base64_signature).map_err(|e| AtomaServiceError::InvalidHeader {
-            message: format!("Failed to parse signature, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let public_key_bytes = signature.public_key_bytes();
-    let public_key =
-        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
-            AtomaServiceError::InvalidHeader {
-                message: format!("Failed to extract public key from bytes, with error: {e}"),
-                endpoint: endpoint.clone(),
-            }
-        })?;
-    let sui_address = SuiAddress::from(&public_key);
-    let stack_small_id = req_parts
-        .headers
-        .get(atoma_utils::constants::STACK_SMALL_ID)
-        .ok_or_else(|| AtomaServiceError::MissingHeader {
-            header: atoma_utils::constants::STACK_SMALL_ID.to_string(),
-            endpoint: endpoint.clone(),
-        })?;
+    sui_address: SuiAddress,
+    max_total_compute_units: i64,
+    num_input_compute_units: i64,
+    mut req_parts: Parts,
+    request_type: RequestType,
+    body_bytes: Bytes,
+    instant: Instant,
+) -> Result<Request<Body>, AtomaServiceError> {
     let stack_small_id = stack_small_id
         .to_str()
         .map_err(|e| AtomaServiceError::InvalidHeader {
@@ -409,43 +404,6 @@ pub async fn verify_stack_permissions(
             message: format!("Stack small ID is not a valid integer, with error: {e}"),
             endpoint: endpoint.clone(),
         })?;
-    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
-        .await
-        .map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to convert body to bytes, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let body_json: Value =
-        serde_json::from_slice(&body_bytes).map_err(|e| AtomaServiceError::InvalidBody {
-            message: format!("Failed to parse body as JSON, with error: {e}"),
-            endpoint: endpoint.clone(),
-        })?;
-    let model = body_json
-        .get(MODEL)
-        .ok_or_else(|| AtomaServiceError::InvalidBody {
-            message: "Model not found in body".to_string(),
-            endpoint: endpoint.clone(),
-        })?
-        .as_str()
-        .ok_or_else(|| AtomaServiceError::InvalidBody {
-            message: "Model is not a string".to_string(),
-            endpoint: endpoint.clone(),
-        })?;
-    if !state.models.contains(&model.to_string()) {
-        return Err(AtomaServiceError::InvalidBody {
-            message: format!("Model not supported, supported models: {:?}", state.models),
-            endpoint: endpoint.clone(),
-        });
-    }
-
-    let ComputeUnitsEstimate {
-        num_input_compute_units,
-        max_total_compute_units,
-    } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
-
-    let max_total_compute_units = max_total_compute_units as i64;
-    let num_input_compute_units = num_input_compute_units as i64;
-
     let (result_sender, result_receiver) = oneshot::channel();
     state
         .state_manager_sender
@@ -526,9 +484,7 @@ pub async fn verify_stack_permissions(
             // stack_small_id, but it is unavailable, so the client either buys a new stack or awaits
             // the stack to be available again.
             return Err(AtomaServiceError::UnavailableStackError {
-                message: format!(
-                    "Stack with stack_small_id={stack_small_id} is unavailable, please buy a new stack or await it to be available again."
-                ),
+                message: format!("Stack with stack_small_id={stack_small_id} is unavailable, please buy a new stack or await it to be available again."),
                 endpoint: endpoint.clone(),
             });
         }
@@ -538,11 +494,8 @@ pub async fn verify_stack_permissions(
         .get::<RequestMetadata>()
         .cloned()
         .unwrap_or_default()
-        .with_stack_info(
-            stack_small_id,
-            num_input_compute_units,
-            max_total_compute_units,
-        )
+        .with_stack_info(stack_small_id)
+        .with_tokens_information(num_input_compute_units, max_total_compute_units)
         .with_request_type(request_type)
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
@@ -554,10 +507,292 @@ pub async fn verify_stack_permissions(
             .or_insert(0);
         *entry += 1;
     }
-    VERIFY_STACK_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
+    VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
         instant.elapsed().as_secs_f64(),
         &[KeyValue::new("endpoint", endpoint)],
     );
+    Ok(req)
+}
+
+/// Generates a fiat request for the given parameters.
+///
+/// This function is used to create a request for the fiat payment system.
+/// It checks if the user is allowed to pay by fiat and locks the amount
+/// for the request.
+///
+/// # Arguments
+/// * `endpoint` - The endpoint of the request.
+/// * `state` - The application state.
+/// * `sui_address` - The Sui address of the user.
+/// * `max_total_compute_units` - The maximum total compute units for the request.
+/// * `num_input_compute_units` - The number of input compute units.
+/// * `req_parts` - The request parts.
+/// * `request_type` - The type of request.
+/// * `body_bytes` - The body bytes of the request.
+/// * `model` - The model for the request.
+/// * `instant` - The instant when the request was created.
+///
+/// # Returns
+/// * `Ok(Request<Body>)` - The generated request.
+/// * `Err(AtomaServiceError)` - An error occurred while generating the request.
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %endpoint,
+    ),
+    err
+)]
+#[allow(clippy::too_many_arguments)]
+async fn generate_fiat_request(
+    endpoint: String,
+    state: State<AppState>,
+    sui_address: SuiAddress,
+    max_total_compute_units: i64,
+    num_input_compute_units: i64,
+    mut req_parts: Parts,
+    request_type: RequestType,
+    body_bytes: Bytes,
+    model: &str,
+    instant: Instant,
+) -> Result<Request<Body>, AtomaServiceError> {
+    if !state
+        .whitelist_sui_addresses_for_fiat
+        .contains(&sui_address.to_string())
+    {
+        // The stack was not found and the address is not enabled for fiat.
+        return Err(AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::STACK_SMALL_ID.to_string(),
+            endpoint: endpoint.clone(),
+        });
+    }
+
+    let (result_sender, result_receiver) = oneshot::channel();
+
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::GetModelPricing {
+            model: model.to_string(),
+            result_sender,
+        })
+        .map_err(|err| AtomaServiceError::InternalError {
+            message: format!("Failed to get model pricing: {}", err),
+            endpoint: endpoint.clone(),
+        })?;
+
+    let price_per_one_million_compute_units = result_receiver
+        .await
+        .map_err(|_| AtomaServiceError::InternalError {
+            message: "Failed to get model pricing".to_string(),
+            endpoint: endpoint.clone(),
+        })?
+        .map_err(|_| AtomaServiceError::ModelError {
+            model_error: format!("Failed to get model pricing for model {model}"),
+            endpoint: endpoint.clone(),
+        })?
+        .ok_or_else(|| AtomaServiceError::ModelError {
+            model_error: format!("No pricing found for model {model}"),
+            endpoint: endpoint.clone(),
+        })?;
+
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::LockFiatAmount {
+            user_address: sui_address.to_string(),
+            amount: ((max_total_compute_units as u128
+                * price_per_one_million_compute_units as u128)
+                / ONE_MILLION) as i64,
+        })
+        .map_err(|err| AtomaServiceError::InternalError {
+            message: format!("Failed to lock fiat amount: {}", err),
+            endpoint: endpoint.clone(),
+        })?;
+
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default()
+        .with_user_address(sui_address.to_string())
+        .with_price_per_one_million_compute_units(price_per_one_million_compute_units)
+        .with_tokens_information(num_input_compute_units, max_total_compute_units)
+        .with_request_type(request_type)
+        .with_endpoint_path(req_parts.uri.path().to_string());
+    req_parts.extensions.insert(request_metadata);
+    let req = Request::from_parts(req_parts, Body::from(body_bytes));
+    VERIFY_PERMISSIONS_MIDDLEWARE_SUCCESSFUL_TIME.record(
+        instant.elapsed().as_secs_f64(),
+        &[KeyValue::new("endpoint", endpoint)],
+    );
+
+    Ok(req)
+}
+
+/// Middleware for verifying stack permissions and compute units usage.
+///
+/// This middleware performs several checks to ensure that the incoming request
+/// is authorized to use the specified model and has sufficient compute units available.
+///
+/// # Steps:
+/// 1. Extracts and validates the public key and stack ID from request headers.
+/// 2. Parses the request body to extract the model and messages.
+/// 3. Verifies that the requested model is supported.
+/// 4. Calculates the total number of compute units required for the request.
+/// 5. Checks if the user has an available stack with sufficient compute units.
+///
+/// # Headers
+/// The middleware expects the following custom headers:
+/// - `X-Stack-Small-Id`: The ID of the stack being used for this request.
+///
+/// # Request Body
+/// The body should be a JSON object containing:
+/// - `model`: The name of the AI model to be used.
+/// - `messages`: An array of message objects, each containing a "content" field.
+/// - `max_tokens`: The maximum number of tokens for the AI's response.
+///
+/// # Extensions
+/// This middleware adds a `RequestMetadata` extension to the request containing:
+/// - `stack_small_id`: The ID of the stack being used
+/// - `estimated_total_compute_units`: The total number of compute units calculated for the request
+///
+/// This metadata can be accessed by downstream handlers using `req.extensions()`.
+///
+/// # Errors
+/// Returns a `BAD_REQUEST` status code if:
+/// - Required headers are missing or invalid.
+/// - The request body is invalid or missing required fields.
+/// - The requested model is not supported.
+///
+/// Returns an `UNAUTHORIZED` status code if:
+/// - There's no available stack with sufficient compute units.
+/// - Fetching available stacks fails.
+///
+/// # Security Note
+/// This middleware is crucial for ensuring that users only consume resources they're
+/// authorized to use and have sufficient compute units for their requests.
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        endpoint = %req.uri().path(),
+    ),
+    err
+)]
+pub async fn verify_permissions(
+    state: State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, AtomaServiceError> {
+    let instant = Instant::now();
+    let (req_parts, req_body) = req.into_parts();
+    let endpoint = req_parts.uri.path().to_string();
+
+    // Get request path to determine type
+    let request_type = match req_parts.uri.path() {
+        CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
+        EMBEDDINGS_PATH => RequestType::Embeddings,
+        IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
+        _ => RequestType::NonInference,
+    };
+
+    let base64_signature = req_parts
+        .headers
+        .get(atoma_utils::constants::SIGNATURE)
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::SIGNATURE.to_string(),
+            endpoint: endpoint.clone(),
+        })?
+        .to_str()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to convert signature to string, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let signature =
+        Signature::from_str(base64_signature).map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("Failed to parse signature, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let public_key_bytes = signature.public_key_bytes();
+    let public_key =
+        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+            AtomaServiceError::InvalidHeader {
+                message: format!("Failed to extract public key from bytes, with error: {e}"),
+                endpoint: endpoint.clone(),
+            }
+        })?;
+    let sui_address = SuiAddress::from(&public_key);
+
+    let body_bytes = axum::body::to_bytes(req_body, MAX_BODY_SIZE)
+        .await
+        .map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to convert body to bytes, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let body_json: Value =
+        serde_json::from_slice(&body_bytes).map_err(|e| AtomaServiceError::InvalidBody {
+            message: format!("Failed to parse body as JSON, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+    let model = body_json
+        .get(MODEL)
+        .ok_or_else(|| AtomaServiceError::InvalidBody {
+            message: "Model not found in body".to_string(),
+            endpoint: endpoint.clone(),
+        })?
+        .as_str()
+        .ok_or_else(|| AtomaServiceError::InvalidBody {
+            message: "Model is not a string".to_string(),
+            endpoint: endpoint.clone(),
+        })?;
+    if !state.models.contains(&model.to_string()) {
+        return Err(AtomaServiceError::InvalidBody {
+            message: format!("Model not supported, supported models: {:?}", state.models),
+            endpoint: endpoint.clone(),
+        });
+    }
+
+    let ComputeUnitsEstimate {
+        num_input_compute_units,
+        max_total_compute_units,
+    } = utils::calculate_compute_units(&body_json, request_type, &state, model, &endpoint)?;
+
+    let max_total_compute_units = max_total_compute_units as i64;
+    let num_input_compute_units = num_input_compute_units as i64;
+
+    let stack_small_id = req_parts
+        .headers
+        .get(atoma_utils::constants::STACK_SMALL_ID)
+        .cloned();
+
+    let req = if let Some(stack_small_id) = stack_small_id {
+        generate_request_from_stack(
+            stack_small_id,
+            endpoint,
+            state,
+            sui_address,
+            max_total_compute_units,
+            num_input_compute_units,
+            req_parts,
+            request_type,
+            body_bytes,
+            instant,
+        )
+        .await?
+    } else {
+        generate_fiat_request(
+            endpoint,
+            state,
+            sui_address,
+            max_total_compute_units,
+            num_input_compute_units,
+            req_parts,
+            request_type,
+            body_bytes,
+            model,
+            instant,
+        )
+        .await?
+    };
     Ok(next.run(req).await)
 }
 

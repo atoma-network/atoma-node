@@ -56,6 +56,9 @@ pub struct AtomaServiceConfig {
 
     /// The interval for updating the metrics.
     pub metrics_update_interval: Option<u64>,
+
+    /// List of allowed sui addresses for fiat payments.
+    pub whitelist_sui_addresses_for_fiat: Vec<String>,
 }
 
 impl AtomaServiceConfig {

@@ -9,6 +9,7 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     encryption::encrypt_plaintext,
+    hashing::blake2b_hash,
 };
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
@@ -31,7 +32,7 @@ use crate::{
             CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
             TOTAL_COMPLETED_REQUESTS,
         },
-        update_stack_num_compute_units, USAGE_KEY,
+        update_fiat_amount, update_stack_num_compute_units, USAGE_KEY,
     },
     server::utils,
 };
@@ -99,7 +100,7 @@ pub struct Streamer {
     /// Current status of the stream
     status: StreamStatus,
     /// The stack small id for the request
-    stack_small_id: i64,
+    stack_small_id: Option<i64>,
     /// The estimated total compute units for the request
     estimated_total_compute_units: i64,
     /// The request payload hash
@@ -139,6 +140,10 @@ pub struct Streamer {
     streamer_computed_num_tokens: i64,
     /// The number of input tokens for the request
     num_input_tokens: i64,
+    /// The price per one million compute units for the request
+    price_per_one_million_compute_units: i64,
+    /// The user address for the request
+    user_address: String,
 }
 
 /// Represents the various states of a streaming process
@@ -162,7 +167,7 @@ impl Streamer {
         state_manager_sender: FlumeSender<AtomaAtomaStateManagerEvent>,
         concurrent_requests: Arc<DashMap<i64, u64>>,
         client_dropped_streamer_connections: Arc<DashSet<String>>,
-        stack_small_id: i64,
+        stack_small_id: Option<i64>,
         num_input_tokens: i64,
         estimated_total_compute_units: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
@@ -173,6 +178,8 @@ impl Streamer {
         endpoint: String,
         request_id: String,
         first_token_generation_timer: Instant,
+        price_per_one_million_compute_units: i64,
+        user_address: String,
     ) -> Self {
         Self {
             concurrent_requests,
@@ -196,6 +203,8 @@ impl Streamer {
             is_final_chunk_handled: false,
             streamer_computed_num_tokens: 0,
             num_input_tokens,
+            price_per_one_million_compute_units,
+            user_address,
         }
     }
 
@@ -314,24 +323,65 @@ impl Streamer {
             total_compute_units,
         );
 
-        // Update stack num tokens
-        let concurrent_requests = handle_concurrent_requests_count_decrement(
-            &self.concurrent_requests,
-            self.stack_small_id,
-            &self.endpoint,
-        );
-        if let Err(e) = update_stack_num_compute_units(
+        if let Some(stack_small_id) = self.stack_small_id {
+            // Calculate and update total hash
+            let total_hash = blake2b_hash(&[self.payload_hash, response_hash].concat());
+            let total_hash_bytes: [u8; 32] = total_hash
+                .as_slice()
+                .try_into()
+                .expect("Invalid BLAKE2b hash length");
+
+            // Update stack total hash
+            if let Err(e) =
+                self.state_manager_sender
+                    .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
+                        stack_small_id,
+                        total_hash: total_hash_bytes,
+                    })
+            {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    endpoint = self.endpoint,
+                    "Error updating stack total hash: {}",
+                    e
+                );
+            }
+
+            // Update stack num tokens
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &self.concurrent_requests,
+                stack_small_id,
+                &self.endpoint,
+            );
+            if let Err(e) = update_stack_num_compute_units(
+                &self.state_manager_sender,
+                stack_small_id,
+                self.estimated_total_compute_units,
+                total_compute_units as i64,
+                &self.endpoint,
+                concurrent_requests,
+            ) {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    "Error updating stack num tokens: {}",
+                    e
+                );
+            }
+        } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
-            self.stack_small_id,
+            self.user_address.clone(),
             self.estimated_total_compute_units,
             total_compute_units as i64,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
-            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
                 level = "error",
-                "Error updating stack num tokens: {}",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
                 e
             );
         }
@@ -760,14 +810,14 @@ impl Streamer {
     /// Handles errors during streaming
     fn handle_streaming_error(&mut self, e: Error) -> Poll<Option<Result<Event, Error>>> {
         self.status = StreamStatus::Failed(e.to_string());
-        self.update_stack_tokens_on_error();
+        self.update_balance_on_error();
         Poll::Ready(Some(Err(e)))
     }
 
     /// Handles stream poll errors
     fn handle_poll_error(&mut self, e: &reqwest::Error) -> Poll<Option<Result<Event, Error>>> {
         self.status = StreamStatus::Failed(e.to_string());
-        self.update_stack_tokens_on_error();
+        self.update_balance_on_error();
         Poll::Ready(None)
     }
 
@@ -785,31 +835,58 @@ impl Streamer {
         Poll::Ready(None)
     }
 
-    /// Updates stack tokens when an error occurs
-    fn update_stack_tokens_on_error(&self) {
-        // NOTE: We need to update the stack number of tokens as the service failed to generate
-        // a proper response. For this reason, we set the total number of tokens to 0.
-        // This will ensure that the stack number of tokens is not updated, and the stack
-        // will not be penalized for the failed request.
-        //
-        // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
-        let concurrent_requests = handle_concurrent_requests_count_decrement(
-            &self.concurrent_requests,
-            self.stack_small_id,
-            &self.endpoint,
-        );
-        if let Err(e) = update_stack_num_compute_units(
+    /// Updates balance (stack or fiat) when an error occurs
+    #[instrument(
+        level = "error",
+        skip_all,
+        fields(
+            endpoint = self.endpoint,
+            stack_small_id = self.stack_small_id,
+            estimated_total_compute_units = self.estimated_total_compute_units,
+            payload_hash = hex::encode(self.payload_hash)
+        )
+    )]
+    fn update_balance_on_error(&self) {
+        if let Some(stack_small_id) = self.stack_small_id {
+            // NOTE: We need to update the stack number of tokens as the service failed to generate
+            // a proper response. For this reason, we set the total number of tokens to 0.
+            // This will ensure that the stack number of tokens is not updated, and the stack
+            // will not be penalized for the failed request.
+            //
+            // NOTE: We also decrement the concurrent requests count, as we are done processing the request.
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &self.concurrent_requests,
+                stack_small_id,
+                &self.endpoint,
+            );
+            if let Err(e) = update_stack_num_compute_units(
+                &self.state_manager_sender,
+                stack_small_id,
+                self.estimated_total_compute_units,
+                0,
+                &self.endpoint,
+                concurrent_requests,
+            ) {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    "Error updating stack num tokens: {}",
+                    e
+                );
+            }
+        } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
-            self.stack_small_id,
+            self.user_address.clone(),
             self.estimated_total_compute_units,
             0,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
-            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
                 level = "error",
-                "Error updating stack num tokens: {}",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
                 e
             );
         }
@@ -887,23 +964,40 @@ impl Drop for Streamer {
                 ],
             );
         }
-        let concurrent_requests = handle_concurrent_requests_count_decrement(
-            &self.concurrent_requests,
-            self.stack_small_id,
-            &self.endpoint,
-        );
-        if let Err(e) = update_stack_num_compute_units(
+        if let Some(stack_small_id) = self.stack_small_id {
+            let concurrent_requests = handle_concurrent_requests_count_decrement(
+                &self.concurrent_requests,
+                stack_small_id,
+                &self.endpoint,
+            );
+            if let Err(e) = update_stack_num_compute_units(
+                &self.state_manager_sender,
+                stack_small_id,
+                self.estimated_total_compute_units,
+                self.num_input_tokens + self.streamer_computed_num_tokens,
+                &self.endpoint,
+                concurrent_requests,
+            ) {
+                error!(
+                    target = "atoma-service-streamer",
+                    level = "error",
+                    "Error updating stack num tokens: {}",
+                    e
+                );
+            }
+        } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
-            self.stack_small_id,
+            self.user_address.clone(),
             self.estimated_total_compute_units,
             self.num_input_tokens + self.streamer_computed_num_tokens,
+            self.price_per_one_million_compute_units,
             &self.endpoint,
-            concurrent_requests,
         ) {
             error!(
                 target = "atoma-service-streamer",
                 level = "error",
-                "Error updating stack num tokens: {}",
+                endpoint = self.endpoint,
+                "Error updating fiat amount: {}",
                 e
             );
         }

@@ -143,13 +143,13 @@ pub enum AtomaEvent {
     TaskRemovedEvent(TaskRemovedEvent),
 
     /// An event emitted when a new stack (collection of tasks) is created.
-    StackCreatedEvent((StackCreatedEvent, Option<u64>)),
+    StackCreatedEvent(StackCreatedEvent),
 
     /// An event emitted when a stack is created and updated simultaneously with already computed compute units.
     StackCreateAndUpdateEvent(StackCreateAndUpdateEvent),
 
     /// An event emitted when there's an attempt to settle a stack.
-    StackTrySettleEvent((StackTrySettleEvent, Option<u64>)),
+    StackTrySettleEvent(StackTrySettleEvent),
 
     /// An event emitted when a new attestation is made for a stack settlement.
     NewStackSettlementAttestationEvent(NewStackSettlementAttestationEvent),

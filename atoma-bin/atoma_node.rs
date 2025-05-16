@@ -372,6 +372,7 @@ async fn main() -> Result<()> {
             .context("Image generations service URL not configured")?,
         keystore: Arc::new(keystore),
         address_index,
+        whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
     };
 
     // Extract chat_completions_service_urls for metrics updater

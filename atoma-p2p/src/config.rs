@@ -44,9 +44,9 @@ pub struct AtomaP2pNodeConfig {
     pub node_small_id: Option<u64>,
 
     /// The list of endpoints serving metrics to collect, displayed as a map of model name to a tuple
-    /// of the form (`serving_engine`, `metrics_endpoint`)
-    /// (e.g. `"meta-llama/Llama-3.2-3B-Instruct" => ("vllm", "http://chat-completions:8000/metrics")`)
-    pub metrics_endpoints: HashMap<String, (String, String)>,
+    /// of the form (`serving_engine`, `job_name`)
+    /// (e.g. `"meta-llama/Llama-3.2-3B-Instruct" => ("vllm", ["vllm1", "vllm2", "vllm3", "vllm4"])`)
+    pub metrics_endpoints: HashMap<String, (String, Vec<String>)>,
 
     /// The list of bootstrap nodes to dial
     pub bootstrap_node_addrs: Vec<String>,
