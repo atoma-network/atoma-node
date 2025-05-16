@@ -1017,7 +1017,11 @@ pub mod inference_service_metrics {
                         target = "atoma-service",
                         module = "vllm_metrics",
                         level = "info",
-                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}: num_queue_requests={num_queue_requests}, time_to_first_token_seconds={time_to_first_token_seconds}"
+                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}:\n
+                            num_waiting_queue_time={waiting_queue_time},
+                            num_queue_requests={num_queue_requests},
+                            num_running_requests={num_running_requests},
+                            time_to_first_token_seconds={time_to_first_token_seconds}"
                     );
                     (
                         chat_completions_service_url,
