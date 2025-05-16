@@ -528,6 +528,9 @@ pub mod inference_service_metrics {
     type CachedMetrics = Option<MetricsVec>;
     type MetricsLock = Arc<RwLock<CachedMetrics>>;
 
+    /// The default interval for updating the metrics
+    const DEFAULT_METRICS_UPDATE_INTERVAL: u64 = 5;
+
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -627,7 +630,14 @@ pub mod inference_service_metrics {
         let vllm_chat_completions_service_urls = Arc::new(vllm_chat_completions_service_urls);
         let sglang_chat_completions_service_urls = Arc::new(sglang_chat_completions_service_urls);
         tokio::spawn(async move {
-            let metrics_interval = metrics_update_interval.unwrap_or(30);
+            let metrics_interval =
+                metrics_update_interval.unwrap_or(DEFAULT_METRICS_UPDATE_INTERVAL);
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "Metrics update interval: {metrics_interval} seconds"
+            );
             let mut interval = time::interval(Duration::from_secs(metrics_interval));
             loop {
                 interval.tick().await;
@@ -739,22 +749,22 @@ pub mod inference_service_metrics {
         );
 
         let queue_time_query = format!(
-            "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))"
+            "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[5s])))"
         );
         let num_running_requests_query = format!(
             "quantile_over_time(
                 0.90,
-                vllm:num_requests_running{{job=~\"{jobs}\"}}[30s]
+                vllm:num_requests_running{{job=~\"{jobs}\"}}[5s]
             )"
         );
         let num_queue_requests_query = format!(
             "quantile_over_time(
                 0.90,
-                vllm:num_queue_reqs{{job=~\"{jobs}\"}}[30s]
+                vllm:num_queue_reqs{{job=~\"{jobs}\"}}[5s]
             )"
         );
         let ttft_query =
-            format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[30s])))");
+            format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[5s])))");
 
         let (
             queue_time_response,
@@ -851,31 +861,31 @@ pub mod inference_service_metrics {
             
             quantile_over_time(
                 0.90,
-                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[5s]
             )
             
-            histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))"
+            histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[5s])))"
         );
         let waiting_queue_time = format!(
             "quantile_over_time(
                 0.90,
-                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
+                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[5s]
             )"
         );
         let num_queue_requests = format!(
             "quantile_over_time(
                 0.90,
-                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[5s]
             )"
         );
         let num_running_requests = format!(
             "quantile_over_time(
                 0.90,
-                sglang:num_running_reqs{{job=\"{jobs}\"}}[30s]
+                sglang:num_running_reqs{{job=\"{jobs}\"}}[5s]
             )"
         );
         let ttft = format!(
-            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))",
+            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[5s])))",
         );
         let (
             waiting_queue_time_response,
@@ -993,7 +1003,7 @@ pub mod inference_service_metrics {
     ///     `chat_completions_service_urls` slice is empty.
     /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying issues
     ///     occur during metric collection from Prometheus (e.g., network errors, parsing errors),
-    ///     though the function attempts to handle missing individual metrics gracefully.
+    ///     though the function attempts to handle missing individual metrics gracefully.g
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
