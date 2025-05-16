@@ -886,7 +886,7 @@ pub mod inference_service_metrics {
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
-            "Received sglang metrics response for {jobs}: {num_queue_requests_response:?}, {ttft_response:?}"
+            "Received sglang metrics response for {jobs}: {waiting_queue_time_response:?}, {num_queue_requests_response:?}, {num_running_requests_response:?}, {ttft_response:?}"
         );
         models_with_urls_and_jobs
             .iter()
@@ -1107,7 +1107,7 @@ pub mod inference_service_metrics {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
-                "Best available chat completions service URL for model: {model} has a TTFT of at least {min_time_to_first_token_seconds} seconds",
+                "Node is currently under high load, the best available chat completions service URL for model: {model} has a TTFT of at least {min_time_to_first_token_seconds} seconds",
             );
             CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
             return Ok((
@@ -1136,7 +1136,7 @@ pub mod inference_service_metrics {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
-                "Best available chat completions service URL for model: {model} has a num queue requests of at least {} requests",
+                "Node is currently under high load, the best available chat completions service URL for model: {model} has a num queue requests of at least {} requests",
                 best_metrics.num_queue_requests
             );
             CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
@@ -1150,7 +1150,7 @@ pub mod inference_service_metrics {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
-                "Best available chat completions service URL for model: {model} has a waiting time of at least {} seconds",
+                "Node is currently under high load, the best available chat completions service URL for model: {model} has a waiting time of at least {} seconds",
                 best_metrics.waiting_queue_time
             );
             CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
@@ -1164,9 +1164,9 @@ pub mod inference_service_metrics {
         tracing::info!(
             target = "atoma-service",
             level = "info",
-            "Best available chat completions service URL for model: {model} is: {best_url}",
-            model = model,
-            best_url = best_url
+            "Best available chat completions service URL for model: {model} is: {best_url} with a TTFT of {min_time_to_first_token_seconds} seconds, waiting queue time of {} seconds and {} queue requests",
+            best_metrics.waiting_queue_time,
+            best_metrics.num_queue_requests
         );
 
         Ok((best_url, StatusCode::OK))
