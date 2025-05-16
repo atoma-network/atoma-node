@@ -835,12 +835,15 @@ async fn handle_streaming_response(
             }
         })?;
     let (chat_completions_service_url, status_code) =
-        get_best_available_chat_completions_service_url(chat_completions_service_urls, model)
-            .await
-            .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
-                message: e.to_string(),
-                endpoint: endpoint.clone(),
-            })?;
+        get_best_available_chat_completions_service_url(
+            chat_completions_service_urls,
+            &model.to_lowercase(),
+        )
+        .await
+        .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
+            message: e.to_string(),
+            endpoint: endpoint.clone(),
+        })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
             message: "Too many requests".to_string(),
