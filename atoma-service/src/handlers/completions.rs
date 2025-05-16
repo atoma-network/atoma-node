@@ -844,11 +844,35 @@ async fn handle_streaming_response(
         })?;
 
     if !response.status().is_success() {
-        let error = response
-            .status()
-            .canonical_reason()
-            .unwrap_or("Unknown error");
-        handle_status_code_error(response.status(), &endpoint, error)?;
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to read response body: {}", e),
+                endpoint: endpoint.to_string(),
+            })?;
+        // Try to parse the error message from the response body
+        let error_message = serde_json::from_slice::<Value>(&bytes).map_or_else(
+            |_| {
+                status
+                    .canonical_reason()
+                    .unwrap_or("Unknown error")
+                    .to_string()
+            },
+            |json| {
+                json.get("error")
+                    .or_else(|| json.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error"))
+                    .to_string()
+            },
+        );
+        handle_status_code_error(status, &endpoint, &error_message)?;
+        return Err(AtomaServiceError::InternalError {
+            message: format!("Unexpected error handling failure: {}", error_message),
+            endpoint: endpoint.to_string(),
+        });
     }
 
     let stream = response.bytes_stream();
@@ -1228,14 +1252,45 @@ pub mod utils {
         })?;
 
         if !response.status().is_success() {
-            let error = response
-                .status()
-                .canonical_reason()
-                .unwrap_or("Unknown error");
-            handle_status_code_error(response.status(), endpoint, error)?;
+            let status = response.status();
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| AtomaServiceError::InternalError {
+                    message: format!("Failed to read response body: {}", e),
+                    endpoint: endpoint.to_string(),
+                })?;
+            // Try to parse the error message from the response body
+            let error_message = serde_json::from_slice::<Value>(&bytes).map_or_else(
+                |_| {
+                    status
+                        .canonical_reason()
+                        .unwrap_or("Unknown error")
+                        .to_string()
+                },
+                |json| {
+                    json.get("error")
+                        .or_else(|| json.get("message"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error"))
+                        .to_string()
+                },
+            );
+            handle_status_code_error(status, endpoint, &error_message)?;
+            return Err(AtomaServiceError::InternalError {
+                message: format!("Unexpected error handling failure: {}", error_message),
+                endpoint: endpoint.to_string(),
+            });
         }
 
-        response.json::<Value>().await.map_err(|e| {
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to read response body: {}", e),
+                endpoint: endpoint.to_string(),
+            })?;
+        let response_body = serde_json::from_slice::<Value>(&bytes).map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error reading response body, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -1243,11 +1298,10 @@ pub mod utils {
                     stack_small_id,
                     e
                 ),
-                // NOTE: We don't know the number of tokens processed for this request,
-                // as the returned output is invalid JSON. For this reason, we set it to 0.
                 endpoint: endpoint.to_string(),
             }
-        })
+        })?;
+        Ok(response_body)
     }
 
     /// Extracts and tracks token usage metrics from a chat completion response.
