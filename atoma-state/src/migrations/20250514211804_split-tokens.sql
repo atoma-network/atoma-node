@@ -7,4 +7,7 @@ ALTER TABLE fiat_balance
 ADD COLUMN already_debited_input_amount BIGINT NOT NULL DEFAULT 0,
 ADD COLUMN overcharged_unsettled_input_amount BIGINT NOT NULL DEFAULT 0;
 
+ALTER TABLE IF EXISTS fiat_balance
+RENAME TO fiat_balances;
+
 COMMIT;

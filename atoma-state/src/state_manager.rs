@@ -1886,7 +1886,7 @@ impl AtomaState {
 
     /// Inserts or updates the fiat amount for a user.
     ///
-    /// This method inserts a new entry into the `fiat_balance` table for the specified user address
+    /// This method inserts a new entry into the `fiat_balances` table for the specified user address
     /// with the given estimated total amount. If an entry already exists, it updates the existing
     /// entry by adding the estimated total amount to the `overcharged_unsettled_amount` field.
     ///
@@ -1925,12 +1925,12 @@ impl AtomaState {
         estimated_total_completions_amount: i64,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO fiat_balance 
+            "INSERT INTO fiat_balances 
                      (user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
                      VALUES ($1, $2, $3) 
                      ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_input_amount = fiat_balance.overcharged_unsettled_input_amount + $2,
-                            overcharged_unsettled_completions_amount = fiat_balance.overcharged_unsettled_completions_amount + $3;")
+                        SET overcharged_unsettled_input_amount = fiat_balances.overcharged_unsettled_input_amount + $2,
+                            overcharged_unsettled_completions_amount = fiat_balances.overcharged_unsettled_completions_amount + $3;")
             .bind(user_address)
             .bind(estimated_total_input_amount)
             .bind(estimated_total_completions_amount)
@@ -1942,7 +1942,7 @@ impl AtomaState {
     /// Updates the fiat amount for a user.
     ///
     /// This method updates the `overcharged_unsettled_amount` and `already_debited_amount` fields
-    /// in the `fiat_balance` table for the specified user address.
+    /// in the `fiat_balances` table for the specified user address.
     ///
     /// # Arguments
     ///
@@ -1982,12 +1982,12 @@ impl AtomaState {
         output_amount: i64,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE fiat_balance 
+            "UPDATE fiat_balances 
                   SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $2,
                       already_debited_input_amount = already_debited_input_amount + $3,
                       overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $4,
                       already_debited_completions_amount = already_debited_completions_amount + $5,
-                      num_requests = num_requests + $6;
+                      num_requests = num_requests + $6
                   WHERE user_address = $1",
         )
         .bind(user_address)
