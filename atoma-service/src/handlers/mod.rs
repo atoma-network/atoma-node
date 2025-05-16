@@ -1037,7 +1037,7 @@ pub mod inference_service_metrics {
                         "current_model = {current_model}, model = {model}, they are equal = {}",
                         current_model == model
                     );
-                    if current_model != model {
+                    if current_model.to_lowercase() != model.to_lowercase() {
                         // NOTE: We only want to consider metrics for the current model
                         continue;
                     }
