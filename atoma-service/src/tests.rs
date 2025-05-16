@@ -373,10 +373,7 @@ mod middleware {
 
         assert_eq!(request_metadata.stack_small_id, Some(1));
         assert_eq!(request_metadata.num_input_tokens, 100);
-        assert_eq!(
-            request_metadata.num_input_tokens + request_metadata.estimated_output_tokens,
-            200
-        );
+        assert_eq!(request_metadata.estimated_output_tokens, 200);
 
         let request_metadata = request_metadata.with_payload_hash([3u8; 32]);
 
