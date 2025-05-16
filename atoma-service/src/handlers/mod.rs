@@ -886,7 +886,11 @@ pub mod inference_service_metrics {
             target = "atoma-service",
             module = "sglang_metrics",
             level = "info",
-            "Received sglang metrics response for {jobs}: {waiting_queue_time_response:?}, {num_queue_requests_response:?}, {num_running_requests_response:?}, {ttft_response:?}"
+            "Received sglang metrics response for {jobs}: 
+                waiting_queue_time: {waiting_queue_time_response:?}, 
+                num_queue_requests: {num_queue_requests_response:?}, 
+                num_running_requests: {num_running_requests_response:?}, 
+                ttft: {ttft_response:?}"
         );
         models_with_urls_and_jobs
             .iter()
