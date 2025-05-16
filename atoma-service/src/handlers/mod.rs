@@ -924,16 +924,85 @@ pub mod inference_service_metrics {
             .collect()
     }
 
-    /// Retrieves the best available chat completions service URL for a given model.
+    /// Selects the best available chat completions service URL for a given model based on performance metrics.
+    ///
+    /// This function aims to distribute load and ensure optimal response times by choosing
+    /// the service instance that is currently performing best. The selection process prioritizes
+    /// services with lower latency and queue lengths.
+    ///
+    /// # Metrics and Selection Logic:
+    ///
+    /// 1.  **Metrics Source**: Metrics for each service (vLLM or SgLang) are primarily retrieved
+    ///     from a regularly updated cache (`VLLM_METRICS_CACHE`, `SGLANG_METRICS_CACHE`).
+    ///     If cached metrics are unavailable for a service, they are fetched live from Prometheus.
+    ///     The function filters metrics to only consider those matching the provided `model` name (case-insensitive).
+    ///
+    /// 2.  **Priority of Metrics for "Best" Service Selection**:
+    ///     *   **No Load**: If a service has zero running requests (`num_running_requests` is 0.0 or NaN),
+    ///         it's immediately considered the best. Its Time to First Token (TTFT), waiting queue time,
+    ///         and number of queued requests are effectively treated as zero.
+    ///     *   **Time to First Token (TTFT)**: Services with the lowest TTFT are preferred. If TTFT is
+    ///         0.0 or NaN (after the no-load check), it's considered optimal in terms of TTFT.
+    ///     *   **Waiting Queue Time**: If multiple services share the same minimal TTFT, the one with
+    ///         the shortest `waiting_queue_time` is chosen. A `waiting_queue_time` of -1.0 (indicating
+    ///         an issue fetching this specific metric) is treated as less favorable.
+    ///     *   **Number of Queued Requests**: If TTFT and waiting queue times are equivalent, the service
+    ///         with the fewest `num_queue_requests` is selected.
+    ///
+    /// 3.  **Handling Missing or Invalid Metrics**:
+    ///     *   If `num_queue_requests` or `waiting_queue_time` is NaN, it's treated as 0.0 for comparison,
+    ///         unless it leads to an earlier optimal selection (e.g., TTFT being 0.0).
+    ///     *   If, after checking all services, no valid metrics are found for the specified `model`,
+    ///         a service URL is chosen randomly from the initial list.
+    ///
+    /// # Load Thresholds and Behavior:
+    ///
+    /// The function defines several thresholds to manage high load scenarios:
+    /// *   `MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS` (4.0s)
+    /// *   `MAX_ALLOWED_NUM_QUEUE_REQUESTS` (16.0)
+    /// *   `MAX_ALLOWED_WAITING_TIME_SECONDS` (4.0s)
+    ///
+    /// If the determined "best" service (or all services, in the case of TTFT) exceeds these
+    /// thresholds, the function returns the first URL from the input `chat_completions_service_urls`
+    /// list along with a `StatusCode::TOO_MANY_REQUESTS`. The `CHAT_COMPLETIONS_TOO_MANY_REQUESTS`
+    /// metric counter is also incremented for the model.
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls`: A slice of tuples `(String, String)`, where each tuple
+    ///   represents a service. The first `String` is the service URL, and the second `String`
+    ///   is the job name (e.g., "vllm-service", "sglang-service"), used to determine the
+    ///   metrics querying strategy.
+    /// * `model`: A string slice representing the name of the model for which the best service
+    ///   URL is being requested. The comparison is case-insensitive.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<(String, StatusCode), ChatCompletionsMetricsError>`:
+    /// *   `Ok((String, StatusCode::OK))`: On success, containing the URL of the best available
+    ///     service and an OK status.
+    /// *   `Ok((String, StatusCode::TOO_MANY_REQUESTS))`: If the system is determined to be under
+    ///     high load based on the metrics thresholds. The returned `String` will be the first URL
+    ///     from the `chat_completions_service_urls` input.
+    /// *   `Err(ChatCompletionsMetricsError)`: If an error occurs, such as no service URLs
+    ///     being provided or issues during metrics fetching that are not handled by fallback mechanisms.
+    ///
+    /// # Errors
+    ///
+    /// *   `ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound`: If the input
+    ///     `chat_completions_service_urls` slice is empty.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying issues
+    ///     occur during metric collection from Prometheus (e.g., network errors, parsing errors),
+    ///     though the function attempts to handle missing individual metrics gracefully.
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
         chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_NUM_QUEUE_REQUESTS: f64 = 16.0; // Default to 6 requests
-        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 2.0; // Default to 4 seconds
-        const MAX_ALLOWED_WAITING_TIME_SECONDS: f64 = 2.0; // Default to 6 seconds
+        const MAX_ALLOWED_NUM_QUEUE_REQUESTS: f64 = 16.0; // Default to 16 requests
+        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 4.0; // Default to 4 seconds
+        const MAX_ALLOWED_WAITING_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
 
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
 
