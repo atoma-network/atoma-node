@@ -1030,11 +1030,12 @@ pub mod inference_service_metrics {
                     time_to_first_token_seconds,
                     num_running_requests,
                 }) => {
-                    tracing::debug!(
+                    tracing::info!(
                         target = "atoma-service",
                         module = "inference_service_metrics",
                         level = "info",
-                        "current_model = {current_model}, model = {model}"
+                        "current_model = {current_model}, model = {model}, they are equal = {}",
+                        current_model == model
                     );
                     if current_model != model {
                         // NOTE: We only want to consider metrics for the current model
