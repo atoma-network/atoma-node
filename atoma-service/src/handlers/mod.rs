@@ -971,7 +971,12 @@ pub mod inference_service_metrics {
         } else if let Some(metrics) = VLLM_METRICS_CACHE.get_metrics().await {
             metrics
         } else {
-            // If no cached metrics, get them directly
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "No cached vLLM metrics, getting them directly"
+            );
             let vllm_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
                 vllm_chat_completions_service_urls
                     .iter()
@@ -984,7 +989,12 @@ pub mod inference_service_metrics {
         } else if let Some(metrics) = SGLANG_METRICS_CACHE.get_metrics().await {
             metrics
         } else {
-            // If no cached metrics, get them directly (this is the "None" case)
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "No cached SgLang metrics, getting them directly"
+            );
             let sglang_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
                 sglang_chat_completions_service_urls
                     .iter()
@@ -1020,7 +1030,7 @@ pub mod inference_service_metrics {
                     time_to_first_token_seconds,
                     num_running_requests,
                 }) => {
-                    info!(
+                    tracing::debug!(
                         target = "atoma-service",
                         module = "inference_service_metrics",
                         level = "info",
