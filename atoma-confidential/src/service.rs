@@ -182,7 +182,7 @@ impl AtomaConfidentialCompute {
         tracing::info!(
             target = "atoma-confidential-compute-service",
             event = "new_confidential_compute_service",
-            "New confidential compute service created, with num_devices: {num_devices} and is_cc_supported: {is_cc_supported}"
+            "New confidential compute service created, with num_devices: {num_devices}, is_cc_supported: {is_cc_supported} and is_ppcie_enabled: {is_ppcie_enabled}"
         );
         Ok(Self {
             sui_client,
@@ -252,7 +252,7 @@ impl AtomaConfidentialCompute {
                 service_shared_secret_receiver,
                 shutdown_signal,
             )?;
-            if service.is_cc_supported {
+            if service.is_cc_supported || service.is_ppcie_enabled {
                 tracing::info!(
                     target = "atoma-confidential-compute-service",
                     event = "submit_nvidia_cc_attestation",
