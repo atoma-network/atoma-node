@@ -529,7 +529,7 @@ pub mod inference_service_metrics {
     type MetricsLock = Arc<RwLock<CachedMetrics>>;
 
     /// The default interval for updating the metrics
-    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 2_500;
+    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 5_000;
 
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
