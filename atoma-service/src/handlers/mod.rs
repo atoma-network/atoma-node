@@ -1010,8 +1010,8 @@ pub mod inference_service_metrics {
         chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_NUM_QUEUE_REQUESTS: f64 = 16.0; // Default to 16 requests
-        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 4.0; // Default to 4 seconds
+        const MAX_ALLOWED_NUM_QUEUE_REQUESTS: f64 = 12.0; // Default to 12 requests
+        const MAX_ALLOWED_TIME_TO_FIRST_TOKEN_SECONDS: f64 = 6.0; // Default to 4 seconds
         const MAX_ALLOWED_WAITING_TIME_SECONDS: f64 = 4.0; // Default to 4 seconds
 
         type ChatCompletionsServiceUrls = Vec<(String, String)>;
