@@ -15,41 +15,49 @@ scrape_configs:
 
   - job_name: "vllm1"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm1:8000"]
 
   - job_name: "vllm2"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm2:8000"]
 
   - job_name: "vllm3"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm3:8000"]
 
   - job_name: "vllm4"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm4:8000"]
 
   - job_name: "vllm5"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm5:8000"]
 
   - job_name: "vllm6"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm6:8000"]
 
   - job_name: "vllm7"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm7:8000"]
 
   - job_name: "vllm8"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["vllm8:8000"]
 
@@ -64,6 +72,7 @@ scrape_configs:
 
   - job_name: "sglang"
     metrics_path: "/metrics"
+    scrape_interval: 500ms
     static_configs:
       - targets: ["host.docker.internal:3000"]
 
