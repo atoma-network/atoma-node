@@ -529,7 +529,7 @@ pub mod inference_service_metrics {
     type MetricsLock = Arc<RwLock<CachedMetrics>>;
 
     /// The default interval for updating the metrics
-    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 5_000;
+    const DEFAULT_METRICS_UPDATE_INTERVAL: u64 = 30;
 
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -631,14 +631,14 @@ pub mod inference_service_metrics {
         let sglang_chat_completions_service_urls = Arc::new(sglang_chat_completions_service_urls);
         tokio::spawn(async move {
             let metrics_interval =
-                metrics_update_interval.unwrap_or(DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS);
+                metrics_update_interval.unwrap_or(DEFAULT_METRICS_UPDATE_INTERVAL);
             info!(
                 target = "atoma-service",
                 module = "inference_service_metrics",
                 level = "info",
                 "Metrics update interval: {metrics_interval} seconds"
             );
-            let mut interval = time::interval(Duration::from_millis(metrics_interval));
+            let mut interval = time::interval(Duration::from_secs(metrics_interval));
             loop {
                 interval.tick().await;
                 if !vllm_chat_completions_service_urls.is_empty() {
@@ -749,22 +749,22 @@ pub mod inference_service_metrics {
         );
 
         let queue_time_query = format!(
-            "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[5s])))"
+            "histogram_quantile(0.90, sum by (le,job) (rate(vllm:request_queue_time_seconds_bucket{{job=~\"{jobs}\"}}[30s])))"
         );
         let num_running_requests_query = format!(
             "quantile_over_time(
                 0.90,
-                vllm:num_requests_running{{job=~\"{jobs}\"}}[5s]
+                vllm:num_requests_running{{job=~\"{jobs}\"}}[30s]
             )"
         );
         let num_queue_requests_query = format!(
             "quantile_over_time(
                 0.90,
-                vllm:num_queue_reqs{{job=~\"{jobs}\"}}[5s]
+                vllm:num_queue_reqs{{job=~\"{jobs}\"}}[30s]
             )"
         );
         let ttft_query =
-            format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[5s])))");
+            format!("histogram_quantile(0.90, sum by (le,job) (rate(vllm:time_to_first_token_seconds_bucket{{job=~\"{jobs}\"}}[30s])))");
 
         let (
             queue_time_response,
@@ -861,31 +861,31 @@ pub mod inference_service_metrics {
             
             quantile_over_time(
                 0.90,
-                sglang:num_queue_reqs{{job=\"{jobs}\"}}[5s]
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
             )
             
-            histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[5s])))"
+            histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))"
         );
         let waiting_queue_time = format!(
             "quantile_over_time(
                 0.90,
-                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[5s]
+                sglang:avg_request_queue_latency{{job=\"{jobs}\"}}[30s]
             )"
         );
         let num_queue_requests = format!(
             "quantile_over_time(
                 0.90,
-                sglang:num_queue_reqs{{job=\"{jobs}\"}}[5s]
+                sglang:num_queue_reqs{{job=\"{jobs}\"}}[30s]
             )"
         );
         let num_running_requests = format!(
             "quantile_over_time(
                 0.90,
-                sglang:num_running_reqs{{job=\"{jobs}\"}}[5s]
+                sglang:num_running_reqs{{job=\"{jobs}\"}}[30s]
             )"
         );
         let ttft = format!(
-            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[5s])))",
+            "histogram_quantile(0.90, sum by (le,job) (rate(sglang:time_to_first_token_seconds_bucket{{job=\"{jobs}\"}}[30s])))",
         );
         let (
             waiting_queue_time_response,
