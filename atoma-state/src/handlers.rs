@@ -713,7 +713,6 @@ pub(crate) async fn handle_claimed_stack_event(
 /// 1. Matches the incoming event to determine the type of operation to perform.
 /// 2. For `GetAvailableStackWithComputeUnits`, it retrieves the available stack and sends the result.
 /// 3. For `UpdateStackNumComputeUnits`, it updates the number of compute units for the specified stack.
-/// 4. For `UpdateStackTotalHash`, it updates the total hash for the specified stack.
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_state_manager_event(
     state_manager: &AtomaStateManager,
@@ -757,15 +756,6 @@ pub(crate) async fn handle_state_manager_event(
                 concurrent_requests,
             )
             .await?;
-        }
-        AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash,
-        } => {
-            state_manager
-                .state
-                .update_stack_total_hash(stack_small_id, total_hash)
-                .await?;
         }
         AtomaAtomaStateManagerEvent::GetModelPricing {
             model,
