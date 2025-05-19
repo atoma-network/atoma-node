@@ -239,7 +239,6 @@ impl Streamer {
     ///
     /// This method sends two events to the state manager:
     /// * `UpdateStackNumTokens` - Updates the token count for the stack
-    /// * `UpdateStackTotalHash` - Updates the combined hash of payload and response
     #[instrument(
         level = "info",
         skip(self, usage),
@@ -325,30 +324,6 @@ impl Streamer {
         );
 
         if let Some(stack_small_id) = self.stack_small_id {
-            // Calculate and update total hash
-            let total_hash = blake2b_hash(&[self.payload_hash, response_hash].concat());
-            let total_hash_bytes: [u8; 32] = total_hash
-                .as_slice()
-                .try_into()
-                .expect("Invalid BLAKE2b hash length");
-
-            // Update stack total hash
-            if let Err(e) =
-                self.state_manager_sender
-                    .send(AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-                        stack_small_id,
-                        total_hash: total_hash_bytes,
-                    })
-            {
-                error!(
-                    target = "atoma-service-streamer",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error updating stack total hash: {}",
-                    e
-                );
-            }
-
             // Update stack num tokens
             let concurrent_requests = handle_concurrent_requests_count_decrement(
                 &self.concurrent_requests,

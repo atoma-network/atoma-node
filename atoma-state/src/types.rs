@@ -279,13 +279,6 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Total amount for output in fiat currency
         output_amount: i64,
     },
-    /// Represents an update to the total hash of a stack
-    UpdateStackTotalHash {
-        /// Unique small integer identifier for the stack
-        stack_small_id: i64,
-        /// Total hash of the stack
-        total_hash: [u8; 32],
-    },
     /// Gets an available stack with enough compute units for a given stack and public key
     GetAvailableStackWithComputeUnits {
         /// Unique small integer identifier for the stack
