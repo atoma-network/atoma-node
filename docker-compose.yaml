@@ -295,7 +295,7 @@ services:
     profiles:
       - gpu
     ports:
-      - "${ATOMA_SERVICE_PORT:-3000}:3000"
+      - "${ATOMA_SERVICE_SGLANG_PORT:-50000}:3000"
       - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
       - "${ATOMA_P2P_PORT:-4001}:4001/udp"
       - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
