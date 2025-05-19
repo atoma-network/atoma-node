@@ -9,7 +9,6 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::{
     constants::{NONCE_SIZE, PAYLOAD_HASH_SIZE, SALT_SIZE},
     encryption::encrypt_plaintext,
-    hashing::blake2b_hash,
 };
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
