@@ -66,7 +66,7 @@ paths:
 
         # Arguments
 
-        * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+        * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated tokens count from middleware
         * `state` - Application state containing the inference client and keystore
         * `payload` - The chat completion request body
 
@@ -112,7 +112,7 @@ paths:
 
         # Arguments
 
-        * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+        * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated tokens count from middleware
         * `state` - Application state containing the inference client and keystore
         * `payload` - The chat completion request body
 

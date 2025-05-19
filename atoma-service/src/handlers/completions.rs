@@ -49,7 +49,7 @@ use crate::{
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
     inference_service_metrics::get_best_available_chat_completions_service_url,
-    request_model::{ComputeUnitsEstimate, RequestModel},
+    request_model::{RequestModel, TokensEstimate},
     DEFAULT_MAX_TOKENS,
 };
 
@@ -141,7 +141,7 @@ pub struct CompletionsOpenApi;
 ///
 /// # Arguments
 ///
-/// * `Extension((stack_small_id, estimated_total_compute_units))` - Stack ID and estimated compute units count from middleware
+/// * `Extension((stack_small_id, estimated_total_tokens))` - Stack ID and estimated tokens count from middleware
 /// * `state` - Application state containing the inference client and keystore
 /// * `payload` - The chat completion request body
 ///
@@ -182,12 +182,12 @@ pub async fn completions_handler(
 ) -> Result<Response<Body>, AtomaServiceError> {
     let RequestMetadata {
         stack_small_id,
-        estimated_total_compute_units,
+        estimated_output_tokens,
         num_input_tokens,
         payload_hash,
         client_encryption_metadata,
         user_address,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         ..
     } = request_metadata;
     info!(
@@ -213,12 +213,12 @@ pub async fn completions_handler(
         endpoint.clone(),
         payload_hash,
         stack_small_id,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address.clone(),
         is_stream,
         payload.clone(),
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_tokens,
         client_encryption_metadata,
         headers,
     )
@@ -226,7 +226,7 @@ pub async fn completions_handler(
     {
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
-                estimated_total_compute_units,
+                num_input_tokens + estimated_output_tokens,
                 &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
             if !is_stream {
@@ -252,7 +252,7 @@ pub async fn completions_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -261,9 +261,11 @@ pub async fn completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    estimated_output_tokens,
+                    0,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -323,7 +325,7 @@ pub struct ConfidentialCompletionsOpenApi;
 /// # Arguments
 /// * `request_metadata` - Extension containing request context including:
 ///   - `stack_small_id` - Unique identifier for the requesting stack
-///   - `estimated_total_compute_units` - Predicted compute cost
+///   - `estimated_total_tokens` - Predicted tokens
 ///   - `payload_hash` - Hash of the request payload
 ///   - `client_encryption_metadata` - Encryption parameters for confidential compute
 /// * `state` - Application state containing service connections and configuration
@@ -382,11 +384,11 @@ pub async fn confidential_completions_handler(
     let RequestMetadata {
         stack_small_id,
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_tokens,
         payload_hash,
         client_encryption_metadata,
         user_address,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         ..
     } = request_metadata;
     info!(
@@ -417,12 +419,12 @@ pub async fn confidential_completions_handler(
         endpoint.clone(),
         payload_hash,
         stack_small_id,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address.clone(),
         is_stream,
         payload.clone(),
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_tokens,
         client_encryption_metadata,
         headers,
     )
@@ -430,7 +432,7 @@ pub async fn confidential_completions_handler(
     {
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
-                estimated_total_compute_units,
+                num_input_tokens + estimated_output_tokens,
                 &[KeyValue::new(MODEL_KEY, model.to_owned())],
             );
             if !is_stream {
@@ -458,7 +460,7 @@ pub async fn confidential_completions_handler(
                 update_stack_num_compute_units(
                     &state.state_manager_sender,
                     stack_small_id,
-                    estimated_total_compute_units,
+                    num_input_tokens + estimated_output_tokens,
                     0,
                     &endpoint,
                     concurrent_requests,
@@ -467,9 +469,11 @@ pub async fn confidential_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
-                    estimated_total_compute_units,
+                    num_input_tokens,
                     0,
-                    price_per_one_million_compute_units,
+                    estimated_output_tokens,
+                    0,
+                    price_per_one_million_tokens,
                     &endpoint,
                 )?;
             }
@@ -495,7 +499,7 @@ pub async fn confidential_completions_handler(
 /// * `stack_small_id` - Unique identifier for the stack making the request
 /// * `is_stream` - Boolean flag indicating whether this is a streaming request
 /// * `payload` - The JSON payload containing the chat completion request
-/// * `estimated_total_compute_units` - Estimated compute units for the request
+/// * `estimated_total_tokens` - Estimated tokens for the request
 /// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
 ///
 /// # Returns
@@ -530,7 +534,7 @@ pub async fn confidential_completions_handler(
     fields(
         path = COMPLETIONS_PATH,
         stack_small_id,
-        estimated_total_compute_units,
+        estimated_total_tokens = num_input_tokens + estimated_output_tokens,
         payload_hash
     ),
     err
@@ -546,7 +550,7 @@ async fn handle_response(
     is_stream: bool,
     payload: Value,
     num_input_tokens: i64,
-    estimated_total_compute_units: i64,
+    estimated_output_tokens: i64,
     client_encryption_metadata: Option<EncryptionMetadata>,
     headers: HeaderMap,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -565,7 +569,7 @@ async fn handle_response(
             payload,
             stack_small_id,
             num_input_tokens,
-            estimated_total_compute_units,
+            estimated_output_tokens,
             price_per_one_million_compute_units,
             user_address,
             payload_hash,
@@ -579,7 +583,8 @@ async fn handle_response(
             state,
             payload,
             stack_small_id,
-            estimated_total_compute_units,
+            num_input_tokens,
+            estimated_output_tokens,
             price_per_one_million_compute_units,
             user_address,
             payload_hash,
@@ -608,7 +613,7 @@ async fn handle_response(
 /// * `state` - Application state containing service configuration and keystore
 /// * `payload` - The JSON payload containing the chat completion request
 /// * `stack_small_id` - Unique identifier for the stack making the request
-/// * `estimated_total_compute_units` - Estimated compute units count for the request
+/// * `estimated_total_tokens` - Estimated tokens count for the request
 /// * `payload_hash` - BLAKE2b hash of the original request payload
 /// * `client_encryption_metadata` - The client encryption metadata for the request
 /// * `endpoint` - The endpoint where the request was made
@@ -646,7 +651,7 @@ async fn handle_response(
         path = COMPLETIONS_PATH,
         completion_type = "non-streaming",
         stack_small_id,
-        estimated_total_compute_units,
+        estimated_total_tokens,
         payload_hash
     ),
     err
@@ -656,7 +661,8 @@ async fn handle_non_streaming_response(
     state: &AppState,
     payload: Value,
     stack_small_id: Option<i64>,
-    estimated_total_compute_units: i64,
+    num_input_tokens: i64,
+    estimated_total_tokens: i64,
     price_per_one_million_compute_units: i64,
     user_address: String,
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
@@ -689,16 +695,18 @@ async fn handle_non_streaming_response(
         level = "debug",
         "Received non-streaming chat completions response from {endpoint}"
     );
-    let total_compute_units = utils::extract_total_num_tokens(&response_body, model);
+    let (input_tokens, output_tokens) = utils::extract_total_num_tokens(&response_body, model);
 
     utils::serve_non_streaming_response(
         state,
         response_body,
         stack_small_id,
-        estimated_total_compute_units,
+        num_input_tokens,
+        estimated_total_tokens,
         price_per_one_million_compute_units,
         user_address,
-        total_compute_units,
+        input_tokens,
+        output_tokens,
         payload_hash,
         client_encryption_metadata,
         endpoint,
@@ -721,7 +729,7 @@ async fn handle_non_streaming_response(
 /// * `state` - Application state containing service configuration and connections
 /// * `payload` - The JSON payload containing the chat completion request
 /// * `stack_small_id` - Unique identifier for the stack making the request
-/// * `estimated_total_compute_units` - Estimated compute units count for the request
+/// * `estimated_total_tokens` - Estimated tokens count for the request
 /// * `payload_hash` - BLAKE2b hash of the original request payload
 /// * `streaming_encryption_metadata` - The client encryption metadata for the streaming request
 /// * `endpoint` - The endpoint where the request was made
@@ -751,7 +759,7 @@ async fn handle_non_streaming_response(
         path = COMPLETIONS_PATH,
         completion_type = "streaming",
         stack_small_id,
-        estimated_total_compute_units,
+        estimated_total_tokens,
         payload_hash
     ),
     err
@@ -762,8 +770,8 @@ async fn handle_streaming_response(
     mut payload: Value,
     stack_small_id: Option<i64>,
     num_input_tokens: i64,
-    estimated_total_compute_units: i64,
-    price_per_one_million_compute_units: i64,
+    estimated_output_tokens: i64,
+    price_per_one_million_tokens: i64,
     user_address: String,
     payload_hash: [u8; 32],
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
@@ -844,11 +852,35 @@ async fn handle_streaming_response(
         })?;
 
     if !response.status().is_success() {
-        let error = response
-            .status()
-            .canonical_reason()
-            .unwrap_or("Unknown error");
-        handle_status_code_error(response.status(), &endpoint, error)?;
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to read response body: {}", e),
+                endpoint: endpoint.to_string(),
+            })?;
+        // Try to parse the error message from the response body
+        let error_message = serde_json::from_slice::<Value>(&bytes).map_or_else(
+            |_| {
+                status
+                    .canonical_reason()
+                    .unwrap_or("Unknown error")
+                    .to_string()
+            },
+            |json| {
+                json.get("error")
+                    .or_else(|| json.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error"))
+                    .to_string()
+            },
+        );
+        handle_status_code_error(status, &endpoint, &error_message)?;
+        return Err(AtomaServiceError::InternalError {
+            message: format!("Unexpected error handling failure: {}", error_message),
+            endpoint: endpoint.to_string(),
+        });
     }
 
     let stream = response.bytes_stream();
@@ -860,7 +892,7 @@ async fn handle_streaming_response(
         state.client_dropped_streamer_connections.clone(),
         stack_small_id,
         num_input_tokens,
-        estimated_total_compute_units,
+        estimated_output_tokens,
         payload_hash,
         state.keystore.clone(),
         state.address_index,
@@ -869,7 +901,7 @@ async fn handle_streaming_response(
         endpoint,
         request_id,
         timer,
-        price_per_one_million_compute_units,
+        price_per_one_million_tokens,
         user_address,
     ))
     .keep_alive(
@@ -924,10 +956,10 @@ impl RequestModel for RequestModelCompletions {
     /// We support either string or array of content parts. We further assume that all content messages
     /// share the same previous messages. That said, we further assume that content parts formatted into arrays
     /// are to be concatenated and treated as a single message, by the model and from the estimate point of view.
-    fn get_compute_units_estimate(
+    fn get_tokens_estimate(
         &self,
         tokenizer: Option<&Tokenizer>,
-    ) -> Result<ComputeUnitsEstimate, AtomaServiceError> {
+    ) -> Result<TokensEstimate, AtomaServiceError> {
         // Helper function to count the number of tokens in a text prompt
         let count_text_tokens =
             |text: &str, tokenizer: &tokenizers::Tokenizer| -> Result<u64, AtomaServiceError> {
@@ -946,16 +978,16 @@ impl RequestModel for RequestModelCompletions {
                     message: "Tokenizer is required for `RequestModelCompletions`".to_string(),
                     endpoint: COMPLETIONS_PATH.to_string(),
                 })?;
-                let num_input_compute_units =
-                    count_text_tokens(prompt, tokenizer).map_err(|err| {
-                        AtomaServiceError::InternalError {
-                            message: format!("Failed to count text tokens: {err:?}"),
-                            endpoint: COMPLETIONS_PATH.to_string(),
-                        }
-                    })?;
-                Ok(ComputeUnitsEstimate {
-                    num_input_compute_units,
-                    max_total_compute_units: self.max_completion_tokens,
+                let num_input_tokens = count_text_tokens(prompt, tokenizer).map_err(|err| {
+                    AtomaServiceError::InternalError {
+                        message: format!("Failed to count text tokens: {err:?}"),
+                        endpoint: COMPLETIONS_PATH.to_string(),
+                    }
+                })?;
+                Ok(TokensEstimate {
+                    num_input_tokens,
+                    max_output_tokens: self.max_completion_tokens,
+                    max_total_tokens: self.max_completion_tokens,
                 })
             }
             CompletionsPrompt::List(prompts) => {
@@ -963,28 +995,30 @@ impl RequestModel for RequestModelCompletions {
                     message: "Tokenizer is required for `RequestModelCompletions`".to_string(),
                     endpoint: COMPLETIONS_PATH.to_string(),
                 })?;
-                let num_input_compute_units = prompts
+                let num_input_tokens = prompts
                     .iter()
                     .map(|prompt| count_text_tokens(prompt, tokenizer).unwrap_or(0))
                     .sum();
-                Ok(ComputeUnitsEstimate {
-                    num_input_compute_units,
-                    max_total_compute_units: self.max_completion_tokens,
+                Ok(TokensEstimate {
+                    num_input_tokens,
+                    max_output_tokens: self.max_completion_tokens,
+                    max_total_tokens: self.max_completion_tokens,
                 })
             }
             CompletionsPrompt::Tokens(tokens) => {
-                let num_input_compute_units = tokens.len() as u64;
-                Ok(ComputeUnitsEstimate {
-                    num_input_compute_units,
-                    max_total_compute_units: self.max_completion_tokens,
+                let num_input_tokens = tokens.len() as u64;
+                Ok(TokensEstimate {
+                    num_input_tokens,
+                    max_output_tokens: self.max_completion_tokens,
+                    max_total_tokens: self.max_completion_tokens,
                 })
             }
             CompletionsPrompt::TokenArrays(token_arrays) => {
-                let num_input_compute_units =
-                    token_arrays.iter().map(|tokens| tokens.len() as u64).sum();
-                Ok(ComputeUnitsEstimate {
-                    num_input_compute_units,
-                    max_total_compute_units: self.max_completion_tokens,
+                let num_input_tokens = token_arrays.iter().map(|tokens| tokens.len() as u64).sum();
+                Ok(TokensEstimate {
+                    num_input_tokens,
+                    max_output_tokens: self.max_completion_tokens,
+                    max_total_tokens: self.max_completion_tokens,
                 })
             }
         }
@@ -1228,14 +1262,45 @@ pub mod utils {
         })?;
 
         if !response.status().is_success() {
-            let error = response
-                .status()
-                .canonical_reason()
-                .unwrap_or("Unknown error");
-            handle_status_code_error(response.status(), endpoint, error)?;
+            let status = response.status();
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| AtomaServiceError::InternalError {
+                    message: format!("Failed to read response body: {}", e),
+                    endpoint: endpoint.to_string(),
+                })?;
+            // Try to parse the error message from the response body
+            let error_message = serde_json::from_slice::<Value>(&bytes).map_or_else(
+                |_| {
+                    status
+                        .canonical_reason()
+                        .unwrap_or("Unknown error")
+                        .to_string()
+                },
+                |json| {
+                    json.get("error")
+                        .or_else(|| json.get("message"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error"))
+                        .to_string()
+                },
+            );
+            handle_status_code_error(status, endpoint, &error_message)?;
+            return Err(AtomaServiceError::InternalError {
+                message: format!("Unexpected error handling failure: {}", error_message),
+                endpoint: endpoint.to_string(),
+            });
         }
 
-        response.json::<Value>().await.map_err(|e| {
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to read response body: {}", e),
+                endpoint: endpoint.to_string(),
+            })?;
+        let response_body = serde_json::from_slice::<Value>(&bytes).map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error reading response body, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -1243,11 +1308,10 @@ pub mod utils {
                     stack_small_id,
                     e
                 ),
-                // NOTE: We don't know the number of tokens processed for this request,
-                // as the returned output is invalid JSON. For this reason, we set it to 0.
                 endpoint: endpoint.to_string(),
             }
-        })
+        })?;
+        Ok(response_body)
     }
 
     /// Extracts and tracks token usage metrics from a chat completion response.
@@ -1297,14 +1361,15 @@ pub mod utils {
     /// let total = extract_total_num_tokens(&response_body, "gpt-4");
     /// assert_eq!(total, 30);
     /// ```
-    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> i64 {
-        let mut total_compute_units = 0;
+    pub fn extract_total_num_tokens(response_body: &Value, model: &str) -> (i64, i64) {
+        let mut input_tokens = 0;
+        let mut output_tokens = 0;
         if let Some(usage) = response_body.get(USAGE_KEY) {
             if let Some(prompt_tokens) = usage.get(PROMPT_TOKENS_KEY) {
                 let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
                 CHAT_COMPLETIONS_INPUT_TOKENS_METRICS
                     .add(prompt_tokens, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                total_compute_units += prompt_tokens;
+                input_tokens += prompt_tokens;
             }
             if let Some(completion_tokens) = usage.get(COMPLETION_TOKENS_KEY) {
                 let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
@@ -1312,10 +1377,10 @@ pub mod utils {
                     completion_tokens,
                     &[KeyValue::new(MODEL_KEY, model.to_owned())],
                 );
-                total_compute_units += completion_tokens;
+                output_tokens += completion_tokens;
             }
         }
-        total_compute_units as i64
+        (input_tokens as i64, output_tokens as i64)
     }
 
     /// Processes and serves a non-streaming chat completion response by handling signature verification,
@@ -1334,8 +1399,8 @@ pub mod utils {
     /// * `state` - Application state containing service configuration and connections
     /// * `response_body` - The JSON response body from the inference service
     /// * `stack_small_id` - Unique identifier for the stack making the request
-    /// * `estimated_total_compute_units` - Initially estimated compute units for the request
-    /// * `total_compute_units` - Actual compute units used by the request
+    /// * `estimated_total_tokens` - Initially estimated tokens for the request
+    /// * `total_tokens` - Actual tokens used by the request
     /// * `payload_hash` - BLAKE2b hash of the original request payload
     /// * `client_encryption_metadata` - Optional encryption metadata for confidential compute
     /// * `endpoint` - The API endpoint path where the request was received
@@ -1372,13 +1437,13 @@ pub mod utils {
     /// # Instrumentation
     ///
     /// This function is instrumented with:
-    /// - Info-level tracing with fields: stack_small_id, estimated_total_compute_units, payload_hash, endpoint
+    /// - Info-level tracing with fields: stack_small_id, estimated_total_tokens, payload_hash, endpoint
     /// - Prometheus metrics for response timing
     /// - Detailed logging of compute unit usage
     #[instrument(
         level = "info",
         skip_all,
-        fields(stack_small_id, estimated_total_compute_units, payload_hash, endpoint),
+        fields(stack_small_id, estimated_total_tokens = num_input_tokens + estimated_output_tokens, payload_hash, endpoint),
         err
     )]
     #[allow(clippy::too_many_arguments)]
@@ -1386,10 +1451,12 @@ pub mod utils {
         state: &AppState,
         mut response_body: Value,
         stack_small_id: Option<i64>,
-        estimated_total_compute_units: i64,
+        num_input_tokens: i64,
+        estimated_output_tokens: i64,
         price_per_one_million_compute_units: i64,
         user_address: String,
-        total_compute_units: i64,
+        input_tokens: i64,
+        output_tokens: i64,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         client_encryption_metadata: Option<EncryptionMetadata>,
         endpoint: String,
@@ -1401,10 +1468,10 @@ pub mod utils {
             level = "info",
             endpoint = "handle_non_streaming_response",
             stack_small_id = stack_small_id,
-            estimated_total_compute_units = estimated_total_compute_units,
+            estimated_total_tokens = num_input_tokens + estimated_output_tokens,
             payload_hash = hex::encode(payload_hash),
             "Total compute units: {}",
-            total_compute_units,
+            input_tokens + output_tokens,
         );
 
         if let Err(e) = sign_response_and_update_stack_hash(
@@ -1483,8 +1550,8 @@ pub mod utils {
             update_stack_num_compute_units(
                 &state.state_manager_sender,
                 stack_small_id,
-                estimated_total_compute_units,
-                total_compute_units,
+                estimated_output_tokens,
+                input_tokens + output_tokens,
                 &endpoint,
                 concurrent_requests,
             )?;
@@ -1492,8 +1559,10 @@ pub mod utils {
             update_fiat_amount(
                 &state.state_manager_sender,
                 user_address,
-                estimated_total_compute_units,
-                total_compute_units,
+                num_input_tokens,
+                input_tokens,
+                estimated_output_tokens,
+                output_tokens,
                 price_per_one_million_compute_units,
                 &endpoint,
             )?;

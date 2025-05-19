@@ -361,7 +361,10 @@ mod middleware {
         let request_metadata = RequestMetadata::default();
 
         assert_eq!(request_metadata.stack_small_id, None);
-        assert_eq!(request_metadata.estimated_total_compute_units, 0);
+        assert_eq!(
+            request_metadata.num_input_tokens + request_metadata.estimated_output_tokens,
+            0
+        );
         assert_eq!(request_metadata.payload_hash, [0u8; 32]);
 
         let request_metadata = request_metadata
@@ -370,7 +373,7 @@ mod middleware {
 
         assert_eq!(request_metadata.stack_small_id, Some(1));
         assert_eq!(request_metadata.num_input_tokens, 100);
-        assert_eq!(request_metadata.estimated_total_compute_units, 200);
+        assert_eq!(request_metadata.estimated_output_tokens, 200);
 
         let request_metadata = request_metadata.with_payload_hash([3u8; 32]);
 
@@ -782,7 +785,7 @@ mod middleware {
 
             assert_eq!(metadata.stack_small_id, Some(1));
             // The exact token count will depend on your tokenizer, but we can verify it's non-zero
-            assert!(metadata.estimated_total_compute_units > 0);
+            assert!(metadata.num_input_tokens + metadata.estimated_output_tokens > 0);
 
             Ok(Response::new(Body::empty()))
         }
@@ -849,7 +852,7 @@ mod middleware {
             // 1. Should include tokens from both messages
             // 2. Should include max_tokens (50)
             // 3. Should include safety margins (3 tokens per message)
-            assert!(metadata.estimated_total_compute_units > 50); // At least more than max_tokens
+            assert!(metadata.num_input_tokens + metadata.estimated_output_tokens > 50); // At least more than max_tokens
 
             // You could add more specific assertions based on your tokenizer's behavior
             // For example, if you know the exact token counts:
@@ -1111,12 +1114,12 @@ mod middleware {
         let initial_metadata = RequestMetadata {
             stack_small_id: Some(42),
             num_input_tokens: 50,
-            estimated_total_compute_units: 100,
+            estimated_output_tokens: 50,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
-            price_per_one_million_compute_units: 0,
+            price_per_one_million_tokens: 0,
             user_address: "0x1".to_string(),
         };
 
@@ -1144,7 +1147,10 @@ mod middleware {
 
             // Verify that the payload hash was updated but other fields preserved
             assert_eq!(metadata.stack_small_id, Some(42));
-            assert_eq!(metadata.estimated_total_compute_units, 100);
+            assert_eq!(
+                metadata.num_input_tokens + metadata.estimated_output_tokens,
+                100
+            );
             assert_ne!(metadata.payload_hash, [0u8; 32]);
             assert_eq!(
                 metadata.payload_hash,
@@ -1203,7 +1209,7 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // Verify compute units are calculated correctly
-            assert!(metadata.estimated_total_compute_units > 0);
+            assert!(metadata.num_input_tokens + metadata.estimated_output_tokens > 0);
             assert_eq!(metadata.request_type, RequestType::Embeddings);
 
             Ok(Response::new(Body::empty()))
@@ -1281,7 +1287,10 @@ mod middleware {
                 .expect("Metadata should be set");
 
             // For 4x4 image with n=2, should be 32 compute units (4 * 4 * 2)
-            assert_eq!(metadata.estimated_total_compute_units, 32);
+            assert_eq!(
+                metadata.num_input_tokens + metadata.estimated_output_tokens,
+                32
+            );
             assert_eq!(metadata.request_type, RequestType::ImageGenerations);
 
             Ok(Response::new(Body::empty()))
@@ -1739,12 +1748,12 @@ mod middleware {
         let initial_metadata = RequestMetadata {
             stack_small_id: Some(42),
             num_input_tokens: 50,
-            estimated_total_compute_units: 100,
+            estimated_output_tokens: 50,
             payload_hash: [0u8; 32],
             request_type: RequestType::ChatCompletions,
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
-            price_per_one_million_compute_units: 0,
+            price_per_one_million_tokens: 0,
             user_address: "0x1".to_string(),
         };
 
@@ -1766,7 +1775,10 @@ mod middleware {
 
             // Verify that the metadata was updated correctly
             assert_eq!(metadata.stack_small_id, Some(42)); // Original value preserved
-            assert_eq!(metadata.estimated_total_compute_units, 100); // Original value preserved
+            assert_eq!(
+                metadata.num_input_tokens + metadata.estimated_output_tokens,
+                100
+            ); // Original value preserved
             assert_ne!(metadata.payload_hash, [0u8; 32]); // Updated with new hash
             assert!(metadata.client_encryption_metadata.is_some()); // Updated with encryption metadata
 

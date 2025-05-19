@@ -713,7 +713,6 @@ pub(crate) async fn handle_claimed_stack_event(
 /// 1. Matches the incoming event to determine the type of operation to perform.
 /// 2. For `GetAvailableStackWithComputeUnits`, it retrieves the available stack and sends the result.
 /// 3. For `UpdateStackNumComputeUnits`, it updates the number of compute units for the specified stack.
-/// 4. For `UpdateStackTotalHash`, it updates the total hash for the specified stack.
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_state_manager_event(
     state_manager: &AtomaStateManager,
@@ -728,7 +727,7 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
             stack_small_id,
             sui_address,
-            total_num_compute_units,
+            total_num_tokens,
             result_sender,
         } => {
             let result = state_manager
@@ -736,36 +735,27 @@ pub(crate) async fn handle_state_manager_event(
                 .get_available_stack_with_compute_units(
                     stack_small_id,
                     &sui_address,
-                    total_num_compute_units,
+                    total_num_tokens,
                 )
                 .await;
             result_sender
                 .send(result)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
-        AtomaAtomaStateManagerEvent::UpdateStackNumComputeUnits {
+        AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
             stack_small_id,
-            estimated_total_compute_units,
-            total_compute_units,
+            estimated_total_tokens,
+            total_tokens,
             concurrent_requests,
         } => {
             handle_update_stack_num_compute_units_and_claim_funds(
                 state_manager,
                 stack_small_id,
-                estimated_total_compute_units,
-                total_compute_units,
+                estimated_total_tokens,
+                total_tokens,
                 concurrent_requests,
             )
             .await?;
-        }
-        AtomaAtomaStateManagerEvent::UpdateStackTotalHash {
-            stack_small_id,
-            total_hash,
-        } => {
-            state_manager
-                .state
-                .update_stack_total_hash(stack_small_id, total_hash)
-                .await?;
         }
         AtomaAtomaStateManagerEvent::GetModelPricing {
             model,
@@ -778,39 +768,52 @@ pub(crate) async fn handle_state_manager_event(
         }
         AtomaAtomaStateManagerEvent::LockFiatAmount {
             user_address,
-            amount,
+            estimated_input_amount,
+            estimated_output_amount,
         } => {
             state_manager
                 .state
-                .lock_fiat_amount(user_address, amount)
+                .lock_fiat_amount(
+                    user_address,
+                    estimated_input_amount,
+                    estimated_output_amount,
+                )
                 .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
-            estimated_total_amount,
-            total_amount,
+            estimated_input_amount,
+            input_amount,
+            estimated_output_amount,
+            output_amount,
         } => {
             state_manager
                 .state
-                .update_fiat_amount(user_address, estimated_total_amount, total_amount)
+                .update_fiat_amount(
+                    user_address,
+                    estimated_input_amount,
+                    input_amount,
+                    estimated_output_amount,
+                    output_amount,
+                )
                 .await?;
         }
     }
     Ok(())
 }
 
-/// Handles an update to the number of compute units in a stack.
+/// Handles an update to the number of tokens in a stack.
 ///
 /// This function processes an update to the number of compute units in a stack by parsing the event data
-/// and updating the corresponding stack in the database. If the ratio of compute units is greater than or equal to 95%,
+/// and updating the corresponding stack in the database. If the ratio of tokens is greater than or equal to 95%,
 /// it will submit a claim funds for stacks transaction.
 ///
 /// # Arguments
 ///
 /// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
 /// * `stack_small_id` - The unique identifier of the stack to be updated.
-/// * `estimated_total_compute_units` - The estimated total number of compute units in the stack.
-/// * `total_compute_units` - The total number of compute units in the stack.
+/// * `estimated_total_tokens` - The estimated total number of tokens in the stack.
+/// * `total_tokens` - The total number of tokens in the stack.
 ///
 /// # Returns
 ///
@@ -824,19 +827,14 @@ pub(crate) async fn handle_state_manager_event(
 #[instrument(
     level = "info",
     skip_all,
-    fields(
-        stack_small_id,
-        estimated_total_compute_units,
-        total_compute_units,
-        ratio
-    )
+    fields(stack_small_id, estimated_total_tokens, total_tokens, ratio)
 )]
 #[allow(clippy::cast_sign_loss)]
 pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
     state_manager: &AtomaStateManager,
     stack_small_id: i64,
-    estimated_total_compute_units: i64,
-    total_compute_units: i64,
+    estimated_total_tokens: i64,
+    total_tokens: i64,
     concurrent_requests: u64,
 ) -> Result<()> {
     info!(
@@ -854,8 +852,8 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         .state
         .update_stack_num_compute_units(
             stack_small_id,
-            estimated_total_compute_units,
-            total_compute_units,
+            estimated_total_tokens,
+            total_tokens,
             RATIO_FOR_CLAIM_STACK_THRESHOLD,
             concurrent_requests as i64,
         )
@@ -877,14 +875,14 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
         target = "atoma-state-handlers",
         event = "handle-update-stack-num-compute-units-and-claim-funds",
         "Stack {} has ratio {} with total compute units {} confidential state {} and is locked for claim {}",
-        stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
+        stack_small_id, ratio, total_tokens, is_confidential, is_locked_for_claim
     );
     if is_confidential && ratio >= RATIO_FOR_CLAIM_STACK_THRESHOLD && concurrent_requests == 0 {
         info!(
             target = "atoma-state-handlers",
             event = "handle-update-stack-num-compute-units-and-claim-funds",
             "Submitting claim funds for locked stack {} with ratio {} with total compute units {} confidential state {} and is locked for claim {}",
-            stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim
+            stack_small_id, ratio, total_tokens, is_confidential, is_locked_for_claim
         );
         let mut client = state_manager.client.write().await;
         if let Err(e) = client
@@ -902,7 +900,7 @@ pub(crate) async fn handle_update_stack_num_compute_units_and_claim_funds(
                     target = "atoma-state-handlers",
                     event = "handle-update-stack-num-compute-units-and-claim-funds",
                     "Failed to submit claim funds for locked stack {} with ratio {} with total compute units {} confidential state {} and is locked for claim {}, with error {}",
-                    stack_small_id, ratio, total_compute_units, is_confidential, is_locked_for_claim, e
+                    stack_small_id, ratio, total_tokens, is_confidential, is_locked_for_claim, e
                 );
             return Err(AtomaStateManagerError::SuiClientError(e));
         }

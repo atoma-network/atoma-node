@@ -104,7 +104,7 @@ pub fn setup_logging() -> Result<(WorkerGuard, WorkerGuard)> {
         std::env::var("LOKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_LOKI_ENDPOINT.to_string());
 
     let (layer, task) = tracing_loki::builder()
-        .label("service_name", "atoma-proxy")?
+        .label("service_name", "atoma-node")?
         .extra_field("pid", format!("{}", process::id()))?
         .build_url(Url::parse(&loki_endpoint).unwrap())?;
 
