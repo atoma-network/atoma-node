@@ -60,8 +60,8 @@ use crate::{
 
 use super::{
     handle_confidential_compute_encryption_response, handle_status_code_error,
+    inference_service_metrics::get_best_available_chat_completions_service_url,
     request_model::{RequestModel, TokensEstimate},
-    vllm_metrics::get_best_available_chat_completions_service_url,
     DEFAULT_MAX_TOKENS,
 };
 
@@ -843,12 +843,15 @@ async fn handle_streaming_response(
             }
         })?;
     let (chat_completions_service_url, status_code) =
-        get_best_available_chat_completions_service_url(chat_completions_service_urls, model)
-            .await
-            .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
-                message: e.to_string(),
-                endpoint: endpoint.clone(),
-            })?;
+        get_best_available_chat_completions_service_url(
+            chat_completions_service_urls,
+            &model.to_lowercase(),
+        )
+        .await
+        .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
+            message: e.to_string(),
+            endpoint: endpoint.clone(),
+        })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
             message: "Too many requests".to_string(),
@@ -1067,8 +1070,8 @@ pub mod utils {
 
     use crate::handlers::{
         handle_concurrent_requests_count_decrement, handle_status_code_error,
-        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, update_fiat_amount,
-        vllm_metrics::get_best_available_chat_completions_service_url, COMPLETION_TOKENS_KEY,
+        inference_service_metrics::get_best_available_chat_completions_service_url,
+        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, update_fiat_amount, COMPLETION_TOKENS_KEY,
         PROMPT_TOKENS_KEY, USAGE_KEY,
     };
 

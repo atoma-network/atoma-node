@@ -34,5 +34,20 @@ pub const IMAGE_GENERATION_LATENCY_QUERY: &str = "mistral:image_generation_laten
 /// Number of running requests query
 pub const IMAGE_GENERATION_NUM_RUNNING_REQUESTS_QUERY: &str = "mistral:running_requests";
 
+/// Time to first token query
+pub const SGLANG_TIME_TO_FIRST_TOKEN_QUERY: &str = "sglang:time_to_first_token_seconds";
+
+/// Time per output token query
+pub const SGLANG_TIME_PER_OUTPUT_TOKEN_QUERY: &str = "sglang:inter_token_latency_seconds";
+
+/// Running requests query
+pub const SGLANG_RUNNING_REQUESTS_QUERY: &str = "sglang:num_running_reqs";
+
+/// Waiting requests query
+pub const SGLANG_AVG_QUEUE_LATENCY_QUERY: &str = "sglang:avg_request_queue_latency";
+
+/// Waiting requests query
+pub const SGLANG_WAITING_REQUESTS_QUERY: &str = "sglang:num_queue_reqs";
+
 /// One million, used for computing fiat amounts
 pub const ONE_MILLION: u128 = 1_000_000;
