@@ -54,6 +54,7 @@ scrape_configs:
       - targets: ["vllm8:8000"]
 
   - job_name: "otel-collector"
+    scrape_interval: 10s
     static_configs:
       - targets: ["otel-collector:8889"]
     metric_relabel_configs:
