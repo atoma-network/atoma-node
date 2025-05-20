@@ -48,9 +48,6 @@ const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
 /// The keep-alive-text chunk (used by mistralrs)
 const KEEP_ALIVE_TEXT_CHUNK: &[u8] = b"keep-alive-text\n";
 
-/// The choices key
-const CHOICES: &str = "choices";
-
 /// The ciphertext key
 const CIPHERTEXT_KEY: &str = "ciphertext";
 
