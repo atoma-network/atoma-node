@@ -48,9 +48,6 @@ const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
 /// The keep-alive-text chunk (used by mistralrs)
 const KEEP_ALIVE_TEXT_CHUNK: &[u8] = b"keep-alive-text\n";
 
-/// The choices key
-const CHOICES: &str = "choices";
-
 /// The ciphertext key
 const CIPHERTEXT_KEY: &str = "ciphertext";
 
@@ -639,44 +636,20 @@ impl Streamer {
 
         let (signature, response_hash) = self.sign_chunk(&chunk)?;
 
-        let Some(choices) = chunk.get(CHOICES).and_then(|choices| choices.as_array()) else {
-            error!(
-                target = "atoma-service",
-                level = "error",
-                endpoint = self.endpoint,
-                "Error getting choices from chunk"
-            );
-            return Poll::Ready(Some(Err(Error::new("Error getting choices from chunk"))));
-        };
-
-        if choices.is_empty() {
-            // Check if this is a final chunk with usage info
-            if let Some(usage) = chunk.get(USAGE_KEY) {
-                self.status = StreamStatus::Completed;
-                let mut chunk = if let Some(streaming_encryption_metadata) =
-                    self.streaming_encryption_metadata.as_ref()
-                {
-                    // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                    Self::handle_encryption_request(
-                        &chunk,
-                        Some(usage),
-                        streaming_encryption_metadata,
-                    )?
-                } else {
-                    chunk.clone()
-                };
-                self.handle_final_chunk(usage, response_hash)?;
-                update_chunk(&mut chunk, &signature, response_hash);
-                Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
+        // Check if this is a final chunk with usage info
+        if let Some(usage) = chunk.get(USAGE_KEY).filter(|v| !v.is_null()) {
+            self.status = StreamStatus::Completed;
+            let mut chunk = if let Some(streaming_encryption_metadata) =
+                self.streaming_encryption_metadata.as_ref()
+            {
+                // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
+                Self::handle_encryption_request(&chunk, Some(usage), streaming_encryption_metadata)?
             } else {
-                error!(
-                    target = "atoma-service",
-                    level = "error",
-                    endpoint = self.endpoint,
-                    "Error getting usage from chunk"
-                );
-                Poll::Ready(Some(Err(Error::new("Error getting usage from chunk"))))
-            }
+                chunk.clone()
+            };
+            self.handle_final_chunk(usage, response_hash)?;
+            update_chunk(&mut chunk, &signature, response_hash);
+            Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
         } else {
             let mut chunk = if let Some(streaming_encryption_metadata) =
                 self.streaming_encryption_metadata.as_ref()
