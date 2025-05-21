@@ -43,7 +43,7 @@ use tokio::sync::oneshot;
 use tracing::instrument;
 
 /// Body size limit for signature verification (contains the body size of the request)
-const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+const MAX_BODY_SIZE: usize = 1024 * 1024 * 1024; // 1GB
 
 /// The key for the model in the request body
 const MODEL: &str = "model";
