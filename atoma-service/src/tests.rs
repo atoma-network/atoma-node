@@ -1617,7 +1617,7 @@ mod middleware {
         let blake2b_hash: [u8; 32] = blake2b_hash(TEST_MESSAGE.as_bytes()).into();
 
         let encrypted_body_json = json!({
-            "ciphertext": "x".repeat(2 * 1024 * 1024),
+            "ciphertext": "x".repeat(2 * 1024 * 1024 * 1024),
             "salt": STANDARD.encode(salt),
             "nonce": STANDARD.encode([0u8; 12]),
             "node_dh_public_key": STANDARD.encode(server_dh_public_key.as_ref()),
