@@ -126,6 +126,8 @@ services:
     env_file: .env
     networks:
       - atoma-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
@@ -288,6 +290,28 @@ services:
         condition: service_started
         required: true
 
+  atoma-node-sglang:
+    <<: *atoma-node
+    profiles:
+      - gpu
+    ports:
+      - "${ATOMA_SERVICE_SGLANG_PORT:-50000}:3000"
+      - "127.0.0.1:${ATOMA_DAEMON_PORT:-3001}:3001"
+      - "${ATOMA_P2P_PORT:-4001}:4001/udp"
+      - "${ATOMA_P2P_PORT:-4001}:4001/tcp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      sglang:
+        condition: service_started
+        required: false
+      postgres-db:
+        condition: service_started
+        required: true
+      otel-collector:
+        condition: service_started
+        required: true
+
   atoma-node-no-nvidia:
     <<: *atoma-node-no-nvidia
     profiles:
@@ -310,6 +334,36 @@ services:
       otel-collector:
         condition: service_started
         required: true
+
+  sglang:
+    container_name: sglang
+    profiles: [chat_completions_sglang]
+    image: lmsysorg/sglang:latest
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    restart: always
+    network_mode: host # required by RDMA
+    privileged: true # required by RDMA
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    entrypoint: python3 -m sglang.launch_server
+    command:
+      --model-path ${SGLANG_MODEL_PATH} --tp 8 --enable-dp-attention --dp 8 --trust-remote-code --max-running-requests 128 --enable-metrics
+      --host 0.0.0.0
+      --port 3000
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   vllm1:
     <<: *inference-service-cuda
