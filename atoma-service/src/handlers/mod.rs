@@ -551,8 +551,6 @@ pub mod inference_service_metrics {
     /// The default interval for updating the metrics
     const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 1_000;
 
-    /// The timeout for the Prometheus metrics queries
-    const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
     /// Chat completions metrics
     #[derive(Debug, Clone)]
     struct ChatCompletionsMetrics {
@@ -659,12 +657,6 @@ pub mod inference_service_metrics {
                         &sglang_chat_completions_service_urls,
                     )
                     .await;
-                    info!(
-                        target = "atoma-service",
-                        module = "inference_service_metrics",
-                        level = "info",
-                        "Received SgLang metrics response for {sglang_chat_completions_service_urls:?}, {sglang_metrics:?}"
-                    );
                     if sglang_metrics.iter().any(std::result::Result::is_ok) {
                         SGLANG_METRICS_CACHE.update_metrics(sglang_metrics).await;
                     } else {
