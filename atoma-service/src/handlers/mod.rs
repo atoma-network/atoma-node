@@ -549,7 +549,18 @@ pub mod inference_service_metrics {
     type MetricsLock = Arc<RwLock<CachedMetrics>>;
 
     /// The default interval for updating the metrics
-    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 1_000;
+    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 300;
+
+    /// The timeout for the Prometheus metrics queries
+    const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// The HTTP client for the Prometheus metrics queries
+    static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+        reqwest::Client::builder()
+            .timeout(METRICS_TIMEOUT)
+            .build()
+            .expect("Failed to create HTTP client")
+    });
 
     /// Chat completions metrics
     #[derive(Debug, Clone)]
@@ -710,7 +721,9 @@ pub mod inference_service_metrics {
             jobs_with_url
                 .iter()
                 .map(|(model, chat_completions_service_url, job)| async move {
-                    let response = reqwest::get(format!("{chat_completions_service_url}/metrics"))
+                    let response = HTTP_CLIENT
+                        .get(format!("{chat_completions_service_url}/metrics"))
+                        .send()
                         .await
                         .map_err(|_| {
                             ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
