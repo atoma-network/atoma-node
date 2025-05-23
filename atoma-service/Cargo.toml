@@ -39,6 +39,8 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry_sdk = { workspace = true, features = [ "logs", "metrics", "rt-tokio", "trace" ] }
 prometheus = { workspace = true }
 prometheus-http-query = { workspace = true }
+prometheus-parse = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, features = [ "json" ] }
 sentry = { workspace = true }
 serde = { workspace = true }

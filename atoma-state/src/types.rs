@@ -247,15 +247,37 @@ pub struct Node {
 
 pub enum AtomaAtomaStateManagerEvent {
     /// Represents an update to the number of compute units in a stack
-    UpdateStackNumComputeUnits {
+    UpdateStackNumTokens {
         /// Unique small integer identifier for the stack
         stack_small_id: i64,
-        /// Estimated total number of compute units in the stack
-        estimated_total_compute_units: i64,
-        /// Total number of compute units in the stack
-        total_compute_units: i64,
+        /// Estimated total number of tokens in the stack
+        estimated_total_tokens: i64,
+        /// Total number of tokens in the stack
+        total_tokens: i64,
         /// Number of concurrent requests for the stack
         concurrent_requests: u64,
+    },
+    /// Represents an update to the amount of fiat currency for a user to be locked
+    LockFiatAmount {
+        /// User address
+        user_address: String,
+        /// Amount to be locked in fiat currency for input
+        estimated_input_amount: i64,
+        /// Amount to be locked in fiat currency for output
+        estimated_output_amount: i64,
+    },
+    /// Represents an update to the amount of fiat currency for a user, after the inference is done
+    UpdateFiatAmount {
+        /// User address
+        user_address: String,
+        /// Estimated total amount for input in fiat currency
+        estimated_input_amount: i64,
+        /// Total amount for input in fiat currency
+        input_amount: i64,
+        /// Estimated total amount for output in fiat currency
+        estimated_output_amount: i64,
+        /// Total amount for output in fiat currency
+        output_amount: i64,
     },
     /// Gets an available stack with enough compute units for a given stack and public key
     GetAvailableStackWithComputeUnits {
@@ -264,9 +286,16 @@ pub enum AtomaAtomaStateManagerEvent {
         /// Sui address of the user
         sui_address: String,
         /// Total number of compute units
-        total_num_compute_units: i64,
+        total_num_tokens: i64,
         /// Oneshot channel to send the result back to the sender channel
         result_sender: oneshot::Sender<Result<StackAvailability, AtomaStateManagerError>>,
+    },
+    /// Gets the pricing for a model
+    GetModelPricing {
+        /// Model name
+        model: String,
+        /// Oneshot channel to send the result back to the sender channel
+        result_sender: oneshot::Sender<Result<Option<i64>, AtomaStateManagerError>>,
     },
 }
 

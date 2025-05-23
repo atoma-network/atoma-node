@@ -80,6 +80,9 @@ impl Client {
     /// - Failed to get client from wallet context
     /// - Failed to get active address
     /// - Failed to retrieve node badge
+    #[instrument(level = "info", skip_all, err, fields(
+        config = %config.sui_config_path()
+    ))]
     pub async fn new(config: SuiConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
@@ -88,6 +91,8 @@ impl Client {
             config.request_timeout(),
             config.max_concurrent_requests(),
         )?;
+        let active_address = wallet_ctx.active_address()?;
+        info!("Current active address: {}", active_address);
         let node_badge = utils::get_node_badge(
             &wallet_ctx.get_client().await?,
             config.atoma_package_id(),
@@ -1490,6 +1495,10 @@ pub(crate) mod utils {
     /// - The function queries up to 100 objects at a time
     /// - The function filters objects by package and looks for the specific `NodeBadge` type
     /// - Object content is parsed to extract the `small_id` from the Move object's fields
+    #[instrument(level = "info", skip_all, fields(
+        endpoint = "get_node_badge",
+        address = %active_address
+    ))]
     pub async fn get_node_badge(
         client: &SuiClient,
         package: ObjectID,
