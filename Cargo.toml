@@ -58,6 +58,7 @@ opentelemetry-otlp          = "0.27.0"
 opentelemetry_sdk           = "0.27.0"
 prometheus                  = "0.13.4"
 prometheus-http-query       = "0.8.3"
+prometheus-parse            = "0.2.5"
 rand                        = "0.8.5"
 remote-attestation-verifier = { git = "https://github.com/atoma-network/nvrust.git", branch = "main", package = "remote-attestation-verifier" }
 reqwest                     = "0.12.12"
