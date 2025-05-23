@@ -50,10 +50,43 @@ pub const PROMPT_TOKENS_KEY: &str = "prompt_tokens";
 /// Key for the completion tokens in the usage in the response body
 pub const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
 
+const VLLM_RUNNING_REQUESTS_QUERY: &str = "num_requests_running";
+const VLLM_QUEUED_REQUESTS_QUERY: &str = "num_requests_waiting";
+const VLLM_SERVICE_PREFIX: &str = "vllm:";
+const SGLANG_RUNNING_REQUESTS_QUERY: &str = "num_running_reqs";
+const SGLANG_QUEUED_REQUESTS_QUERY: &str = "num_queue_reqs";
+const SGLANG_SERVICE_PREFIX: &str = "sglang:";
+
 #[derive(Debug, Clone)]
 pub enum InferenceService {
     Vllm,
     SgLang,
+}
+
+impl InferenceService {
+    #[must_use]
+    pub const fn get_queued_requests_metric_name(&self) -> &'static str {
+        match self {
+            Self::Vllm => VLLM_QUEUED_REQUESTS_QUERY,
+            Self::SgLang => SGLANG_QUEUED_REQUESTS_QUERY,
+        }
+    }
+
+    #[must_use]
+    pub const fn get_running_requests_metric_name(&self) -> &'static str {
+        match self {
+            Self::Vllm => VLLM_RUNNING_REQUESTS_QUERY,
+            Self::SgLang => SGLANG_RUNNING_REQUESTS_QUERY,
+        }
+    }
+
+    #[must_use]
+    pub const fn get_service_prefix(&self) -> &'static str {
+        match self {
+            Self::Vllm => VLLM_SERVICE_PREFIX,
+            Self::SgLang => SGLANG_SERVICE_PREFIX,
+        }
+    }
 }
 
 /// Updates response signature and stack hash state
@@ -549,12 +582,12 @@ pub mod inference_service_metrics {
     type MetricsLock = Arc<RwLock<CachedMetrics>>;
 
     /// The default interval for updating the metrics
-    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 300;
+    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 35;
 
     /// The timeout for the Prometheus metrics queries
     const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-    /// The HTTP client for the Prometheus metrics queries
+    /// The HTTP client for the metrics queries
     static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         reqwest::Client::builder()
             .timeout(METRICS_TIMEOUT)
@@ -652,7 +685,7 @@ pub mod inference_service_metrics {
                 interval.tick().await;
                 if !vllm_chat_completions_service_urls.is_empty() {
                     let vllm_metrics =
-                        get_metrics(InferenceService::Vllm, &vllm_chat_completions_service_urls)
+                        get_metrics(&InferenceService::Vllm, &vllm_chat_completions_service_urls)
                             .await;
                     if vllm_metrics.iter().any(std::result::Result::is_ok) {
                         VLLM_METRICS_CACHE.update_metrics(vllm_metrics).await;
@@ -664,7 +697,7 @@ pub mod inference_service_metrics {
                 }
                 if !sglang_chat_completions_service_urls.is_empty() {
                     let sglang_metrics = get_metrics(
-                        InferenceService::SgLang,
+                        &InferenceService::SgLang,
                         &sglang_chat_completions_service_urls,
                     )
                     .await;
@@ -708,15 +741,9 @@ pub mod inference_service_metrics {
     ///     parsing errors), though the function attempts to handle missing individual metrics
     ///     gracefully.
     async fn get_metrics(
-        inference_service: InferenceService,
+        inference_service: &InferenceService,
         jobs_with_url: &[(String, String, String)], // (model, url, job)
     ) -> Vec<Result<ChatCompletionsMetrics>> {
-        let (num_queue_requests_metric, num_running_requests_metric, service_prefix) =
-            match inference_service {
-                InferenceService::SgLang => ("num_queue_reqs", "num_running_reqs", "sglang:"),
-                InferenceService::Vllm => ("num_requests_waiting", "num_requests_running", "vllm:"),
-            };
-
         let tasks =
             jobs_with_url
                 .iter()
@@ -731,24 +758,18 @@ pub mod inference_service_metrics {
                     let body = response.text().await?;
                     let lines = body
                         .lines()
-                        .map(|line| Ok(line.replace(service_prefix, "")));
+                        .map(|line| Ok(line.replace(inference_service.get_service_prefix(), "")));
                     let metrics = Scrape::parse(lines).unwrap();
-                    let get_metric = |name: &str| -> Result<f64> {
-                        metrics
-                            .samples
-                            .iter()
-                            .find(|s| s.metric == name)
-                            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.clone()))
-                            .and_then(|sample| {
-                                if let Value::Gauge(value) = sample.value {
-                                    Ok(value)
-                                } else {
-                                    Err(ChatCompletionsMetricsError::NoMetricsFound(job.clone()))
-                                }
-                            })
-                    };
-                    let num_queued_requests = get_metric(num_queue_requests_metric)?;
-                    let num_running_requests = get_metric(num_running_requests_metric)?;
+                    let num_queued_requests = extract_metric(
+                        &metrics,
+                        inference_service.get_queued_requests_metric_name(),
+                        job,
+                    )?;
+                    let num_running_requests = extract_metric(
+                        &metrics,
+                        inference_service.get_running_requests_metric_name(),
+                        job,
+                    )?;
 
                     Ok(ChatCompletionsMetrics {
                         model: model.clone(),
@@ -758,6 +779,45 @@ pub mod inference_service_metrics {
                     })
                 });
         join_all(tasks).await
+    }
+
+    /// Extracts a specific metric from the Scrape response.
+    ///
+    /// This function searches for a metric with the specified name in the
+    /// Scrape response and returns its value if found.
+    ///
+    /// # Arguments
+    ///
+    /// * `metrics` - The Scrape response containing the metrics.
+    /// * `name` - The name of the metric to extract.
+    /// * `job` - The job name used for error reporting.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<f64>` containing the metric value if found,
+    /// or an error if not found or if the value is not a Gauge.
+    ///
+    /// # Errors
+    ///
+    /// *   `ChatCompletionsMetricsError::NoMetricsFound`: If the specified metric is not found
+    ///     or if the value is not a Gauge.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying
+    ///     issues occur during metric collection from Prometheus (e.g., network errors,
+    ///     parsing errors),
+    ///     though the function attempts to handle missing individual metrics gracefully.
+    fn extract_metric(metrics: &Scrape, name: &str, job: &str) -> Result<f64> {
+        metrics
+            .samples
+            .iter()
+            .find(|s| s.metric == name)
+            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+            .and_then(|sample| {
+                if let Value::Gauge(value) = sample.value {
+                    Ok(value)
+                } else {
+                    Err(ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                }
+            })
     }
 
     /// Selects the best available chat completions service URL for a given model based on performance metrics.
@@ -872,7 +932,7 @@ pub mod inference_service_metrics {
                     .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
                     .collect();
             get_metrics(
-                InferenceService::Vllm,
+                &InferenceService::Vllm,
                 &vllm_chat_completions_service_urls_with_model,
             )
             .await
@@ -894,7 +954,7 @@ pub mod inference_service_metrics {
                     .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
                     .collect();
             get_metrics(
-                InferenceService::SgLang,
+                &InferenceService::SgLang,
                 &sglang_chat_completions_service_urls_with_model,
             )
             .await
@@ -1016,8 +1076,6 @@ pub mod inference_service_metrics {
         FailedToCreateHttpClient(String),
         #[error("No metrics found for job: {0}")]
         NoMetricsFound(String),
-        #[error("Failed to acquire semaphore permit")]
-        AcquireError,
     }
 
     // From implementations to handle conversions from error types to our cloneable error type
