@@ -1034,10 +1034,15 @@ pub mod inference_service_metrics {
         // and select the one with the least number of queued requests.
         let best_metrics = metrics_results
             .iter()
-            .min_by_key(|metric| (metric.num_queued_requests + metric.num_running_requests) as i64)
+            .min_by_key(|metric| {
+                (
+                    metric.num_queued_requests as i64,
+                    metric.num_running_requests as i64,
+                )
+            })
             .unwrap();
 
-        if best_metrics.num_queued_requests > MAX_ALLOWED_NUM_QUEUED_REQUESTS {
+        if best_metrics.num_queued_requests >= MAX_ALLOWED_NUM_QUEUED_REQUESTS {
             tracing::warn!(
                 target = "atoma-service",
                 level = "warn",
