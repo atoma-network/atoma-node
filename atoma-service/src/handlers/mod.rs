@@ -723,7 +723,7 @@ pub mod inference_service_metrics {
     /// # Arguments
     ///
     /// * `inference_service` - The inference service type (vLLM or SgLang).
-    /// * `jobs_with_url` - A slice of tuples containing the chat completions service URL
+    /// * `jobs_with_url` - A slice of tuples containing model name, the chat completions service URL
     ///   and the job name (e.g., "vllm-service", "sglang-service").
     ///
     /// # Returns
@@ -937,7 +937,7 @@ pub mod inference_service_metrics {
             )
             .await
         };
-        let sglang_metrics = if sglang_chat_completions_service_urls.is_empty() {
+        let _sglang_metrics = if sglang_chat_completions_service_urls.is_empty() {
             vec![]
         } else if let Some(metrics) = SGLANG_METRICS_CACHE.get_metrics().await {
             metrics
@@ -959,6 +959,15 @@ pub mod inference_service_metrics {
             )
             .await
         };
+
+        let sglang_metrics = get_metrics(
+            &InferenceService::SgLang,
+            &sglang_chat_completions_service_urls
+                .iter()
+                .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
+                .collect::<Vec<_>>(),
+        )
+        .await;
 
         tracing::debug!(
             target = "atoma-service",
