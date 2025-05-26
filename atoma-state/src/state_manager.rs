@@ -11,12 +11,16 @@ use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::client::Client;
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{oneshot, RwLock};
 use tracing::instrument;
+
+/// The maximum number of connections in the Postgres connection pool
+const MAX_NUMBER_POOL_CONNECTIONS: u32 = 256;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -82,7 +86,10 @@ impl AtomaStateManager {
         p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let db = PgPool::connect(database_url).await?;
+        let db = PgPoolOptions::new()
+            .max_connections(MAX_NUMBER_POOL_CONNECTIONS)
+            .connect(database_url)
+            .await?;
         sqlx::migrate!("./src/migrations").run(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
