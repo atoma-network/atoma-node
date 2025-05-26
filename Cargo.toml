@@ -87,7 +87,7 @@ tracing-opentelemetry       = "0.28.0"
 tracing-subscriber          = "0.3.18"
 url                         = "2.5.4"
 utoipa                      = "5.3.1"
-utoipa-swagger-ui           = "9.0.1"
+utoipa-swagger-ui           = "9.0.2"
 validator                   = "0.20.0"
 x25519-dalek                = "2.0.1"
 
