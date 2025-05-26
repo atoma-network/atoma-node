@@ -560,7 +560,6 @@ pub mod inference_service_metrics {
     use opentelemetry::KeyValue;
     use prometheus_parse::Scrape;
     use prometheus_parse::Value;
-    use rand::seq::SliceRandom;
     use rand::Rng;
     use std::sync::Arc;
     use std::sync::LazyLock;
@@ -1025,13 +1024,7 @@ pub mod inference_service_metrics {
             return Ok((best_url, StatusCode::OK));
         }
 
-        let mut rng = rand::thread_rng();
-        // If there are several minimum metrics, shuffle them to get a random one, the min_by selects the first one
-        metrics_results.shuffle(&mut rng);
-
         // Select the best available chat completions service URL based on the number of queued and running requests.
-        // If some service has 0 running requests it can still have a lot of queued requests, so we need to check for that
-        // and select the one with the least number of queued requests.
         let best_metrics = metrics_results
             .iter()
             .min_by_key(|metric| {
