@@ -261,6 +261,7 @@ pub async fn completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -469,6 +470,7 @@ pub async fn confidential_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -1559,6 +1561,7 @@ pub mod utils {
             update_fiat_amount(
                 &state.state_manager_sender,
                 user_address,
+                model.to_string(),
                 num_input_tokens,
                 input_tokens,
                 estimated_output_tokens,

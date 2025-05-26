@@ -344,6 +344,7 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
+            self.model.clone(),
             self.num_input_tokens,
             input_tokens as i64,
             self.estimated_output_tokens,
@@ -827,6 +828,7 @@ impl Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
+            self.model.clone(),
             self.num_input_tokens,
             0,
             self.estimated_output_tokens,
@@ -940,6 +942,7 @@ impl Drop for Streamer {
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
             self.user_address.clone(),
+            self.model.clone(),
             self.num_input_tokens,
             self.num_input_tokens,
             self.estimated_output_tokens,

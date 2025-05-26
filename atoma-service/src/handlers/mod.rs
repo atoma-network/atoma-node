@@ -406,6 +406,7 @@ pub fn update_stack_num_compute_units(
 pub fn update_fiat_amount(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     user_address: String,
+    model_name: String,
     estimated_input_tokens: i64,
     input_tokens: i64,
     estimated_output_tokens: i64,
@@ -426,10 +427,13 @@ pub fn update_fiat_amount(
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
+            model_name,
             estimated_input_amount,
             input_amount,
+            input_tokens,
             estimated_output_amount,
             output_amount,
+            output_tokens,
         })
         .map_err(|e| AtomaServiceError::InternalError {
             message: format!("Error sending update fiat amount event: {e}"),
