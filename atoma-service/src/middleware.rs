@@ -4,6 +4,7 @@ use crate::{
     error::AtomaServiceError,
     handlers::{
         chat_completions::CHAT_COMPLETIONS_PATH,
+        completions::COMPLETIONS_PATH,
         embeddings::EMBEDDINGS_PATH,
         image_generations::IMAGE_GENERATIONS_PATH,
         metrics::{
@@ -695,6 +696,7 @@ pub async fn verify_permissions(
         CHAT_COMPLETIONS_PATH => RequestType::ChatCompletions,
         EMBEDDINGS_PATH => RequestType::Embeddings,
         IMAGE_GENERATIONS_PATH => RequestType::ImageGenerations,
+        COMPLETIONS_PATH => RequestType::Completions,
         _ => RequestType::NonInference,
     };
 
