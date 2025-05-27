@@ -204,6 +204,9 @@ pub struct AppState {
 
     /// The Sui address of the clients that are allowed to use fiat.
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
+
+    /// Number of running requests for each inference service.
+    pub running_num_requests: Arc<DashMap<String, u64>>,
 }
 
 /// Creates and configures the main router for the application.

@@ -140,6 +140,10 @@ pub struct Streamer {
     price_per_one_million_tokens: i64,
     /// The user address for the request
     user_address: String,
+    /// A map to keep track of the number of requests currently being processed
+    running_num_requests: Arc<DashMap<String, u64>>,
+    /// The chat completions URL for the request
+    chat_completions_service_url: String,
 }
 
 /// Represents the various states of a streaming process
@@ -176,6 +180,8 @@ impl Streamer {
         first_token_generation_timer: Instant,
         price_per_one_million_tokens: i64,
         user_address: String,
+        running_num_requests: Arc<DashMap<String, u64>>,
+        chat_completions_service_url: String,
     ) -> Self {
         Self {
             concurrent_requests,
@@ -201,6 +207,8 @@ impl Streamer {
             num_input_tokens,
             price_per_one_million_tokens,
             user_address,
+            running_num_requests,
+            chat_completions_service_url,
         }
     }
 
@@ -896,6 +904,15 @@ impl Drop for Streamer {
         )
     )]
     fn drop(&mut self) {
+        self.running_num_requests
+            .entry(self.chat_completions_service_url.clone())
+            .and_modify(|e| {
+                *e -= 1;
+                if *e == 0 {
+                    self.running_num_requests
+                        .remove(&self.chat_completions_service_url);
+                }
+            });
         if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, self.model.clone())]);
             return;
