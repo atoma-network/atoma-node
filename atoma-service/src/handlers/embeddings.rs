@@ -9,7 +9,7 @@ use crate::{
             TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS,
             TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_REQUESTS,
             TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS,
-            TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS,
+            TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS, TOTAL_TOO_MANY_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
@@ -18,6 +18,7 @@ use crate::{
     types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
+use hyper::StatusCode;
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
@@ -137,9 +138,14 @@ pub async fn embeddings_handler(
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
-                .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            if !e.status_code().is_client_error() {
+                TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS
+                    .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            }
+            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
+                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
                     &state.concurrent_requests_per_stack,
@@ -306,9 +312,14 @@ pub async fn confidential_embeddings_handler(
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
-                .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
+            if !e.status_code().is_client_error() {
+                TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS
+                    .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            }
+            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
+                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
                     &state.concurrent_requests_per_stack,

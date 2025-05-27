@@ -346,6 +346,21 @@ pub static TOTAL_FAILED_CHAT_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(||
         .build()
 });
 
+/// Counter metric that tracks the total number of too many requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_too_many_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_TOO_MANY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_too_many_requests")
+        .with_description("Total number of too many requests")
+        .with_unit("requests")
+        .build()
+});
+
 /// Counter metric that tracks the total number of confidential chat requests.
 ///
 /// # Metric Details
