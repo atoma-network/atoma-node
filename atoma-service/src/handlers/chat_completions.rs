@@ -863,6 +863,12 @@ async fn handle_streaming_response(
         });
     }
     let client = Client::new();
+
+    // This has to be here, because when this will be incremented after the request is sent, it can cause the counter to go above the limit.
+    state
+        .running_num_requests
+        .increment(&chat_completions_service_url);
+
     let response = client
         .post(format!(
             "{}{}",
@@ -915,10 +921,6 @@ async fn handle_streaming_response(
             endpoint: endpoint.clone(),
         });
     }
-
-    state
-        .running_num_requests
-        .increment(&chat_completions_service_url);
 
     let stream = response.bytes_stream();
     // Create the SSE stream
