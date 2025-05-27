@@ -47,7 +47,10 @@ use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::{
     error::AtomaServiceError,
@@ -287,6 +290,7 @@ pub async fn chat_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -494,6 +498,7 @@ pub async fn confidential_chat_completions_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -844,8 +849,9 @@ async fn handle_streaming_response(
         })?;
     let (chat_completions_service_url, status_code) =
         get_best_available_chat_completions_service_url(
+            &state.running_num_requests,
             chat_completions_service_urls,
-            &model.to_lowercase(),
+            model,
         )
         .await
         .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
@@ -859,6 +865,7 @@ async fn handle_streaming_response(
         });
     }
     let client = Client::new();
+
     let response = client
         .post(format!(
             "{}{}",
@@ -868,6 +875,9 @@ async fn handle_streaming_response(
         .send()
         .await
         .map_err(|e| {
+            state
+                .running_num_requests
+                .decrement(&chat_completions_service_url);
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -880,6 +890,9 @@ async fn handle_streaming_response(
         })?;
 
     if !response.status().is_success() {
+        state
+            .running_num_requests
+            .decrement(&chat_completions_service_url);
         let status = response.status();
         let bytes = response
             .bytes()
@@ -932,6 +945,8 @@ async fn handle_streaming_response(
         timer,
         price_per_one_million_compute_units,
         user_address,
+        Arc::clone(&state.running_num_requests),
+        chat_completions_service_url,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -1263,6 +1278,7 @@ pub mod utils {
             })?;
         let (chat_completions_service_url, status_code) =
             get_best_available_chat_completions_service_url(
+                &state.running_num_requests,
                 chat_completions_service_url_services,
                 model,
             )
@@ -1278,14 +1294,17 @@ pub mod utils {
             });
         }
         let response = client
-        .post(format!(
-            "{}{}",
-            chat_completions_service_url, CHAT_COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
+            .post(format!(
+                "{}{}",
+                chat_completions_service_url, CHAT_COMPLETIONS_PATH
+            ))
+            .json(&payload)
+            .send()
+            .await;
+        state
+            .running_num_requests
+            .decrement(&chat_completions_service_url);
+        let response = response.map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -1590,6 +1609,7 @@ pub mod utils {
             update_fiat_amount(
                 &state.state_manager_sender,
                 user_address,
+                model.to_string(),
                 estimated_input_tokens,
                 input_tokens,
                 estimated_output_tokens,

@@ -310,6 +310,23 @@ pub static KAD_ROUTING_TABLE_SIZE: LazyLock<Gauge<u64>> = LazyLock::new(|| {
         .build()
 });
 
+// / Gauge metric that tracks the number of running requests.
+/// This metric counts the number of running requests,
+/// broken down by model type.
+///
+/// # Metric Details
+/// - Name: `running_requests`
+/// - Type: Gauge
+/// - Labels: `inference`
+/// - Unit: requests (count)
+pub static RUNNING_REQUESTS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_gauge("running_requests")
+        .with_description("The number of running requests")
+        .with_unit("requests")
+        .build()
+});
+
 /// Structure to store the network metrics.
 ///
 /// This data is collected from the system

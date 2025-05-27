@@ -270,12 +270,18 @@ pub enum AtomaAtomaStateManagerEvent {
     UpdateFiatAmount {
         /// User address
         user_address: String,
+        /// Model name used for the inference
+        model_name: String,
         /// Estimated total amount for input in fiat currency
         estimated_input_amount: i64,
         /// Total amount for input in fiat currency
         input_amount: i64,
+        /// Number of input tokens,
+        input_tokens: i64,
         /// Estimated total amount for output in fiat currency
         estimated_output_amount: i64,
+        /// Number of output tokens
+        output_tokens: i64,
         /// Total amount for output in fiat currency
         output_amount: i64,
     },

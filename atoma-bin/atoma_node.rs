@@ -5,8 +5,7 @@ use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{
-    config::AtomaServiceConfig, handlers::inference_service_metrics::start_metrics_updater,
-    server::AppState,
+    config::AtomaServiceConfig, handlers::request_counter::RequestCounter, server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
@@ -374,19 +373,8 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
+        running_num_requests: Arc::new(RequestCounter::new()),
     };
-
-    start_metrics_updater(
-        app_state
-            .chat_completions_service_urls
-            .iter()
-            .flat_map(|(model, urls)| {
-                urls.iter()
-                    .map(move |(url, job)| (model.to_lowercase(), url.clone(), job.clone()))
-            })
-            .collect(),
-        config.service.metrics_update_interval,
-    );
 
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
