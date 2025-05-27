@@ -864,7 +864,10 @@ async fn handle_streaming_response(
     }
     let client = Client::new();
 
-    // This has to be here, because when this will be incremented after the request is sent, it can cause the counter to go above the limit.
+    // This increments the number of running requests for the specific chat completions service URL.
+    // It has to be before the client.post() call, so for new requests this value is up-to-date.
+    // If you update it after, the new request can see older value and still run the request, and
+    // we will end up with more requests than we want.
     state
         .running_num_requests
         .increment(&chat_completions_service_url);
@@ -877,7 +880,10 @@ async fn handle_streaming_response(
         .json(&payload)
         .send()
         .await
-        .map_err(|e|
+        .map_err(|e| {
+            state
+                .running_num_requests
+                .decrement(&chat_completions_service_url);
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -887,9 +893,12 @@ async fn handle_streaming_response(
                 ),
                 endpoint: endpoint.clone(),
             }
-        )?;
+        })?;
 
     if !response.status().is_success() {
+        state
+            .running_num_requests
+            .decrement(&chat_completions_service_url);
         let status = response.status();
         let bytes = response
             .bytes()

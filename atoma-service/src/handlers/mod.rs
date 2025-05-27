@@ -654,27 +654,22 @@ pub mod inference_service_metrics {
                 if current_requests_for_url < min_current_requests_found {
                     min_current_requests_found = current_requests_for_url;
                     best_candidate_url = Some(url_str.clone());
-                } else if current_requests_for_url == min_current_requests_found
-                    && best_candidate_url.is_none()
-                {
-                    // This handles the case where the first eligible candidate sets the min_current_requests_found
-                    best_candidate_url = Some(url_str.clone());
                 }
             }
         }
 
         if let Some(selected_url) = best_candidate_url {
             tracing::info!(
-            target = "atoma-service",
-            model = model,
-            selected_url = %selected_url,
-            current_requests_on_selected_url = min_current_requests_found,
-            "Selected chat completions service based on local request counter (min running requests below capacity)."
+                target = "atoma-service",
+                model = model,
+                selected_url = %selected_url,
+                current_requests_on_selected_url = min_current_requests_found,
+                "Selected chat completions service based on local request counter (min running requests below capacity)."
             );
             return Ok((selected_url, StatusCode::OK));
         }
 
-        tracing::info!(
+        tracing::warn!(
             target = "atoma-service",
             model = model,
             "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
