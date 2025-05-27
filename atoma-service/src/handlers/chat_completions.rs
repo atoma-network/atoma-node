@@ -844,8 +844,9 @@ async fn handle_streaming_response(
         })?;
     let (chat_completions_service_url, status_code) =
         get_best_available_chat_completions_service_url(
+            &mut state.running_num_requests,
             chat_completions_service_urls,
-            &model.to_lowercase(),
+            model,
         )
         .await
         .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
@@ -1270,6 +1271,7 @@ pub mod utils {
             })?;
         let (chat_completions_service_url, status_code) =
             get_best_available_chat_completions_service_url(
+                &mut state.running_num_requests,
                 chat_completions_service_url_services,
                 model,
             )

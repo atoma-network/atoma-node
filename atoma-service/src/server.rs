@@ -170,12 +170,12 @@ pub struct AppState {
 
     /// Mapping between model names and the URLs of the chat completions
     /// services available to the current node, together with the job names of
-    /// the vLLM instances running on each service.
+    /// the vLLM instances running on each service and the maximum concurrency.
     ///
     /// These URLs point to the external services responsible for performing
     /// AI model chat completions. The application forwards requests to this
     /// service to obtain AI-generated responses.
-    pub chat_completions_service_urls: HashMap<String, Vec<(String, String)>>,
+    pub chat_completions_service_urls: HashMap<String, Vec<(String, String, usize)>>,
 
     /// URL for the embeddings service.
     ///
