@@ -864,9 +864,7 @@ async fn handle_streaming_response(
     let client = Client::new();
     state
         .running_num_requests
-        .entry(chat_completions_service_url.clone())
-        .and_modify(|e| *e += 1)
-        .or_insert(1);
+        .increment(&chat_completions_service_url);
 
     let response = client
         .post(format!(
@@ -877,6 +875,7 @@ async fn handle_streaming_response(
         .send()
         .await
         .map_err(|e| {
+            state.running_num_requests.decrement(&chat_completions_service_url);
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -891,15 +890,7 @@ async fn handle_streaming_response(
     if !response.status().is_success() {
         state
             .running_num_requests
-            .entry(chat_completions_service_url.clone())
-            .and_modify(|e| {
-                *e -= 1;
-                if *e == 0 {
-                    state
-                        .running_num_requests
-                        .remove(&chat_completions_service_url);
-                }
-            });
+            .decrement(&chat_completions_service_url);
         let status = response.status();
         let bytes = response
             .bytes()
@@ -1301,18 +1292,19 @@ pub mod utils {
         }
         state
             .running_num_requests
-            .entry(chat_completions_service_url.clone())
-            .and_modify(|e| *e += 1)
-            .or_insert(1);
+            .increment(&chat_completions_service_url);
         let response = client
-        .post(format!(
-            "{}{}",
-            chat_completions_service_url, CHAT_COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
+            .post(format!(
+                "{}{}",
+                chat_completions_service_url, CHAT_COMPLETIONS_PATH
+            ))
+            .json(&payload)
+            .send()
+            .await;
+        state
+            .running_num_requests
+            .decrement(&chat_completions_service_url);
+        let response = response.map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -1323,17 +1315,6 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             }
         })?;
-        state
-            .running_num_requests
-            .entry(chat_completions_service_url.clone())
-            .and_modify(|e| {
-                *e -= 1;
-                if *e == 0 {
-                    state
-                        .running_num_requests
-                        .remove(&chat_completions_service_url);
-                }
-            });
 
         if !response.status().is_success() {
             let status = response.status();

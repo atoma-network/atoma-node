@@ -54,6 +54,7 @@ use crate::{
             confidential_image_generations_handler, image_generations_handler,
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
         },
+        request_counter::RequestCounter,
         stop_streamer::stop_streamer_handler,
     },
     middleware::{
@@ -206,7 +207,7 @@ pub struct AppState {
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
 
     /// Number of running requests for each inference service.
-    pub running_num_requests: Arc<DashMap<String, u64>>,
+    pub running_num_requests: Arc<RequestCounter>,
 }
 
 /// Creates and configures the main router for the application.

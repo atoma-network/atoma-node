@@ -389,9 +389,7 @@ async fn handle_image_generations_response(
     let client = Client::new();
     state
         .running_num_requests
-        .entry(state.image_generations_service_url.clone())
-        .and_modify(|e| *e += 1)
-        .or_insert(1);
+        .increment(&state.image_generations_service_url);
     let response = client
         .post(format!(
             "{}{}",
@@ -407,15 +405,7 @@ async fn handle_image_generations_response(
 
     state
         .running_num_requests
-        .entry(state.image_generations_service_url.clone())
-        .and_modify(|e| {
-            *e -= 1;
-            if *e == 0 {
-                state
-                    .running_num_requests
-                    .remove(&state.image_generations_service_url);
-            }
-        });
+        .decrement(&state.image_generations_service_url);
 
     if !response.status().is_success() {
         let error = response

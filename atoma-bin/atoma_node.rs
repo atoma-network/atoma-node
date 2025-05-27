@@ -5,7 +5,8 @@ use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{
-    config::AtomaServiceConfig, handlers::inference_service_metrics::start_metrics_updater,
+    config::AtomaServiceConfig,
+    handlers::{inference_service_metrics::start_metrics_updater, request_counter::RequestCounter},
     server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
@@ -374,7 +375,7 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
-        running_num_requests: Arc::new(DashMap::new()),
+        running_num_requests: Arc::new(RequestCounter::new()),
     };
 
     start_metrics_updater(
