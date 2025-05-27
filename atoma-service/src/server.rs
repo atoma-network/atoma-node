@@ -207,7 +207,7 @@ pub struct AppState {
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
 
     /// Number of running requests for each inference service.
-    pub running_num_requests: RequestCounter,
+    pub running_num_requests: Arc<RequestCounter>,
 }
 
 /// Creates and configures the main router for the application.

@@ -88,7 +88,7 @@ pub struct EmbeddingsOpenApi;
 )]
 pub async fn embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
@@ -115,7 +115,7 @@ pub async fn embeddings_handler(
     TEXT_EMBEDDINGS_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
 
     match handle_embeddings_response(
-        &mut state,
+        &state,
         &payload,
         stack_small_id,
         payload_hash,
@@ -231,7 +231,7 @@ pub struct ConfidentialEmbeddingsOpenApi;
 )]
 pub async fn confidential_embeddings_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received embeddings request, with payload: {payload}");
@@ -259,7 +259,7 @@ pub async fn confidential_embeddings_handler(
     let timer = Instant::now();
 
     match handle_embeddings_response(
-        &mut state,
+        &state,
         &payload,
         stack_small_id,
         payload_hash,
@@ -397,7 +397,7 @@ pub async fn confidential_embeddings_handler(
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_embeddings_response(
-    state: &mut AppState,
+    state: &AppState,
     payload: &Value,
     stack_small_id: Option<i64>,
     payload_hash: [u8; 32],

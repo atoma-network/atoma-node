@@ -1,13 +1,10 @@
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicUsize, Arc},
-};
+use dashmap::{DashMap, Entry};
 
 /// A thread-safe request counter that tracks the number of requests being processed for each inference service.
 #[derive(Clone, Debug)]
 pub struct RequestCounter {
-    /// A map that keeps track of the number of requests currently being processed for each inference service.
-    running_num_requests: HashMap<String, Arc<AtomicUsize>>,
+    /// A map that holds the count of running requests for each inference service.
+    running_num_requests: DashMap<String, usize>,
 }
 
 impl Default for RequestCounter {
@@ -17,40 +14,43 @@ impl Default for RequestCounter {
 }
 
 impl RequestCounter {
-    /// Creates a new `RequestCounter`.
+    /// Creates a new instance of `RequestCounter`.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            running_num_requests: HashMap::new(),
+            running_num_requests: DashMap::new(),
         }
     }
 
-    /// Increments the request count for the given key.
-    pub fn increment(&mut self, key: &str) {
-        self.running_num_requests
+    /// Increments the count for the given key or initializes it to 1 if it does not exist.
+    pub fn increment(&self, key: &str) {
+        let mut entry = self
+            .running_num_requests
             .entry(key.to_string())
-            .and_modify(|count| {
-                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            })
-            .or_insert_with(|| Arc::new(AtomicUsize::new(1)));
+            .or_insert(0);
+        *entry += 1;
     }
 
-    /// Decrements the count for the given key.
-    pub fn decrement(&mut self, key: &str) {
-        self.running_num_requests
-            .entry(key.to_string())
-            .and_modify(|count| {
-                count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            });
+    /// Decrements the count for the given key. If the count reaches zero, the entry is removed.
+    pub fn decrement(&self, key: &str) {
+        match self.running_num_requests.entry(key.to_string()) {
+            Entry::Occupied(mut entry) => {
+                let count = entry.get_mut();
+                *count -= 1;
+                if *count == 0 {
+                    entry.remove();
+                }
+            }
+            Entry::Vacant(_) => {
+                // This should not happen, but just in case, we remove the entry
+                self.running_num_requests.remove(key);
+            }
+        }
     }
 
-    /// Returns a reference to the `AtomicUsize` for the given key, creating it if it does not exist.
+    /// Retrieves the current count for the given key.
     #[must_use]
-    pub fn get_count(&mut self, key: &str) -> Arc<AtomicUsize> {
-        Arc::clone(
-            self.running_num_requests
-                .entry(key.to_string())
-                .or_insert_with(|| Arc::new(AtomicUsize::new(0))),
-        )
+    pub fn get_count(&self, key: &str) -> usize {
+        self.running_num_requests.get(key).map_or(0, |entry| *entry)
     }
 }

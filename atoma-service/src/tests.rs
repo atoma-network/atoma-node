@@ -341,7 +341,7 @@ mod middleware {
                 address_index: 0,
                 stack_retrieve_sender,
                 whitelist_sui_addresses_for_fiat: vec![],
-                running_num_requests: RequestCounter::new(),
+                running_num_requests: Arc::new(RequestCounter::new()),
             },
             public_key,
             signature,

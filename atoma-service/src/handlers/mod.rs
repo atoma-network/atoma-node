@@ -557,7 +557,6 @@ pub fn handle_status_code_error(
 }
 
 pub mod inference_service_metrics {
-    use std::sync::atomic::Ordering;
 
     use hyper::StatusCode;
     use tracing::instrument;
@@ -627,7 +626,7 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
-        running_num_requests: &mut RequestCounter,
+        running_num_requests: &RequestCounter,
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
     ) -> Result<(String, StatusCode)> {
@@ -648,9 +647,7 @@ pub mod inference_service_metrics {
         let mut min_current_requests_found = usize::MAX;
 
         for (url_str, _job_name, max_concurrent_val) in chat_completions_service_urls {
-            let current_requests_for_url = running_num_requests
-                .get_count(url_str)
-                .load(Ordering::Relaxed);
+            let current_requests_for_url = running_num_requests.get_count(url_str);
 
             if current_requests_for_url < *max_concurrent_val {
                 // This service is a candidate as it's below its max capacity.

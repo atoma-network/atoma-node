@@ -90,7 +90,7 @@ pub struct ImageGenerationsOpenApi;
 )]
 pub async fn image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
@@ -120,7 +120,7 @@ pub async fn image_generations_handler(
         .unwrap_or("unknown");
 
     match handle_image_generations_response(
-        &mut state,
+        &state,
         payload.clone(),
         payload_hash,
         stack_small_id,
@@ -231,7 +231,7 @@ pub struct ConfidentialImageGenerationsOpenApi;
 )]
 pub async fn confidential_image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AtomaServiceError> {
     info!("Received image generations request, with payload: {payload}");
@@ -258,7 +258,7 @@ pub async fn confidential_image_generations_handler(
     } = request_metadata;
 
     match handle_image_generations_response(
-        &mut state,
+        &state,
         payload.clone(),
         payload_hash,
         stack_small_id,
@@ -377,7 +377,7 @@ pub async fn confidential_image_generations_handler(
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_image_generations_response(
-    state: &mut AppState,
+    state: &AppState,
     payload: Value,
     payload_hash: [u8; 32],
     stack_small_id: Option<i64>,
