@@ -11,12 +11,16 @@ use atoma_p2p::types::AtomaP2pEvent;
 use atoma_sui::client::Client;
 use atoma_sui::events::AtomaEvent;
 use flume::Receiver as FlumeReceiver;
+use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{oneshot, RwLock};
 use tracing::instrument;
+
+/// The maximum number of connections in the Postgres connection pool
+const MAX_NUMBER_POOL_CONNECTIONS: u32 = 256;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -82,7 +86,10 @@ impl AtomaStateManager {
         p2p_service_receiver: FlumeReceiver<(AtomaP2pEvent, Option<oneshot::Sender<bool>>)>,
     ) -> Result<Self> {
         // Create connection options with create_if_missing enabled
-        let db = PgPool::connect(database_url).await?;
+        let db = PgPoolOptions::new()
+            .max_connections(MAX_NUMBER_POOL_CONNECTIONS)
+            .connect(database_url)
+            .await?;
         sqlx::migrate!("./src/migrations").run(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
@@ -1996,6 +2003,67 @@ impl AtomaState {
         .bind(estimated_output_amount)
         .bind(output_amount)
         .bind(i64::from(output_amount > 0)) // If total amount is greater than 0 then the request was successful
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates the usage per model for a user.
+    ///
+    /// This method updates the `usage_per_model` table for the specified user and model.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_address` - The unique identifier of the user.
+    /// * `model_name` - The name of the model.
+    /// * `input_amount` - The total input amount used by the user for the model.
+    /// * `input_tokens` - The total input tokens used by the user for the model.
+    /// * `output_amount` - The total output amount used by the user for the model.
+    /// * `output_tokens` - The total output tokens used by the user for the model.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_usage(state_manager: &AtomaStateManager, user_address: i64, model_name: String, total_tokens: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_usage_per_model(user_address, model_name, total_tokens).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn update_usage_per_model(
+        &self,
+        user_address: String,
+        model: String,
+        input_amount: i64,
+        input_tokens: i64,
+        output_amount: i64,
+        output_tokens: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO usage_per_model (user_address, model, input_amount, input_tokens, output_amount, output_tokens)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (user_address, model) DO UPDATE SET
+                input_amount = usage_per_model.input_amount + EXCLUDED.input_amount,
+                input_tokens = usage_per_model.input_tokens + EXCLUDED.input_tokens,
+                output_amount = usage_per_model.output_amount + EXCLUDED.output_amount,
+                output_tokens = usage_per_model.output_tokens + EXCLUDED.output_tokens",
+        )
+        .bind(user_address)
+        .bind(model)
+        .bind(input_amount)
+        .bind(input_tokens)
+        .bind(output_amount)
+        .bind(output_tokens)
         .execute(&self.db)
         .await?;
         Ok(())

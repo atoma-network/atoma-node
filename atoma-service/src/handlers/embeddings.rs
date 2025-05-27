@@ -158,6 +158,7 @@ pub async fn embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -295,6 +296,7 @@ pub async fn confidential_embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     num_input_tokens,
                     estimated_output_tokens,
@@ -327,6 +329,7 @@ pub async fn confidential_embeddings_handler(
                 update_fiat_amount(
                     &state.state_manager_sender,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
