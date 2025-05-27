@@ -1,4 +1,6 @@
+use atoma_p2p::metrics::RUNNING_REQUESTS;
 use dashmap::{DashMap, Entry};
+use opentelemetry::KeyValue;
 use tracing::error;
 
 /// A thread-safe request counter that tracks the number of requests being processed for each inference service.
@@ -30,6 +32,7 @@ impl RequestCounter {
             .entry(key.to_string())
             .or_insert(0);
         *entry += 1;
+        RUNNING_REQUESTS.record(*entry as u64, &[KeyValue::new("service", key.to_string())]);
     }
 
     /// Decrements the count for the given key. If the count reaches zero, the entry is removed.
@@ -38,6 +41,8 @@ impl RequestCounter {
             Entry::Occupied(mut entry) => {
                 let count = entry.get_mut();
                 *count -= 1;
+                RUNNING_REQUESTS
+                    .record(*count as u64, &[KeyValue::new("service", key.to_string())]);
                 if *count == 0 {
                     entry.remove();
                 }
