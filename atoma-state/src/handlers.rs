@@ -782,21 +782,37 @@ pub(crate) async fn handle_state_manager_event(
         }
         AtomaAtomaStateManagerEvent::UpdateFiatAmount {
             user_address,
+            model_name,
             estimated_input_amount,
             input_amount,
+            input_tokens,
             estimated_output_amount,
             output_amount,
+            output_tokens,
         } => {
             state_manager
                 .state
                 .update_fiat_amount(
-                    user_address,
+                    user_address.clone(),
                     estimated_input_amount,
                     input_amount,
                     estimated_output_amount,
                     output_amount,
                 )
                 .await?;
+            if output_amount > 0 {
+                state_manager
+                    .state
+                    .update_usage_per_model(
+                        user_address,
+                        model_name,
+                        input_amount,
+                        input_tokens,
+                        output_amount,
+                        output_tokens,
+                    )
+                    .await?;
+            }
         }
     }
     Ok(())
