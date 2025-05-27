@@ -35,10 +35,7 @@ use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use crate::{
     error::AtomaServiceError,
@@ -179,7 +176,7 @@ pub struct CompletionsOpenApi;
 )]
 pub async fn completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -212,7 +209,7 @@ pub async fn completions_handler(
         .unwrap_or_default();
 
     match handle_response(
-        &state,
+        &mut state,
         endpoint.clone(),
         payload_hash,
         stack_small_id,
@@ -380,7 +377,7 @@ pub struct ConfidentialCompletionsOpenApi;
 )]
 pub async fn confidential_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, AtomaServiceError> {
@@ -418,7 +415,7 @@ pub async fn confidential_completions_handler(
     let endpoint = request_metadata.endpoint_path.clone();
 
     match handle_response(
-        &state,
+        &mut state,
         endpoint.clone(),
         payload_hash,
         stack_small_id,
@@ -544,7 +541,7 @@ pub async fn confidential_completions_handler(
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_response(
-    state: &AppState,
+    state: &mut AppState,
     endpoint: String,
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
     stack_small_id: Option<i64>,
@@ -661,7 +658,7 @@ async fn handle_response(
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_non_streaming_response(
-    state: &AppState,
+    state: &mut AppState,
     payload: Value,
     stack_small_id: Option<i64>,
     num_input_tokens: i64,
@@ -769,7 +766,7 @@ async fn handle_non_streaming_response(
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_streaming_response(
-    state: &AppState,
+    state: &mut AppState,
     mut payload: Value,
     stack_small_id: Option<i64>,
     num_input_tokens: i64,
@@ -834,16 +831,12 @@ async fn handle_streaming_response(
         });
     }
     let client = Client::new();
-    state
-        .running_num_requests
-        .increment(&completions_service_url);
     let response = client
         .post(format!("{}{}", completions_service_url, COMPLETIONS_PATH))
         .json(&payload)
         .send()
         .await
-        .map_err(|e| {
-            state.running_num_requests.decrement(&completions_service_url);
+        .map_err(|e| 
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -853,12 +846,9 @@ async fn handle_streaming_response(
                 ),
                 endpoint: endpoint.clone(),
             }
-        })?;
+        )?;
 
     if !response.status().is_success() {
-        state
-            .running_num_requests
-            .decrement(&completions_service_url);
         let status = response.status();
         let bytes = response
             .bytes()
@@ -889,6 +879,9 @@ async fn handle_streaming_response(
             endpoint: endpoint.to_string(),
         });
     }
+    state
+        .running_num_requests
+        .increment(&completions_service_url);
 
     let stream = response.bytes_stream();
     // Create the SSE stream
@@ -910,8 +903,9 @@ async fn handle_streaming_response(
         timer,
         price_per_one_million_tokens,
         user_address,
-        Arc::clone(&state.running_num_requests),
-        completions_service_url.clone(),
+        state
+            .running_num_requests
+            .get_count(&completions_service_url),
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -1211,7 +1205,7 @@ pub mod utils {
         err
     )]
     pub async fn send_request_to_inference_service(
-        state: &AppState,
+        state: &mut AppState,
         payload: &Value,
         stack_small_id: Option<i64>,
         payload_hash: [u8; PAYLOAD_HASH_SIZE],

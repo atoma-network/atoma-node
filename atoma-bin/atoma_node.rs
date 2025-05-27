@@ -375,7 +375,7 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
-        running_num_requests: Arc::new(RequestCounter::new()),
+        running_num_requests: RequestCounter::new(),
     };
 
     start_metrics_updater(
