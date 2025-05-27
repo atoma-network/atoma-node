@@ -390,9 +390,6 @@ async fn handle_image_generations_response(
     model: String,
 ) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
-    state
-        .running_num_requests
-        .increment(&state.image_generations_service_url);
     let response = client
         .post(format!(
             "{}{}",
@@ -405,10 +402,6 @@ async fn handle_image_generations_response(
             message: format!("Error sending request to image generations service: {}", e),
             endpoint: endpoint.to_string(),
         })?;
-
-    state
-        .running_num_requests
-        .decrement(&state.image_generations_service_url);
 
     if !response.status().is_success() {
         let error = response

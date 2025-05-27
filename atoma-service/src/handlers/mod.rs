@@ -646,31 +646,10 @@ pub mod inference_service_metrics {
             );
         }
 
-        // New logic: Select based on local running_num_requests and max_concurrent_requests.
-        let mut best_candidate_url: Option<String> = None;
-        let mut min_current_requests_found = usize::MAX;
-
         for (url_str, _job_name, max_concurrent_val) in chat_completions_service_urls {
-            let current_requests_for_url = running_num_requests.get_count(url_str);
-
-            if current_requests_for_url < *max_concurrent_val {
-                // This service is a candidate as it's below its max capacity.
-                if current_requests_for_url < min_current_requests_found {
-                    min_current_requests_found = current_requests_for_url;
-                    best_candidate_url = Some(url_str.clone());
-                }
+            if running_num_requests.increment(url_str, *max_concurrent_val) {
+                return Ok((url_str.clone(), StatusCode::OK));
             }
-        }
-
-        if let Some(selected_url) = best_candidate_url {
-            tracing::info!(
-                target = "atoma-service",
-                model = model,
-                selected_url = %selected_url,
-                current_requests_on_selected_url = min_current_requests_found,
-                "Selected chat completions service based on local request counter (min running requests below capacity)."
-            );
-            return Ok((selected_url, StatusCode::OK));
         }
 
         tracing::warn!(

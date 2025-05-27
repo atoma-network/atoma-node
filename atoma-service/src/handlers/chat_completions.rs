@@ -866,14 +866,6 @@ async fn handle_streaming_response(
     }
     let client = Client::new();
 
-    // This increments the number of running requests for the specific chat completions service URL.
-    // It has to be before the client.post() call, so for new requests this value is up-to-date.
-    // If you update it after, the new request can see older value and still run the request, and
-    // we will end up with more requests than we want.
-    state
-        .running_num_requests
-        .increment(&chat_completions_service_url);
-
     let response = client
         .post(format!(
             "{}{}",
@@ -1301,9 +1293,6 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             });
         }
-        state
-            .running_num_requests
-            .increment(&chat_completions_service_url);
         let response = client
             .post(format!(
                 "{}{}",

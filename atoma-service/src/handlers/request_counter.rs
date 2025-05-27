@@ -26,13 +26,18 @@ impl RequestCounter {
     }
 
     /// Increments the count for the given key or initializes it to 1 if it does not exist.
-    pub fn increment(&self, key: &str) {
+    pub fn increment(&self, key: &str, max_value: usize) -> bool {
         let mut entry = self
             .running_num_requests
             .entry(key.to_string())
             .or_insert(0);
-        *entry += 1;
-        RUNNING_REQUESTS.record(*entry as u64, &[KeyValue::new("service", key.to_string())]);
+        if *entry >= max_value {
+            false
+        } else {
+            *entry += 1;
+            RUNNING_REQUESTS.record(*entry as u64, &[KeyValue::new("service", key.to_string())]);
+            true
+        }
     }
 
     /// Decrements the count for the given key. If the count reaches zero, the entry is removed.
