@@ -408,6 +408,9 @@ async fn handle_embeddings_response(
     endpoint: &str,
 ) -> Result<Json<Value>, AtomaServiceError> {
     let client = Client::new();
+    state
+        .running_num_requests
+        .increment(&state.embeddings_service_url);
     let response = client
         .post(format!(
             "{}{}",
@@ -420,6 +423,9 @@ async fn handle_embeddings_response(
             message: format!("Error sending request to embeddings service: {}", e),
             endpoint: endpoint.to_string(),
         })?;
+    state
+        .running_num_requests
+        .decrement(&state.embeddings_service_url);
 
     if !response.status().is_success() {
         let error = response

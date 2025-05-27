@@ -9,12 +9,12 @@ use serde::Deserialize;
 /// including URLs for various services and a list of models.
 #[derive(Debug, Deserialize)]
 pub struct AtomaServiceConfig {
-    /// URL for the chat completions service.
+    /// URL for the chat completions service with maximum concurrency settings.
     ///
     /// This is an optional field that, if provided, specifies the endpoint
     /// for the chat completions service used by the Atoma Service, together with its
     /// associated Prometheus job name.
-    pub chat_completions_service_urls: HashMap<String, Vec<(String, String)>>,
+    pub chat_completions_service_urls: HashMap<String, Vec<(String, String, usize)>>,
 
     /// URL for the embeddings service.
     ///

@@ -35,7 +35,10 @@ use tracing::{debug, info, instrument};
 use utoipa::OpenApi;
 
 use serde::Deserialize;
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::{
     error::AtomaServiceError,
@@ -819,13 +822,16 @@ async fn handle_streaming_response(
                 endpoint: endpoint.clone(),
             }
         })?;
-    let (chat_completions_service_url, status_code) =
-        get_best_available_chat_completions_service_url(chat_completions_service_urls, model)
-            .await
-            .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
-                message: e.to_string(),
-                endpoint: endpoint.clone(),
-            })?;
+    let (completions_service_url, status_code) = get_best_available_chat_completions_service_url(
+        &state.running_num_requests,
+        chat_completions_service_urls,
+        model,
+    )
+    .await
+    .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
+        message: e.to_string(),
+        endpoint: endpoint.clone(),
+    })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
             message: "Too many requests".to_string(),
@@ -833,15 +839,23 @@ async fn handle_streaming_response(
         });
     }
     let client = Client::new();
+    // This increments the number of running requests for the specific chat completions service URL.
+    // It has to be before the client.post() call, so for new requests this value is up-to-date.
+    // If you update it after, the new request can see older value and still run the request, and
+    // we will end up with more requests than we want.
+    state
+        .running_num_requests
+        .increment(&completions_service_url);
+
     let response = client
-        .post(format!(
-            "{}{}",
-            chat_completions_service_url, COMPLETIONS_PATH
-        ))
+        .post(format!("{}{}", completions_service_url, COMPLETIONS_PATH))
         .json(&payload)
         .send()
         .await
         .map_err(|e| {
+            state
+                .running_num_requests
+                .decrement(&completions_service_url);
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -851,9 +865,12 @@ async fn handle_streaming_response(
                 ),
                 endpoint: endpoint.clone(),
             }
-        })?;
+    })?;
 
     if !response.status().is_success() {
+        state
+            .running_num_requests
+            .decrement(&completions_service_url);
         let status = response.status();
         let bytes = response
             .bytes()
@@ -905,6 +922,8 @@ async fn handle_streaming_response(
         timer,
         price_per_one_million_tokens,
         user_address,
+        Arc::clone(&state.running_num_requests),
+        completions_service_url,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -1229,6 +1248,7 @@ pub mod utils {
             })?;
         let (completions_service_url, status_code) =
             get_best_available_chat_completions_service_url(
+                &state.running_num_requests,
                 completions_service_url_services,
                 model,
             )
@@ -1243,14 +1263,18 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             });
         }
+        state
+            .running_num_requests
+            .increment(&completions_service_url);
         let response = client
-        .post(format!(
-            "{}{}",
-            completions_service_url, COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
+            .post(format!("{}{}", completions_service_url, COMPLETIONS_PATH))
+            .json(&payload)
+            .send()
+            .await;
+        state
+            .running_num_requests
+            .decrement(&completions_service_url);
+        let response = response
         .map_err(|e| {
             AtomaServiceError::InternalError {
                 message: format!(
