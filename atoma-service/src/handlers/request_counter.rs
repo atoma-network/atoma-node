@@ -1,4 +1,5 @@
 use dashmap::{DashMap, Entry};
+use tracing::error;
 
 /// A thread-safe request counter that tracks the number of requests being processed for each inference service.
 #[derive(Clone, Debug)]
@@ -42,8 +43,14 @@ impl RequestCounter {
                 }
             }
             Entry::Vacant(_) => {
-                // This should not happen, but just in case, we remove the entry
-                self.running_num_requests.remove(key);
+                // This should not happen
+                error!(
+                    target = "atoma-service",
+                    level = "info",
+                    event = "chat-completions-handler",
+                    "Attempted to decrement a non-existent key: {}",
+                    key
+                );
             }
         }
     }
