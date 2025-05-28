@@ -3,7 +3,7 @@ use crate::{
         handle_concurrent_requests_count_decrement,
         metrics::{
             CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
-            TOTAL_BAD_REQUEST_REQUESTS, TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS,
+            TOTAL_BAD_REQUESTS, TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS,
             TOTAL_FAILED_CHAT_REQUESTS, TOTAL_LOCKED_REQUESTS, TOTAL_TOO_EARLY_REQUESTS,
             TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
@@ -247,8 +247,7 @@ pub async fn completions_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
@@ -479,8 +478,7 @@ pub async fn confidential_completions_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);

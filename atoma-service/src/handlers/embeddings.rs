@@ -7,7 +7,7 @@ use crate::{
         handle_confidential_compute_encryption_response,
         metrics::{
             TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS, TEXT_EMBEDDINGS_LATENCY_METRICS,
-            TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_BAD_REQUEST_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TEXT_EMBEDDINGS_NUM_REQUESTS, TOTAL_BAD_REQUESTS, TOTAL_COMPLETED_REQUESTS,
             TOTAL_FAILED_REQUESTS, TOTAL_FAILED_TEXT_EMBEDDING_CONFIDENTIAL_REQUESTS,
             TOTAL_FAILED_TEXT_EMBEDDING_REQUESTS, TOTAL_LOCKED_REQUESTS, TOTAL_TOO_EARLY_REQUESTS,
             TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
@@ -145,7 +145,7 @@ pub async fn embeddings_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
@@ -338,7 +338,7 @@ pub async fn confidential_embeddings_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);

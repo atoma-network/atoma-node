@@ -409,13 +409,13 @@ pub static TOTAL_LOCKED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
 /// Counter metric that tracks the total number of bad request requests.
 ///
 /// # Metric Details
-/// - Name: `atoma_total_bad_request_requests`
+/// - Name: `atoma_TOTAL_BAD_REQUESTS`
 /// - Type: Counter
 /// - Labels: `model`
 /// - Unit: requests (count)
-pub static TOTAL_BAD_REQUEST_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+pub static TOTAL_BAD_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
     GLOBAL_METER
-        .u64_counter("atoma_total_bad_request_requests")
+        .u64_counter("atoma_TOTAL_BAD_REQUESTS")
         .with_description("Total number of bad request requests")
         .with_unit("requests")
         .build()

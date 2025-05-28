@@ -6,7 +6,7 @@ use crate::{
         handle_concurrent_requests_count_decrement,
         metrics::{
             IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
-            TOTAL_BAD_REQUEST_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TOTAL_BAD_REQUESTS, TOTAL_COMPLETED_REQUESTS,
             TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
             TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS, TOTAL_LOCKED_REQUESTS,
             TOTAL_TOO_EARLY_REQUESTS, TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
@@ -146,7 +146,7 @@ pub async fn image_generations_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
@@ -334,7 +334,7 @@ pub async fn confidential_image_generations_handler(
                     TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
                     TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
