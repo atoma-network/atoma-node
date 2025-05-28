@@ -81,6 +81,8 @@ pub struct RequestMetadata {
     pub estimated_output_tokens: i64,
     /// The price per one million tokens
     pub price_per_one_million_tokens: i64,
+    /// User id in the proxy db
+    pub user_id: Option<i64>,
     /// User address that sent the request
     pub user_address: String,
     /// The payload hash
@@ -168,6 +170,26 @@ impl RequestMetadata {
     #[must_use]
     pub fn with_user_address(mut self, user_address: String) -> Self {
         self.user_address = user_address;
+        self
+    }
+
+    /// Create a new `RequestMetadata` with the given user id
+    ///
+    /// # Arguments
+    /// * `user_id` - The user id in the proxy db
+    ///
+    /// # Returns
+    /// Returns self with the updated user id for method chaining
+    ///
+    /// # Example
+    /// ```
+    /// use atoma_service::middleware::RequestMetadata;
+    ///
+    /// let metadata = RequestMetadata::default().with_user_id(1234567890);
+    /// ```
+    #[must_use]
+    pub const fn with_user_id(mut self, user_id: Option<i64>) -> Self {
+        self.user_id = user_id;
         self
     }
 
@@ -596,9 +618,29 @@ async fn generate_fiat_request(
             endpoint: endpoint.clone(),
         })?;
 
+    let user_id = req_parts
+        .headers
+        .get(atoma_utils::constants::USER_ID)
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::USER_ID.to_string(),
+            endpoint: endpoint.clone(),
+        })?;
+    let user_id = user_id
+        .to_str()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("User ID cannot be converted to a string, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?
+        .parse::<i64>()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("User ID is not a valid integer, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
+
     state
         .state_manager_sender
         .send(AtomaAtomaStateManagerEvent::LockFiatAmount {
+            user_id,
             user_address: sui_address.to_string(),
             estimated_input_amount: ((num_input_tokens as u128
                 * price_per_one_million_tokens as u128)
@@ -612,6 +654,24 @@ async fn generate_fiat_request(
             endpoint: endpoint.clone(),
         })?;
 
+    let user_id = req_parts
+        .headers
+        .get(atoma_utils::constants::USER_ID)
+        .ok_or_else(|| AtomaServiceError::MissingHeader {
+            header: atoma_utils::constants::USER_ID.to_string(),
+            endpoint: endpoint.clone(),
+        })?;
+    let user_id = user_id
+        .to_str()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("User ID cannot be converted to a string, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?
+        .parse::<i64>()
+        .map_err(|e| AtomaServiceError::InvalidHeader {
+            message: format!("User ID is not a valid integer, with error: {e}"),
+            endpoint: endpoint.clone(),
+        })?;
     let request_metadata = req_parts
         .extensions
         .get::<RequestMetadata>()
@@ -621,6 +681,7 @@ async fn generate_fiat_request(
         .with_price_per_one_million_tokens(price_per_one_million_tokens)
         .with_tokens_information(num_input_tokens, max_output_tokens)
         .with_request_type(request_type)
+        .with_user_id(Some(user_id))
         .with_endpoint_path(req_parts.uri.path().to_string());
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
