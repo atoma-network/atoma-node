@@ -185,7 +185,8 @@ impl RequestMetadata {
     /// ```
     /// use atoma_service::middleware::RequestMetadata;
     ///
-    /// let metadata = RequestMetadata::default().with_user_id(1234567890);
+    /// let metadata = RequestMetadata::default()
+    ///     .with_user_id(Some(1234567890));
     /// ```
     #[must_use]
     pub const fn with_user_id(mut self, user_id: Option<i64>) -> Self {
