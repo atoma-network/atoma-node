@@ -143,26 +143,24 @@ pub async fn image_generations_handler(
         Err(e) => {
             match e.status_code() {
                 StatusCode::TOO_MANY_REQUESTS => {
-                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
-                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::TOO_EARLY => {
-                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::UNAUTHORIZED => {
-                    TOTAL_UNAUTHORIZED_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 _ => {
                     TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
             }
             if let Some(stack_small_id) = stack_small_id {
@@ -333,26 +331,24 @@ pub async fn confidential_image_generations_handler(
         Err(e) => {
             match e.status_code() {
                 StatusCode::TOO_MANY_REQUESTS => {
-                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUEST_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUEST_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
-                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::TOO_EARLY => {
-                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::UNAUTHORIZED => {
-                    TOTAL_UNAUTHORIZED_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 _ => {
                     TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
             }
             if let Some(stack_small_id) = stack_small_id {
