@@ -573,6 +573,8 @@ pub fn handle_status_code_error(
 
 pub mod inference_service_metrics {
 
+    use std::sync::{Arc, Mutex};
+
     use hyper::StatusCode;
     use tracing::instrument;
 
@@ -641,7 +643,7 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
-        running_num_requests: &RequestCounter,
+        request_counter: &Arc<Mutex<RequestCounter>>,
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
     ) -> Result<(String, StatusCode)> {
@@ -657,19 +659,41 @@ pub mod inference_service_metrics {
             );
         }
 
-        for (url_str, _job_name, max_concurrent_val) in chat_completions_service_urls {
-            if running_num_requests.increment(url_str, *max_concurrent_val) {
-                return Ok((url_str.clone(), StatusCode::OK));
-            }
+        let selected_url = {
+            // Find the service URL with the least number of running requests.
+            let mut request_counter = request_counter.lock().unwrap();
+            chat_completions_service_urls
+                .iter()
+                .filter(|(url, _job_name, max_concurrent_val)| {
+                    // Filter out the URLs that are already at max capacity.
+                    // We need to do this in case the max capacity are different for each service.
+                    // Because in that case the minimum could be full, but another service
+                    // could still have capacity.
+                    request_counter.get_count(url) < *max_concurrent_val
+                })
+                .min_by_key(|(url, _job_name, _max_concurrent_val)| request_counter.get_count(url))
+                .and_then(|(url, _job_name, _max_concurrent_val)| {
+                    request_counter.increment(url);
+                    Some(url.clone())
+                })
+        };
+
+        if let Some(selected_url) = selected_url {
+            tracing::info!(
+                target = "atoma-service",
+                model = model,
+                "Selected chat completions service URL: {}",
+                selected_url
+            );
+            Ok((selected_url, StatusCode::OK))
+        } else {
+            tracing::warn!(
+                target = "atoma-service",
+                model = model,
+                "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
+            );
+            Ok((String::new(), StatusCode::TOO_MANY_REQUESTS))
         }
-
-        tracing::warn!(
-            target = "atoma-service",
-            model = model,
-            "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
-        );
-
-        return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
     }
 
     #[derive(Debug, thiserror::Error, Clone)]

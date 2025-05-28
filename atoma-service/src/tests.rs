@@ -20,7 +20,11 @@ mod middleware {
     use serde_json::{json, Value};
     use serial_test::serial;
     use sqlx::PgPool;
-    use std::{collections::HashMap, str::FromStr, sync::Arc};
+    use std::{
+        collections::HashMap,
+        str::FromStr,
+        sync::{Arc, Mutex},
+    };
     use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
     use sui_sdk::types::{
         base_types::{ObjectID, SuiAddress},
@@ -341,7 +345,7 @@ mod middleware {
                 address_index: 0,
                 stack_retrieve_sender,
                 whitelist_sui_addresses_for_fiat: vec![],
-                running_num_requests: Arc::new(RequestCounter::new()),
+                running_num_requests: Arc::new(Mutex::new(RequestCounter::new())),
             },
             public_key,
             signature,
