@@ -656,7 +656,7 @@ pub mod inference_service_metrics {
     ///
     /// # Arguments
     ///
-    /// * `chat_completions_service_urls` - A vector of tuples containing the chat completions service URL and the job name.
+    /// * `chat_completions_service_urls` - A vector of tuples containing the model name, the chat completions service URL and the job name.
     /// * `metrics_update_interval` - The interval in seconds to update the metrics.
     #[instrument(level = "info", skip_all)]
     pub fn start_metrics_updater(

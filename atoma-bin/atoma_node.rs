@@ -373,6 +373,19 @@ async fn main() -> Result<()> {
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
     };
 
+    let chat_completions_service_urls = app_state
+        .chat_completions_service_urls
+        .iter()
+        .flat_map(|(model, urls)| {
+            urls.iter()
+                .map(|(url, job)| (model.clone(), url.clone(), job.clone()))
+        })
+        .collect();
+    atoma_service::handlers::inference_service_metrics::start_metrics_updater(
+        chat_completions_service_urls,
+        config.service.metrics_update_interval,
+    );
+
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
         client,
