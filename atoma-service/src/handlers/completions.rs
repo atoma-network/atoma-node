@@ -3,8 +3,9 @@ use crate::{
         handle_concurrent_requests_count_decrement,
         metrics::{
             CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS, CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS,
-            TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS, TOTAL_FAILED_CHAT_REQUESTS,
-            TOTAL_TOO_MANY_REQUESTS,
+            TOTAL_BAD_REQUEST_REQUESTS, TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS,
+            TOTAL_FAILED_CHAT_REQUESTS, TOTAL_LOCKED_REQUESTS, TOTAL_TOO_EARLY_REQUESTS,
+            TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
@@ -236,12 +237,29 @@ pub async fn completions_handler(
             Ok(response)
         }
         Err(e) => {
-            if !e.status_code().is_client_error() {
-                TOTAL_FAILED_CHAT_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-            }
-            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUEST_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                _ => {
+                    TOTAL_FAILED_CHAT_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
             }
             // NOTE: We need to update the stack number of tokens as the service failed to generate
             // a proper response. For this reason, we set the total number of tokens to 0.
@@ -447,13 +465,29 @@ pub async fn confidential_completions_handler(
             Ok(response)
         }
         Err(e) => {
-            if !e.status_code().is_client_error() {
-                TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
-                    .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-            }
-            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUEST_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                _ => {
+                    TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
             }
             if let Some(stack_small_id) = stack_small_id {
                 // NOTE: We need to update the stack number of tokens as the service failed to generate

@@ -361,6 +361,66 @@ pub static TOTAL_TOO_MANY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+/// Counter metric that tracks the total number of unauthorized requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_unauthorized_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_UNAUTHORIZED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_unauthorized_requests")
+        .with_description("Total number of unauthorized requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of too early requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_too_early_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_TOO_EARLY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_too_early_requests")
+        .with_description("Total number of too early requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of locked requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_locked_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_LOCKED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_locked_requests")
+        .with_description("Total number of locked requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of bad request requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_bad_request_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_BAD_REQUEST_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_bad_request_requests")
+        .with_description("Total number of bad request requests")
+        .with_unit("requests")
+        .build()
+});
+
 /// Counter metric that tracks the total number of confidential chat requests.
 ///
 /// # Metric Details

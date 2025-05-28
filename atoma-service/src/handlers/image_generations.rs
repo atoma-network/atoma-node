@@ -6,8 +6,10 @@ use crate::{
         handle_concurrent_requests_count_decrement,
         metrics::{
             IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
-            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
-            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS, TOTAL_TOO_MANY_REQUESTS,
+            TOTAL_BAD_REQUEST_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
+            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS, TOTAL_LOCKED_REQUESTS,
+            TOTAL_TOO_EARLY_REQUESTS, TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
         update_fiat_amount, update_stack_num_compute_units,
     },
@@ -138,13 +140,29 @@ pub async fn image_generations_handler(
             Ok(response)
         }
         Err(e) => {
-            if !e.status_code().is_client_error() {
-                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
-                TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
-                    .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
-            }
-            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUEST_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                _ => {
+                    TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
             }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
@@ -307,13 +325,29 @@ pub async fn confidential_image_generations_handler(
             Ok(response)
         }
         Err(e) => {
-            if !e.status_code().is_client_error() {
-                TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
-                TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
-                    .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
-            }
-            if e.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUEST_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
+                _ => {
+                    TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                }
             }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
