@@ -643,7 +643,7 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
-        request_counter: &Arc<Mutex<RequestCounter>>,
+        running_num_requests: &Arc<Mutex<RequestCounter>>,
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
     ) -> Result<(String, StatusCode)> {
@@ -661,7 +661,12 @@ pub mod inference_service_metrics {
 
         let selected_url = {
             // Find the service URL with the least number of running requests.
-            let mut request_counter = request_counter.lock().unwrap();
+            let mut running_num_requests = running_num_requests.lock().map_err(|_| {
+                ChatCompletionsMetricsError::InternalError {
+                    message: "Failed to lock running_num_requests".to_string(),
+                    endpoint: "get_best_available_chat_completions_service_url".to_string(),
+                }
+            })?;
             chat_completions_service_urls
                 .iter()
                 .filter(|(url, _job_name, max_concurrent_val)| {
@@ -669,11 +674,13 @@ pub mod inference_service_metrics {
                     // We need to do this in case the max capacity are different for each service.
                     // Because in that case the minimum could be full, but another service
                     // could still have capacity.
-                    request_counter.get_count(url) < *max_concurrent_val
+                    running_num_requests.get_count(url) < *max_concurrent_val
                 })
-                .min_by_key(|(url, _job_name, _max_concurrent_val)| request_counter.get_count(url))
+                .min_by_key(|(url, _job_name, _max_concurrent_val)| {
+                    running_num_requests.get_count(url)
+                })
                 .map(|(url, _job_name, _max_concurrent_val)| {
-                    request_counter.increment(url);
+                    running_num_requests.increment(url);
                     url.clone()
                 })
         };
@@ -700,5 +707,7 @@ pub mod inference_service_metrics {
     pub enum ChatCompletionsMetricsError {
         #[error("No chat completions service urls found for model: {0}")]
         NoChatCompletionsServiceUrlsFound(String),
+        #[error("Internal error: {message} at endpoint: {endpoint}")]
+        InternalError { message: String, endpoint: String },
     }
 }

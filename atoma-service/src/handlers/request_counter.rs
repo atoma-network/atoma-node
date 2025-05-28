@@ -28,7 +28,7 @@ impl RequestCounter {
         self.running_num_requests
             .entry(key.to_string())
             .and_modify(|count| *count += 1)
-            .or_insert(0);
+            .or_insert(1);
     }
 
     /// Decrements the count for the given key. If the count reaches zero, the entry is removed.
