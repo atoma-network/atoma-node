@@ -574,6 +574,7 @@ pub fn handle_status_code_error(
 pub mod inference_service_metrics {
 
     use hyper::StatusCode;
+    use rand::seq::SliceRandom;
     use tracing::instrument;
 
     use super::request_counter::RequestCounter;
@@ -656,8 +657,11 @@ pub mod inference_service_metrics {
                 ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
             );
         }
-
-        for (url_str, _job_name, max_concurrent_val) in chat_completions_service_urls {
+        let mut shuffled_chat_completions_service_urls = chat_completions_service_urls.to_vec();
+        shuffled_chat_completions_service_urls.shuffle(&mut rand::thread_rng());
+        for (url_str, _job_name, max_concurrent_val) in
+            &shuffled_chat_completions_service_urls
+        {
             if running_num_requests.increment(url_str, *max_concurrent_val) {
                 return Ok((url_str.clone(), StatusCode::OK));
             }
