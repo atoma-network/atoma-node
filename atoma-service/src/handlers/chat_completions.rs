@@ -887,9 +887,14 @@ async fn handle_streaming_response(
         .send()
         .await
         .map_err(|e| {
-            state
-                .running_num_requests
-                .decrement(&chat_completions_service_url);
+            if let Ok(mut running_num_requests) = state.running_num_requests.lock() {
+                running_num_requests.decrement(&chat_completions_service_url);
+            } else {
+                return AtomaServiceError::InternalError {
+                    message: "Failed to lock running requests".to_string(),
+                    endpoint: endpoint.clone(),
+                };
+            }
             AtomaServiceError::InternalError {
                 message: format!(
                     "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
@@ -904,6 +909,11 @@ async fn handle_streaming_response(
     if !response.status().is_success() {
         state
             .running_num_requests
+            .lock()
+            .map_err(|_| AtomaServiceError::InternalError {
+                message: "Failed to lock running requests".to_string(),
+                endpoint: endpoint.clone(),
+            })?
             .decrement(&chat_completions_service_url);
         let status = response.status();
         let bytes = response
@@ -1316,6 +1326,11 @@ pub mod utils {
             .await;
         state
             .running_num_requests
+            .lock()
+            .map_err(|_| AtomaServiceError::InternalError {
+                message: "Failed to lock running requests".to_string(),
+                endpoint: endpoint.to_string(),
+            })?
             .decrement(&chat_completions_service_url);
         let response = response.map_err(|e| {
             AtomaServiceError::InternalError {

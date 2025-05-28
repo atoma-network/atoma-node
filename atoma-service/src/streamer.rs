@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
     time::Instant,
 };
@@ -144,7 +144,7 @@ pub struct Streamer {
     /// The user address for the request
     user_address: String,
     /// A map to keep track of the number of requests currently being processed
-    running_num_requests: Arc<RequestCounter>,
+    running_num_requests: Arc<Mutex<RequestCounter>>,
     /// The URL of the chat completions service
     chat_completions_service_url: String,
 }
@@ -184,7 +184,7 @@ impl Streamer {
         price_per_one_million_tokens: i64,
         user_id: Option<i64>,
         user_address: String,
-        running_num_requests: Arc<RequestCounter>,
+        running_num_requests: Arc<Mutex<RequestCounter>>,
         chat_completions_service_url: String,
     ) -> Self {
         Self {
@@ -913,8 +913,15 @@ impl Drop for Streamer {
         )
     )]
     fn drop(&mut self) {
-        self.running_num_requests
-            .decrement(&self.chat_completions_service_url);
+        if let Ok(mut running_num_requests) = self.running_num_requests.lock() {
+            running_num_requests.decrement(&self.chat_completions_service_url);
+        } else {
+            error!(
+                target = "atoma-service-streamer",
+                level = "error",
+                "Failed to lock running_num_requests mutex"
+            );
+        }
 
         if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, self.model.clone())]);

@@ -672,28 +672,28 @@ pub mod inference_service_metrics {
                     request_counter.get_count(url) < *max_concurrent_val
                 })
                 .min_by_key(|(url, _job_name, _max_concurrent_val)| request_counter.get_count(url))
-                .and_then(|(url, _job_name, _max_concurrent_val)| {
+                .map(|(url, _job_name, _max_concurrent_val)| {
                     request_counter.increment(url);
-                    Some(url.clone())
+                    url.clone()
                 })
         };
 
-        if let Some(selected_url) = selected_url {
-            tracing::info!(
-                target = "atoma-service",
-                model = model,
-                "Selected chat completions service URL: {}",
-                selected_url
-            );
-            Ok((selected_url, StatusCode::OK))
-        } else {
-            tracing::warn!(
-                target = "atoma-service",
-                model = model,
-                "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
-            );
-            Ok((String::new(), StatusCode::TOO_MANY_REQUESTS))
-        }
+        selected_url.map_or_else(|| {
+             tracing::warn!(
+                 target = "atoma-service",
+                 model = model,
+                 "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
+             );
+             Ok((String::new(), StatusCode::TOO_MANY_REQUESTS))
+         }, |selected_url| {
+             tracing::info!(
+                 target = "atoma-service",
+                 model = model,
+                 "Selected chat completions service URL: {}",
+                 selected_url
+             );
+             Ok((selected_url, StatusCode::OK))
+         })
     }
 
     #[derive(Debug, thiserror::Error, Clone)]

@@ -1,4 +1,8 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
