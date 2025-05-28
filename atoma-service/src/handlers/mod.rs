@@ -692,7 +692,7 @@ pub mod inference_service_metrics {
                 target = "atoma-service",
                 module = "inference_service_metrics",
                 level = "info",
-                "Metrics update interval: {metrics_interval} seconds"
+                "Metrics update interval: {metrics_interval} milliseconds"
             );
             let mut interval = time::interval(Duration::from_millis(metrics_interval));
             loop {
