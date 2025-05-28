@@ -259,6 +259,8 @@ pub enum AtomaAtomaStateManagerEvent {
     },
     /// Represents an update to the amount of fiat currency for a user to be locked
     LockFiatAmount {
+        /// User id in the proxy db
+        user_id: i64,
         /// User address
         user_address: String,
         /// Amount to be locked in fiat currency for input
@@ -268,6 +270,8 @@ pub enum AtomaAtomaStateManagerEvent {
     },
     /// Represents an update to the amount of fiat currency for a user, after the inference is done
     UpdateFiatAmount {
+        /// User id in the proxy db
+        user_id: i64,
         /// User address
         user_address: String,
         /// Model name used for the inference

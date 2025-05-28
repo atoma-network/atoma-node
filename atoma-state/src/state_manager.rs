@@ -1927,17 +1927,19 @@ impl AtomaState {
     )]
     pub async fn lock_fiat_amount(
         &self,
+        user_id: i64,
         user_address: String,
         estimated_total_input_amount: i64,
         estimated_total_completions_amount: i64,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO fiat_balances 
-                     (user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
-                     VALUES ($1, $2, $3) 
-                     ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_input_amount = fiat_balances.overcharged_unsettled_input_amount + $2,
-                            overcharged_unsettled_completions_amount = fiat_balances.overcharged_unsettled_completions_amount + $3;")
+                     (user_id, user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
+                     VALUES ($1, $2, $3, $4) 
+                     ON CONFLICT (user_id, user_address) DO UPDATE
+                        SET overcharged_unsettled_input_amount = fiat_balances.overcharged_unsettled_input_amount + $3,
+                            overcharged_unsettled_completions_amount = fiat_balances.overcharged_unsettled_completions_amount + $4;")
+            .bind(user_id)
             .bind(user_address)
             .bind(estimated_total_input_amount)
             .bind(estimated_total_completions_amount)
@@ -1982,6 +1984,7 @@ impl AtomaState {
     )]
     pub async fn update_fiat_amount(
         &self,
+        user_id: i64,
         user_address: String,
         estimated_input_amount: i64,
         input_amount: i64,
@@ -1990,13 +1993,14 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE fiat_balances 
-                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $2,
-                      already_debited_input_amount = already_debited_input_amount + $3,
-                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $4,
-                      already_debited_completions_amount = already_debited_completions_amount + $5,
-                      num_requests = num_requests + $6
-                  WHERE user_address = $1",
+                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $3,
+                      already_debited_input_amount = already_debited_input_amount + $4,
+                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $5,
+                      already_debited_completions_amount = already_debited_completions_amount + $6,
+                      num_requests = num_requests + $7
+                  WHERE user_id = $1 AND user_address = $2",
         )
+        .bind(user_id)
         .bind(user_address)
         .bind(estimated_input_amount)
         .bind(input_amount)
