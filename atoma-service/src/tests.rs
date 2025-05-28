@@ -34,7 +34,7 @@ mod middleware {
     use crate::{
         handlers::{
             chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
-            image_generations::IMAGE_GENERATIONS_PATH,
+            image_generations::IMAGE_GENERATIONS_PATH, request_counter::RequestCounter,
         },
         middleware::{
             confidential_compute_middleware, signature_verification_middleware, verify_permissions,
@@ -341,6 +341,7 @@ mod middleware {
                 address_index: 0,
                 stack_retrieve_sender,
                 whitelist_sui_addresses_for_fiat: vec![],
+                running_num_requests: Arc::new(RequestCounter::new()),
             },
             public_key,
             signature,
@@ -1120,6 +1121,7 @@ mod middleware {
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
             price_per_one_million_tokens: 0,
+            user_id: Some(1_234_567_890),
             user_address: "0x1".to_string(),
         };
 
@@ -1754,6 +1756,7 @@ mod middleware {
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
             price_per_one_million_tokens: 0,
+            user_id: Some(1_234_567_890),
             user_address: "0x1".to_string(),
         };
 

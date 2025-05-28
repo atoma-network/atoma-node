@@ -108,6 +108,7 @@ pub async fn embeddings_handler(
         client_encryption_metadata,
         endpoint_path: endpoint,
         price_per_one_million_tokens,
+        user_id,
         user_address,
         ..
     } = request_metadata;
@@ -180,7 +181,9 @@ pub async fn embeddings_handler(
             } else {
                 update_fiat_amount(
                     &state.state_manager_sender,
+                    user_id,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -275,6 +278,7 @@ pub async fn confidential_embeddings_handler(
         client_encryption_metadata,
         endpoint_path: endpoint,
         price_per_one_million_tokens,
+        user_id,
         user_address,
         ..
     } = request_metadata;
@@ -317,7 +321,9 @@ pub async fn confidential_embeddings_handler(
             } else {
                 update_fiat_amount(
                     &state.state_manager_sender,
+                    user_id,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     num_input_tokens,
                     estimated_output_tokens,
@@ -370,7 +376,9 @@ pub async fn confidential_embeddings_handler(
             } else {
                 update_fiat_amount(
                     &state.state_manager_sender,
+                    user_id,
                     user_address,
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,

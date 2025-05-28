@@ -16,6 +16,10 @@ use tokio::sync::watch;
 use tracing::{error, instrument};
 
 pub mod constants {
+    /// HTTP header name for the user ID.
+    /// Contains the user ID.
+    pub const USER_ID: &str = "X-User-Id";
+
     /// HTTP header name for the Stack Small ID.
     /// Used to identify specific stacks in the system.
     pub const STACK_SMALL_ID: &str = "X-Stack-Small-Id";
