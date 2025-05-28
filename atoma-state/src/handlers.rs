@@ -803,6 +803,18 @@ pub(crate) async fn handle_state_manager_event(
             if output_amount > 0 {
                 state_manager
                     .state
+                    .update_per_day_table(
+                        0, // TODO: Change this to the correct user_id when available
+                        user_address.clone(),
+                        model_name.clone(),
+                        estimated_input_amount,
+                        input_amount,
+                        estimated_output_amount,
+                        output_amount,
+                    )
+                    .await?;
+                state_manager
+                    .state
                     .update_usage_per_model(
                         user_address,
                         model_name,
