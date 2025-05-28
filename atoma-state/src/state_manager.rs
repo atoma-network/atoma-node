@@ -2008,6 +2008,71 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Updates the usage per day for a user and model.
+    ///
+    /// This method updates the `usage_per_day` table for the specified user and model.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The unique identifier of the user.
+    /// * `user_address` - The sui address.
+    /// * `model` - The name of the model.
+    /// * `input_amount` - The input amount for the model.
+    /// * `input_tokens` - The input tokens for the model.
+    /// * `output_amount` - The output amount for the model.
+    /// * `output_tokens` - The output tokens for the model.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use chrono::Utc;
+    /// async fn update_usage_per_day(state_manager: &AtomaStateManager, user_id: i64, model: String, input_amount: i64, input_tokens: i64, output_amount: i64, output_tokens: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_per_day_table(user_id, model, input_amount, input_tokens, output_amount, output_tokens).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_per_day_table(
+        &self,
+        user_id: i64,
+        user_address: String,
+        model: String,
+        input_amount: i64,
+        input_tokens: i64,
+        output_amount: i64,
+        output_tokens: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO usage_per_day (user_id, user_address, model, input_amount, input_tokens, output_amount, output_tokens)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (user_id, user_address, model, date) DO UPDATE SET
+                    input_amount = usage_per_day.input_amount + EXCLUDED.input_amount,
+                    input_tokens = usage_per_day.input_tokens + EXCLUDED.input_tokens,
+                    output_amount = usage_per_day.output_amount + EXCLUDED.output_amount,
+                    output_tokens = usage_per_day.output_tokens + EXCLUDED.output_tokens",
+        )
+        .bind(user_id)
+        .bind(user_address)
+        .bind(model)
+        .bind(input_amount)
+        .bind(input_tokens)
+        .bind(output_amount)
+        .bind(output_tokens)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
     /// Updates the usage per model for a user.
     ///
     /// This method updates the `usage_per_model` table for the specified user and model.
