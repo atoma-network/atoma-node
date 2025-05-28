@@ -4,9 +4,7 @@ use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
-use atoma_service::{
-    config::AtomaServiceConfig, handlers::request_counter::RequestCounter, server::AppState,
-};
+use atoma_service::{config::AtomaServiceConfig, server::AppState};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -373,7 +371,6 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
-        running_num_requests: Arc::new(RequestCounter::new()),
     };
 
     let daemon_app_state = DaemonState {
