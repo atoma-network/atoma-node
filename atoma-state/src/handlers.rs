@@ -767,6 +767,7 @@ pub(crate) async fn handle_state_manager_event(
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::LockFiatAmount {
+            user_id,
             user_address,
             estimated_input_amount,
             estimated_output_amount,
@@ -774,6 +775,7 @@ pub(crate) async fn handle_state_manager_event(
             state_manager
                 .state
                 .lock_fiat_amount(
+                    user_id,
                     user_address,
                     estimated_input_amount,
                     estimated_output_amount,
@@ -781,6 +783,7 @@ pub(crate) async fn handle_state_manager_event(
                 .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateFiatAmount {
+            user_id,
             user_address,
             model_name,
             estimated_input_amount,
@@ -793,6 +796,7 @@ pub(crate) async fn handle_state_manager_event(
             state_manager
                 .state
                 .update_fiat_amount(
+                    user_id,
                     user_address.clone(),
                     estimated_input_amount,
                     input_amount,
@@ -801,6 +805,18 @@ pub(crate) async fn handle_state_manager_event(
                 )
                 .await?;
             if output_amount > 0 {
+                state_manager
+                    .state
+                    .update_per_day_table(
+                        user_id,
+                        user_address.clone(),
+                        model_name.clone(),
+                        input_amount,
+                        input_tokens,
+                        output_amount,
+                        output_tokens,
+                    )
+                    .await?;
                 state_manager
                     .state
                     .update_usage_per_model(

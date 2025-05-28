@@ -1121,6 +1121,7 @@ mod middleware {
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
             price_per_one_million_tokens: 0,
+            user_id: Some(1_234_567_890),
             user_address: "0x1".to_string(),
         };
 
@@ -1755,6 +1756,7 @@ mod middleware {
             endpoint_path: "/".to_string(),
             client_encryption_metadata: None,
             price_per_one_million_tokens: 0,
+            user_id: Some(1_234_567_890),
             user_address: "0x1".to_string(),
         };
 

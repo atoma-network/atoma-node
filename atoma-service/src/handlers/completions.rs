@@ -189,6 +189,7 @@ pub async fn completions_handler(
         num_input_tokens,
         payload_hash,
         client_encryption_metadata,
+        user_id,
         user_address,
         price_per_one_million_tokens,
         ..
@@ -217,6 +218,7 @@ pub async fn completions_handler(
         payload_hash,
         stack_small_id,
         price_per_one_million_tokens,
+        user_id,
         user_address.clone(),
         is_stream,
         payload.clone(),
@@ -263,6 +265,7 @@ pub async fn completions_handler(
             } else {
                 update_fiat_amount(
                     &state.state_manager_sender,
+                    user_id,
                     user_address,
                     model.to_string(),
                     num_input_tokens,
@@ -393,6 +396,7 @@ pub async fn confidential_completions_handler(
         client_encryption_metadata,
         user_address,
         price_per_one_million_tokens,
+        user_id,
         ..
     } = request_metadata;
     info!(
@@ -424,6 +428,7 @@ pub async fn confidential_completions_handler(
         payload_hash,
         stack_small_id,
         price_per_one_million_tokens,
+        user_id,
         user_address.clone(),
         is_stream,
         payload.clone(),
@@ -472,6 +477,7 @@ pub async fn confidential_completions_handler(
             } else {
                 update_fiat_amount(
                     &state.state_manager_sender,
+                    user_id,
                     user_address,
                     model.to_string(),
                     num_input_tokens,
@@ -551,6 +557,7 @@ async fn handle_response(
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
     stack_small_id: Option<i64>,
     price_per_one_million_compute_units: i64,
+    user_id: Option<i64>,
     user_address: String,
     is_stream: bool,
     payload: Value,
@@ -576,6 +583,7 @@ async fn handle_response(
             num_input_tokens,
             estimated_output_tokens,
             price_per_one_million_compute_units,
+            user_id,
             user_address,
             payload_hash,
             streaming_encryption_metadata,
@@ -591,6 +599,7 @@ async fn handle_response(
             num_input_tokens,
             estimated_output_tokens,
             price_per_one_million_compute_units,
+            user_id,
             user_address,
             payload_hash,
             client_encryption_metadata,
@@ -669,6 +678,7 @@ async fn handle_non_streaming_response(
     num_input_tokens: i64,
     estimated_total_tokens: i64,
     price_per_one_million_compute_units: i64,
+    user_id: Option<i64>,
     user_address: String,
     payload_hash: [u8; PAYLOAD_HASH_SIZE],
     client_encryption_metadata: Option<EncryptionMetadata>,
@@ -709,6 +719,7 @@ async fn handle_non_streaming_response(
         num_input_tokens,
         estimated_total_tokens,
         price_per_one_million_compute_units,
+        user_id,
         user_address,
         input_tokens,
         output_tokens,
@@ -777,6 +788,7 @@ async fn handle_streaming_response(
     num_input_tokens: i64,
     estimated_output_tokens: i64,
     price_per_one_million_tokens: i64,
+    user_id: Option<i64>,
     user_address: String,
     payload_hash: [u8; 32],
     streaming_encryption_metadata: Option<StreamingEncryptionMetadata>,
@@ -914,6 +926,7 @@ async fn handle_streaming_response(
         request_id,
         timer,
         price_per_one_million_tokens,
+        user_id,
         user_address,
         Arc::clone(&state.running_num_requests),
         completions_service_url,
@@ -1470,6 +1483,7 @@ pub mod utils {
         num_input_tokens: i64,
         estimated_output_tokens: i64,
         price_per_one_million_compute_units: i64,
+        user_id: Option<i64>,
         user_address: String,
         input_tokens: i64,
         output_tokens: i64,
@@ -1574,6 +1588,7 @@ pub mod utils {
         } else {
             update_fiat_amount(
                 &state.state_manager_sender,
+                user_id,
                 user_address,
                 model.to_string(),
                 num_input_tokens,

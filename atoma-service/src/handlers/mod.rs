@@ -356,6 +356,7 @@ pub fn update_stack_num_compute_units(
 /// # Arguments
 ///
 /// * `state_manager_sender` - The channel to send events to the state manager
+/// * `user_id` - The id of the user for whom the fiat amount is being updated
 /// * `user_address` - The address of the user for whom the fiat amount is being updated
 /// * `estimated_total_tokens` - The estimated number of tokens for the request
 /// * `total_amount` - The total amount in fiat currency
@@ -406,6 +407,7 @@ pub fn update_stack_num_compute_units(
 #[allow(clippy::too_many_arguments)]
 pub fn update_fiat_amount(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
+    user_id: Option<i64>,
     user_address: String,
     model_name: String,
     estimated_input_tokens: i64,
@@ -415,31 +417,40 @@ pub fn update_fiat_amount(
     price_per_one_million_compute_units: i64,
     endpoint: &str,
 ) -> Result<(), AtomaServiceError> {
-    let estimated_input_amount = (estimated_input_tokens as u128
-        * price_per_one_million_compute_units as u128
-        / ONE_MILLION) as i64;
-    let input_amount =
-        (input_tokens as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
-    let estimated_output_amount = (estimated_output_tokens as u128
-        * price_per_one_million_compute_units as u128
-        / ONE_MILLION) as i64;
-    let output_amount =
-        (output_tokens as u128 * price_per_one_million_compute_units as u128 / ONE_MILLION) as i64;
-    state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
-            user_address,
-            model_name,
-            estimated_input_amount,
-            input_amount,
-            input_tokens,
-            estimated_output_amount,
-            output_amount,
-            output_tokens,
-        })
-        .map_err(|e| AtomaServiceError::InternalError {
-            message: format!("Error sending update fiat amount event: {e}"),
+    if let Some(user_id) = user_id {
+        let estimated_input_amount = (estimated_input_tokens as u128
+            * price_per_one_million_compute_units as u128
+            / ONE_MILLION) as i64;
+        let input_amount = (input_tokens as u128 * price_per_one_million_compute_units as u128
+            / ONE_MILLION) as i64;
+        let estimated_output_amount = (estimated_output_tokens as u128
+            * price_per_one_million_compute_units as u128
+            / ONE_MILLION) as i64;
+        let output_amount = (output_tokens as u128 * price_per_one_million_compute_units as u128
+            / ONE_MILLION) as i64;
+        state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::UpdateFiatAmount {
+                user_id,
+                user_address,
+                model_name,
+                estimated_input_amount,
+                input_amount,
+                input_tokens,
+                estimated_output_amount,
+                output_amount,
+                output_tokens,
+            })
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error sending update fiat amount event: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        Ok(())
+    } else {
+        Err(AtomaServiceError::InvalidBody {
+            message: "User ID not found in request body".to_string(),
             endpoint: endpoint.to_string(),
         })
+    }
 }
 
 /// Atomically decrements the concurrent request count for a specific stack ID in a `DashMap`.
@@ -563,6 +574,7 @@ pub fn handle_status_code_error(
 pub mod inference_service_metrics {
 
     use hyper::StatusCode;
+    use rand::seq::SliceRandom;
     use tracing::instrument;
 
     use super::request_counter::RequestCounter;
@@ -645,8 +657,9 @@ pub mod inference_service_metrics {
                 ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
             );
         }
-
-        for (url_str, _job_name, max_concurrent_val) in chat_completions_service_urls {
+        let mut shuffled_chat_completions_service_urls = chat_completions_service_urls.to_vec();
+        shuffled_chat_completions_service_urls.shuffle(&mut rand::thread_rng());
+        for (url_str, _job_name, max_concurrent_val) in &shuffled_chat_completions_service_urls {
             if running_num_requests.increment(url_str, *max_concurrent_val) {
                 return Ok((url_str.clone(), StatusCode::OK));
             }

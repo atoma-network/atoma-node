@@ -139,6 +139,8 @@ pub struct Streamer {
     num_input_tokens: i64,
     /// The price per one million tokens for the request
     price_per_one_million_tokens: i64,
+    /// The user id for the request (only available for requests that are through fiat payments)
+    user_id: Option<i64>,
     /// The user address for the request
     user_address: String,
     /// A map to keep track of the number of requests currently being processed
@@ -180,6 +182,7 @@ impl Streamer {
         request_id: String,
         first_token_generation_timer: Instant,
         price_per_one_million_tokens: i64,
+        user_id: Option<i64>,
         user_address: String,
         running_num_requests: Arc<RequestCounter>,
         chat_completions_service_url: String,
@@ -207,6 +210,7 @@ impl Streamer {
             streamer_computed_num_tokens: 0,
             num_input_tokens,
             price_per_one_million_tokens,
+            user_id,
             user_address,
             running_num_requests,
             chat_completions_service_url,
@@ -352,6 +356,7 @@ impl Streamer {
             }
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
+            self.user_id,
             self.user_address.clone(),
             self.model.clone(),
             self.num_input_tokens,
@@ -836,6 +841,7 @@ impl Streamer {
             }
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
+            self.user_id,
             self.user_address.clone(),
             self.model.clone(),
             self.num_input_tokens,
@@ -953,6 +959,7 @@ impl Drop for Streamer {
             }
         } else if let Err(e) = update_fiat_amount(
             &self.state_manager_sender,
+            self.user_id,
             self.user_address.clone(),
             self.model.clone(),
             self.num_input_tokens,

@@ -1927,17 +1927,19 @@ impl AtomaState {
     )]
     pub async fn lock_fiat_amount(
         &self,
+        user_id: i64,
         user_address: String,
         estimated_total_input_amount: i64,
         estimated_total_completions_amount: i64,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO fiat_balances 
-                     (user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
-                     VALUES ($1, $2, $3) 
-                     ON CONFLICT (user_address) DO UPDATE
-                        SET overcharged_unsettled_input_amount = fiat_balances.overcharged_unsettled_input_amount + $2,
-                            overcharged_unsettled_completions_amount = fiat_balances.overcharged_unsettled_completions_amount + $3;")
+                     (user_id, user_address, overcharged_unsettled_input_amount, overcharged_unsettled_completions_amount)
+                     VALUES ($1, $2, $3, $4) 
+                     ON CONFLICT (user_id, user_address) DO UPDATE
+                        SET overcharged_unsettled_input_amount = fiat_balances.overcharged_unsettled_input_amount + $3,
+                            overcharged_unsettled_completions_amount = fiat_balances.overcharged_unsettled_completions_amount + $4;")
+            .bind(user_id)
             .bind(user_address)
             .bind(estimated_total_input_amount)
             .bind(estimated_total_completions_amount)
@@ -1982,6 +1984,7 @@ impl AtomaState {
     )]
     pub async fn update_fiat_amount(
         &self,
+        user_id: i64,
         user_address: String,
         estimated_input_amount: i64,
         input_amount: i64,
@@ -1990,19 +1993,85 @@ impl AtomaState {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE fiat_balances 
-                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $2,
-                      already_debited_input_amount = already_debited_input_amount + $3,
-                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $4,
-                      already_debited_completions_amount = already_debited_completions_amount + $5,
-                      num_requests = num_requests + $6
-                  WHERE user_address = $1",
+                  SET overcharged_unsettled_input_amount = overcharged_unsettled_input_amount - $3,
+                      already_debited_input_amount = already_debited_input_amount + $4,
+                      overcharged_unsettled_completions_amount = overcharged_unsettled_completions_amount - $5,
+                      already_debited_completions_amount = already_debited_completions_amount + $6,
+                      num_requests = num_requests + $7
+                  WHERE user_id = $1 AND user_address = $2",
         )
+        .bind(user_id)
         .bind(user_address)
         .bind(estimated_input_amount)
         .bind(input_amount)
         .bind(estimated_output_amount)
         .bind(output_amount)
         .bind(i64::from(output_amount > 0)) // If total amount is greater than 0 then the request was successful
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates the usage per day for a user and model.
+    ///
+    /// This method updates the `usage_per_day` table for the specified user and model.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The unique identifier of the user.
+    /// * `user_address` - The sui address.
+    /// * `model` - The name of the model.
+    /// * `input_amount` - The input amount for the model.
+    /// * `input_tokens` - The input tokens for the model.
+    /// * `output_amount` - The output amount for the model.
+    /// * `output_tokens` - The output tokens for the model.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use chrono::Utc;
+    /// async fn update_usage_per_day(state_manager: &AtomaStateManager, user_id: i64, model: String, input_amount: i64, input_tokens: i64, output_amount: i64, output_tokens: i64) -> Result<(), AtomaStateManagerError> {
+    ///     state_manager.update_per_day_table(user_id, model, input_amount, input_tokens, output_amount, output_tokens).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_per_day_table(
+        &self,
+        user_id: i64,
+        user_address: String,
+        model: String,
+        input_amount: i64,
+        input_tokens: i64,
+        output_amount: i64,
+        output_tokens: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO usage_per_day (user_id, user_address, model, input_amount, input_tokens, output_amount, output_tokens)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (user_id, user_address, model, date) DO UPDATE SET
+                    input_amount = usage_per_day.input_amount + EXCLUDED.input_amount,
+                    input_tokens = usage_per_day.input_tokens + EXCLUDED.input_tokens,
+                    output_amount = usage_per_day.output_amount + EXCLUDED.output_amount,
+                    output_tokens = usage_per_day.output_tokens + EXCLUDED.output_tokens",
+        )
+        .bind(user_id)
+        .bind(user_address)
+        .bind(model)
+        .bind(input_amount)
+        .bind(input_tokens)
+        .bind(output_amount)
+        .bind(output_tokens)
         .execute(&self.db)
         .await?;
         Ok(())
