@@ -1029,7 +1029,8 @@ impl AtomaP2pNode {
             return Ok(());
         }
         // Directly deserialize SignedNodeMessage using new method
-        let signed_node_message = SignedNodeMessage::deserialize_with_signature(&message_data)?;
+        let signed_node_message =
+            SignedNodeMessage::deserialize_with_signature(&message_data).map_err(|e| *e)?;
         let signature_len = signed_node_message.signature.len();
         trace!(
             target = "atoma-p2p",
@@ -1058,7 +1059,7 @@ impl AtomaP2pNode {
                 );
                 // NOTE: We should reject the message if it fails to validate
                 // as it means the node is not being following the current protocol
-                if let AtomaP2pNodeError::UrlParseError(_) = e {
+                if let AtomaP2pNodeError::UrlParseError(_) = *e {
                     // We remove the peer from the gossipsub topic, because it is not a valid URL and therefore cannot be reached
                     // by clients for processing OpenAI api compatible AI requests, so these peers are not useful for the network
                     self.swarm
@@ -1192,7 +1193,9 @@ impl AtomaP2pNode {
             node_message,
             signature: Bytes::copy_from_slice(signature.as_ref()),
         };
-        let serialized_signed_node_message = signed_node_message.serialize_with_signature()?;
+        let serialized_signed_node_message = signed_node_message
+            .serialize_with_signature()
+            .map_err(|e| *e)?;
         let topic = gossipsub::IdentTopic::new(METRICS_GOSPUBSUB_TOPIC);
         self.swarm
             .behaviour_mut()

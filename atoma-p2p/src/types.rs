@@ -17,7 +17,7 @@ pub const SECP256K1_SIGNATURE_LENGTH: usize = 98;
 /// see <https://github.com/MystenLabs/sui/blob/main/crates/sui-types/src/crypto.rs#L891>
 pub const SECP256R1_SIGNATURE_LENGTH: usize = 98;
 
-type Result<T, E = AtomaP2pNodeError> = std::result::Result<T, E>;
+type Result<T, E = Box<AtomaP2pNodeError>> = std::result::Result<T, E>;
 
 /// An enum representing different types of events that can be emitted by the Atoma P2P node.
 pub enum AtomaP2pEvent {
@@ -138,8 +138,7 @@ pub struct NodeMessage {
 impl SerializeWithHash for NodeMessage {
     fn serialize_with_hash(&self) -> Result<SerializedMessage> {
         let mut buffer = BytesMut::new();
-        ciborium::into_writer(self, (&mut buffer).writer())
-            .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
+        ciborium::into_writer(self, (&mut buffer).writer()).map_err(|e| Box::new(e.into()))?;
         Ok(SerializedMessage {
             hash: blake3::hash(buffer.as_ref()),
             message: buffer.freeze(),
@@ -185,35 +184,36 @@ pub trait SerializeWithSignature {
 }
 
 impl SerializeWithSignature for SignedNodeMessage {
-    fn serialize_with_signature(&self) -> Result<Bytes, AtomaP2pNodeError> {
+    fn serialize_with_signature(&self) -> Result<Bytes> {
         let mut buffer = BytesMut::with_capacity(1024);
         buffer.extend_from_slice(&self.signature);
 
         // Serialize node message
         ciborium::into_writer(&self.node_message, (&mut buffer).writer())
-            .map_err(AtomaP2pNodeError::UsageMetricsSerializeError)?;
+            .map_err(|e| Box::new(e.into()))?;
 
         Ok(buffer.freeze())
     }
 
-    fn deserialize_with_signature(data: &[u8]) -> Result<Self, AtomaP2pNodeError> {
+    fn deserialize_with_signature(data: &[u8]) -> Result<Self> {
         let signature_len = data
             .first()
             .map(|&flag| match flag {
                 f if f == Ed25519SuiSignature::SCHEME.flag() => Ok(ED25519_SIGNATURE_LENGTH),
                 f if f == Secp256k1SuiSignature::SCHEME.flag() => Ok(SECP256K1_SIGNATURE_LENGTH),
                 f if f == Secp256r1SuiSignature::SCHEME.flag() => Ok(SECP256R1_SIGNATURE_LENGTH),
-                f => Err(AtomaP2pNodeError::SignatureParseError(format!(
+                f => Err(Box::new(AtomaP2pNodeError::SignatureParseError(format!(
                     "Invalid signature scheme, expected 0x00, 0x01 or 0x02, received {f:#04x}",
-                ))),
+                )))),
             })
             .ok_or_else(|| {
-                AtomaP2pNodeError::SignatureParseError(
+                Box::new(AtomaP2pNodeError::SignatureParseError(
                     "Invalid signature scheme: the data is empty".to_string(),
-                )
+                ))
             })??;
         let signature = Bytes::copy_from_slice(&data[0..signature_len]);
-        let node_message = ciborium::from_reader(&data[signature_len..])?;
+        let node_message =
+            ciborium::from_reader(&data[signature_len..]).map_err(|e| Box::new(e.into()))?;
         Ok(Self {
             node_message,
             signature,
