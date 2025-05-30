@@ -1,6 +1,6 @@
 use opentelemetry::{
     global,
-    metrics::{Counter, Histogram, Meter, UpDownCounter},
+    metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
 };
 use std::sync::LazyLock;
 
@@ -616,3 +616,18 @@ pub static SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram
         .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
         .build()
     });
+
+/// Gauge metric that tracks the number of running requests.
+///
+/// # Metric Details
+/// - Name: `atoma_num_running_requests`
+/// - Type: Gauge
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+pub static NUM_RUNNING_REQUESTS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_gauge("atoma_num_running_requests")
+        .with_description("Number of running requests")
+        .with_unit("requests")
+        .build()
+});

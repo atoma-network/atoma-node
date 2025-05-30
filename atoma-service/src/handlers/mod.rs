@@ -793,7 +793,7 @@ pub mod inference_service_metrics {
                         chat_completions_service_url: chat_completions_service_url.clone(),
                         num_queued_requests,
                         num_running_requests,
-                        max_number_of_running_requests:*max_number_of_running_requests
+                        max_number_of_running_requests: *max_number_of_running_requests,
                     })
                 });
         join_all(tasks).await
