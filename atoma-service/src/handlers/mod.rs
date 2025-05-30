@@ -4,7 +4,6 @@ pub mod completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
-pub mod request_counter;
 pub mod request_model;
 pub mod stop_streamer;
 
@@ -572,14 +571,268 @@ pub fn handle_status_code_error(
 }
 
 pub mod inference_service_metrics {
+    use futures::future::join_all;
+    use opentelemetry::KeyValue;
+    use prometheus_parse::Scrape;
+    use prometheus_parse::Value;
+    use rand::Rng;
+    use std::sync::Arc;
+    use std::sync::LazyLock;
+    use std::time::Duration;
+    use tokio::sync::RwLock;
+    use tokio::time;
 
+    use crate::handlers::metrics::CHAT_COMPLETIONS_TOO_MANY_REQUESTS;
     use hyper::StatusCode;
-    use rand::seq::SliceRandom;
-    use tracing::instrument;
+    use tracing::{info, instrument};
 
-    use super::request_counter::RequestCounter;
+    use super::InferenceService;
 
     pub type Result<T> = std::result::Result<T, ChatCompletionsMetricsError>;
+    type MetricValue = ChatCompletionsMetrics;
+    type MetricResult = Result<MetricValue>;
+    type MetricsVec = Vec<MetricResult>;
+    type CachedMetrics = Option<MetricsVec>;
+    type MetricsLock = Arc<RwLock<CachedMetrics>>;
+
+    /// The default interval for updating the metrics
+    const DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS: u64 = 35;
+
+    /// The timeout for the Prometheus metrics queries
+    const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// The HTTP client for the metrics queries
+    static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+        reqwest::Client::builder()
+            .timeout(METRICS_TIMEOUT)
+            .build()
+            .expect("Failed to create HTTP client")
+    });
+
+    /// Chat completions metrics
+    #[derive(Debug, Clone)]
+    struct ChatCompletionsMetrics {
+        /// The model name  
+        model: String,
+        /// The chat completions service url
+        chat_completions_service_url: String,
+        /// The number of queue requests
+        num_queued_requests: f64,
+        /// The number of running requests
+        num_running_requests: f64,
+    }
+
+    /// Cache structure to store metrics
+    #[derive(Debug, Default)]
+    struct MetricsCache {
+        metrics: MetricsLock,
+    }
+
+    impl MetricsCache {
+        fn new() -> Self {
+            Self {
+                metrics: Arc::new(RwLock::new(None)),
+            }
+        }
+
+        async fn get_metrics(&self) -> Option<MetricsVec> {
+            self.metrics.read().await.clone()
+        }
+
+        async fn update_metrics(&self, new_metrics: Vec<Result<ChatCompletionsMetrics>>) {
+            *self.metrics.write().await = Some(new_metrics);
+        }
+    }
+
+    /// Global metrics cache
+    #[allow(clippy::redundant_closure)]
+    static VLLM_METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
+
+    /// Global metrics cache
+    #[allow(clippy::redundant_closure)]
+    static SGLANG_METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
+
+    /// Start the background task to update metrics every 500 milliseconds
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls` - A vector of tuples containing the model name, the chat completions service URL and the job name.
+    /// * `metrics_update_interval` - The interval in seconds to update the metrics.
+    #[instrument(level = "info", skip_all)]
+    pub fn start_metrics_updater(
+        chat_completions_service_urls: Vec<(String, String, String)>,
+        metrics_update_interval: Option<u64>,
+    ) {
+        type ChatCompletionsServiceUrls = Vec<(String, String, String)>;
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Starting metrics updater with {chat_completions_service_urls:?}"
+        );
+        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
+            ChatCompletionsServiceUrls,
+            ChatCompletionsServiceUrls,
+        ) = chat_completions_service_urls
+            .iter()
+            .cloned()
+            .partition(|(_, _, job)| job.contains("vllm"));
+        info!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+        );
+        let vllm_chat_completions_service_urls = Arc::new(vllm_chat_completions_service_urls);
+        let sglang_chat_completions_service_urls = Arc::new(sglang_chat_completions_service_urls);
+        tokio::spawn(async move {
+            let metrics_interval =
+                metrics_update_interval.unwrap_or(DEFAULT_METRICS_UPDATE_INTERVAL_MILLIS);
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "Metrics update interval: {metrics_interval} milliseconds"
+            );
+            let mut interval = time::interval(Duration::from_millis(metrics_interval));
+            loop {
+                interval.tick().await;
+                if !vllm_chat_completions_service_urls.is_empty() {
+                    let vllm_metrics =
+                        get_metrics(&InferenceService::Vllm, &vllm_chat_completions_service_urls)
+                            .await;
+                    if vllm_metrics.iter().any(std::result::Result::is_ok) {
+                        VLLM_METRICS_CACHE.update_metrics(vllm_metrics).await;
+                    } else {
+                        tracing::warn!(
+                            "Failed to retrieve any valid vLLM metrics, not updating cache"
+                        );
+                    }
+                }
+                if !sglang_chat_completions_service_urls.is_empty() {
+                    let sglang_metrics = get_metrics(
+                        &InferenceService::SgLang,
+                        &sglang_chat_completions_service_urls,
+                    )
+                    .await;
+                    if sglang_metrics.iter().any(std::result::Result::is_ok) {
+                        SGLANG_METRICS_CACHE.update_metrics(sglang_metrics).await;
+                    } else {
+                        tracing::warn!(
+                            "Failed to retrieve any valid SgLang metrics, not updating cache"
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    /// Fetches metrics from the specified chat completions service URL.
+    ///
+    /// This function retrieves metrics from the specified chat completions service URL
+    /// and parses the response to extract relevant metrics such as the number of queue
+    /// requests and running requests. It handles errors gracefully and returns a vector
+    /// of results, where each result contains the metrics for a specific service URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `inference_service` - The inference service type (vLLM or SgLang).
+    /// * `jobs_with_url` - A slice of tuples containing model name, the chat completions service URL
+    ///   and the job name (e.g., "vllm-service", "sglang-service").
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Vec<Result<ChatCompletionsMetrics>>`, where each result contains
+    /// the metrics for a specific service URL. If an error occurs while fetching or parsing
+    /// the metrics, the error is returned in the result.
+    ///
+    /// # Errors
+    ///
+    /// *   `ChatCompletionsMetricsError::NoMetricsFound`: If no metrics are found for the
+    ///     specified job or if the metrics response is invalid.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying
+    ///     issues occur during metric collection from Prometheus (e.g., network errors,
+    ///     parsing errors), though the function attempts to handle missing individual metrics
+    ///     gracefully.
+    async fn get_metrics(
+        inference_service: &InferenceService,
+        jobs_with_url: &[(String, String, String)], // (model, url, job)
+    ) -> Vec<Result<ChatCompletionsMetrics>> {
+        let tasks =
+            jobs_with_url
+                .iter()
+                .map(|(model, chat_completions_service_url, job)| async move {
+                    let response = HTTP_CLIENT
+                        .get(format!("{chat_completions_service_url}/metrics"))
+                        .send()
+                        .await
+                        .map_err(|_| {
+                            ChatCompletionsMetricsError::NoMetricsFound(job.to_string())
+                        })?;
+                    let body = response.text().await?;
+                    let lines = body
+                        .lines()
+                        .map(|line| Ok(line.replace(inference_service.get_service_prefix(), "")));
+                    let metrics = Scrape::parse(lines).unwrap();
+                    let num_queued_requests = extract_metric(
+                        &metrics,
+                        inference_service.get_queued_requests_metric_name(),
+                        job,
+                    )?;
+                    let num_running_requests = extract_metric(
+                        &metrics,
+                        inference_service.get_running_requests_metric_name(),
+                        job,
+                    )?;
+
+                    Ok(ChatCompletionsMetrics {
+                        model: model.clone(),
+                        chat_completions_service_url: chat_completions_service_url.clone(),
+                        num_queued_requests,
+                        num_running_requests,
+                    })
+                });
+        join_all(tasks).await
+    }
+
+    /// Extracts a specific metric from the Scrape response.
+    ///
+    /// This function searches for a metric with the specified name in the
+    /// Scrape response and returns its value if found.
+    ///
+    /// # Arguments
+    ///
+    /// * `metrics` - The Scrape response containing the metrics.
+    /// * `name` - The name of the metric to extract.
+    /// * `job` - The job name used for error reporting.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<f64>` containing the metric value if found,
+    /// or an error if not found or if the value is not a Gauge.
+    ///
+    /// # Errors
+    ///
+    /// *   `ChatCompletionsMetricsError::NoMetricsFound`: If the specified metric is not found
+    ///     or if the value is not a Gauge.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying
+    ///     issues occur during metric collection from Prometheus (e.g., network errors,
+    ///     parsing errors),
+    ///     though the function attempts to handle missing individual metrics gracefully.
+    fn extract_metric(metrics: &Scrape, name: &str, job: &str) -> Result<f64> {
+        metrics
+            .samples
+            .iter()
+            .find(|s| s.metric == name)
+            .ok_or_else(|| ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+            .and_then(|sample| {
+                if let Value::Gauge(value) = sample.value {
+                    Ok(value)
+                } else {
+                    Err(ChatCompletionsMetricsError::NoMetricsFound(job.to_string()))
+                }
+            })
+    }
 
     /// Selects the best available chat completions service URL for a given model based on performance metrics.
     ///
@@ -642,41 +895,224 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
-        running_num_requests: &RequestCounter,
-        chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
+        chat_completions_service_urls: &[(String, String)],
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        // Ensure there are service URLs to choose from.
+        const MAX_ALLOWED_NUM_QUEUED_REQUESTS: f64 = 1.0; // Default to 1 request
+
+        type ChatCompletionsServiceUrls = Vec<(String, String)>;
+
         if chat_completions_service_urls.is_empty() {
-            tracing::warn!(
-                target = "atoma-service",
-                model = model,
-                "No chat completions service URLs provided for model."
-            );
             return Err(
                 ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
             );
         }
-        let mut shuffled_chat_completions_service_urls = chat_completions_service_urls.to_vec();
-        shuffled_chat_completions_service_urls.shuffle(&mut rand::thread_rng());
-        for (url_str, _job_name, max_concurrent_val) in &shuffled_chat_completions_service_urls {
-            if running_num_requests.increment(url_str, *max_concurrent_val) {
-                return Ok((url_str.clone(), StatusCode::OK));
+        tracing::debug!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Getting best available chat completions service URL for model: {model} and urls: {chat_completions_service_urls:?}"
+        );
+        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
+            ChatCompletionsServiceUrls,
+            ChatCompletionsServiceUrls,
+        ) = chat_completions_service_urls
+            .iter()
+            .cloned()
+            .partition(|(_, job)| job.contains("vllm"));
+
+        tracing::debug!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+        );
+
+        // Get cached metrics
+        let vllm_metrics = if vllm_chat_completions_service_urls.is_empty() {
+            vec![]
+        } else if let Some(metrics) = VLLM_METRICS_CACHE.get_metrics().await {
+            metrics
+        } else {
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "No cached vLLM metrics, getting them directly"
+            );
+            let vllm_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
+                vllm_chat_completions_service_urls
+                    .iter()
+                    .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
+                    .collect();
+            get_metrics(
+                &InferenceService::Vllm,
+                &vllm_chat_completions_service_urls_with_model,
+            )
+            .await
+        };
+        let sglang_metrics = if sglang_chat_completions_service_urls.is_empty() {
+            vec![]
+        } else if let Some(metrics) = SGLANG_METRICS_CACHE.get_metrics().await {
+            metrics
+        } else {
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "No cached SgLang metrics, getting them directly"
+            );
+            let sglang_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
+                sglang_chat_completions_service_urls
+                    .iter()
+                    .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
+                    .collect();
+            get_metrics(
+                &InferenceService::SgLang,
+                &sglang_chat_completions_service_urls_with_model,
+            )
+            .await
+        };
+
+        tracing::debug!(
+            target = "atoma-service",
+            module = "inference_service_metrics",
+            level = "info",
+            "Received vLLM metrics: {vllm_metrics:?}, SgLang metrics: {sglang_metrics:?}"
+        );
+
+        let mut metrics_results = Vec::new();
+        for metric in vllm_metrics.into_iter().chain(sglang_metrics.into_iter()) {
+            match metric {
+                Ok(ChatCompletionsMetrics {
+                    model: current_model,
+                    chat_completions_service_url,
+                    num_queued_requests,
+                    num_running_requests,
+                }) => {
+                    tracing::info!(
+                        target = "atoma-service",
+                        module = "inference_service_metrics",
+                        level = "info",
+                        "current_model = {current_model}, model = {model}, they are equal = {}",
+                        current_model == model
+                    );
+                    if current_model.to_lowercase() != model.to_lowercase() {
+                        // NOTE: We only want to consider metrics for the current model
+                        continue;
+                    }
+                    info!(
+                        target = "atoma-service",
+                        module = "vllm_metrics",
+                        level = "info",
+                        "Received vLLM/SgLang metrics response for {chat_completions_service_url}:\n
+                            num_queued_requests={num_queued_requests},
+                            num_running_requests={num_running_requests}"
+                    );
+                    metrics_results.push(ChatCompletionsMetrics {
+                        model: current_model,
+                        chat_completions_service_url,
+                        num_queued_requests,
+                        num_running_requests,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target = "atoma-service",
+                        module = "vllm_metrics",
+                        level = "error",
+                        "Failed to get metrics for chat completions service url with error: {e}",
+                    );
+                }
             }
         }
 
-        tracing::warn!(
+        if metrics_results.is_empty() {
+            tracing::warn!(
+                target = "atoma-service",
+                level = "warn",
+                "No metrics found for model: {model}",
+            );
+            // NOTE: In this case, we pick one of the urls at random
+            let random_index = rand::thread_rng().gen_range(0..chat_completions_service_urls.len());
+            let best_url = chat_completions_service_urls[random_index].0.clone();
+            return Ok((best_url, StatusCode::OK));
+        }
+
+        // Select the best available chat completions service URL based on the number of queued and running requests.
+        let best_metrics = metrics_results
+            .iter()
+            .min_by_key(|metric| {
+                (
+                    metric.num_queued_requests as i64,
+                    metric.num_running_requests as i64,
+                )
+            })
+            .unwrap();
+
+        if best_metrics.num_queued_requests >= MAX_ALLOWED_NUM_QUEUED_REQUESTS {
+            tracing::warn!(
+                target = "atoma-service",
+                level = "warn",
+                "Node is currently under high load, the best available chat completions service URL for model: {model} has a num queue requests of at least {} requests",
+                best_metrics.num_queued_requests
+            );
+            CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
+            return Ok((
+                chat_completions_service_urls[0].0.clone(),
+                StatusCode::TOO_MANY_REQUESTS,
+            ));
+        }
+
+        let best_url = best_metrics.chat_completions_service_url.clone();
+        tracing::info!(
             target = "atoma-service",
-            model = model,
-            "No chat completions service URLs below max capacity found, returning TOO_MANY_REQUESTS status."
+            level = "info",
+            "Best available chat completions service URL for model: {model} is: {best_url} with and {} queue requests",
+            best_metrics.num_queued_requests
         );
 
-        return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
+        Ok((best_url, StatusCode::OK))
     }
 
     #[derive(Debug, thiserror::Error, Clone)]
     pub enum ChatCompletionsMetricsError {
+        #[error("Failed to get metrics: {0}")]
+        GetMetricsError(String),
         #[error("No chat completions service urls found for model: {0}")]
         NoChatCompletionsServiceUrlsFound(String),
+        #[error("Invalid metrics value: {0}")]
+        InvalidMetricsValue(String),
+        #[error("Invalid metrics response: {0}")]
+        InvalidMetricsResponse(String),
+        #[error("Failed to create HTTP client: {0}")]
+        FailedToCreateHttpClient(String),
+        #[error("No metrics found for job: {0}")]
+        NoMetricsFound(String),
+    }
+
+    // From implementations to handle conversions from error types to our cloneable error type
+    impl From<reqwest::Error> for ChatCompletionsMetricsError {
+        fn from(err: reqwest::Error) -> Self {
+            Self::GetMetricsError(err.to_string())
+        }
+    }
+
+    impl From<std::num::ParseFloatError> for ChatCompletionsMetricsError {
+        fn from(err: std::num::ParseFloatError) -> Self {
+            Self::InvalidMetricsValue(err.to_string())
+        }
+    }
+
+    impl From<serde_json::Error> for ChatCompletionsMetricsError {
+        fn from(err: serde_json::Error) -> Self {
+            Self::InvalidMetricsResponse(err.to_string())
+        }
+    }
+
+    impl From<prometheus_http_query::Error> for ChatCompletionsMetricsError {
+        fn from(err: prometheus_http_query::Error) -> Self {
+            Self::FailedToCreateHttpClient(err.to_string())
+        }
     }
 }

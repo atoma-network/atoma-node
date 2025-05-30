@@ -34,7 +34,7 @@ mod middleware {
     use crate::{
         handlers::{
             chat_completions::CHAT_COMPLETIONS_PATH, embeddings::EMBEDDINGS_PATH,
-            image_generations::IMAGE_GENERATIONS_PATH, request_counter::RequestCounter,
+            image_generations::IMAGE_GENERATIONS_PATH,
         },
         middleware::{
             confidential_compute_middleware, signature_verification_middleware, verify_permissions,
@@ -341,7 +341,6 @@ mod middleware {
                 address_index: 0,
                 stack_retrieve_sender,
                 whitelist_sui_addresses_for_fiat: vec![],
-                running_num_requests: Arc::new(RequestCounter::new()),
             },
             public_key,
             signature,
