@@ -1079,7 +1079,7 @@ pub mod inference_service_metrics {
             )
         });
 
-        for metric in metrics_results.into_iter() {
+        for metric in metrics_results {
             if running_num_requests.increment(
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
