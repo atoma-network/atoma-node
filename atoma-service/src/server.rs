@@ -54,6 +54,7 @@ use crate::{
             confidential_image_generations_handler, image_generations_handler,
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
         },
+        request_counter::RequestCounter,
         stop_streamer::stop_streamer_handler,
     },
     middleware::{
@@ -174,7 +175,7 @@ pub struct AppState {
     /// These URLs point to the external services responsible for performing
     /// AI model chat completions. The application forwards requests to this
     /// service to obtain AI-generated responses.
-    pub chat_completions_service_urls: HashMap<String, Vec<(String, String)>>,
+    pub chat_completions_service_urls: HashMap<String, Vec<(String, String, usize)>>,
 
     /// URL for the embeddings service.
     ///
@@ -210,6 +211,9 @@ pub struct AppState {
 
     /// The time for which we triiger too many requests since the first occurrence.
     pub too_many_requests_timeout_ms: u128,
+
+    /// Number of running requests for each inference service.
+    pub running_num_requests: Arc<RequestCounter>,
 }
 
 /// Creates and configures the main router for the application.

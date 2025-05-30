@@ -3,34 +3,42 @@ chat_completions_service_urls = { "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic
     [
         "http://chat-completions1:8000",
         "vllm1",
+        256,
     ],
     [
         "http://chat-completions2:8000",
         "vllm2",
+        256,
     ],
     [
         "http://chat-completions3:8000",
         "vllm3",
+        256,
     ],
     [
         "http://chat-completions4:8000",
         "vllm4",
+        256,
     ],
     [
         "http://chat-completions5:8000",
         "vllm5",
+        256,
     ],
     [
         "http://chat-completions6:8000",
         "vllm6",
+        256,
     ],
     [
         "http://chat-completions7:8000",
         "vllm7",
+        256,
     ],
     [
         "http://chat-completions8:8000",
         "vllm8",
+        256,
     ],
 ] }
 embeddings_service_url = "http://embeddings:80"

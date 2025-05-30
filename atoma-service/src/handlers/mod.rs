@@ -4,6 +4,7 @@ pub mod completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod metrics;
+pub mod request_counter;
 pub mod request_model;
 pub mod stop_streamer;
 
@@ -572,7 +573,6 @@ pub fn handle_status_code_error(
 
 pub mod inference_service_metrics {
     use futures::future::join_all;
-    use opentelemetry::KeyValue;
     use prometheus_parse::Scrape;
     use prometheus_parse::Value;
     use rand::Rng;
@@ -581,12 +581,13 @@ pub mod inference_service_metrics {
     use std::time::Duration;
     use tokio::sync::RwLock;
     use tokio::time;
+    use tracing::info;
 
-    use crate::handlers::metrics::CHAT_COMPLETIONS_TOO_MANY_REQUESTS;
+    use crate::handlers::InferenceService;
     use hyper::StatusCode;
-    use tracing::{info, instrument};
+    use tracing::instrument;
 
-    use super::InferenceService;
+    use super::request_counter::RequestCounter;
 
     pub type Result<T> = std::result::Result<T, ChatCompletionsMetricsError>;
     type MetricValue = ChatCompletionsMetrics;
@@ -620,6 +621,8 @@ pub mod inference_service_metrics {
         num_queued_requests: f64,
         /// The number of running requests
         num_running_requests: f64,
+        /// The maximum number of running requests allowed for this url.
+        max_number_of_running_requests: usize,
     }
 
     /// Cache structure to store metrics
@@ -660,10 +663,10 @@ pub mod inference_service_metrics {
     /// * `metrics_update_interval` - The interval in seconds to update the metrics.
     #[instrument(level = "info", skip_all)]
     pub fn start_metrics_updater(
-        chat_completions_service_urls: Vec<(String, String, String)>,
+        chat_completions_service_urls: Vec<(String, String, String, usize)>,
         metrics_update_interval: Option<u64>,
     ) {
-        type ChatCompletionsServiceUrls = Vec<(String, String, String)>;
+        type ChatCompletionsServiceUrls = Vec<(String, String, String, usize)>;
         info!(
             target = "atoma-service",
             module = "inference_service_metrics",
@@ -676,7 +679,7 @@ pub mod inference_service_metrics {
         ) = chat_completions_service_urls
             .iter()
             .cloned()
-            .partition(|(_, _, job)| job.contains("vllm"));
+            .partition(|(_, _, job, _)| job.contains("vllm"));
         info!(
             target = "atoma-service",
             module = "inference_service_metrics",
@@ -756,12 +759,12 @@ pub mod inference_service_metrics {
     ///     gracefully.
     async fn get_metrics(
         inference_service: &InferenceService,
-        jobs_with_url: &[(String, String, String)], // (model, url, job)
+        jobs_with_url: &[(String, String, String, usize)], // (model, url, job, max_concurrent_requests)
     ) -> Vec<Result<ChatCompletionsMetrics>> {
         let tasks =
             jobs_with_url
                 .iter()
-                .map(|(model, chat_completions_service_url, job)| async move {
+                .map(|(model, chat_completions_service_url, job, max_number_of_running_requests)| async move {
                     let response = HTTP_CLIENT
                         .get(format!("{chat_completions_service_url}/metrics"))
                         .send()
@@ -790,6 +793,7 @@ pub mod inference_service_metrics {
                         chat_completions_service_url: chat_completions_service_url.clone(),
                         num_queued_requests,
                         num_running_requests,
+                        max_number_of_running_requests:*max_number_of_running_requests
                     })
                 });
         join_all(tasks).await
@@ -895,14 +899,18 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     pub async fn get_best_available_chat_completions_service_url(
-        chat_completions_service_urls: &[(String, String)],
+        running_num_requests: &RequestCounter,
+        chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
     ) -> Result<(String, StatusCode)> {
-        const MAX_ALLOWED_NUM_QUEUED_REQUESTS: f64 = 1.0; // Default to 1 request
-
-        type ChatCompletionsServiceUrls = Vec<(String, String)>;
+        type ChatCompletionsServiceUrls = Vec<(String, String, usize)>;
 
         if chat_completions_service_urls.is_empty() {
+            tracing::warn!(
+                target = "atoma-service",
+                model = model,
+                "No chat completions service URLs provided for model."
+            );
             return Err(
                 ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
             );
@@ -919,7 +927,7 @@ pub mod inference_service_metrics {
         ) = chat_completions_service_urls
             .iter()
             .cloned()
-            .partition(|(_, job)| job.contains("vllm"));
+            .partition(|(_, job, _)| job.contains("vllm"));
 
         tracing::debug!(
             target = "atoma-service",
@@ -940,11 +948,22 @@ pub mod inference_service_metrics {
                 level = "info",
                 "No cached vLLM metrics, getting them directly"
             );
-            let vllm_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
-                vllm_chat_completions_service_urls
-                    .iter()
-                    .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
-                    .collect();
+            let vllm_chat_completions_service_urls_with_model: Vec<(
+                String,
+                String,
+                String,
+                usize,
+            )> = vllm_chat_completions_service_urls
+                .iter()
+                .map(|(url, job, max_concurrent_requests)| {
+                    (
+                        model.to_string(),
+                        url.clone(),
+                        job.clone(),
+                        *max_concurrent_requests,
+                    )
+                })
+                .collect();
             get_metrics(
                 &InferenceService::Vllm,
                 &vllm_chat_completions_service_urls_with_model,
@@ -962,11 +981,22 @@ pub mod inference_service_metrics {
                 level = "info",
                 "No cached SgLang metrics, getting them directly"
             );
-            let sglang_chat_completions_service_urls_with_model: Vec<(String, String, String)> =
-                sglang_chat_completions_service_urls
-                    .iter()
-                    .map(|(url, job)| (model.to_string(), url.clone(), job.clone()))
-                    .collect();
+            let sglang_chat_completions_service_urls_with_model: Vec<(
+                String,
+                String,
+                String,
+                usize,
+            )> = sglang_chat_completions_service_urls
+                .iter()
+                .map(|(url, job, max_concurrent_requests)| {
+                    (
+                        model.to_string(),
+                        url.clone(),
+                        job.clone(),
+                        *max_concurrent_requests,
+                    )
+                })
+                .collect();
             get_metrics(
                 &InferenceService::SgLang,
                 &sglang_chat_completions_service_urls_with_model,
@@ -989,6 +1019,7 @@ pub mod inference_service_metrics {
                     chat_completions_service_url,
                     num_queued_requests,
                     num_running_requests,
+                    max_number_of_running_requests,
                 }) => {
                     tracing::info!(
                         target = "atoma-service",
@@ -1014,6 +1045,7 @@ pub mod inference_service_metrics {
                         chat_completions_service_url,
                         num_queued_requests,
                         num_running_requests,
+                        max_number_of_running_requests,
                     });
                 }
                 Err(e) => {
@@ -1040,39 +1072,30 @@ pub mod inference_service_metrics {
         }
 
         // Select the best available chat completions service URL based on the number of queued and running requests.
-        let best_metrics = metrics_results
-            .iter()
-            .min_by_key(|metric| {
-                (
-                    metric.num_queued_requests as i64,
-                    metric.num_running_requests as i64,
-                )
-            })
-            .unwrap();
+        metrics_results.sort_by_key(|metric| {
+            (
+                metric.num_queued_requests as i64,
+                metric.num_running_requests as i64,
+            )
+        });
 
-        if best_metrics.num_queued_requests >= MAX_ALLOWED_NUM_QUEUED_REQUESTS {
-            tracing::warn!(
-                target = "atoma-service",
-                level = "warn",
-                "Node is currently under high load, the best available chat completions service URL for model: {model} has a num queue requests of at least {} requests",
-                best_metrics.num_queued_requests
-            );
-            CHAT_COMPLETIONS_TOO_MANY_REQUESTS.add(1, &[KeyValue::new("model", model.to_string())]);
-            return Ok((
-                chat_completions_service_urls[0].0.clone(),
-                StatusCode::TOO_MANY_REQUESTS,
-            ));
+        for metric in metrics_results {
+            if running_num_requests.increment(
+                &metric.chat_completions_service_url,
+                metric.max_number_of_running_requests,
+            ) {
+                let best_url = metric.chat_completions_service_url.clone();
+                tracing::info!(
+                    target = "atoma-service",
+                    level = "info",
+                    "Best available chat completions service URL for model: {model} is: {best_url} with and {} queue requests",
+                    metric.num_queued_requests
+                );
+                return Ok((best_url, StatusCode::OK));
+            }
         }
 
-        let best_url = best_metrics.chat_completions_service_url.clone();
-        tracing::info!(
-            target = "atoma-service",
-            level = "info",
-            "Best available chat completions service URL for model: {model} is: {best_url} with and {} queue requests",
-            best_metrics.num_queued_requests
-        );
-
-        Ok((best_url, StatusCode::OK))
+        return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
     }
 
     #[derive(Debug, thiserror::Error, Clone)]
