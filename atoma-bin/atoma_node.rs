@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
-use atoma_service::{config::AtomaServiceConfig, server::AppState};
+use atoma_service::{
+    config::AtomaServiceConfig, handlers::request_counter::RequestCounter, server::AppState,
+};
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
 use atoma_utils::spawn_with_shutdown;
@@ -373,6 +375,7 @@ async fn main() -> Result<()> {
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
         too_many_requests: Arc::new(DashMap::new()),
         too_many_requests_timeout_ms: u128::from(config.service.too_many_requests_timeout_ms),
+        running_num_requests: Arc::new(RequestCounter::new()),
     };
 
     let chat_completions_service_urls = app_state
@@ -380,7 +383,14 @@ async fn main() -> Result<()> {
         .iter()
         .flat_map(|(model, urls)| {
             urls.iter()
-                .map(|(url, job)| (model.clone(), url.clone(), job.clone()))
+                .map(|(url, job, max_number_of_running_requests)| {
+                    (
+                        model.clone(),
+                        url.clone(),
+                        job.clone(),
+                        *max_number_of_running_requests,
+                    )
+                })
         })
         .collect();
     atoma_service::handlers::inference_service_metrics::start_metrics_updater(

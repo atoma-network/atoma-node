@@ -31,6 +31,7 @@ use crate::{
             CHAT_COMPLETIONS_STREAMING_LATENCY_METRICS, CHAT_COMPLETIONS_TIME_TO_FIRST_TOKEN,
             TOTAL_COMPLETED_REQUESTS,
         },
+        request_counter::RequestCounter,
         update_fiat_amount, update_stack_num_compute_units, USAGE_KEY,
     },
     server::utils,
@@ -143,6 +144,10 @@ pub struct Streamer {
     user_id: Option<i64>,
     /// The user address for the request
     user_address: String,
+    /// A map to keep track of the number of requests currently being processed
+    running_num_requests: Arc<RequestCounter>,
+    /// The URL of the chat completions service
+    chat_completions_service_url: String,
 }
 
 /// Represents the various states of a streaming process
@@ -180,6 +185,8 @@ impl Streamer {
         price_per_one_million_tokens: i64,
         user_id: Option<i64>,
         user_address: String,
+        running_num_requests: Arc<RequestCounter>,
+        chat_completions_service_url: String,
     ) -> Self {
         Self {
             concurrent_requests,
@@ -206,6 +213,8 @@ impl Streamer {
             price_per_one_million_tokens,
             user_id,
             user_address,
+            running_num_requests,
+            chat_completions_service_url,
         }
     }
 
@@ -905,6 +914,9 @@ impl Drop for Streamer {
         )
     )]
     fn drop(&mut self) {
+        self.running_num_requests
+            .decrement(&self.chat_completions_service_url);
+
         if self.is_final_chunk_handled || matches!(self.status, StreamStatus::Failed(_)) {
             TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, self.model.clone())]);
             return;
