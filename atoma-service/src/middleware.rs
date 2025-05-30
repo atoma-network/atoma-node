@@ -811,22 +811,7 @@ pub async fn verify_permissions(
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
         })?;
-    if let Some(trigger_time) = state.too_many_requests.get(model) {
-        if trigger_time.elapsed().as_millis() < state.too_many_requests_timeout_ms {
-            tracing::info!(
-                target = "atoma-service",
-                level = "info",
-                "Too many requests for model: {model}, endpoint: {endpoint}, elapsed trigger time: {} and timeout: {}",
-                trigger_time.elapsed().as_millis(),
-                state.too_many_requests_timeout_ms
-            );
-            return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
-                message: "Too many requests".to_string(),
-                endpoint: endpoint.clone(),
-            });
-        }
-        state.too_many_requests.remove(model);
-    }
+    utils::check_if_too_many_requests(&state, model, &endpoint)?;
     if !state.models.contains(&model.to_string()) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
@@ -1600,6 +1585,58 @@ pub mod utils {
                 ),
                 endpoint: endpoint.to_string(),
             });
+        }
+        Ok(())
+    }
+
+    /// Checks if the model has too many requests.
+    ///
+    /// This function checks if the model has too many requests by checking if the elapsed time since the first occurrence is less than the timeout.
+    ///
+    /// # Arguments
+    /// * `state` - The application state containing the too many requests map
+    /// * `model` - The model to check
+    /// * `endpoint` - The API endpoint path being accessed (used for error context)
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the model has too many requests
+    /// * `Err(AtomaServiceError)` - If the model has too many requests
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - The model has too many requests
+    /// - The elapsed time since the first occurrence is less than the timeout
+    #[instrument(level = "info", skip_all, err)]
+    pub fn check_if_too_many_requests(
+        state: &AppState,
+        model: &str,
+        endpoint: &str,
+    ) -> Result<(), AtomaServiceError> {
+        match state.too_many_requests.entry(model.to_string()) {
+            dashmap::mapref::entry::Entry::Occupied(occupied_entry) => {
+                let elapsed_ms = occupied_entry.get().elapsed().as_millis();
+
+                if elapsed_ms < state.too_many_requests_timeout_ms {
+                    tracing::info!(
+                            target = "atoma-service",
+                            level = "info",
+                            "Too many requests for model: {model}, endpoint: {endpoint}, elapsed trigger time: {elapsed_ms} and timeout: {}",
+                            state.too_many_requests_timeout_ms
+                        );
+                    return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                        message: "Too many requests".to_string(),
+                        endpoint: endpoint.to_string(),
+                    });
+                }
+                occupied_entry.remove();
+            }
+            dashmap::mapref::entry::Entry::Vacant(_) => {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model is not in the `too_many_requests` map, so no action is needed here. Processing can continue."
+                );
+            }
         }
         Ok(())
     }
