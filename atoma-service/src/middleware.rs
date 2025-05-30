@@ -811,6 +811,15 @@ pub async fn verify_permissions(
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
         })?;
+    if let Some(trigger_time) = state.too_many_requests.get(model) {
+        if trigger_time.elapsed().as_millis() < state.too_many_requests_timeout_ms {
+            return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: "Too many requests".to_string(),
+                endpoint: endpoint.clone(),
+            });
+        }
+        state.too_many_requests.remove(model);
+    }
     if !state.models.contains(&model.to_string()) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),

@@ -341,6 +341,8 @@ mod middleware {
                 address_index: 0,
                 stack_retrieve_sender,
                 whitelist_sui_addresses_for_fiat: vec![],
+                too_many_requests: Arc::new(DashMap::new()),
+                too_many_requests_timeout_ms: 0,
             },
             public_key,
             signature,
