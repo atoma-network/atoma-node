@@ -813,6 +813,13 @@ pub async fn verify_permissions(
         })?;
     if let Some(trigger_time) = state.too_many_requests.get(model) {
         if trigger_time.elapsed().as_millis() < state.too_many_requests_timeout_ms {
+            tracing::info!(
+                target = "atoma-service",
+                level = "info",
+                "Too many requests for model: {model}, endpoint: {endpoint}, elapsed trigger time: {} and timeout: {}",
+                trigger_time.elapsed().as_millis(),
+                state.too_many_requests_timeout_ms
+            );
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
                 message: "Too many requests".to_string(),
                 endpoint: endpoint.clone(),
