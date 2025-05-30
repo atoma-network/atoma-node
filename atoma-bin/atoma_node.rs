@@ -371,6 +371,8 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
+        too_many_requests: Arc::new(DashMap::new()),
+        too_many_requests_timeout_ms: u128::from(config.service.too_many_requests_timeout_ms),
     };
 
     let chat_completions_service_urls = app_state

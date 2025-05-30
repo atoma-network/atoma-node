@@ -57,6 +57,9 @@ pub struct AtomaServiceConfig {
 
     /// List of allowed sui addresses for fiat payments.
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
+
+    /// The timeout for the too many requests error in milliseconds.
+    pub too_many_requests_timeout_ms: u64,
 }
 
 impl AtomaServiceConfig {
