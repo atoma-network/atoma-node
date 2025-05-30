@@ -134,6 +134,7 @@ pub struct Streamer {
     /// kills the connection before the final chunk is sent. If, instead,
     /// the last chunk is handled, the value is updated to the actual number of tokens
     /// returned by the LLM inference service
+    #[allow(clippy::struct_field_names)]
     streamer_computed_num_tokens: i64,
     /// The number of input tokens for the request
     num_input_tokens: i64,

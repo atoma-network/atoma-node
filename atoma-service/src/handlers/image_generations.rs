@@ -6,8 +6,10 @@ use crate::{
         handle_concurrent_requests_count_decrement,
         metrics::{
             IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS, IMAGE_GEN_LATENCY_METRICS, IMAGE_GEN_NUM_REQUESTS,
-            TOTAL_COMPLETED_REQUESTS, TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
-            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS,
+            TOTAL_BAD_REQUESTS, TOTAL_COMPLETED_REQUESTS,
+            TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS,
+            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS, TOTAL_FAILED_REQUESTS, TOTAL_LOCKED_REQUESTS,
+            TOTAL_TOO_EARLY_REQUESTS, TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
         update_fiat_amount, update_stack_num_compute_units,
     },
@@ -16,6 +18,7 @@ use crate::{
     types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 use axum::{extract::State, Extension, Json};
+use hyper::StatusCode;
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde_json::Value;
@@ -118,28 +121,48 @@ pub async fn image_generations_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or("unknown")
+        .to_string();
 
     match handle_image_generations_response(
         &state,
-        payload.clone(),
+        payload,
         payload_hash,
         stack_small_id,
         client_encryption_metadata,
         &endpoint,
         timer,
-        model.to_string(),
+        model.clone(),
     )
     .await
     {
         Ok(response) => {
-            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
+            TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
-            TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
-                .add(1, &[KeyValue::new("model", model.to_owned())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                _ => {
+                    TOTAL_FAILED_IMAGE_GENERATION_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+            }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
                     &state.concurrent_requests_per_stack,
@@ -263,13 +286,13 @@ pub async fn confidential_image_generations_handler(
 
     match handle_image_generations_response(
         &state,
-        payload.clone(),
+        payload,
         payload_hash,
         stack_small_id,
         client_encryption_metadata,
         &endpoint,
         timer,
-        model.to_string(),
+        model.clone(),
     )
     .await
     {
@@ -306,9 +329,28 @@ pub async fn confidential_image_generations_handler(
             Ok(response)
         }
         Err(e) => {
-            TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
-            TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
-                .add(1, &[KeyValue::new("model", model.clone())]);
+            match e.status_code() {
+                StatusCode::TOO_MANY_REQUESTS => {
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::BAD_REQUEST => {
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::LOCKED => {
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::TOO_EARLY => {
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                StatusCode::UNAUTHORIZED => {
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+                _ => {
+                    TOTAL_FAILED_IMAGE_CONFIDENTIAL_GENERATION_REQUESTS
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                }
+            }
             if let Some(stack_small_id) = stack_small_id {
                 let concurrent_requests = handle_concurrent_requests_count_decrement(
                     &state.concurrent_requests_per_stack,

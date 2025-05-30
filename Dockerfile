@@ -22,8 +22,8 @@ RUN echo "* soft nofile 65535" >> /etc/security/limits.conf && \
     echo "* soft nproc 65535" >> /etc/security/limits.conf && \
     echo "* hard nproc 65535" >> /etc/security/limits.conf
 
-# Install Rust 1.84.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.0 \
+# Install Rust 1.87.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.87.0 \
     && . "$HOME/.cargo/env"
 
 # Add cargo to PATH

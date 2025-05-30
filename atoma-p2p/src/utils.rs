@@ -75,7 +75,7 @@ const EXPIRED_TIMESTAMP_THRESHOLD: u64 = 10 * 60; // 10 minutes
 #[instrument(level = "debug", skip_all)]
 pub fn validate_node_message_country_url_timestamp(
     node_message: &NodeMessage,
-) -> Result<(), AtomaP2pNodeError> {
+) -> Result<(), Box<AtomaP2pNodeError>> {
     let now = std::time::Instant::now().elapsed().as_secs();
 
     let country = node_message.node_metadata.country.as_str();
@@ -91,7 +91,7 @@ pub fn validate_node_message_country_url_timestamp(
                 "Invalid URL format, received address: {}",
                 node_message.node_metadata.node_public_url
             );
-            AtomaP2pNodeError::UrlParseError(e)
+            Box::new(AtomaP2pNodeError::UrlParseError(e))
         })?;
 
     // Check if the timestamp is within a reasonable time frame
@@ -105,18 +105,20 @@ pub fn validate_node_message_country_url_timestamp(
             node_message.node_metadata.timestamp,
             now
         );
-        return Err(AtomaP2pNodeError::InvalidPublicAddressError(
+        return Err(Box::new(AtomaP2pNodeError::InvalidPublicAddressError(
             "Timestamp is too far in the past".to_string(),
-        ));
+        )));
     }
 
     Ok(())
 }
 
 /// Custom validation function for ISO 3166-1 alpha-2 country codes
-fn validate_country_code(code: &str) -> Result<(), AtomaP2pNodeError> {
+fn validate_country_code(code: &str) -> Result<(), Box<AtomaP2pNodeError>> {
     isocountry::CountryCode::for_alpha2(code).map_err(|_| {
-        AtomaP2pNodeError::InvalidCountryCodeError("Country code is invalid.".to_string())
+        Box::new(AtomaP2pNodeError::InvalidCountryCodeError(
+            "Country code is invalid.".to_string(),
+        ))
     })?;
     Ok(())
 }
@@ -331,7 +333,7 @@ pub async fn validate_signed_node_message(
     node_message_hash: &[u8; 32],
     signature: &[u8],
     state_manager_sender: &Sender<StateManagerEvent>,
-) -> Result<(), AtomaP2pNodeError> {
+) -> Result<(), Box<AtomaP2pNodeError>> {
     // Validate the message's node public URL and timestamp
     validate_node_message_country_url_timestamp(node_message)?;
     // Verify the signature of the message

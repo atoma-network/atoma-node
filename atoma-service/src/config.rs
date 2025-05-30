@@ -11,9 +11,7 @@ use serde::Deserialize;
 pub struct AtomaServiceConfig {
     /// URL for the chat completions service with maximum concurrency settings.
     ///
-    /// This is an optional field that, if provided, specifies the endpoint
-    /// for the chat completions service used by the Atoma Service, together with its
-    /// associated Prometheus job name.
+    /// This field specifies the endpoint for the chat completions service used by the Atoma Service.
     pub chat_completions_service_urls: HashMap<String, Vec<(String, String, usize)>>,
 
     /// URL for the embeddings service.
@@ -59,6 +57,9 @@ pub struct AtomaServiceConfig {
 
     /// List of allowed sui addresses for fiat payments.
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
+
+    /// The timeout for the too many requests error in milliseconds.
+    pub too_many_requests_timeout_ms: u64,
 }
 
 impl AtomaServiceConfig {

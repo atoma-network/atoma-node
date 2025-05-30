@@ -373,8 +373,30 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
+        too_many_requests: Arc::new(DashMap::new()),
+        too_many_requests_timeout_ms: u128::from(config.service.too_many_requests_timeout_ms),
         running_num_requests: Arc::new(RequestCounter::new()),
     };
+
+    let chat_completions_service_urls = app_state
+        .chat_completions_service_urls
+        .iter()
+        .flat_map(|(model, urls)| {
+            urls.iter()
+                .map(|(url, job, max_number_of_running_requests)| {
+                    (
+                        model.clone(),
+                        url.clone(),
+                        job.clone(),
+                        *max_number_of_running_requests,
+                    )
+                })
+        })
+        .collect();
+    atoma_service::handlers::inference_service_metrics::start_metrics_updater(
+        chat_completions_service_urls,
+        config.service.metrics_update_interval,
+    );
 
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,

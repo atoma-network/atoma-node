@@ -46,7 +46,7 @@ pub fn openapi_routes() -> Router {
         let spec_path = docs_dir.join("openapi.yml");
         fs::write(&spec_path, spec).expect("Failed to write OpenAPI spec to file");
 
-        println!("OpenAPI spec written to: {spec_path:?}");
+        println!("OpenAPI spec written to: {}", spec_path.display());
     }
 
     Router::new()
