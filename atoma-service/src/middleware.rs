@@ -811,7 +811,7 @@ pub async fn verify_permissions(
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
         })?;
-    utils::check_if_too_many_requests(&state, model, &endpoint)?;
+    utils::check_if_too_many_requests(&state, model, &endpoint).await?;
     if !state.models.contains(&model.to_string()) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
@@ -1016,6 +1016,7 @@ pub mod utils {
         completions::RequestModelCompletions,
         embeddings::RequestModelEmbeddings,
         image_generations::RequestModelImageGenerations,
+        inference_service_metrics::get_all_metrics,
         request_model::{RequestModel, TokensEstimate},
     };
 
@@ -1607,36 +1608,48 @@ pub mod utils {
     /// - The model has too many requests
     /// - The elapsed time since the first occurrence is less than the timeout
     #[instrument(level = "info", skip_all, err)]
-    pub fn check_if_too_many_requests(
+    pub async fn check_if_too_many_requests(
         state: &AppState,
         model: &str,
         endpoint: &str,
     ) -> Result<(), AtomaServiceError> {
-        match state.too_many_requests.entry(model.to_string()) {
-            dashmap::mapref::entry::Entry::Occupied(occupied_entry) => {
-                let elapsed_ms = occupied_entry.get().elapsed().as_millis();
-
-                if elapsed_ms < state.too_many_requests_timeout_ms {
-                    tracing::info!(
-                            target = "atoma-service",
-                            level = "info",
-                            "Too many requests for model: {model}, endpoint: {endpoint}, elapsed trigger time: {elapsed_ms} and timeout: {}",
-                            state.too_many_requests_timeout_ms
-                        );
-                    return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
-                        message: "Too many requests".to_string(),
+        if state.too_many_requests.get(model).is_some() {
+            let chat_completions_service_urls = state
+                .chat_completions_service_urls
+                .get(&model.to_lowercase())
+                .ok_or_else(|| {
+                    AtomaServiceError::InternalError {
+                        message: format!(
+                            "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                            model
+                        ),
                         endpoint: endpoint.to_string(),
-                    });
-                }
-                occupied_entry.remove();
-            }
-            dashmap::mapref::entry::Entry::Vacant(_) => {
+                    }
+                })?;
+            let metrics = get_all_metrics(chat_completions_service_urls, model)
+                .await
+                .map_err(|e| AtomaServiceError::InternalError {
+                    message: format!("Failed to get metrics for model {model}, with error: {e}"),
+                    endpoint: endpoint.to_string(),
+                })?;
+            if metrics
+                .iter()
+                .any(|metric| metric.under_lower_threshold(state.memory_lower_threshold))
+            {
+                state.too_many_requests.remove(model);
                 tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model {} is in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
+                    model
+                );
+            }
+        } else {
+            tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
                     "Model is not in the `too_many_requests` map, so no action is needed here. Processing can continue."
                 );
-            }
         }
         Ok(())
     }
