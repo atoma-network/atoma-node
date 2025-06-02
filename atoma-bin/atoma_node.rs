@@ -376,8 +376,8 @@ async fn main() -> Result<()> {
         too_many_requests: Arc::new(DashSet::new()),
         too_many_requests_timeout_ms: u128::from(config.service.too_many_requests_timeout_ms),
         running_num_requests: Arc::new(RequestCounter::new()),
-        lower_memory_threshold: config.service.lower_memory_threshold,
-        upper_memory_threshold: config.service.upper_memory_threshold,
+        memory_lower_threshold: config.service.memory_lower_threshold,
+        memory_upper_threshold: config.service.memory_upper_threshold,
     };
 
     let chat_completions_service_urls = app_state

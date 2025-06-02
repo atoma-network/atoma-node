@@ -62,9 +62,9 @@ pub struct AtomaServiceConfig {
     pub too_many_requests_timeout_ms: u64,
 
     ///Lower threshold for memory usage, if the memory usage goes below this value, the service will not be considered overloaded
-    pub lower_memory_threshold: f64,
+    pub memory_lower_threshold: f64,
     /// Upper threshold for memory usage, if the memory usage goes above this value, the service will be considered overloaded
-    pub upper_memory_threshold: f64,
+    pub memory_upper_threshold: f64,
 }
 
 impl AtomaServiceConfig {

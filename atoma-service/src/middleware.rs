@@ -1634,7 +1634,7 @@ pub mod utils {
                 })?;
             if metrics
                 .iter()
-                .any(|metric| metric.under_lower_threshold(state.lower_memory_threshold))
+                .any(|metric| metric.under_lower_threshold(state.memory_lower_threshold))
             {
                 state.too_many_requests.remove(model);
                 tracing::debug!(

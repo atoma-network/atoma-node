@@ -217,11 +217,11 @@ pub struct AppState {
 
     /// The upper memory threshold for the node.
     /// This threshold is used to determine when the node should start rejecting.
-    pub upper_memory_threshold: f64,
+    pub memory_upper_threshold: f64,
 
     /// The lower memory threshold for the node.
     /// This threshold is used to determine when the node can start accepting requests again.
-    pub lower_memory_threshold: f64,
+    pub memory_lower_threshold: f64,
 }
 
 /// Creates and configures the main router for the application.
