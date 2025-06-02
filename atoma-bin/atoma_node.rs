@@ -213,11 +213,13 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
-    let mut wallet_ctx = WalletContext::new(
-        &PathBuf::from(config.sui.sui_config_path()),
-        config.sui.request_timeout(),
-        config.sui.max_concurrent_requests(),
-    )?;
+    let mut wallet_ctx = WalletContext::new(&PathBuf::from(config.sui.sui_config_path()))?;
+    if let Some(request_timeout) = config.sui.request_timeout() {
+        wallet_ctx = wallet_ctx.with_request_timeout(request_timeout);
+    }
+    if let Some(max_concurrent_requests) = config.sui.max_concurrent_requests() {
+        wallet_ctx = wallet_ctx.with_max_concurrent_requests(max_concurrent_requests);
+    }
     let address = wallet_ctx.active_address()?;
     let address_index = args.address_index.unwrap_or_else(|| {
         wallet_ctx
