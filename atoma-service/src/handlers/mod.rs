@@ -669,10 +669,12 @@ pub mod inference_service_metrics {
     }
 
     impl ChatCompletionsMetrics {
+        #[must_use]
         pub fn above_upper_threshold_exceeded(&self) -> bool {
             self.memory_usage > MEMORY_USAGE_CEILING
         }
 
+        #[must_use]
         pub fn under_lower_threshold(&self) -> bool {
             self.memory_usage < MEMORY_USAGE_FLOOR
         }
