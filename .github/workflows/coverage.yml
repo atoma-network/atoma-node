@@ -1,6 +1,8 @@
 name: Coverage
 
-on: [push, pull_request]
+on:
+  pull_request:
+    branches: [main]
 
 env:
   toolchain: stable
@@ -54,8 +56,9 @@ jobs:
         timeout-minutes: 5
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-        timeout-minutes: 15
+        run: |
+          RUSTFLAGS="-C target-cpu=native -C opt-level=2" cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --jobs 2
+        timeout-minutes: 30
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
