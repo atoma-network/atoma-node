@@ -4,12 +4,10 @@ on:
   pull_request:
 
 env:
-  toolchain: stable
-  CARGO_HTTP_MULTIPLEXING: false
   CARGO_TERM_COLOR: always
-  CARGO_UNSTABLE_SPARSE_REGISTRY: true
-  CARGO_INCREMENTAL: 0
-  TERM: unknown
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
+  RUSTDOCFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,7 +16,7 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:13
@@ -50,18 +48,21 @@ jobs:
             ~/.cargo/git
             target
 
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Run tests
+        run: cargo test --verbose
         timeout-minutes: 5
 
       - name: Generate coverage
-        run: |
-          RUSTFLAGS="-C target-cpu=native -C opt-level=2" cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --jobs 2
-        timeout-minutes: 30
+        uses: actions-rs/grcov@v0.1
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
-        timeout-minutes: 5
+          verbose: true
+          fail_ci_if_error: true
