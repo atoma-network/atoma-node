@@ -133,3 +133,10 @@ jobs:
       - name: Unit tests
         run: cargo test
         timeout-minutes: 20
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: target/
+          retention-days: 1

@@ -5,12 +5,6 @@ on:
 
 env:
   toolchain: stable
-  CARGO_HTTP_MULTIPLEXING: false
-  CARGO_TERM_COLOR: always
-  CARGO_UNSTABLE_SPARSE_REGISTRY: true
-  CARGO_INCREMENTAL: 0
-  TERM: unknown
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -18,33 +12,33 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-22.04
-    services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_DB: atoma
-          POSTGRES_USER: atoma
-          POSTGRES_PASSWORD: atoma
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.toolchain }}
+          components: clippy
+
+      - name: Download test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-artifacts
+          path: target/
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libtss2-dev
+        timeout-minutes: 5
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --no-run
+        timeout-minutes: 10
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
