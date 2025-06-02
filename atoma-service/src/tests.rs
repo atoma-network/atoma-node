@@ -344,6 +344,8 @@ mod middleware {
                 too_many_requests: Arc::new(DashSet::new()),
                 too_many_requests_timeout_ms: 0,
                 running_num_requests: Arc::new(RequestCounter::new()),
+                lower_memory_threshold: 1.0,
+                upper_memory_threshold: 1.0,
             },
             public_key,
             signature,
