@@ -2,7 +2,6 @@ name: Coverage
 
 on:
   pull_request:
-    branches: [main]
 
 env:
   toolchain: stable
