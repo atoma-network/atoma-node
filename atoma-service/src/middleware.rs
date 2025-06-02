@@ -1016,7 +1016,7 @@ pub mod utils {
         completions::RequestModelCompletions,
         embeddings::RequestModelEmbeddings,
         image_generations::RequestModelImageGenerations,
-        inference_service_metrics::{get_all_metrics, ChatCompletionsMetrics},
+        inference_service_metrics::get_all_metrics,
         request_model::{RequestModel, TokensEstimate},
     };
 
@@ -1634,7 +1634,7 @@ pub mod utils {
                 })?;
             if metrics
                 .iter()
-                .any(ChatCompletionsMetrics::under_lower_threshold)
+                .any(|metric| metric.under_lower_threshold(state.lower_memory_threshold))
             {
                 state.too_many_requests.remove(model);
                 tracing::debug!(

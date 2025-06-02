@@ -33,12 +33,6 @@ const CIPHERTEXT_KEY: &str = "ciphertext";
 /// The default max tokens for a chat completion request
 const DEFAULT_MAX_TOKENS: u64 = 8_192;
 
-/// The ceiling for memory usage, above which the service will not accept new requests
-const MEMORY_USAGE_CEILING: f64 = 0.9;
-
-/// The floor for memory usage, below which the service will start accept new requests
-const MEMORY_USAGE_FLOOR: f64 = 0.75;
-
 /// Key for the nonce in the response body
 const NONCE_KEY: &str = "nonce";
 
@@ -600,8 +594,6 @@ pub mod inference_service_metrics {
     use tracing::info;
 
     use crate::handlers::InferenceService;
-    use crate::handlers::MEMORY_USAGE_CEILING;
-    use crate::handlers::MEMORY_USAGE_FLOOR;
     use hyper::StatusCode;
     use tracing::instrument;
 
@@ -670,13 +662,13 @@ pub mod inference_service_metrics {
 
     impl ChatCompletionsMetrics {
         #[must_use]
-        pub fn above_upper_threshold_exceeded(&self) -> bool {
-            self.memory_usage > MEMORY_USAGE_CEILING
+        pub fn above_upper_threshold_exceeded(&self, threshold: f64) -> bool {
+            self.memory_usage > threshold
         }
 
         #[must_use]
-        pub fn under_lower_threshold(&self) -> bool {
-            self.memory_usage <= MEMORY_USAGE_FLOOR
+        pub fn under_lower_threshold(&self, threshold: f64) -> bool {
+            self.memory_usage <= threshold
         }
     }
 
@@ -1154,6 +1146,7 @@ pub mod inference_service_metrics {
         running_num_requests: &RequestCounter,
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
+        upper_memory_threshold: f64,
     ) -> Result<(String, StatusCode)> {
         let mut metrics_results = get_all_metrics(chat_completions_service_urls, model)
             .await
@@ -1185,7 +1178,7 @@ pub mod inference_service_metrics {
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
-                if metric.above_upper_threshold_exceeded() {
+                if metric.above_upper_threshold_exceeded(upper_memory_threshold) {
                     tracing::debug!(
                         target = "atoma-service",
                         level = "debug",

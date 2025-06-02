@@ -214,6 +214,14 @@ pub struct AppState {
 
     /// Number of running requests for each inference service.
     pub running_num_requests: Arc<RequestCounter>,
+
+    /// The upper memory threshold for the node.
+    /// This threshold is used to determine when the node should start rejecting.
+    pub upper_memory_threshold: f64,
+
+    /// The lower memory threshold for the node.
+    /// This threshold is used to determine when the node can start accepting requests again.
+    pub lower_memory_threshold: f64,
 }
 
 /// Creates and configures the main router for the application.

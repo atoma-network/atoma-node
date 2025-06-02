@@ -881,6 +881,7 @@ async fn handle_streaming_response(
         &state.running_num_requests,
         chat_completions_service_urls,
         model,
+        state.upper_memory_threshold,
     )
     .await
     .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
@@ -1301,6 +1302,7 @@ pub mod utils {
                 &state.running_num_requests,
                 completions_service_url_services,
                 model,
+                state.upper_memory_threshold,
             )
             .await
             .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
