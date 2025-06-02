@@ -676,7 +676,7 @@ pub mod inference_service_metrics {
 
         #[must_use]
         pub fn under_lower_threshold(&self) -> bool {
-            self.memory_usage < MEMORY_USAGE_FLOOR
+            self.memory_usage <= MEMORY_USAGE_FLOOR
         }
     }
 

@@ -1634,7 +1634,7 @@ pub mod utils {
                 })?;
             if metrics
                 .iter()
-                .any(ChatCompletionsMetrics::above_upper_threshold_exceeded)
+                .any(ChatCompletionsMetrics::under_lower_threshold)
             {
                 state.too_many_requests.remove(model);
                 tracing::debug!(
