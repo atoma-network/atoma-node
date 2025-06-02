@@ -17,6 +17,7 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:13
@@ -38,15 +39,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libtss2-dev
+        timeout-minutes: 5
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
+        timeout-minutes: 5
 
       - name: Generate coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        timeout-minutes: 15
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
+        timeout-minutes: 5

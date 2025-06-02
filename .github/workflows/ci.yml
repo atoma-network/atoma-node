@@ -25,9 +25,17 @@ jobs:
   format:
     name: format
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: checkout
         uses: actions/checkout@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
       - name: toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,13 +43,22 @@ jobs:
           components: rustfmt
       - name: cargo format
         run: cargo fmt --all -- --check
+        timeout-minutes: 5
 
   clippy:
     name: clippy
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: checkout
         uses: actions/checkout@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
       - name: toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -59,9 +76,12 @@ jobs:
             -W clippy::perf \
             -W clippy::suspicious \
             -W clippy::correctness
+        timeout-minutes: 10
+
   toml-format:
     name: toml-format
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -73,12 +93,15 @@ jobs:
           gzip -d > taplo && \
           chmod +x taplo && \
           sudo mv taplo /usr/local/bin/taplo
+        timeout-minutes: 5
       - name: Run Taplo
         run: taplo fmt --check
+        timeout-minutes: 5
 
   test:
     name: test
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:13
@@ -96,9 +119,17 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
       - name: toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
       - name: Unit tests
         run: cargo test
+        timeout-minutes: 20
