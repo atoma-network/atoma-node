@@ -33,7 +33,11 @@ const CIPHERTEXT_KEY: &str = "ciphertext";
 /// The default max tokens for a chat completion request
 const DEFAULT_MAX_TOKENS: u64 = 8_192;
 
+/// The ceiling for memory usage, above which the service will not accept new requests
 const MEMORY_USAGE_CEILING: f64 = 0.9;
+
+/// The floor for memory usage, below which the service will start accept new requests
+const MEMORY_USAGE_FLOOR: f64 = 0.75;
 
 /// Key for the nonce in the response body
 const NONCE_KEY: &str = "nonce";
@@ -597,6 +601,7 @@ pub mod inference_service_metrics {
 
     use crate::handlers::InferenceService;
     use crate::handlers::MEMORY_USAGE_CEILING;
+    use crate::handlers::MEMORY_USAGE_FLOOR;
     use hyper::StatusCode;
     use tracing::instrument;
 
@@ -625,7 +630,7 @@ pub mod inference_service_metrics {
 
     /// Chat completions metrics
     #[derive(Debug, Clone, PartialEq)]
-    struct ChatCompletionsMetrics {
+    pub struct ChatCompletionsMetrics {
         /// The model name  
         model: String,
         /// The chat completions service url
@@ -660,6 +665,16 @@ pub mod inference_service_metrics {
                                 .total_cmp(&other.num_running_requests)
                         })
                 })
+        }
+    }
+
+    impl ChatCompletionsMetrics {
+        pub fn above_upper_threshold_exceeded(&self) -> bool {
+            self.memory_usage > MEMORY_USAGE_CEILING
+        }
+
+        pub fn under_lower_threshold(&self) -> bool {
+            self.memory_usage < MEMORY_USAGE_FLOOR
         }
     }
 
@@ -882,71 +897,37 @@ pub mod inference_service_metrics {
             })
     }
 
-    /// Selects the best available chat completions service URL for a given model based on performance metrics.
+    /// Retrieves all chat completions metrics for the specified model.
     ///
-    /// This function aims to distribute load and ensure optimal response times by choosing
-    /// the service instance that is currently performing best. The selection process prioritizes
-    /// services with lower requests running and queue lengths.
-    ///
-    /// # Metrics and Selection Logic:
-    ///
-    /// 1.  **Metrics Source**: Metrics for each service (vLLM or SgLang) are retrieved directly from the inference
-    ///     service URL.
-    ///
-    /// 2.  **Priority of Metrics for "Best" Service Selection**:
-    ///     *   **No Load**: If a service has zero running requests (`num_running_requests` is 0.0),
-    ///         it's considered the best.
-    ///     *   **Number of Queued Requests**: If number of running requests are equivalent, the service
-    ///         with the fewest `num_queue_requests` is selected.
-    ///
-    /// 3.  **Handling Missing or Invalid Metrics**:
-    ///     *   If, after checking all services, no valid metrics are found for the specified `model`,
-    ///         a service URL is chosen randomly from the initial list.
-    ///
-    /// # Load Thresholds and Behavior:
-    ///
-    /// The function defines several thresholds to manage high load scenarios:
-    /// *   `MAX_ALLOWED_NUM_QUEUED_REQUESTS` (1.0)
-    ///
-    /// If the determined "best" service (or all services) exceeds these
-    /// thresholds, the function returns the first URL from the input `chat_completions_service_urls`
-    /// list along with a `StatusCode::TOO_MANY_REQUESTS`. The `CHAT_COMPLETIONS_TOO_MANY_REQUESTS`
-    /// metric counter is also incremented for the model.
+    /// This function fetches metrics from both vLLM and SgLang services,
+    /// partitions the service URLs based on the job type, and retrieves metrics
+    /// for each service. It returns a vector of `ChatCompletionsMetrics` for the specified model.
     ///
     /// # Arguments
     ///
-    /// * `chat_completions_service_urls`: A slice of tuples `(String, String)`, where each tuple
-    ///   represents a service. The first `String` is the service URL, and the second `String`
-    ///   is the job name (e.g., "vllm-service", "sglang-service"), used to determine the
-    ///   metrics querying strategy.
-    /// * `model`: A string slice representing the name of the model for which the best service
-    ///   URL is being requested. The comparison is case-insensitive.
+    /// * `chat_completions_service_urls` - A vector of tuples containing the chat completions service URLs,
+    ///   job names, and maximum concurrent requests.
+    /// * `model` - The model name for which to retrieve metrics.
     ///
     /// # Returns
     ///
-    /// Returns a `Result<(String, StatusCode), ChatCompletionsMetricsError>`:
-    /// *   `Ok((String, StatusCode::OK))`: On success, containing the URL of the best available
-    ///     service and an OK status.
-    /// *   `Ok((String, StatusCode::TOO_MANY_REQUESTS))`: If the system is determined to be under
-    ///     high load based on the metrics thresholds. The returned `String` will be the first URL
-    ///     from the `chat_completions_service_urls` input.
-    /// *   `Err(ChatCompletionsMetricsError)`: If an error occurs, such as no service URLs
-    ///     being provided or issues during metrics fetching that are not handled by fallback mechanisms.
+    /// Returns a `Result<Vec<ChatCompletionsMetrics>>` containing the metrics for the specified model.
     ///
     /// # Errors
     ///
-    /// *   `ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound`: If the input
-    ///     `chat_completions_service_urls` slice is empty.
-    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying issues
-    ///     occur during metric collection from Prometheus (e.g., network errors, parsing errors),
-    ///     though the function attempts to handle missing individual metrics gracefully.g
-    #[instrument(level = "info", skip_all, fields(model=model))]
-    #[allow(clippy::float_cmp)]
-    pub async fn get_best_available_chat_completions_service_url(
-        running_num_requests: &RequestCounter,
+    /// *   `ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound`: If no chat completions service URLs are provided.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying
+    ///     issues occur during metric collection from Prometheus (e.g., network errors,
+    ///     parsing errors), though the function attempts to handle missing individual metrics gracefully.
+    #[instrument(
+        level = "info",
+        skip(chat_completions_service_urls, model),
+        fields(model = model)
+    )]
+    pub async fn get_all_metrics(
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
-    ) -> Result<(String, StatusCode)> {
+    ) -> Result<Vec<ChatCompletionsMetrics>> {
         type ChatCompletionsServiceUrls = Vec<(String, String, usize)>;
 
         if chat_completions_service_urls.is_empty() {
@@ -1104,7 +1085,84 @@ pub mod inference_service_metrics {
                 }
             }
         }
+        Ok(metrics_results)
+    }
 
+    /// Selects the best available chat completions service URL for a given model based on performance metrics.
+    ///
+    /// This function aims to distribute load and ensure optimal response times by choosing
+    /// the service instance that is currently performing best. The selection process prioritizes
+    /// services with lower requests running and queue lengths.
+    ///
+    /// # Metrics and Selection Logic:
+    ///
+    /// 1.  **Metrics Source**: Metrics for each service (vLLM or SgLang) are retrieved directly from the inference
+    ///     service URL.
+    ///
+    /// 2.  **Priority of Metrics for "Best" Service Selection**:
+    ///     *   **No Load**: If a service has zero running requests (`num_running_requests` is 0.0),
+    ///         it's considered the best.
+    ///     *   **Number of Queued Requests**: If number of running requests are equivalent, the service
+    ///         with the fewest `num_queue_requests` is selected.
+    ///
+    /// 3.  **Handling Missing or Invalid Metrics**:
+    ///     *   If, after checking all services, no valid metrics are found for the specified `model`,
+    ///         a service URL is chosen randomly from the initial list.
+    ///
+    /// # Load Thresholds and Behavior:
+    ///
+    /// The function defines several thresholds to manage high load scenarios:
+    /// *   `MAX_ALLOWED_NUM_QUEUED_REQUESTS` (1.0)
+    ///
+    /// If the determined "best" service (or all services) exceeds these
+    /// thresholds, the function returns the first URL from the input `chat_completions_service_urls`
+    /// list along with a `StatusCode::TOO_MANY_REQUESTS`. The `CHAT_COMPLETIONS_TOO_MANY_REQUESTS`
+    /// metric counter is also incremented for the model.
+    ///
+    /// # Arguments
+    ///
+    /// * `chat_completions_service_urls`: A slice of tuples `(String, String)`, where each tuple
+    ///   represents a service. The first `String` is the service URL, and the second `String`
+    ///   is the job name (e.g., "vllm-service", "sglang-service"), used to determine the
+    ///   metrics querying strategy.
+    /// * `model`: A string slice representing the name of the model for which the best service
+    ///   URL is being requested. The comparison is case-insensitive.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<(String, StatusCode), ChatCompletionsMetricsError>`:
+    /// *   `Ok((String, StatusCode::OK))`: On success, containing the URL of the best available
+    ///     service and an OK status.
+    /// *   `Ok((String, StatusCode::TOO_MANY_REQUESTS))`: If the system is determined to be under
+    ///     high load based on the metrics thresholds. The returned `String` will be the first URL
+    ///     from the `chat_completions_service_urls` input.
+    /// *   `Err(ChatCompletionsMetricsError)`: If an error occurs, such as no service URLs
+    ///     being provided or issues during metrics fetching that are not handled by fallback mechanisms.
+    ///
+    /// # Errors
+    ///
+    /// *   `ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound`: If the input
+    ///     `chat_completions_service_urls` slice is empty.
+    /// *   Other variants of `ChatCompletionsMetricsError` may be returned if underlying issues
+    ///     occur during metric collection from Prometheus (e.g., network errors, parsing errors),
+    ///     though the function attempts to handle missing individual metrics gracefully.g
+    #[instrument(level = "info", skip_all, fields(model=model))]
+    #[allow(clippy::float_cmp)]
+    pub async fn get_best_available_chat_completions_service_url(
+        running_num_requests: &RequestCounter,
+        chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
+        model: &str,
+    ) -> Result<(String, StatusCode)> {
+        let mut metrics_results = get_all_metrics(chat_completions_service_urls, model)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    target = "atoma-service",
+                    level = "error",
+                    "Failed to get metrics for model: {model} with error: {e}"
+                );
+                e
+            })?;
         if metrics_results.is_empty() {
             tracing::warn!(
                 target = "atoma-service",
@@ -1125,7 +1183,7 @@ pub mod inference_service_metrics {
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
-                if metric.memory_usage > MEMORY_USAGE_CEILING {
+                if metric.above_upper_threshold_exceeded() {
                     tracing::debug!(
                         target = "atoma-service",
                         level = "debug",
