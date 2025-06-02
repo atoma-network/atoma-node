@@ -33,6 +33,8 @@ const CIPHERTEXT_KEY: &str = "ciphertext";
 /// The default max tokens for a chat completion request
 const DEFAULT_MAX_TOKENS: u64 = 8_192;
 
+const MEMORY_USAGE_CEILING: f64 = 0.9;
+
 /// Key for the nonce in the response body
 const NONCE_KEY: &str = "nonce";
 
@@ -53,9 +55,11 @@ pub const COMPLETION_TOKENS_KEY: &str = "completion_tokens";
 
 const VLLM_RUNNING_REQUESTS_QUERY: &str = "num_requests_running";
 const VLLM_QUEUED_REQUESTS_QUERY: &str = "num_requests_waiting";
+const VLLM_MEMORY_USAGE_QUERY: &str = "gpu_cache_usage_perc";
 const VLLM_SERVICE_PREFIX: &str = "vllm:";
 const SGLANG_RUNNING_REQUESTS_QUERY: &str = "num_running_reqs";
 const SGLANG_QUEUED_REQUESTS_QUERY: &str = "num_queue_reqs";
+const SGLANG_MEMORY_USAGE_QUERY: &str = "token_usage";
 const SGLANG_SERVICE_PREFIX: &str = "sglang:";
 
 #[derive(Debug, Clone)]
@@ -78,6 +82,14 @@ impl InferenceService {
         match self {
             Self::Vllm => VLLM_RUNNING_REQUESTS_QUERY,
             Self::SgLang => SGLANG_RUNNING_REQUESTS_QUERY,
+        }
+    }
+
+    #[must_use]
+    pub const fn get_usage(&self) -> &'static str {
+        match self {
+            Self::Vllm => VLLM_MEMORY_USAGE_QUERY,
+            Self::SgLang => SGLANG_MEMORY_USAGE_QUERY,
         }
     }
 
@@ -584,6 +596,7 @@ pub mod inference_service_metrics {
     use tracing::info;
 
     use crate::handlers::InferenceService;
+    use crate::handlers::MEMORY_USAGE_CEILING;
     use hyper::StatusCode;
     use tracing::instrument;
 
@@ -611,7 +624,7 @@ pub mod inference_service_metrics {
     });
 
     /// Chat completions metrics
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq)]
     struct ChatCompletionsMetrics {
         /// The model name  
         model: String,
@@ -621,8 +634,33 @@ pub mod inference_service_metrics {
         num_queued_requests: f64,
         /// The number of running requests
         num_running_requests: f64,
+        /// The memory usage in fraction, e.g. 1.00 means 100% memory usage
+        memory_usage: f64,
         /// The maximum number of running requests allowed for this url.
         max_number_of_running_requests: usize,
+    }
+
+    impl Eq for ChatCompletionsMetrics {}
+
+    impl PartialOrd for ChatCompletionsMetrics {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for ChatCompletionsMetrics {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.num_queued_requests
+                .total_cmp(&other.num_queued_requests)
+                .then_with(|| {
+                    self.memory_usage
+                        .total_cmp(&other.memory_usage)
+                        .then_with(|| {
+                            self.num_running_requests
+                                .total_cmp(&other.num_running_requests)
+                        })
+                })
+        }
     }
 
     /// Cache structure to store metrics
@@ -787,12 +825,18 @@ pub mod inference_service_metrics {
                         inference_service.get_running_requests_metric_name(),
                         job,
                     )?;
+                    let memory_usage = extract_metric(
+                        &metrics,
+                        inference_service.get_usage(),
+                        job,
+                    )?;
 
                     Ok(ChatCompletionsMetrics {
                         model: model.clone(),
                         chat_completions_service_url: chat_completions_service_url.clone(),
                         num_queued_requests,
                         num_running_requests,
+                        memory_usage,
                         max_number_of_running_requests: *max_number_of_running_requests,
                     })
                 });
@@ -1019,6 +1063,7 @@ pub mod inference_service_metrics {
                     chat_completions_service_url,
                     num_queued_requests,
                     num_running_requests,
+                    memory_usage,
                     max_number_of_running_requests,
                 }) => {
                     tracing::info!(
@@ -1045,6 +1090,7 @@ pub mod inference_service_metrics {
                         chat_completions_service_url,
                         num_queued_requests,
                         num_running_requests,
+                        memory_usage,
                         max_number_of_running_requests,
                     });
                 }
@@ -1072,18 +1118,22 @@ pub mod inference_service_metrics {
         }
 
         // Select the best available chat completions service URL based on the number of queued and running requests.
-        metrics_results.sort_by_key(|metric| {
-            (
-                metric.num_queued_requests as i64,
-                metric.num_running_requests as i64,
-            )
-        });
+        metrics_results.sort();
 
         for metric in metrics_results {
             if running_num_requests.increment(
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
+                if metric.memory_usage > MEMORY_USAGE_CEILING {
+                    tracing::debug!(
+                        target = "atoma-service",
+                        level = "debug",
+                        "Memory usage for model: {model} is too high: {}",
+                        metric.memory_usage
+                    );
+                    continue;
+                }
                 let best_url = metric.chat_completions_service_url.clone();
                 tracing::info!(
                     target = "atoma-service",
