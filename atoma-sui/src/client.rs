@@ -86,11 +86,13 @@ impl Client {
     pub async fn new(config: SuiConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
-        let mut wallet_ctx = WalletContext::new(
-            sui_config_path,
-            config.request_timeout(),
-            config.max_concurrent_requests(),
-        )?;
+        let mut wallet_ctx = WalletContext::new(sui_config_path)?;
+        if let Some(request_timeout) = config.request_timeout() {
+            wallet_ctx = wallet_ctx.with_request_timeout(request_timeout);
+        }
+        if let Some(max_concurrent_requests) = config.max_concurrent_requests() {
+            wallet_ctx = wallet_ctx.with_max_concurrent_requests(max_concurrent_requests);
+        }
         let active_address = wallet_ctx.active_address()?;
         info!("Current active address: {}", active_address);
         let node_badge = utils::get_node_badge(

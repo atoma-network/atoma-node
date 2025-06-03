@@ -1,14 +1,7 @@
 name: Coverage
 
-on: [push, pull_request]
-
-env:
-  toolchain: stable
-  CARGO_HTTP_MULTIPLEXING: false
-  CARGO_TERM_COLOR: always
-  CARGO_UNSTABLE_SPARSE_REGISTRY: true
-  CARGO_INCREMENTAL: 0
-  TERM: unknown
+on:
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +10,9 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-22.04
+    env:
+      toolchain: stable
+      CARGO_TERM_COLOR: always
     services:
       postgres:
         image: postgres:13
@@ -33,6 +29,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.toolchain }}
+          components: clippy
 
       - name: Install system dependencies
         run: |
@@ -40,13 +41,14 @@ jobs:
           sudo apt-get install -y pkg-config libtss2-dev
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --workspace --exclude atoma-p2p-tester --codecov --output-path codecov.json
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
+          files: codecov.json
+          fail_ci_if_error: true
