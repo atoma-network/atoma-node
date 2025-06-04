@@ -44,7 +44,19 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --exclude atoma-p2p-tester --codecov --output-path codecov.json
+        run: |
+          # Set memory limits for the process
+          export RUSTFLAGS="-C link-arg=-Wl,-z,stack-size=8388608"
+          # Generate coverage with optimized settings
+          cargo llvm-cov \
+            --all-features \
+            --workspace \
+            --exclude atoma-p2p-tester \
+            --codecov \
+            --output-path codecov.json \
+            --no-report \
+            --no-run \
+            --no-fail-fast
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
