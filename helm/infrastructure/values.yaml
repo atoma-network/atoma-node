@@ -1,0 +1,51 @@
+# MetalLB Configuration
+metallb:
+  enabled: true
+  configInline:
+    address-pools:
+      - name: default
+        protocol: layer2
+        addresses:
+          - 192.168.1.240-192.168.1.250 # Adjust based on your network
+
+# NVIDIA Device Plugin Configuration
+nvidiaDevicePlugin:
+  enabled: true
+  runtimeClassName: nvidia
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "100Mi"
+    limits:
+      cpu: "200m"
+      memory: "200Mi"
+
+# Ingress NGINX Configuration
+ingressNginx:
+  enabled: true
+  controller:
+    service:
+      type: LoadBalancer
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+# Cert-Manager Configuration
+certManager:
+  enabled: true
+  installCRDs: true
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"

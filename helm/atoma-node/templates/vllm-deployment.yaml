@@ -1,0 +1,65 @@
+{{- if .Values.vllm.enabled }}
+{{- range $i, $e := until (.Values.vllm.replicas | int) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-vllm-{{ $i }}
+  labels:
+    app: vllm
+    instance: {{ $i }}
+    release: {{ $.Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      instance: {{ $i }}
+      release: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: vllm
+        instance: {{ $i }}
+        release: {{ $.Release.Name }}
+    spec:
+      containers:
+        - name: vllm
+          image: "{{ $.Values.vllm.image.repository }}:{{ $.Values.vllm.image.tag }}"
+          imagePullPolicy: {{ $.Values.vllm.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $.Values.vllm.service.port }}
+          resources:
+            {{- toYaml $.Values.vllm.resources | nindent 12 }}
+          env:
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"
+            - name: VLLM_FLASH_ATTN_VERSION
+              value: "3"
+            - name: VLLM_USE_V1
+              value: "1"
+            - name: CUDA_VISIBLE_DEVICES
+              value: "{{ $i }}"
+          command: {{ $.Values.vllm.command | default (list "--model" $.Values.vllm.model "--max-model-len" $.Values.vllm.maxModelLen) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-vllm-{{ $i }}
+  labels:
+    app: vllm
+    instance: {{ $i }}
+    release: {{ $.Release.Name }}
+spec:
+  type: {{ $.Values.vllm.service.type }}
+  ports:
+    - port: {{ $.Values.vllm.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: vllm
+    instance: {{ $i }}
+    release: {{ $.Release.Name }}
+{{- end }}
+{{- end }}
