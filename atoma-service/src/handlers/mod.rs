@@ -1147,6 +1147,7 @@ pub mod inference_service_metrics {
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
         memory_upper_threshold: f64,
+        max_num_queued_requests: f64,
     ) -> Result<(String, StatusCode)> {
         let mut metrics_results = get_all_metrics(chat_completions_service_urls, model)
             .await
@@ -1178,6 +1179,15 @@ pub mod inference_service_metrics {
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
+                if metric.num_queued_requests > max_num_queued_requests {
+                    tracing::debug!(
+                        target = "atoma-service",
+                        level = "debug",
+                        "Number of queued requests for model: {model} is too high: {}",
+                        metric.num_queued_requests
+                    );
+                    continue;
+                }
                 if metric.above_upper_threshold_exceeded(memory_upper_threshold) {
                     tracing::debug!(
                         target = "atoma-service",

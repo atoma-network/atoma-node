@@ -46,6 +46,7 @@ image_generations_service_url = "http://image-generations:80"
 # List of models to be used by the service, the current value here is just a placeholder, please change it to the models you want to deploy
 environment                      = "development"                                       # or "production" (for use in sentry, you need to set the Sentry DSN)
 heartbeat_url                    = "my-heartbeat-url"
+max_num_queued_requests          = 1                                                   # Maximum number of queued requests for each inference service, this is used to limit the number of requests that can be queued for each service, if the number of queued requests exceeds this value, the service will be considered overloaded and will not accept new requests
 memory_lower_threshold           = 0.75                                                # Lower threshold for memory usage, if the memory usage goes below this value, the service will not be considered overloaded
 memory_upper_threshold           = 0.9                                                 # Upper threshold for memory usage, if the memory usage goes above this value, the service will be considered overloaded
 metrics_update_interval          = 30

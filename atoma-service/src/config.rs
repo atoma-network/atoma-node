@@ -63,8 +63,12 @@ pub struct AtomaServiceConfig {
 
     ///Lower threshold for memory usage, if the memory usage goes below this value, the service will not be considered overloaded
     pub memory_lower_threshold: f64,
+
     /// Upper threshold for memory usage, if the memory usage goes above this value, the service will be considered overloaded
     pub memory_upper_threshold: f64,
+
+    /// The maximum number of queued requests for each inference service.
+    pub max_num_queued_requests: f64,
 }
 
 impl AtomaServiceConfig {
