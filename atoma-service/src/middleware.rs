@@ -1613,7 +1613,16 @@ pub mod utils {
         model: &str,
         endpoint: &str,
     ) -> Result<(), AtomaServiceError> {
-        if state.too_many_requests.get(model).is_some() {
+        if let Some(a) = state.too_many_requests.get(model) {
+            if a.elapsed().as_millis() < state.too_many_requests_timeout_ms {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model {} is in the `too_many_requests` map, but the elapsed time since the first occurrence is less than the timeout.",
+                    model
+                );
+                return Ok(());
+            }
             let chat_completions_service_urls = state
                 .chat_completions_service_urls
                 .get(&model.to_lowercase())

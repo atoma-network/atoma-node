@@ -909,6 +909,7 @@ async fn handle_streaming_response(
             chat_completions_service_urls,
             &model.to_lowercase(),
             state.memory_upper_threshold,
+            state.max_num_queued_requests,
         )
         .await
         .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
@@ -916,7 +917,9 @@ async fn handle_streaming_response(
             endpoint: endpoint.clone(),
         })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
-        state.too_many_requests.insert(model.to_string());
+        state
+            .too_many_requests
+            .insert(model.to_string(), Instant::now());
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
             message: "Too many requests".to_string(),
             endpoint: endpoint.clone(),
@@ -1341,6 +1344,7 @@ pub mod utils {
                 chat_completions_service_url_services,
                 model,
                 state.memory_upper_threshold,
+                state.max_num_queued_requests,
             )
             .await
             .map_err(|e| AtomaServiceError::ChatCompletionsServiceUnavailable {
@@ -1348,7 +1352,9 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             })?;
         if status_code == StatusCode::TOO_MANY_REQUESTS {
-            state.too_many_requests.insert(model.to_string());
+            state
+                .too_many_requests
+                .insert(model.to_string(), Instant::now());
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
                 message: "Too many requests".to_string(),
                 endpoint: endpoint.to_string(),
