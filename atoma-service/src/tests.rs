@@ -410,7 +410,6 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions() {
-        setup_subscriber();
         let (
             app_state,
             _,
@@ -630,7 +629,7 @@ mod middleware {
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.status(), StatusCode::TOO_EARLY);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
         truncate_tables().await;

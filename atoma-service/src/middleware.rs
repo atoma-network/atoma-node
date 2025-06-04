@@ -479,7 +479,14 @@ async fn generate_request_from_stack(
                     message: format!("Tx digest cannot be converted to a string, with error: {e}"),
                     endpoint: endpoint.clone(),
                 })?;
-            let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
+            let tx_digest = TransactionDigest::from_str(tx_digest_str).map_err(|e| {
+                AtomaServiceError::InvalidHeader {
+                    message: format!(
+                        "Tx digest is not a valid transaction digest, with error: {e}"
+                    ),
+                    endpoint: endpoint.clone(),
+                }
+            })?;
             utils::request_blockchain_for_stack(
                 &state,
                 tx_digest,
