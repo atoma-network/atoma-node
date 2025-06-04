@@ -1706,7 +1706,7 @@ pub mod utils {
                     "Model {} is in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
                     model
                 );
-        } else {
+        } else if !metrics.is_empty() {
             // TODO: Should we add the model to the `too_many_requests` map here?
             tracing::debug!(
                     target = "atoma-service",

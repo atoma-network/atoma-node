@@ -410,6 +410,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions() {
+        setup_subscriber();
         let (
             app_state,
             _,
@@ -834,6 +835,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_token_counting() {
+        setup_subscriber();
         let (
             app_state,
             _,
