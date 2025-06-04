@@ -319,6 +319,27 @@ mod middleware {
             .expect("Failed to remove client.yaml");
         std::fs::remove_dir_all(keystore_path.parent().unwrap())
             .expect("Failed to remove keystore");
+
+        let mut service_urls = HashMap::new();
+        service_urls.insert(
+            "meta-llama/llama-3.1-70b-instruct"
+                .to_string()
+                .to_lowercase(),
+            vec![("http://localhost:8080".to_string(), "vllm".to_string(), 1)],
+        );
+        service_urls.insert(
+            "intfloat/multilingual-e5-large-instruct"
+                .to_string()
+                .to_lowercase(),
+            vec![("http://localhost:8081".to_string(), "vllm".to_string(), 1)],
+        );
+        service_urls.insert(
+            "black-forest-labs/flux.1-schnell"
+                .to_string()
+                .to_lowercase(),
+            vec![("http://localhost:8082".to_string(), "vllm".to_string(), 1)],
+        );
+
         (
             AppState {
                 concurrent_requests_per_stack: Arc::new(DashMap::new()),
@@ -334,7 +355,7 @@ mod middleware {
                 decryption_sender,
                 encryption_sender,
                 compute_shared_secret_sender,
-                chat_completions_service_urls: HashMap::new(),
+                chat_completions_service_urls: service_urls,
                 embeddings_service_url: String::new(),
                 image_generations_service_url: String::new(),
                 keystore: Arc::new(keystore),
@@ -813,6 +834,7 @@ mod middleware {
     #[tokio::test]
     #[serial]
     async fn test_verify_stack_permissions_token_counting() {
+        setup_subscriber();
         let (
             app_state,
             _,
