@@ -1681,7 +1681,7 @@ pub mod utils {
                 .chat_completions_service_urls
                 .get(&model.to_lowercase())
                 .ok_or_else(|| {
-                    AtomaServiceError::InternalError {
+                    AtomaServiceError::InvalidBody {
                         message: format!(
                             "Chat completions service URL not found, likely that model is not supported by the current node: {}",
                             model
@@ -1707,12 +1707,17 @@ pub mod utils {
                     model
                 );
         } else {
+            // TODO: Should we add the model to the `too_many_requests` map here?
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
                     "Model {} is in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
                     model
                 );
+            return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: "Service unavailable due to high load (metrics)".to_string(),
+                endpoint: endpoint.to_string(),
+            });
         }
         Ok(())
     }
