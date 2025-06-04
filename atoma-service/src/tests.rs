@@ -629,7 +629,7 @@ mod middleware {
             ));
 
         let response = app.call(req).await.expect("Failed to get response");
-        assert_eq!(response.status(), StatusCode::TOO_EARLY);
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         shutdown_sender.send(true).unwrap();
         state_manager_handle.await.unwrap();
         truncate_tables().await;
