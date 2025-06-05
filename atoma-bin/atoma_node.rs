@@ -362,14 +362,7 @@ async fn main() -> Result<()> {
         encryption_sender: app_state_encryption_sender,
         compute_shared_secret_sender,
         tokenizers: Arc::new(tokenizers),
-        models: Arc::new(
-            config
-                .service
-                .models
-                .into_iter()
-                .map(|model| model.to_lowercase())
-                .collect(),
-        ),
+        models: Arc::new(config.service.models),
         chat_completions_service_urls: config.service.chat_completions_service_urls,
         embeddings_service_url: config
             .service
