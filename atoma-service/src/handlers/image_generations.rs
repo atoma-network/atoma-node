@@ -100,10 +100,9 @@ pub async fn image_generations_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or("unknown")
-        .to_lowercase();
+        .unwrap_or("unknown");
 
-    IMAGE_GEN_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.clone())]);
+    IMAGE_GEN_NUM_REQUESTS.add(1, &[KeyValue::new("model", model.to_owned())]);
     let timer = Instant::now();
 
     let RequestMetadata {
@@ -123,7 +122,7 @@ pub async fn image_generations_handler(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown")
-        .to_lowercase();
+        .to_string();
 
     match handle_image_generations_response(
         &state,
@@ -183,7 +182,7 @@ pub async fn image_generations_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.clone(),
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -266,7 +265,7 @@ pub async fn confidential_image_generations_handler(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown")
-        .to_lowercase();
+        .to_string();
 
     IMAGE_GEN_CONFIDENTIAL_NUM_REQUESTS
         .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
@@ -318,7 +317,7 @@ pub async fn confidential_image_generations_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.clone(),
+                    model.to_string(),
                     num_input_tokens,
                     num_input_tokens,
                     estimated_output_tokens,
@@ -371,7 +370,7 @@ pub async fn confidential_image_generations_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.clone(),
+                    model.to_string(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
