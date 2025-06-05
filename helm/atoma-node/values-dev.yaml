@@ -1,0 +1,218 @@
+# Development environment settings
+global:
+  environment: development
+  domain: atoma.network
+
+# Main application settings
+atomaNode:
+  image:
+    repository: ghcr.io/atoma-network/atoma-node
+    tag: latest
+    pullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+  service:
+    main:
+      port: 3000
+    daemon:
+      port: 3001
+    p2p:
+      port: 4001
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-staging"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: node-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: main
+      - host: vllm-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: vllm
+      - host: sglang-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: sglang
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 10Gi
+    accessMode: ReadWriteOnce
+  config:
+    environment: "development"
+    logLevel: "debug"
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: RUST_LOG
+      value: "info"
+
+# VLLM settings
+vllm:
+  enabled: true
+  replicas: 1 # Reduced for development
+  image:
+    repository: vllm/vllm-openai
+    tag: v0.8.1
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "16Gi"
+      cpu: "4"
+      nvidia.com/gpu: 1
+    limits:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 1
+  service:
+    port: 8000
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: OTEL_SERVICE_NAME
+      value: vllm
+    - name: OTEL_LOGS_EXPORTER
+      value: otlp
+
+# SGLang settings
+sglang:
+  enabled: true
+  image:
+    repository: lmsysorg/sglang
+    tag: latest
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 1 # Reduced for development
+    limits:
+      memory: "64Gi"
+      cpu: "16"
+      nvidia.com/gpu: 1 # Reduced for development
+  service:
+    port: 3000
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: OTEL_SERVICE_NAME
+      value: sglang
+    - name: OTEL_LOGS_EXPORTER
+      value: otlp
+
+# PostgreSQL settings
+postgresql:
+  enabled: true
+  auth:
+    database: atoma_node_dev
+    username: atoma_node_dev
+    password: "dev_password" # Change this in production
+  primary:
+    persistence:
+      size: 5Gi
+  service:
+    port: 5432
+
+# Monitoring stack settings
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 5Gi
+    ingress:
+      enabled: true
+      className: "nginx"
+      annotations:
+        cert-manager.io/cluster-issuer: "letsencrypt-staging"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - prometheus-dev.atoma.network
+    service:
+      type: LoadBalancer
+      servicePort: 9090
+      targetPort: 9090
+
+grafana:
+  enabled: true
+  persistence:
+    size: 5Gi
+  admin:
+    existingSecret: "grafana-admin"
+    userKey: admin-user
+    passwordKey: admin-password
+  security:
+    adminPassword: "admin123" # Change this in production
+  ingress:
+    enabled: true
+    hosts:
+      - grafana-dev.atoma.network
+  service:
+    type: LoadBalancer
+    port: 3000
+    targetPort: 3000
+    annotations:
+      metallb.universe.tf/address-pool: grafana-pool
+
+loki:
+  enabled: true
+  deploymentMode: SingleBinary
+  auth_enabled: false
+  config: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /var/loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /var/loki/index
+        shared_store: filesystem
+      filesystem:
+        directory: /var/loki/chunks
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: local-path
+  write:
+    replicas: 0
+  read:
+    replicas: 0
+  backend:
+    replicas: 0
+
+tempo:
+  enabled: true
+  persistence:
+    size: 5Gi
+  ingress:
+    enabled: true
+    hosts:
+      - tempo-dev.atoma.network
