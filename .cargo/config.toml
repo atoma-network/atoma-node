@@ -1,0 +1,3 @@
+[profile.profiling]
+debug    = true
+inherits = "release"
