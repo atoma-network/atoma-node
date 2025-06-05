@@ -367,7 +367,7 @@ async fn main() -> Result<()> {
                 .service
                 .models
                 .into_iter()
-                .map(String::to_lowercase)
+                .map(|model| model.to_lowercase())
                 .collect(),
         ),
         chat_completions_service_urls: config.service.chat_completions_service_urls,
