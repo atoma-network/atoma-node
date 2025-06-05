@@ -344,12 +344,7 @@ mod middleware {
             AppState {
                 concurrent_requests_per_stack: Arc::new(DashMap::new()),
                 client_dropped_streamer_connections: Arc::new(DashSet::new()),
-                models: Arc::new(
-                    models
-                        .into_iter()
-                        .map(std::string::ToString::to_string)
-                        .collect(),
-                ),
+                models: Arc::new(models.into_iter().map(str::to_lowercase).collect()),
                 tokenizers: Arc::new(vec![Arc::new(tokenizer.clone()), Arc::new(tokenizer)]),
                 state_manager_sender,
                 decryption_sender,
