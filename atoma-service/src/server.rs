@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -206,8 +206,25 @@ pub struct AppState {
     /// The Sui address of the clients that are allowed to use fiat.
     pub whitelist_sui_addresses_for_fiat: Vec<String>,
 
+    /// When was the too many requests triggered for each model.
+    pub too_many_requests: Arc<DashMap<String, Instant>>,
+
+    /// The time for which we triiger too many requests since the first occurrence.
+    pub too_many_requests_timeout_ms: u128,
+
     /// Number of running requests for each inference service.
     pub running_num_requests: Arc<RequestCounter>,
+
+    /// The upper memory threshold for the node.
+    /// This threshold is used to determine when the node should start rejecting.
+    pub memory_upper_threshold: f64,
+
+    /// The lower memory threshold for the node.
+    /// This threshold is used to determine when the node can start accepting requests again.
+    pub memory_lower_threshold: f64,
+
+    /// The maximum number of queued requests for each inference service.
+    pub max_num_queued_requests: f64,
 }
 
 /// Creates and configures the main router for the application.

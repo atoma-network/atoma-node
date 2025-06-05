@@ -479,7 +479,14 @@ async fn generate_request_from_stack(
                     message: format!("Tx digest cannot be converted to a string, with error: {e}"),
                     endpoint: endpoint.clone(),
                 })?;
-            let tx_digest = TransactionDigest::from_str(tx_digest_str).unwrap();
+            let tx_digest = TransactionDigest::from_str(tx_digest_str).map_err(|e| {
+                AtomaServiceError::InvalidHeader {
+                    message: format!(
+                        "Tx digest is not a valid transaction digest, with error: {e}"
+                    ),
+                    endpoint: endpoint.clone(),
+                }
+            })?;
             utils::request_blockchain_for_stack(
                 &state,
                 tx_digest,
@@ -596,7 +603,7 @@ async fn generate_fiat_request(
     state
         .state_manager_sender
         .send(AtomaAtomaStateManagerEvent::GetModelPricing {
-            model: model.to_string(),
+            model: model.to_owned(),
             result_sender,
         })
         .map_err(|err| AtomaServiceError::InternalError {
@@ -810,19 +817,22 @@ pub async fn verify_permissions(
         .ok_or_else(|| AtomaServiceError::InvalidBody {
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
-        })?;
-    if !state.models.contains(&model.to_string()) {
+        })?
+        .to_lowercase();
+    if !state.models.contains(&model) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
             endpoint: endpoint.clone(),
         });
     }
 
+    utils::check_if_too_many_requests(&state, &model, &endpoint).await?;
+
     let TokensEstimate {
         num_input_tokens,
         max_output_tokens,
         max_total_tokens,
-    } = utils::calculate_tokens(&body_json, request_type, &state, model, &endpoint)?;
+    } = utils::calculate_tokens(&body_json, request_type, &state, &model, &endpoint)?;
 
     let max_total_tokens = max_total_tokens as i64;
     let max_output_tokens = max_output_tokens as i64;
@@ -857,7 +867,7 @@ pub async fn verify_permissions(
             req_parts,
             request_type,
             body_bytes,
-            model,
+            &model,
             instant,
         )
         .await?
@@ -1015,6 +1025,7 @@ pub mod utils {
         completions::RequestModelCompletions,
         embeddings::RequestModelEmbeddings,
         image_generations::RequestModelImageGenerations,
+        inference_service_metrics::get_all_metrics,
         request_model::{RequestModel, TokensEstimate},
     };
 
@@ -1582,6 +1593,137 @@ pub mod utils {
                     "Plaintext body hash does not match, computed hash: {:?}, expected hash: {:?}",
                     computed_plaintext_body_hash, plaintext_body_hash_bytes
                 ),
+                endpoint: endpoint.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Checks if a given model is currently flagged for "too many requests" and,
+    /// if so, whether it should be unflagged based on a timeout or current service metrics.
+    ///
+    /// This function implements a cooldown mechanism for models that have recently
+    /// triggered a "too many requests" (429) status.
+    ///
+    /// # Arguments
+    ///
+    /// * `state`: A reference to the application's shared state (`AppState`), which includes:
+    ///     - `too_many_requests`: A `DashMap` tracking models currently in a "too many requests" state and when they entered it.
+    ///     - `too_many_requests_timeout_ms`: The duration (in milliseconds) a model stays flagged before its status is re-evaluated based on metrics.
+    ///     - `chat_completions_service_urls`: A `DashMap` containing the service URLs for different models.
+    ///     - `memory_lower_threshold`: A threshold used to determine if a service's memory usage is low enough to consider it recovered.
+    /// * `model`: The name of the model to check.
+    /// * `endpoint`: The API endpoint path where the request was received (used for error reporting).
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())`: If the model is not currently restricted, or if it was restricted but has now been unflagged.
+    /// * `Err(AtomaServiceError::ChatCompletionsServiceUnavailable)`: If the model is currently flagged for "too many requests" and the timeout period has not yet elapsed.
+    /// * `Err(AtomaServiceError::InternalError)`: If there's an issue fetching service URLs or metrics.
+    ///
+    /// # Logic Flow
+    ///
+    /// 1.  **Initial "Too Many Requests" Check:**
+    ///     - It first attempts to access the `model` in the `state.too_many_requests` map using `entry()`.
+    ///     - If the model is found (Occupied entry):
+    ///         - It retrieves the `Instant` when the model was flagged.
+    ///         - It calculates the time elapsed since flagging.
+    ///         - If `elapsed_ms` is less than `state.too_many_requests_timeout_ms`, the function immediately
+    ///           returns `Err(AtomaServiceError::ChatCompletionsServiceUnavailable)`, indicating the model is still in a cooldown period.
+    ///         - If the timeout has passed, the entry for the model is removed from `state.too_many_requests`. This effectively
+    ///           clears the "too many requests" flag based on the timeout, regardless of current metrics at this stage.
+    ///     - If the model is not found (Vacant entry), it means the model isn't currently flagged for "too many requests" from a previous direct 429 response.
+    ///
+    /// 2.  **Metrics-Based Re-evaluation (if not returned early):**
+    ///     - The function proceeds to fetch the service URLs for the given `model`.
+    ///     - It then asynchronously calls `get_all_metrics` to retrieve current operational metrics for these services.
+    ///     - It checks if any of the retrieved metrics indicate that the service's memory usage is now below `state.memory_lower_threshold`.
+    ///
+    /// 3.  **Final "Too Many Requests" State Update:**
+    ///     - If the metrics show that the service is under the lower memory threshold (indicating potential recovery):
+    ///         - It attempts to remove the `model` from `state.too_many_requests` again. This handles cases where the model might have been
+    ///           re-added by another concurrent request between the initial check and metrics retrieval, or if it was never there but
+    ///           the metrics now allow it.
+    ///     - If the metrics do not show the service is under the lower threshold, no further action is taken on the `too_many_requests` map at this point
+    ///       (it might have been removed by timeout earlier, or was never there).
+    ///
+    /// 4.  The function then returns `Ok(())` if it hasn't returned an error earlier.
+    ///
+    /// # Deadlock Safety
+    ///
+    /// The function is designed to be deadlock-safe with respect to `DashMap` operations:
+    /// - The lock acquired by `state.too_many_requests.entry()` is released before any `.await` point.
+    /// - Subsequent operations on `state.too_many_requests` (like the second `remove` call) acquire new, independent locks.
+    #[instrument(level = "info", skip_all, err)]
+    pub async fn check_if_too_many_requests(
+        state: &AppState,
+        model: &str,
+        endpoint: &str,
+    ) -> Result<(), AtomaServiceError> {
+        match state.too_many_requests.entry(model.to_owned()) {
+            dashmap::mapref::entry::Entry::Occupied(occupied_entry) => {
+                let elapsed_ms = occupied_entry.get().elapsed().as_millis();
+
+                if elapsed_ms < state.too_many_requests_timeout_ms {
+                    tracing::info!(
+                            target = "atoma-service",
+                            level = "info",
+                            "Too many requests for model: {model}, endpoint: {endpoint}, elapsed trigger time: {elapsed_ms} and timeout: {}",
+                            state.too_many_requests_timeout_ms
+                        );
+                    return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                        message: "Too many requests".to_string(),
+                        endpoint: endpoint.to_string(),
+                    });
+                }
+                occupied_entry.remove();
+            }
+            dashmap::mapref::entry::Entry::Vacant(_) => {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model is not in the `too_many_requests` map, so no action is needed here. Processing can continue."
+                );
+            }
+        }
+        let chat_completions_service_urls = state
+                .chat_completions_service_urls
+                .get(model)
+                .ok_or_else(|| {
+                    AtomaServiceError::InvalidBody {
+                        message: format!(
+                            "Chat completions service URL not found, likely that model is not supported by the current node: {}",
+                            model
+                        ),
+                        endpoint: endpoint.to_string(),
+                    }
+                })?;
+        let metrics = get_all_metrics(chat_completions_service_urls, model)
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to get metrics for model {model}, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        if metrics
+            .iter()
+            .any(|metric| metric.under_lower_threshold(state.memory_lower_threshold))
+        {
+            tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
+                    model
+                );
+        } else if !metrics.is_empty() {
+            // TODO: Should we add the model to the `too_many_requests` map here? It means that the service is either dead, or we are restarting it.
+            tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
+                    model
+                );
+            return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
+                message: "Service unavailable due to high load (metrics)".to_string(),
                 endpoint: endpoint.to_string(),
             });
         }

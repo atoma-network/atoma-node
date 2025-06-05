@@ -161,7 +161,10 @@ async fn test_validate_usage_metrics_message_invalid_url() {
         &tx,
     )
     .await;
-    assert!(matches!(result, Err(AtomaP2pNodeError::UrlParseError(_))));
+    assert!(matches!(
+        result,
+        Err(e) if matches!(*e, AtomaP2pNodeError::UrlParseError(_))
+    ));
 }
 
 #[tokio::test]
@@ -185,7 +188,7 @@ async fn test_validate_usage_metrics_message_expired_timestamp() {
     .await;
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::InvalidPublicAddressError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::InvalidPublicAddressError(_))
     ));
 }
 
@@ -210,7 +213,7 @@ async fn test_validate_usage_metrics_message_future_timestamp() {
     .await;
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::InvalidPublicAddressError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::InvalidPublicAddressError(_))
     ));
 }
 
@@ -244,7 +247,7 @@ async fn test_validate_usage_metrics_message_invalid_signature() {
     .await;
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::SignatureVerificationError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::SignatureVerificationError(_))
     ));
 }
 
@@ -283,7 +286,7 @@ async fn test_validate_usage_metrics_message_invalid_node_ownership() {
 
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
     ));
 }
 
@@ -312,7 +315,7 @@ async fn test_validate_usage_metrics_message_state_manager_error() {
     .await;
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::StateManagerError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::StateManagerError(_))
     ));
 }
 
@@ -352,6 +355,6 @@ async fn test_validate_usage_metrics_message_response_channel_error() {
     .await;
     assert!(matches!(
         result,
-        Err(AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
+        Err(e) if matches!(*e, AtomaP2pNodeError::NodeSmallIdOwnershipVerificationError(_))
     ));
 }

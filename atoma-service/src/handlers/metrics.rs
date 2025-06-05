@@ -1,6 +1,6 @@
 use opentelemetry::{
     global,
-    metrics::{Counter, Histogram, Meter, UpDownCounter},
+    metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
 };
 use std::sync::LazyLock;
 
@@ -346,6 +346,81 @@ pub static TOTAL_FAILED_CHAT_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(||
         .build()
 });
 
+/// Counter metric that tracks the total number of too many requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_too_many_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_TOO_MANY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_too_many_requests")
+        .with_description("Total number of too many requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of unauthorized requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_unauthorized_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_UNAUTHORIZED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_unauthorized_requests")
+        .with_description("Total number of unauthorized requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of too early requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_too_early_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_TOO_EARLY_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_too_early_requests")
+        .with_description("Total number of too early requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of locked requests.
+///
+/// # Metric Details
+/// - Name: `atoma_total_locked_requests`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_LOCKED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_total_locked_requests")
+        .with_description("Total number of locked requests")
+        .with_unit("requests")
+        .build()
+});
+
+/// Counter metric that tracks the total number of bad request requests.
+///
+/// # Metric Details
+/// - Name: `atoma_TOTAL_BAD_REQUESTS`
+/// - Type: Counter
+/// - Labels: `model`
+/// - Unit: requests (count)
+pub static TOTAL_BAD_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_counter("atoma_TOTAL_BAD_REQUESTS")
+        .with_description("Total number of bad request requests")
+        .with_unit("requests")
+        .build()
+});
+
 /// Counter metric that tracks the total number of confidential chat requests.
 ///
 /// # Metric Details
@@ -541,3 +616,18 @@ pub static SIGNATURE_VERIFICATION_MIDDLEWARE_SUCCESSFUL_TIME: LazyLock<Histogram
         .with_boundaries(LATENCY_HISTOGRAM_BUCKETS.to_vec())
         .build()
     });
+
+/// Gauge metric that tracks the number of running requests.
+///
+/// # Metric Details
+/// - Name: `atoma_num_running_requests`
+/// - Type: Gauge
+/// - Labels: `model`
+/// - Labels: `privacy_level`
+pub static NUM_RUNNING_REQUESTS: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_gauge("atoma_num_running_requests")
+        .with_description("Number of running requests")
+        .with_unit("requests")
+        .build()
+});

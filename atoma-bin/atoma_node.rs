@@ -213,11 +213,13 @@ async fn main() -> Result<()> {
 
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
-    let mut wallet_ctx = WalletContext::new(
-        &PathBuf::from(config.sui.sui_config_path()),
-        config.sui.request_timeout(),
-        config.sui.max_concurrent_requests(),
-    )?;
+    let mut wallet_ctx = WalletContext::new(&PathBuf::from(config.sui.sui_config_path()))?;
+    if let Some(request_timeout) = config.sui.request_timeout() {
+        wallet_ctx = wallet_ctx.with_request_timeout(request_timeout);
+    }
+    if let Some(max_concurrent_requests) = config.sui.max_concurrent_requests() {
+        wallet_ctx = wallet_ctx.with_max_concurrent_requests(max_concurrent_requests);
+    }
     let address = wallet_ctx.active_address()?;
     let address_index = args.address_index.unwrap_or_else(|| {
         wallet_ctx
@@ -360,7 +362,14 @@ async fn main() -> Result<()> {
         encryption_sender: app_state_encryption_sender,
         compute_shared_secret_sender,
         tokenizers: Arc::new(tokenizers),
-        models: Arc::new(config.service.models),
+        models: Arc::new(
+            config
+                .service
+                .models
+                .into_iter()
+                .map(|model| model.to_lowercase())
+                .collect(),
+        ),
         chat_completions_service_urls: config.service.chat_completions_service_urls,
         embeddings_service_url: config
             .service
@@ -373,8 +382,33 @@ async fn main() -> Result<()> {
         keystore: Arc::new(keystore),
         address_index,
         whitelist_sui_addresses_for_fiat: config.service.whitelist_sui_addresses_for_fiat,
+        too_many_requests: Arc::new(DashMap::new()),
+        too_many_requests_timeout_ms: u128::from(config.service.too_many_requests_timeout_ms),
         running_num_requests: Arc::new(RequestCounter::new()),
+        memory_lower_threshold: config.service.memory_lower_threshold,
+        memory_upper_threshold: config.service.memory_upper_threshold,
+        max_num_queued_requests: config.service.max_num_queued_requests,
     };
+
+    let chat_completions_service_urls = app_state
+        .chat_completions_service_urls
+        .iter()
+        .flat_map(|(model, urls)| {
+            urls.iter()
+                .map(|(url, job, max_number_of_running_requests)| {
+                    (
+                        model.clone(),
+                        url.clone(),
+                        job.clone(),
+                        *max_number_of_running_requests,
+                    )
+                })
+        })
+        .collect();
+    atoma_service::handlers::inference_service_metrics::start_metrics_updater(
+        chat_completions_service_urls,
+        config.service.metrics_update_interval,
+    );
 
     let daemon_app_state = DaemonState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
