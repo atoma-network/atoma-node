@@ -238,7 +238,8 @@ pub async fn chat_completions_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .to_lowercase();
 
     match handle_response(
         &state,
@@ -260,35 +261,33 @@ pub async fn chat_completions_handler(
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
                 num_input_tokens + estimated_output_tokens,
-                &[KeyValue::new(MODEL_KEY, model.to_owned())],
+                &[KeyValue::new(MODEL_KEY, model.clone())],
             );
             if !is_stream {
-                TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
             }
             Ok(response)
         }
         Err(e) => {
             match e.status_code() {
                 StatusCode::TOO_MANY_REQUESTS => {
-                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
-                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::TOO_EARLY => {
-                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::UNAUTHORIZED => {
-                    TOTAL_UNAUTHORIZED_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 _ => {
-                    TOTAL_FAILED_CHAT_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_FAILED_CHAT_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
             }
 
@@ -317,7 +316,7 @@ pub async fn chat_completions_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.to_string(),
+                    model.clone(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -465,10 +464,10 @@ pub async fn confidential_chat_completions_handler(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or(UNKNOWN_MODEL);
+        .unwrap_or(UNKNOWN_MODEL)
+        .to_lowercase();
 
-    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS
-        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+    CHAT_COMPLETIONS_CONFIDENTIAL_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
 
     let endpoint = request_metadata.endpoint_path.clone();
 
@@ -492,35 +491,34 @@ pub async fn confidential_chat_completions_handler(
         Ok(response) => {
             CHAT_COMPLETIONS_ESTIMATED_TOTAL_TOKENS.add(
                 num_input_tokens + estimated_output_tokens,
-                &[KeyValue::new(MODEL_KEY, model.to_owned())],
+                &[KeyValue::new(MODEL_KEY, model.clone())],
             );
             if !is_stream {
-                TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                TOTAL_COMPLETED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
             }
             Ok(response)
         }
         Err(e) => {
             match e.status_code() {
                 StatusCode::TOO_MANY_REQUESTS => {
-                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_MANY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::BAD_REQUEST => {
-                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_BAD_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::LOCKED => {
-                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_LOCKED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::TOO_EARLY => {
-                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_TOO_EARLY_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 StatusCode::UNAUTHORIZED => {
-                    TOTAL_UNAUTHORIZED_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                    TOTAL_UNAUTHORIZED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
                 _ => {
                     TOTAL_FAILED_CHAT_CONFIDENTIAL_REQUESTS
-                        .add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
-                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+                        .add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
+                    TOTAL_FAILED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
                 }
             }
             // NOTE: We need to update the stack number of tokens as the service failed to generate
@@ -548,7 +546,7 @@ pub async fn confidential_chat_completions_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.to_string(),
+                    model.clone(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -757,9 +755,10 @@ async fn handle_non_streaming_response(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or(UNKNOWN_MODEL);
+        .unwrap_or(UNKNOWN_MODEL)
+        .to_lowercase();
 
-    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
     let timer = Instant::now();
     debug!(
         target = "atoma-service",
@@ -779,7 +778,7 @@ async fn handle_non_streaming_response(
         level = "debug",
         "Received non-streaming chat completions response from {endpoint}"
     );
-    let (input_tokens, output_tokens) = utils::extract_total_num_tokens(&response_body, model);
+    let (input_tokens, output_tokens) = utils::extract_total_num_tokens(&response_body, &model);
 
     utils::serve_non_streaming_response(
         state,
@@ -796,7 +795,7 @@ async fn handle_non_streaming_response(
         client_encryption_metadata,
         endpoint,
         timer,
-        model,
+        &model,
     )
     .await
 }
@@ -887,13 +886,14 @@ async fn handle_streaming_response(
     let model = payload
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
-        .unwrap_or(UNKNOWN_MODEL);
-    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
+        .unwrap_or(UNKNOWN_MODEL)
+        .to_lowercase();
+    CHAT_COMPLETIONS_NUM_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.clone())]);
     let timer = Instant::now();
 
     let chat_completions_service_urls = state
         .chat_completions_service_urls
-        .get(&model.to_lowercase())
+        .get(&model)
         .ok_or_else(|| {
             AtomaServiceError::InternalError {
                 message: format!(
@@ -907,7 +907,7 @@ async fn handle_streaming_response(
         get_best_available_chat_completions_service_url(
             &state.running_num_requests,
             chat_completions_service_urls,
-            &model.to_lowercase(),
+            &model,
             state.memory_upper_threshold,
             state.max_num_queued_requests,
         )
@@ -917,9 +917,7 @@ async fn handle_streaming_response(
             endpoint: endpoint.clone(),
         })?;
     if status_code == StatusCode::TOO_MANY_REQUESTS {
-        state
-            .too_many_requests
-            .insert(model.to_string(), Instant::now());
+        state.too_many_requests.insert(model, Instant::now());
         return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
             message: "Too many requests".to_string(),
             endpoint: endpoint.clone(),
@@ -999,7 +997,7 @@ async fn handle_streaming_response(
         payload_hash,
         state.keystore.clone(),
         state.address_index,
-        model.to_string(),
+        model.clone(),
         streaming_encryption_metadata,
         endpoint,
         request_id,
@@ -1325,10 +1323,11 @@ pub mod utils {
         let model = payload
             .get(MODEL_KEY)
             .and_then(|m| m.as_str())
-            .unwrap_or(UNKNOWN_MODEL);
+            .unwrap_or(UNKNOWN_MODEL)
+            .to_lowercase();
         let chat_completions_service_url_services = state
             .chat_completions_service_urls
-            .get(&model.to_lowercase())
+            .get(&model)
             .ok_or_else(|| {
                 AtomaServiceError::InternalError {
                     message: format!(
@@ -1342,7 +1341,7 @@ pub mod utils {
             get_best_available_chat_completions_service_url(
                 &state.running_num_requests,
                 chat_completions_service_url_services,
-                model,
+                &model,
                 state.memory_upper_threshold,
                 state.max_num_queued_requests,
             )
@@ -1354,7 +1353,7 @@ pub mod utils {
         if status_code == StatusCode::TOO_MANY_REQUESTS {
             state
                 .too_many_requests
-                .insert(model.to_string(), Instant::now());
+                .insert(model.clone(), Instant::now());
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
                 message: "Too many requests".to_string(),
                 endpoint: endpoint.to_string(),
@@ -1678,7 +1677,7 @@ pub mod utils {
                 &state.state_manager_sender,
                 user_id,
                 user_address,
-                model.to_string(),
+                model.to_owned(),
                 estimated_input_tokens,
                 input_tokens,
                 estimated_output_tokens,

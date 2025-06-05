@@ -931,7 +931,7 @@ pub mod inference_service_metrics {
                 "No chat completions service URLs provided for model."
             );
             return Err(
-                ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_string()),
+                ChatCompletionsMetricsError::NoChatCompletionsServiceUrlsFound(model.to_owned()),
             );
         }
         tracing::debug!(
@@ -976,7 +976,7 @@ pub mod inference_service_metrics {
                 .iter()
                 .map(|(url, job, max_concurrent_requests)| {
                     (
-                        model.to_string(),
+                        model.to_owned(),
                         url.clone(),
                         job.clone(),
                         *max_concurrent_requests,
@@ -1009,7 +1009,7 @@ pub mod inference_service_metrics {
                 .iter()
                 .map(|(url, job, max_concurrent_requests)| {
                     (
-                        model.to_string(),
+                        model.to_owned(),
                         url.clone(),
                         job.clone(),
                         *max_concurrent_requests,
@@ -1048,7 +1048,7 @@ pub mod inference_service_metrics {
                         "current_model = {current_model}, model = {model}, they are equal = {}",
                         current_model == model
                     );
-                    if current_model.to_lowercase() != model.to_lowercase() {
+                    if current_model != model {
                         // NOTE: We only want to consider metrics for the current model
                         continue;
                     }
