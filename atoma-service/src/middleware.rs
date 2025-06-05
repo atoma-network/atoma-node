@@ -818,13 +818,13 @@ pub async fn verify_permissions(
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
         })?;
-    utils::check_if_too_many_requests(&state, model, &endpoint).await?;
     if !state.models.contains(&model.to_string()) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
             endpoint: endpoint.clone(),
         });
     }
+    utils::check_if_too_many_requests(&state, model, &endpoint).await?;
 
     let TokensEstimate {
         num_input_tokens,
@@ -1706,11 +1706,10 @@ pub mod utils {
             .iter()
             .any(|metric| metric.under_lower_threshold(state.memory_lower_threshold))
         {
-            state.too_many_requests.remove(model);
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
-                    "Model {} is in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
                     model
                 );
         } else if !metrics.is_empty() {
@@ -1718,7 +1717,7 @@ pub mod utils {
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
-                    "Model {} is in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
                     model
                 );
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
