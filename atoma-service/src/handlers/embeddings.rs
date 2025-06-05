@@ -98,7 +98,8 @@ pub async fn embeddings_handler(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown")
-        .to_string();
+        .to_string()
+        .to_lowercase();
 
     let RequestMetadata {
         stack_small_id,
@@ -181,7 +182,7 @@ pub async fn embeddings_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.to_string(),
+                    model.clone(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,
@@ -263,7 +264,8 @@ pub async fn confidential_embeddings_handler(
         .get(MODEL_KEY)
         .and_then(|m| m.as_str())
         .unwrap_or("unknown")
-        .to_string();
+        .to_string()
+        .to_lowercase();
 
     TEXT_EMBEDDINGS_CONFIDENTIAL_NUM_REQUESTS
         .add(1, &[KeyValue::new("model", model.as_str().to_owned())]);
@@ -321,7 +323,7 @@ pub async fn confidential_embeddings_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.to_string(),
+                    model.clone(),
                     num_input_tokens,
                     num_input_tokens,
                     estimated_output_tokens,
@@ -374,7 +376,7 @@ pub async fn confidential_embeddings_handler(
                     &state.state_manager_sender,
                     user_id,
                     user_address,
-                    model.to_string(),
+                    model.clone(),
                     num_input_tokens,
                     0,
                     estimated_output_tokens,

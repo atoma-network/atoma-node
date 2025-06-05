@@ -603,7 +603,7 @@ async fn generate_fiat_request(
     state
         .state_manager_sender
         .send(AtomaAtomaStateManagerEvent::GetModelPricing {
-            model: model.to_string(),
+            model: model.to_owned(),
             result_sender,
         })
         .map_err(|err| AtomaServiceError::InternalError {
@@ -817,20 +817,22 @@ pub async fn verify_permissions(
         .ok_or_else(|| AtomaServiceError::InvalidBody {
             message: "Model is not a string".to_string(),
             endpoint: endpoint.clone(),
-        })?;
-    utils::check_if_too_many_requests(&state, model, &endpoint).await?;
-    if !state.models.contains(&model.to_string()) {
+        })?
+        .to_lowercase();
+    if !state.models.contains(&model) {
         return Err(AtomaServiceError::InvalidBody {
             message: format!("Model not supported, supported models: {:?}", state.models),
             endpoint: endpoint.clone(),
         });
     }
 
+    utils::check_if_too_many_requests(&state, &model, &endpoint).await?;
+
     let TokensEstimate {
         num_input_tokens,
         max_output_tokens,
         max_total_tokens,
-    } = utils::calculate_tokens(&body_json, request_type, &state, model, &endpoint)?;
+    } = utils::calculate_tokens(&body_json, request_type, &state, &model, &endpoint)?;
 
     let max_total_tokens = max_total_tokens as i64;
     let max_output_tokens = max_output_tokens as i64;
@@ -865,7 +867,7 @@ pub async fn verify_permissions(
             req_parts,
             request_type,
             body_bytes,
-            model,
+            &model,
             instant,
         )
         .await?
@@ -1658,7 +1660,7 @@ pub mod utils {
         model: &str,
         endpoint: &str,
     ) -> Result<(), AtomaServiceError> {
-        match state.too_many_requests.entry(model.to_string()) {
+        match state.too_many_requests.entry(model.to_owned()) {
             dashmap::mapref::entry::Entry::Occupied(occupied_entry) => {
                 let elapsed_ms = occupied_entry.get().elapsed().as_millis();
 
@@ -1686,7 +1688,7 @@ pub mod utils {
         }
         let chat_completions_service_urls = state
                 .chat_completions_service_urls
-                .get(&model.to_lowercase())
+                .get(model)
                 .ok_or_else(|| {
                     AtomaServiceError::InvalidBody {
                         message: format!(
@@ -1706,19 +1708,18 @@ pub mod utils {
             .iter()
             .any(|metric| metric.under_lower_threshold(state.memory_lower_threshold))
         {
-            state.too_many_requests.remove(model);
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
-                    "Model {} is in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is no longer exceeding the lower threshold. Removing from the map.",
                     model
                 );
         } else if !metrics.is_empty() {
-            // TODO: Should we add the model to the `too_many_requests` map here?
+            // TODO: Should we add the model to the `too_many_requests` map here? It means that the service is either dead, or we are restarting it.
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
-                    "Model {} is in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
+                    "Model {} is not in the `too_many_requests` map, but metrics indicate that it is still exceeding the lower threshold. Processing can continue.",
                     model
                 );
             return Err(AtomaServiceError::ChatCompletionsServiceUnavailable {
