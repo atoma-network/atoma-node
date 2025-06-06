@@ -1,0 +1,23 @@
+apiVersion: v2
+name: atoma-node
+description: A Helm chart for deploying Atoma Node and its dependencies
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: prometheus
+    version: "25.0.0"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled
+  - name: grafana
+    version: "7.0.0"
+    repository: https://grafana.github.io/helm-charts
+    condition: grafana.enabled
+  - name: loki
+    version: "5.41.3"
+    repository: https://grafana.github.io/helm-charts
+    condition: loki.enabled
+  - name: tempo
+    version: "1.5.0"
+    repository: https://grafana.github.io/helm-charts
+    condition: tempo.enabled

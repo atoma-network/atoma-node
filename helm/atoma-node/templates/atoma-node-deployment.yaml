@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-atoma-node
+  labels:
+    app: atoma-node
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: atoma-node
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: atoma-node
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: atoma-node
+          image: "{{ .Values.atomaNode.image.repository }}:{{ .Values.atomaNode.image.tag }}"
+          imagePullPolicy: {{ .Values.atomaNode.image.pullPolicy }}
+          ports:
+            - name: service
+              containerPort: {{ .Values.atomaNode.service.port }}
+            - name: daemon
+              containerPort: {{ .Values.atomaNode.service.daemonPort }}
+            - name: p2p
+              containerPort: {{ .Values.atomaNode.service.p2pPort }}
+          resources:
+            {{- toYaml .Values.atomaNode.resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-env
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.toml
+              subPath: config.toml
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+            - name: sui-config
+              mountPath: /root/.sui/sui_config
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: data
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+        - name: sui-config
+          configMap:
+            name: {{ .Release.Name }}-sui-config
