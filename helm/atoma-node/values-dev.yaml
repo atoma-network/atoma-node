@@ -18,12 +18,10 @@ atomaNode:
       memory: "8Gi"
       cpu: "4"
   service:
-    main:
-      port: 3000
-    daemon:
-      port: 3001
-    p2p:
-      port: 4001
+    port: 3000
+    daemonPort: 3001
+    p2pPort: 4001
+    port: 3000
   ingress:
     enabled: true
     className: "nginx"
@@ -48,7 +46,7 @@ atomaNode:
             service: sglang
   persistence:
     enabled: true
-    storageClass: "standard"
+    storageClass: "gp2"
     size: 10Gi
     accessMode: ReadWriteOnce
   config:
@@ -78,7 +76,7 @@ vllm:
       cpu: "8"
       nvidia.com/gpu: 1
   service:
-    port: 8000
+    port: 3000
   extraEnv:
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: http://otel-collector:4317
@@ -105,6 +103,7 @@ sglang:
       nvidia.com/gpu: 1 # Reduced for development
   service:
     port: 3000
+    type: ClusterIP
   extraEnv:
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: http://otel-collector:4317
@@ -124,7 +123,7 @@ postgresql:
     persistence:
       size: 5Gi
   service:
-    port: 5432
+    port: 3000
 
 # Monitoring stack settings
 prometheus:
@@ -161,7 +160,6 @@ grafana:
       - grafana-dev.atoma.network
   service:
     type: LoadBalancer
-    port: 3000
     targetPort: 3000
     annotations:
       metallb.universe.tf/address-pool: grafana-pool
@@ -173,7 +171,7 @@ loki:
   config: |
     auth_enabled: false
     server:
-      http_listen_port: 3100
+    port: 3000
     common:
       path_prefix: /var/loki
       replication_factor: 1

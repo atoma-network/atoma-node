@@ -48,8 +48,7 @@ spec:
           configMap:
             name: {{ .Release.Name }}-config
         - name: data
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-atoma-node-data
+          emptyDir: {}
         - name: logs
           emptyDir: {}
         - name: sui-config
