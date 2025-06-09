@@ -69,6 +69,9 @@ pub struct AtomaServiceConfig {
 
     /// The maximum number of queued requests for each inference service.
     pub max_num_queued_requests: f64,
+
+    /// Batching interval for requests in milliseconds.
+    pub requests_batcher_interval_ms: u64,
 }
 
 impl AtomaServiceConfig {

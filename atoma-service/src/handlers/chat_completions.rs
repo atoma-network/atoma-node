@@ -7,6 +7,7 @@ use crate::{
             TOTAL_FAILED_CHAT_REQUESTS, TOTAL_LOCKED_REQUESTS, TOTAL_TOO_EARLY_REQUESTS,
             TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
+        request_batcher::InferenceRequest,
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::EncryptionMetadata,
@@ -42,7 +43,6 @@ use openai_api::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
 };
 use opentelemetry::KeyValue;
-use reqwest::Client;
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
 use tracing::{debug, info, instrument};
@@ -925,17 +925,12 @@ async fn handle_streaming_response(
             endpoint: endpoint.clone(),
         });
     }
-    let client = Client::new();
-
-    let response = client
-        .post(format!(
-            "{}{}",
-            chat_completions_service_url, CHAT_COMPLETIONS_PATH
-        ))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
+    let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+    state.request_batcher_sender.send(InferenceRequest {
+            url: format!("{}{}", chat_completions_service_url, CHAT_COMPLETIONS_PATH),
+            payload: payload.clone(),
+            result_sender
+        }).map_err(|e| {
             state
                 .running_num_requests
                 .decrement(&chat_completions_service_url);
@@ -946,9 +941,38 @@ async fn handle_streaming_response(
                     stack_small_id,
                     e
                 ),
-                endpoint: endpoint.clone(),
+                endpoint: endpoint.to_string(),
             }
         })?;
+    let response = result_receiver
+            .await
+            .map_err(|e| {
+                state
+                    .running_num_requests
+                    .decrement(&chat_completions_service_url);
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error receiving response from inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?.map_err(|e| {
+                state
+                    .running_num_requests
+                    .decrement(&chat_completions_service_url);
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error processing response from inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?;
 
     if !response.status().is_success() {
         state
@@ -1148,14 +1172,14 @@ pub mod utils {
     use crate::handlers::{
         handle_concurrent_requests_count_decrement, handle_status_code_error,
         inference_service_metrics::get_best_available_chat_completions_service_url,
-        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, update_fiat_amount, COMPLETION_TOKENS_KEY,
-        PROMPT_TOKENS_KEY, USAGE_KEY,
+        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, request_batcher::InferenceRequest,
+        update_fiat_amount, COMPLETION_TOKENS_KEY, PROMPT_TOKENS_KEY, USAGE_KEY,
     };
 
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
         sign_response_and_update_stack_hash, update_stack_num_compute_units, AppState,
-        AtomaServiceError, Body, Client, ConfidentialComputeSharedSecretRequest,
+        AtomaServiceError, Body, ConfidentialComputeSharedSecretRequest,
         ConfidentialComputeSharedSecretResponse, EncryptionMetadata, IntoResponse, Json, Response,
         StreamingEncryptionMetadata, Value, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
         CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, CHAT_COMPLETIONS_PATH, MODEL_KEY, UNKNOWN_MODEL,
@@ -1321,7 +1345,6 @@ pub mod utils {
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         endpoint: &str,
     ) -> Result<Value, AtomaServiceError> {
-        let client = Client::new();
         let model = payload
             .get(MODEL_KEY)
             .and_then(|m| m.as_str())
@@ -1360,14 +1383,41 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             });
         }
-        let response = client
-            .post(format!(
-                "{}{}",
-                chat_completions_service_url, CHAT_COMPLETIONS_PATH
-            ))
-            .json(&payload)
-            .send()
-            .await;
+        let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+        state.request_batcher_sender.send(InferenceRequest {
+            url: format!("{}{}", chat_completions_service_url, CHAT_COMPLETIONS_PATH),
+            payload: payload.clone(),
+            result_sender
+        }).map_err(|e| {
+            state
+                .running_num_requests
+                .decrement(&chat_completions_service_url);
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+        let response = result_receiver
+            .await
+            .map_err(|e| {
+                state
+                    .running_num_requests
+                    .decrement(&chat_completions_service_url);
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error receiving response from inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?;
         state
             .running_num_requests
             .decrement(&chat_completions_service_url);
