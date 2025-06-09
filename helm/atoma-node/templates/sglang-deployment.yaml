@@ -1,0 +1,67 @@
+{{- if .Values.sglang.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-sglang
+  labels:
+    app: sglang
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sglang
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: sglang
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: sglang
+          image: "{{ .Values.sglang.image.repository }}:{{ .Values.sglang.image.tag }}"
+          imagePullPolicy: {{ .Values.sglang.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sglang.service.port }}
+          resources:
+            {{- toYaml .Values.sglang.resources | nindent 12 }}
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            {{- with .Values.sglang.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.sglang.model.args }}
+          args:
+            {{- toYaml .Values.sglang.model.args | nindent 12 }}
+          {{- else }}
+          command: ["python", "-m", "sglang.launch_server"]
+          args:
+            - "--model-path"
+            - "{{ .Values.sglang.model.name }}"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "{{ .Values.sglang.service.port }}"
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-sglang
+  labels:
+    app: sglang
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.sglang.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.sglang.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: sglang
+    release: {{ .Release.Name }}
+{{- end }}

@@ -1,0 +1,246 @@
+# Development environment settings
+global:
+  environment: development
+  domain: atoma.network
+
+# Main application settings
+atomaNode:
+  image:
+    repository: ghcr.io/atoma-network/atoma-node
+    tag: latest
+    pullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+  service:
+    port: 3000
+    daemonPort: 3001
+    p2pPort: 4001
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-staging"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: node-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: main
+      - host: vllm-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: vllm
+      - host: sglang-dev.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: sglang
+  persistence:
+    enabled: true
+    storageClass: "gp2"
+    size: 10Gi
+    accessMode: ReadWriteOnce
+  config:
+    environment: "development"
+    logLevel: "debug"
+    # Atoma node configuration will be read from files/config.toml
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: RUST_LOG
+      value: "info"
+
+# VLLM settings for Mistral-Nemo
+vllm:
+  enabled: true
+  replicas: 1
+  image:
+    repository: vllm/vllm-openai
+    tag: v0.6.2
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "16Gi"
+      cpu: "4"
+      nvidia.com/gpu: 1
+    limits:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 1
+  service:
+    port: 8000
+  model:
+    name: "mistralai/Mistral-Nemo-Instruct-2407"
+    args:
+      - "--model"
+      - "mistralai/Mistral-Nemo-Instruct-2407"
+      - "--served-model-name"
+      - "mistral-nemo"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--max-model-len"
+      - "8192"
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: OTEL_SERVICE_NAME
+      value: vllm
+    - name: OTEL_LOGS_EXPORTER
+      value: otlp
+    - name: HF_TOKEN
+      value: "${HF_TOKEN}"
+
+# SGLang settings for Mistral-Nemo
+sglang:
+  enabled: true
+  image:
+    repository: lmsysorg/sglang
+    tag: v0.3.5.post1
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 1
+    limits:
+      memory: "64Gi"
+      cpu: "16"
+      nvidia.com/gpu: 1
+  service:
+    port: 30000
+    type: ClusterIP
+  model:
+    name: "mistralai/Mistral-Nemo-Instruct-2407"
+    args:
+      - "--model-path"
+      - "mistralai/Mistral-Nemo-Instruct-2407"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "30000"
+      - "--tp-size"
+      - "1"
+      - "--mem-fraction-static"
+      - "0.9"
+  extraEnv:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector:4317
+    - name: OTEL_SERVICE_NAME
+      value: sglang
+    - name: OTEL_LOGS_EXPORTER
+      value: otlp
+    - name: HF_TOKEN
+      value: "${HF_TOKEN}"
+
+# PostgreSQL settings
+postgresql:
+  enabled: true
+  auth:
+    database: atoma_node_dev
+    username: atoma_node_dev
+    password: "dev_password"
+  primary:
+    persistence:
+      size: 5Gi
+  service:
+    ports:
+      postgresql: 5432
+
+# Monitoring stack settings
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 5Gi
+    ingress:
+      enabled: true
+      className: "nginx"
+      annotations:
+        cert-manager.io/cluster-issuer: "letsencrypt-staging"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - prometheus-dev.atoma.network
+    service:
+      type: LoadBalancer
+      servicePort: 9090
+      targetPort: 9090
+
+grafana:
+  enabled: true
+  persistence:
+    size: 5Gi
+  adminUser: admin
+  adminPassword: admin123
+  ingress:
+    enabled: true
+    hosts:
+      - grafana-dev.atoma.network
+  service:
+    type: LoadBalancer
+    port: 3000
+    targetPort: 3000
+    annotations:
+      metallb.universe.tf/address-pool: grafana-pool
+
+loki:
+  enabled: true
+  deploymentMode: SingleBinary
+  loki:
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /var/loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /var/loki/index
+        shared_store: filesystem
+      filesystem:
+        directory: /var/loki/chunks
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+  write:
+    replicas: 0
+  read:
+    replicas: 0
+  backend:
+    replicas: 0
+
+tempo:
+  enabled: true
+  persistence:
+    size: 5Gi
+  ingress:
+    enabled: true
+    hosts:
+      - tempo-dev.atoma.network

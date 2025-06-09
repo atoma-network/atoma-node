@@ -1,0 +1,179 @@
+# Global settings
+global:
+  environment: production
+  domain: atoma.network
+
+# Main application settings
+atomaNode:
+  image:
+    repository: ghcr.io/atoma-network/atoma-node
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+  service:
+    main:
+      port: 3000
+    daemon:
+      port: 3001
+    p2p:
+      port: 4001
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: node.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: main
+      - host: vllm.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: vllm
+      - host: sglang.atoma.network
+        paths:
+          - path: /
+            pathType: Prefix
+            service: sglang
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 10Gi
+    accessMode: ReadWriteOnce
+
+# VLLM settings
+vllm:
+  enabled: true
+  replicas: 8
+  image:
+    repository: vllm/vllm-openai
+    tag: v0.8.1
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "16Gi"
+      cpu: "4"
+      nvidia.com/gpu: 1
+    limits:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 1
+  service:
+    port: 8000
+
+# SGLang settings
+sglang:
+  enabled: true
+  image:
+    repository: lmsysorg/sglang
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "32Gi"
+      cpu: "8"
+      nvidia.com/gpu: 8
+    limits:
+      memory: "64Gi"
+      cpu: "16"
+      nvidia.com/gpu: 8
+  service:
+    port: 3000
+
+# PostgreSQL settings
+postgresql:
+  enabled: true
+  auth:
+    database: atoma_node
+    username: atoma_node
+    password: ""
+  primary:
+    persistence:
+      size: 10Gi
+  service:
+    port: 5432
+
+# Monitoring stack settings
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      size: 10Gi
+  alertmanager:
+    persistentVolume:
+      size: 2Gi
+
+grafana:
+  adminUser: admin
+  adminPassword: admin
+  enabled: true
+  persistence:
+    size: 10Gi
+  ingress:
+    enabled: true
+    hosts:
+      - grafana.atoma.network
+
+loki:
+  enabled: true
+  persistence:
+    size: 10Gi
+  ingress:
+    enabled: true
+    hosts:
+      - loki.atoma.network
+
+tempo:
+  enabled: true
+  persistence:
+    size: 10Gi
+  ingress:
+    enabled: true
+    hosts:
+      - tempo.atoma.network
+
+# OpenTelemetry Collector settings
+otelCollector:
+  enabled: true
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+    exporters:
+      prometheus:
+        endpoint: prometheus-server:9090
+      loki:
+        endpoint: loki:3100
+      otlp:
+        endpoint: tempo:4317
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [loki]

@@ -1,0 +1,32 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: traefik-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.0.235.50/32
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: prometheus-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.0.235.51/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2
+  namespace: metallb-system
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: grafana-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.0.235.52/32

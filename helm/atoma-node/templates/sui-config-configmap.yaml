@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-sui-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  client.yaml: |-
+{{ .Files.Get "files/sui_config/client.yaml" | indent 4 }}
+  sui.keystore: |-
+{{ .Files.Get "files/sui_config/sui.keystore" | indent 4 }}
+  sui.aliases: |-
+{{ .Files.Get "files/sui_config/sui.aliases" | indent 4 }}
