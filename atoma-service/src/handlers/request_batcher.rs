@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use futures::stream::{FuturesUnordered, StreamExt};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::{
@@ -127,14 +128,14 @@ impl RequestsBatcher {
     #[instrument(level = "debug", skip_all, fields(requests_count = requests.len()))]
     pub async fn process_requests(&mut self, requests: Vec<InferenceRequest>) {
         if !requests.is_empty() {
-            let mut handles = Vec::with_capacity(requests.len());
+            let mut tasks = FuturesUnordered::new();
             for request in requests {
                 let client = Arc::clone(&self.client);
-                let handle = tokio::spawn(async move { Self::send_request(client, request).await });
-                handles.push(handle);
+                tasks.push(tokio::spawn(async move {
+                    Self::send_request(client, request).await
+                }));
             }
-            let results = futures::future::join_all(handles).await;
-            for result in results {
+            while let Some(result) = tasks.next().await {
                 match result {
                     Ok(Ok(())) => {
                         // Successfully sent the request and received the response
@@ -143,7 +144,8 @@ impl RequestsBatcher {
                         tracing::error!("Failed to send request: {}", e);
                     }
                     Err(e) => {
-                        tracing::error!("Task failed: {}", e);
+                        // This is a JoinError from tokio::spawn if the task panicked
+                        tracing::error!("Task panicked or was cancelled: {}", e);
                     }
                 }
             }
