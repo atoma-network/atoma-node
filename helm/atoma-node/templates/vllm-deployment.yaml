@@ -6,20 +6,20 @@ metadata:
   name: {{ $.Release.Name }}-vllm-{{ $i }}
   labels:
     app: vllm
-    instance: {{ $i }}
+    instance: "{{ $i }}"
     release: {{ $.Release.Name }}
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: vllm
-      instance: {{ $i }}
+      instance: "{{ $i }}"
       release: {{ $.Release.Name }}
   template:
     metadata:
       labels:
         app: vllm
-        instance: {{ $i }}
+        instance: "{{ $i }}"
         release: {{ $.Release.Name }}
     spec:
       containers:
@@ -40,7 +40,15 @@ spec:
               value: "1"
             - name: CUDA_VISIBLE_DEVICES
               value: "{{ $i }}"
+            {{- with $.Values.vllm.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if $.Values.vllm.model.args }}
+          args:
+            {{- toYaml $.Values.vllm.model.args | nindent 12 }}
+          {{- else }}
           command: {{ $.Values.vllm.command | default (list "--model" $.Values.vllm.model "--max-model-len" $.Values.vllm.maxModelLen) }}
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -48,10 +56,10 @@ metadata:
   name: {{ $.Release.Name }}-vllm-{{ $i }}
   labels:
     app: vllm
-    instance: {{ $i }}
+    instance: "{{ $i }}"
     release: {{ $.Release.Name }}
 spec:
-  type: {{ $.Values.vllm.service.type }}
+  type: {{ $.Values.vllm.service.type | default "ClusterIP" }}
   ports:
     - port: {{ $.Values.vllm.service.port }}
       targetPort: http
@@ -59,7 +67,7 @@ spec:
       name: http
   selector:
     app: vllm
-    instance: {{ $i }}
+    instance: "{{ $i }}"
     release: {{ $.Release.Name }}
 {{- end }}
 {{- end }}

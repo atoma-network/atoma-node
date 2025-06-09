@@ -1,0 +1,86 @@
+[atoma_sui]
+atoma_db                = "0x02920289f426dd1f3c2572d613f7dc92be95041720864a73d44d65585530efc5"
+atoma_package_id        = "0x8903298ba49a8e83d438e014b2cfd18404324f3a0274b9507b520d5745b85208"
+cursor_path             = "./cursor.toml"
+http_rpc_node_addr      = "https://fullnode.testnet.sui.io:443"
+limit                   = 100
+max_concurrent_requests = 10
+request_timeout         = { secs = 300, nanos = 0 }
+sui_config_path         = "/root/.sui/sui_config/client.yaml"
+sui_keystore_path       = "/root/.sui/sui_config/sui.keystore"
+usdc_package_id         = "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29"
+
+[node]
+address = "0.0.0.0"
+port = 3000
+
+[daemon]
+address = "0.0.0.0"
+port = 3001
+
+[p2p]
+address = "0.0.0.0"
+port = 4001
+
+[database]
+url = "postgresql://atoma_node_dev:dev_password@atoma-node-dev-postgresql:5432/atoma_node_dev"
+
+[logging]
+level = "debug"
+
+[inference_services]
+vllm_endpoint = "http://atoma-node-dev-vllm:8000"
+sglang_endpoint = "http://atoma-node-dev-sglang:30000"
+
+[atoma_state]
+database_url = "postgresql://atoma_node_dev:dev_password@atoma-node-dev-postgresql:5432/atoma_node_dev"
+
+[atoma_state.metrics_collection]
+metrics_url = "http://prometheus:9090"
+models = [
+    [
+        "Chat Completions",
+        "Llama-3.2-3B-Instruct",
+    ],
+]
+top_k = 10
+
+[atoma_service]
+chat_completions_service_urls = { "mistralai/Mistral-Nemo-Instruct-2407" = "http://atoma-node-dev-vllm-0:8000" }
+service_bind_address = "0.0.0.0:8080"
+password = "password"
+open_router_models_file = "/app/open_router.json"
+models = [ "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic", "mistralai/Mistral-Nemo-Instruct-2407", "deepseek-ai/DeepSeek-V3-0324" ]
+revisions = ["main", "main", "main"]
+hf_token = "${HF_TOKEN}"
+modalities = [["Chat Completions"], ["Chat Completions"], ["Chat Completions"]]
+heartbeat_url = "https://hc-ping.com/6981b450-3453-40f9-8b53-4f95a1f30e30"
+sentry_dsn = "https://bf63999f90e261523847f4474f4d510b@o4509203694419968.ingest.us.sentry.io/4509203836370944"
+environment = "development"
+
+[atoma_proxy_service]
+service_bind_address = "0.0.0.0:8081"
+grafana_url = "http://213.130.147.75:3000"
+grafana_api_token = "${GRAFANA_API_TOKEN}"
+grafana_dashboard_tag = "proxy"
+grafana_stats_tag     = "stats"
+
+[atoma_auth]
+secret_key = "atoma_auth123"
+access_token_lifetime = 1
+refresh_token_lifetime = 1
+google_client_id = "135471414073-41r9t89rejgfr6bc9aptjpm75o4oedk2.apps.googleusercontent.com"
+
+[atoma_p2p]
+heartbeat_interval = { secs = 30, nanos = 0 }
+idle_connection_timeout = { secs = 60, nanos = 0 }
+listen_addrs = [
+    "/ip4/0.0.0.0/tcp/8083",
+    "/ip4/0.0.0.0/udp/8083/quic-v1",
+]
+bootstrap_node_addrs = [
+    "/ip4/213.130.147.75/tcp/8083",
+    "/ip4/213.130.147.75/udp/8083/quic-v1",
+]
+metrics_endpoints = {}
+local_key = "/app/data/local_key"

@@ -8,6 +8,10 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   config.toml: |-
+{{- if .Values.atomaNode.config.content }}
+{{ .Values.atomaNode.config.content | indent 4 }}
+{{- else }}
 {{ .Files.Get "files/config.toml" | indent 4 }}
+{{- end }}
   environment: {{ .Values.atomaNode.config.environment | quote }}
   log_level: {{ .Values.atomaNode.config.logLevel | quote }}

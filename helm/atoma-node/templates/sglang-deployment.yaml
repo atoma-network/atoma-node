@@ -28,31 +28,24 @@ spec:
           resources:
             {{- toYaml .Values.sglang.resources | nindent 12 }}
           env:
-            - name: HF_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Release.Name }}-sglang-secrets
-                  key: hf-token
-          command:
-            - python3
-            - -m
-            - sglang.launch_server
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            {{- with .Values.sglang.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.sglang.model.args }}
           args:
-            - --model-path
-            - {{ .Values.sglang.modelPath }}
-            - --tp
-            - "8"
-            - --enable-dp-attention
-            - --dp
-            - "8"
-            - --trust-remote-code
-            - --max-running-requests
-            - "128"
-            - --enable-metrics
-            - --host
+            {{- toYaml .Values.sglang.model.args | nindent 12 }}
+          {{- else }}
+          command: ["python", "-m", "sglang.launch_server"]
+          args:
+            - "--model-path"
+            - "{{ .Values.sglang.model.name }}"
+            - "--host"
             - "0.0.0.0"
-            - --port
-            - {{ .Values.sglang.service.port | quote }}
+            - "--port"
+            - "{{ .Values.sglang.service.port }}"
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -62,7 +55,7 @@ metadata:
     app: sglang
     release: {{ .Release.Name }}
 spec:
-  type: {{ .Values.sglang.service.type }}
+  type: {{ .Values.sglang.service.type | default "ClusterIP" }}
   ports:
     - port: {{ .Values.sglang.service.port }}
       targetPort: http
