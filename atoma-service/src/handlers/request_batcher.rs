@@ -40,8 +40,6 @@ pub struct RequestsBatcher {
 pub enum InferenceBatcherError {
     #[error("Failed to send the result back to the requester")]
     SendResultError,
-    #[error("Failed to acquire the client lock")]
-    ClientLockError,
     #[error("Failed to join the batcher task")]
     JoinError(#[from] tokio::task::JoinError),
 }
