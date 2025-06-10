@@ -54,6 +54,7 @@ use crate::{
             confidential_image_generations_handler, image_generations_handler,
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH, IMAGE_GENERATIONS_PATH,
         },
+        request_batcher::InferenceRequest,
         request_counter::RequestCounter,
         stop_streamer::stop_streamer_handler,
     },
@@ -225,6 +226,9 @@ pub struct AppState {
 
     /// The maximum number of queued requests for each inference service.
     pub max_num_queued_requests: f64,
+
+    /// The channel sender for batching inference requests.
+    pub request_batcher_sender: UnboundedSender<InferenceRequest>,
 }
 
 /// Creates and configures the main router for the application.
