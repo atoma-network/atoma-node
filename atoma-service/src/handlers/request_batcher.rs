@@ -9,6 +9,8 @@ use tokio::sync::{
 };
 use tracing::instrument;
 
+use crate::{error::AtomaServiceError, handlers::request_counter::RequestCounter};
+
 // This module provides a batcher for handling inference requests.
 // It allows for batching requests to a specified URL with a given payload and sending the results back to the requester.
 // The batcher processes requests at a specified interval, allowing for efficient handling of multiple requests.
@@ -38,8 +40,6 @@ pub struct RequestsBatcher {
 pub enum InferenceBatcherError {
     #[error("Failed to send the result back to the requester")]
     SendResultError,
-    #[error("Failed to acquire the client lock")]
-    ClientLockError,
     #[error("Failed to join the batcher task")]
     JoinError(#[from] tokio::task::JoinError),
 }
@@ -178,4 +178,80 @@ impl RequestsBatcher {
             .send(result)
             .map_err(|_| InferenceBatcherError::SendResultError)
     }
+}
+
+/// Sends an inference request to the specified URL with the given payload.
+/// This function is used to send requests to the inference service and handle the response.
+/// It returns a `Result` containing the response or an error if the request fails.
+///
+/// # Arguments
+/// * `request_batcher_sender` - The sender channel for the request batcher.
+/// * `url` - The URL to which the request should be sent.
+/// * `path` - The path to append to the URL for the request.
+/// * `payload` - The payload to send with the request, serialized as JSON.
+/// * `running_num_requests` - A reference to a shared counter for tracking running requests.
+/// * `payload_hash` - A hash of the payload for tracking purposes.
+/// * `stack_small_id` - An optional identifier for the stack small.
+/// * `endpoint` - The endpoint for which the request is being sent, used for error reporting.
+///
+/// # Returns
+/// A `Result` containing the response from the inference service or an `AtomaServiceError` if an error occurs.
+#[instrument(level = "debug", skip_all, fields(url = %url, payload_hash = ?payload_hash, stack_small_id = ?stack_small_id))]
+#[allow(clippy::too_many_arguments)]
+pub async fn send_and_receive_request(
+    request_batcher_sender: &mpsc::UnboundedSender<InferenceRequest>,
+    url: &str,
+    path: &str,
+    payload: &Value,
+    running_num_requests: &Arc<RequestCounter>,
+    payload_hash: &[u8; 32],
+    stack_small_id: Option<i64>,
+    endpoint: &str,
+) -> Result<reqwest::Response, AtomaServiceError> {
+    let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+    request_batcher_sender.send(InferenceRequest {
+            url: format!("{}{}", url, path),
+            payload:payload.clone(),
+            result_sender
+        }).map_err(|e| {
+                running_num_requests
+                .decrement(url);
+            AtomaServiceError::InternalError {
+                message: format!(
+                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                    payload_hash,
+                    stack_small_id,
+                    e
+                ),
+                endpoint: endpoint.to_string(),
+            }
+        })?;
+    let response = result_receiver
+            .await
+            .map_err(|e| {
+                running_num_requests
+                    .decrement(url);
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error receiving response from inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?.map_err(|e| {
+                running_num_requests
+                    .decrement(url);
+                AtomaServiceError::InternalError {
+                    message: format!(
+                        "Error processing response from inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
+                        payload_hash,
+                        stack_small_id,
+                        e
+                    ),
+                    endpoint: endpoint.to_string(),
+                }
+            })?;
+    Ok(response)
 }
