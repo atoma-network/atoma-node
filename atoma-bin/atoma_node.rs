@@ -1,11 +1,16 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use atoma_confidential::AtomaConfidentialCompute;
 use atoma_daemon::{telemetry, AtomaDaemonConfig, DaemonState};
 use atoma_p2p::{AtomaP2pNode, AtomaP2pNodeConfig};
 use atoma_service::{
-    config::AtomaServiceConfig, handlers::request_counter::RequestCounter, server::AppState,
+    config::AtomaServiceConfig,
+    handlers::{
+        request_batcher::{InferenceRequest, RequestsBatcher},
+        request_counter::RequestCounter,
+    },
+    server::AppState,
 };
 use atoma_state::{config::AtomaStateManagerConfig, AtomaState, AtomaStateManager};
 use atoma_sui::{client::Client, config::Config, subscriber::Subscriber};
@@ -353,6 +358,18 @@ async fn main() -> Result<()> {
     let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
         .context("Failed to initialize keystore")?;
 
+    let (request_batcher_sender, request_batch_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<InferenceRequest>();
+    let requests_batcher = RequestsBatcher::new(
+        Duration::from_millis(config.service.requests_batcher_interval_ms),
+        request_batch_receiver,
+    );
+
+    let requests_batcher_handle = spawn_with_shutdown(
+        requests_batcher.run(shutdown_receiver.clone()),
+        shutdown_sender.clone(),
+    );
+
     let app_state = AppState {
         concurrent_requests_per_stack: Arc::new(DashMap::new()),
         client_dropped_streamer_connections: Arc::new(DashSet::new()),
@@ -381,6 +398,7 @@ async fn main() -> Result<()> {
         memory_lower_threshold: config.service.memory_lower_threshold,
         memory_upper_threshold: config.service.memory_upper_threshold,
         max_num_queued_requests: config.service.max_num_queued_requests,
+        request_batcher_sender,
     };
 
     let chat_completions_service_urls = app_state
@@ -475,6 +493,7 @@ async fn main() -> Result<()> {
         daemon_result,
         p2p_node_service_result,
         confidential_compute_service_result,
+        requests_batcher_result,
         _,
     ) = try_join!(
         subscriber_handle,
@@ -483,6 +502,7 @@ async fn main() -> Result<()> {
         daemon_handle,
         p2p_node_service_handle,
         confidential_compute_service_handle,
+        requests_batcher_handle,
         ctrl_c
     )?;
     handle_tasks_results(
@@ -492,6 +512,7 @@ async fn main() -> Result<()> {
         daemon_result,
         p2p_node_service_result,
         confidential_compute_service_result,
+        requests_batcher_result,
     )?;
 
     info!(
@@ -532,6 +553,7 @@ fn handle_tasks_results(
     daemon_result: Result<()>,
     p2p_node_service_result: Result<()>,
     confidential_compute_service_result: Result<()>,
+    requests_batcher_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -556,6 +578,10 @@ fn handle_tasks_results(
     result_handler(
         confidential_compute_service_result,
         "Confidential compute service terminated abruptly",
+    )?;
+    result_handler(
+        requests_batcher_result,
+        "Requests batcher terminated abruptly",
     )?;
     Ok(())
 }

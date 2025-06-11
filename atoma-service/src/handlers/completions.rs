@@ -7,6 +7,7 @@ use crate::{
             TOTAL_FAILED_CHAT_REQUESTS, TOTAL_LOCKED_REQUESTS, TOTAL_TOO_EARLY_REQUESTS,
             TOTAL_TOO_MANY_REQUESTS, TOTAL_UNAUTHORIZED_REQUESTS,
         },
+        request_batcher::send_and_receive_request,
         sign_response_and_update_stack_hash, update_fiat_amount, update_stack_num_compute_units,
     },
     middleware::EncryptionMetadata,
@@ -30,7 +31,6 @@ use openai_api_completions::{
     CompletionsResponse, LogProbs, PromptTokensDetails, Usage,
 };
 use opentelemetry::KeyValue;
-use reqwest::Client;
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
 use tracing::{debug, info, instrument};
@@ -898,27 +898,17 @@ async fn handle_streaming_response(
             endpoint: endpoint.clone(),
         });
     }
-    let client = Client::new();
-
-    let response = client
-        .post(format!("{}{}", completions_service_url, COMPLETIONS_PATH))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
-            state
-                .running_num_requests
-                .decrement(&completions_service_url);
-            AtomaServiceError::InternalError {
-                message: format!(
-                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
-                    payload_hash,
-                    stack_small_id,
-                    e
-                ),
-                endpoint: endpoint.clone(),
-            }
-    })?;
+    let response = send_and_receive_request(
+        &state.request_batcher_sender,
+        &completions_service_url,
+        COMPLETIONS_PATH,
+        &payload,
+        &state.running_num_requests,
+        &payload_hash,
+        stack_small_id,
+        &endpoint,
+    )
+    .await?;
 
     if !response.status().is_success() {
         state
@@ -1108,19 +1098,20 @@ pub mod utils {
     use opentelemetry::KeyValue;
 
     use crate::handlers::{
-        handle_concurrent_requests_count_decrement, handle_status_code_error,
+        completions::COMPLETIONS_PATH, handle_concurrent_requests_count_decrement,
+        handle_status_code_error,
         inference_service_metrics::get_best_available_chat_completions_service_url,
-        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, update_fiat_amount, COMPLETION_TOKENS_KEY,
-        PROMPT_TOKENS_KEY, USAGE_KEY,
+        metrics::CHAT_COMPLETIONS_LATENCY_METRICS, request_batcher::send_and_receive_request,
+        update_fiat_amount, COMPLETION_TOKENS_KEY, PROMPT_TOKENS_KEY, USAGE_KEY,
     };
 
     use super::{
         handle_confidential_compute_encryption_response, info, instrument,
         sign_response_and_update_stack_hash, update_stack_num_compute_units, AppState,
-        AtomaServiceError, Body, Client, ConfidentialComputeSharedSecretRequest,
+        AtomaServiceError, Body, ConfidentialComputeSharedSecretRequest,
         ConfidentialComputeSharedSecretResponse, EncryptionMetadata, IntoResponse, Json, Response,
         StreamingEncryptionMetadata, Value, CHAT_COMPLETIONS_INPUT_TOKENS_METRICS,
-        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, COMPLETIONS_PATH, MODEL_KEY, UNKNOWN_MODEL,
+        CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS, MODEL_KEY, UNKNOWN_MODEL,
     };
 
     /// Retrieves encryption metadata for streaming chat completions when confidential compute is enabled.
@@ -1283,7 +1274,6 @@ pub mod utils {
         payload_hash: [u8; PAYLOAD_HASH_SIZE],
         endpoint: &str,
     ) -> Result<Value, AtomaServiceError> {
-        let client = Client::new();
         let model = payload
             .get(MODEL_KEY)
             .and_then(|m| m.as_str())
@@ -1322,26 +1312,17 @@ pub mod utils {
                 endpoint: endpoint.to_string(),
             });
         }
-        let response = client
-            .post(format!("{}{}", completions_service_url, COMPLETIONS_PATH))
-            .json(&payload)
-            .send()
-            .await;
-        state
-            .running_num_requests
-            .decrement(&completions_service_url);
-        let response = response
-        .map_err(|e| {
-            AtomaServiceError::InternalError {
-                message: format!(
-                    "Error sending request to inference service, for request with payload hash: {:?}, and stack small id: {:?}, with error: {}",
-                    payload_hash,
-                    stack_small_id,
-                    e
-                ),
-                endpoint: endpoint.to_string(),
-            }
-        })?;
+        let response = send_and_receive_request(
+            &state.request_batcher_sender,
+            &completions_service_url,
+            COMPLETIONS_PATH,
+            payload,
+            &state.running_num_requests,
+            &payload_hash,
+            stack_small_id,
+            endpoint,
+        )
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();

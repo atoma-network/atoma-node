@@ -51,6 +51,7 @@ memory_lower_threshold           = 0.75                                         
 memory_upper_threshold           = 0.9                                                 # Upper threshold for memory usage, if the memory usage goes above this value, the service will be considered overloaded
 metrics_update_interval          = 30
 models                           = [ "Infermatic/Llama-3.3-70B-Instruct-FP8-Dynamic" ]
+requests_batcher_interval_ms     = 300                                                 # Batching interval for requests in milliseconds, this is used to batch requests before sending them to the inference service
 revisions                        = [ "main" ]
 sentry_dsn                       = ""                                                  # Sentry DSN (for use in sentry, you need to set the Sentry DSN)
 service_bind_address             = "0.0.0.0:3000"

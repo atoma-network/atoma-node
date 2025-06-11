@@ -340,6 +340,7 @@ mod middleware {
             vec![("http://localhost:8082".to_string(), "vllm".to_string(), 1)],
         );
 
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         (
             AppState {
                 concurrent_requests_per_stack: Arc::new(DashMap::new()),
@@ -368,6 +369,7 @@ mod middleware {
                 memory_lower_threshold: 1.0,
                 memory_upper_threshold: 1.0,
                 max_num_queued_requests: 0.0,
+                request_batcher_sender: sender,
             },
             public_key,
             signature,
