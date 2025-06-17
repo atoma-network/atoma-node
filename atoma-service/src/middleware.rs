@@ -429,34 +429,23 @@ async fn generate_request_from_stack(
             endpoint: endpoint.clone(),
         })?;
     let (result_sender, result_receiver) = oneshot::channel();
-    state
-        .state_manager_sender
-        .send(
-            AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
-                stack_small_id,
-                sui_address: sui_address.to_string(),
-                total_num_tokens: max_total_tokens,
-                result_sender,
-            },
-        )
-        .map_err(|err| AtomaServiceError::InternalError {
-            message: format!("Failed to get available stacks: {}", err),
-            endpoint: endpoint.clone(),
-        })?;
-    let available_stack = result_receiver
-        .await
-        .map_err(|e| AtomaServiceError::AuthError {
-            auth_error: format!(
-                "Failed to get available stack with enough tokens, with error: {e}"
-            ),
-            endpoint: endpoint.clone(),
-        })?
-        .map_err(|err| AtomaServiceError::AuthError {
-            auth_error: format!(
-                "Failed to get available stack with enough tokens, with error: {err}"
-            ),
-            endpoint: endpoint.clone(),
-        })?;
+    let available_stack = utils::send_and_receive_request(
+        &state.state_manager_sender,
+        AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
+            stack_small_id,
+            sui_address: sui_address.to_string(),
+            total_num_tokens: max_total_tokens,
+            result_sender,
+        },
+        &endpoint,
+        "Failed to get available stack with enough tokens".to_string(),
+        result_receiver,
+    )
+    .await?
+    .map_err(|e| AtomaServiceError::AuthError {
+        auth_error: format!("Failed to get available stack with enough tokens, with error: {e}"),
+        endpoint: endpoint.clone(),
+    })?;
 
     match available_stack {
         StackAvailability::Available => {
@@ -600,31 +589,25 @@ async fn generate_fiat_request(
 
     let (result_sender, result_receiver) = oneshot::channel();
 
-    state
-        .state_manager_sender
-        .send(AtomaAtomaStateManagerEvent::GetModelPricing {
+    let price_per_one_million_tokens = utils::send_and_receive_request(
+        &state.state_manager_sender,
+        AtomaAtomaStateManagerEvent::GetModelPricing {
             model: model.to_string(),
             result_sender,
-        })
-        .map_err(|err| AtomaServiceError::InternalError {
-            message: format!("Failed to get model pricing: {}", err),
-            endpoint: endpoint.clone(),
-        })?;
-
-    let price_per_one_million_tokens = result_receiver
-        .await
-        .map_err(|_| AtomaServiceError::InternalError {
-            message: "Failed to get model pricing".to_string(),
-            endpoint: endpoint.clone(),
-        })?
-        .map_err(|_| AtomaServiceError::ModelError {
-            model_error: format!("Failed to get model pricing for model {model}"),
-            endpoint: endpoint.clone(),
-        })?
-        .ok_or_else(|| AtomaServiceError::ModelError {
-            model_error: format!("No pricing found for model {model}"),
-            endpoint: endpoint.clone(),
-        })?;
+        },
+        &endpoint,
+        "Failed to get model pricing".to_string(),
+        result_receiver,
+    )
+    .await?
+    .map_err(|e| AtomaServiceError::ModelError {
+        model_error: format!("Failed to get model pricing for model {model}, with error: {e}"),
+        endpoint: endpoint.clone(),
+    })?
+    .ok_or_else(|| AtomaServiceError::ModelError {
+        model_error: format!("No pricing found for model {model}"),
+        endpoint: endpoint.clone(),
+    })?;
 
     let user_id = req_parts
         .headers
@@ -1016,6 +999,7 @@ pub async fn confidential_compute_middleware(
 }
 
 pub mod utils {
+    use atoma_state::types::AtomaAtomaStateManagerEvent;
     use hyper::HeaderMap;
 
     use crate::handlers::{
@@ -1726,5 +1710,39 @@ pub mod utils {
             });
         }
         Ok(())
+    }
+
+    /// Sends an event to the state manager and waits for a response.
+    ///
+    /// # Arguments
+    /// * `state_manager_sender` - The sender for the state manager event.
+    /// * `event` - The event to send to the state manager.
+    /// * `endpoint` - The endpoint of the request.
+    /// * `error_message` - The error message to return if the request fails.
+    /// * `receiver` - The receiver for the state manager event.
+    ///
+    /// # Returns
+    /// * `Ok(T)` - The response from the state manager.
+    /// * `Err(AtomaServiceError)` - If the event fails to send or the receiver fails to receive.
+    #[instrument(level = "info", skip_all, fields(endpoint = %endpoint, error_message = %error_message))]
+    pub async fn send_and_receive_request<T>(
+        state_manager_sender: &flume::Sender<AtomaAtomaStateManagerEvent>,
+        event: AtomaAtomaStateManagerEvent,
+        endpoint: &str,
+        error_message: String,
+        receiver: oneshot::Receiver<T>,
+    ) -> Result<T, AtomaServiceError> {
+        state_manager_sender
+            .send(event)
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Failed to send event to state manager, with error: {e}"),
+                endpoint: endpoint.to_string(),
+            })?;
+        receiver
+            .await
+            .map_err(|e| AtomaServiceError::InternalError {
+                message: format!("Error message: {error_message}: Receive error: {e}"),
+                endpoint: endpoint.to_string(),
+            })
     }
 }
