@@ -1658,7 +1658,6 @@ pub mod utils {
                         endpoint: endpoint.to_string(),
                     });
                 }
-                occupied_entry.remove();
             }
             dashmap::mapref::entry::Entry::Vacant(_) => {
                 tracing::debug!(
@@ -1666,6 +1665,7 @@ pub mod utils {
                     level = "debug",
                     "Model is not in the `too_many_requests` map, so no action is needed here. Processing can continue."
                 );
+                return Ok(());
             }
         }
         let chat_completions_service_urls = state
@@ -1697,7 +1697,6 @@ pub mod utils {
                     model
                 );
         } else if !metrics.is_empty() {
-            // TODO: Should we add the model to the `too_many_requests` map here?
             tracing::debug!(
                     target = "atoma-service",
                     level = "debug",
