@@ -341,11 +341,15 @@ services:
     image: lmsysorg/sglang:latest
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - torchinductor-cache:/tmp/torchinductor_root
+      - triton-cache:/root/.triton
     restart: always
     network_mode: host # required by RDMA
     privileged: true # required by RDMA
     environment:
       HF_TOKEN: ${HF_TOKEN}
+      TORCHINDUCTOR_CACHE_DIR: /tmp/torchinductor_root
+      TRITON_CACHE_DIR: /root/triton
     entrypoint: python3 -m sglang.launch_server
     command:
       --model-path ${SGLANG_MODEL_PATH} --tp 8 --enable-dp-attention --dp 8 --trust-remote-code --max-running-requests 128 --enable-metrics
@@ -374,8 +378,12 @@ services:
     image: lmsysorg/sglang:latest
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - torchinductor-cache:/tmp/torchinductor_root
+      - triton-cache:/root/.triton
     environment:
       HF_TOKEN: ${HF_TOKEN}
+      TORCHINDUCTOR_CACHE_DIR: /tmp/torchinductor_root
+      TRITON_CACHE_DIR: /root/triton
     entrypoint: python3 -m sglang.compile_deep_gemm
     command:
       --model-path ${SGLANG_MODEL_PATH} --tp 8 --trust-remote-code
@@ -601,3 +609,5 @@ volumes:
   loki-data:
   tempo-data:
   atoma-local-key:
+  torchinductor-cache:
+  triton-cache:
