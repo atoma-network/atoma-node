@@ -373,7 +373,7 @@ services:
               capabilities: [gpu]
 
   sglang-deepgemm-precompile:
-    container_name: sglang-deepgemm-precompiled
+    container_name: sglang-deepgemm-precompile
     profiles: [chat_completions_sglang]
     image: lmsysorg/sglang:latest
     volumes:
