@@ -357,6 +357,28 @@ services:
     ipc: host
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+    depends_on:
+      sglang-deepgemm-precompile:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  sglang-deepgemm-precompile:
+    container_name: sglang-deepgemm-precompiled
+    profiles: [chat_completions_sglang]
+    image: lmsysorg/sglang:latest
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    entrypoint: python3 -m sglang.compile_deep_gemm
+    command:
+      --model-path ${SGLANG_MODEL_PATH} --tp 8 --trust-remote-code
     deploy:
       resources:
         reservations:
