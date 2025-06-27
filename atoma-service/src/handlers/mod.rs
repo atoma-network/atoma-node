@@ -1168,8 +1168,12 @@ pub mod inference_service_metrics {
             );
             // NOTE: In this case, we pick one of the urls at random
             let random_index = rand::thread_rng().gen_range(0..chat_completions_service_urls.len());
-            let best_url = chat_completions_service_urls[random_index].0.clone();
-            return Ok((best_url, StatusCode::OK));
+            let (best_url, _, max_concurrent_requets) =
+                &chat_completions_service_urls[random_index];
+            if running_num_requests.increment(best_url.as_str(), *max_concurrent_requets) {
+                return Ok((best_url.clone(), StatusCode::OK));
+            }
+            return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
         }
 
         // Select the best available chat completions service URL based on the number of queued and running requests.
