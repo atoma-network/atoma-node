@@ -1168,36 +1168,40 @@ pub mod inference_service_metrics {
             );
             // NOTE: In this case, we pick one of the urls at random
             let random_index = rand::thread_rng().gen_range(0..chat_completions_service_urls.len());
-            let best_url = chat_completions_service_urls[random_index].0.clone();
-            return Ok((best_url, StatusCode::OK));
+            let (best_url, _, max_concurrent_requets) =
+                &chat_completions_service_urls[random_index];
+            if running_num_requests.increment(best_url.as_str(), *max_concurrent_requets) {
+                return Ok((best_url.clone(), StatusCode::OK));
+            }
+            return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
         }
 
         // Select the best available chat completions service URL based on the number of queued and running requests.
         metrics_results.sort();
 
         for metric in metrics_results {
+            if metric.num_queued_requests > max_num_queued_requests {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Number of queued requests for model: {model} is too high: {}",
+                    metric.num_queued_requests
+                );
+                continue;
+            }
+            if metric.above_upper_threshold_exceeded(memory_upper_threshold) {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Memory usage for model: {model} is too high: {}",
+                    metric.memory_usage
+                );
+                continue;
+            }
             if running_num_requests.increment(
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
-                if metric.num_queued_requests > max_num_queued_requests {
-                    tracing::debug!(
-                        target = "atoma-service",
-                        level = "debug",
-                        "Number of queued requests for model: {model} is too high: {}",
-                        metric.num_queued_requests
-                    );
-                    continue;
-                }
-                if metric.above_upper_threshold_exceeded(memory_upper_threshold) {
-                    tracing::debug!(
-                        target = "atoma-service",
-                        level = "debug",
-                        "Memory usage for model: {model} is too high: {}",
-                        metric.memory_usage
-                    );
-                    continue;
-                }
                 let best_url = metric.chat_completions_service_url.clone();
                 tracing::info!(
                     target = "atoma-service",
