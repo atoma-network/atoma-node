@@ -60,11 +60,17 @@ const SGLANG_RUNNING_REQUESTS_QUERY: &str = "num_running_reqs";
 const SGLANG_QUEUED_REQUESTS_QUERY: &str = "num_queue_reqs";
 const SGLANG_MEMORY_USAGE_QUERY: &str = "token_usage";
 const SGLANG_SERVICE_PREFIX: &str = "sglang:";
+// TODO: Implement the TensorRT LLM queries, they are different to vllm/sglang, they don't measure directly the things we want.
+const TENSORRT_LLM_RUNNING_REQUESTS_QUERY: &str = "<TODO>";
+const TENSORRT_LLM_QUEUED_REQUESTS_QUERY: &str = "<TODO>";
+const TENSORRT_LLM_MEMORY_USAGE_QUERY: &str = "<TODO>";
+const TENSORRT_LLM_SERVICE_PREFIX: &str = "";
 
 #[derive(Debug, Clone)]
 pub enum InferenceService {
     Vllm,
     SgLang,
+    TensorRtLLM,
 }
 
 impl InferenceService {
@@ -73,6 +79,7 @@ impl InferenceService {
         match self {
             Self::Vllm => VLLM_QUEUED_REQUESTS_QUERY,
             Self::SgLang => SGLANG_QUEUED_REQUESTS_QUERY,
+            Self::TensorRtLLM => TENSORRT_LLM_QUEUED_REQUESTS_QUERY,
         }
     }
 
@@ -81,6 +88,7 @@ impl InferenceService {
         match self {
             Self::Vllm => VLLM_RUNNING_REQUESTS_QUERY,
             Self::SgLang => SGLANG_RUNNING_REQUESTS_QUERY,
+            Self::TensorRtLLM => TENSORRT_LLM_RUNNING_REQUESTS_QUERY,
         }
     }
 
@@ -89,6 +97,7 @@ impl InferenceService {
         match self {
             Self::Vllm => VLLM_MEMORY_USAGE_QUERY,
             Self::SgLang => SGLANG_MEMORY_USAGE_QUERY,
+            Self::TensorRtLLM => TENSORRT_LLM_MEMORY_USAGE_QUERY,
         }
     }
 
@@ -97,6 +106,7 @@ impl InferenceService {
         match self {
             Self::Vllm => VLLM_SERVICE_PREFIX,
             Self::SgLang => SGLANG_SERVICE_PREFIX,
+            Self::TensorRtLLM => TENSORRT_LLM_SERVICE_PREFIX,
         }
     }
 }
@@ -703,6 +713,11 @@ pub mod inference_service_metrics {
     #[allow(clippy::redundant_closure)]
     static SGLANG_METRICS_CACHE: LazyLock<MetricsCache> = LazyLock::new(|| MetricsCache::new());
 
+    /// Global metrics cache
+    #[allow(clippy::redundant_closure)]
+    static TENSORRT_LLM_METRICS_CACHE: LazyLock<MetricsCache> =
+        LazyLock::new(|| MetricsCache::new());
+
     /// Start the background task to update metrics every 500 milliseconds
     ///
     /// # Arguments
@@ -941,19 +956,26 @@ pub mod inference_service_metrics {
             level = "info",
             "Getting best available chat completions service URL for model: {model} and urls: {chat_completions_service_urls:?}"
         );
-        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
-            ChatCompletionsServiceUrls,
-            ChatCompletionsServiceUrls,
-        ) = chat_completions_service_urls
-            .iter()
-            .cloned()
-            .partition(|(_, job, _)| job.contains("vllm"));
+        let mut vllm_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        let mut sglang_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        let mut tensorrt_llm_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        for chat_completion_service_url in chat_completions_service_urls {
+            let (_, job, _) = chat_completion_service_url;
+            if job.contains("vllm") {
+                vllm_chat_completions_service_urls.push(chat_completion_service_url.clone());
+            } else if job.contains("sglang") {
+                sglang_chat_completions_service_urls.push(chat_completion_service_url.clone());
+            } else {
+                tensorrt_llm_chat_completions_service_urls
+                    .push(chat_completion_service_url.clone());
+            }
+        }
 
         tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",
-            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}, tensorrt_llm_chat_completions_service_urls: {tensorrt_llm_chat_completions_service_urls:?}"
         );
 
         // Get cached metrics
@@ -1023,16 +1045,53 @@ pub mod inference_service_metrics {
             )
             .await
         };
+        let tensorrt_llm_metrics = if tensorrt_llm_chat_completions_service_urls.is_empty() {
+            vec![]
+        } else if let Some(metrics) = TENSORRT_LLM_METRICS_CACHE.get_metrics().await {
+            metrics
+        } else {
+            info!(
+                target = "atoma-service",
+                module = "inference_service_metrics",
+                level = "info",
+                "No cached TensorRt-LLM metrics, getting them directly"
+            );
+            let tensorrt_llm_chat_completions_service_urls_with_model: Vec<(
+                String,
+                String,
+                String,
+                usize,
+            )> = tensorrt_llm_chat_completions_service_urls
+                .iter()
+                .map(|(url, job, max_concurrent_requests)| {
+                    (
+                        model.to_string(),
+                        url.clone(),
+                        job.clone(),
+                        *max_concurrent_requests,
+                    )
+                })
+                .collect();
+            get_metrics(
+                &InferenceService::TensorRtLLM,
+                &tensorrt_llm_chat_completions_service_urls_with_model,
+            )
+            .await
+        };
 
         tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",
-            "Received vLLM metrics: {vllm_metrics:?}, SgLang metrics: {sglang_metrics:?}"
+            "Received vLLM metrics: {vllm_metrics:?}, SgLang metrics: {sglang_metrics:?}, TensorRt-LLM metrics: {tensorrt_llm_metrics:?}"
         );
 
         let mut metrics_results = Vec::new();
-        for metric in vllm_metrics.into_iter().chain(sglang_metrics.into_iter()) {
+        for metric in vllm_metrics
+            .into_iter()
+            .chain(sglang_metrics.into_iter())
+            .chain(tensorrt_llm_metrics.into_iter())
+        {
             match metric {
                 Ok(ChatCompletionsMetrics {
                     model: current_model,
