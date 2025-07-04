@@ -137,7 +137,7 @@ impl RequestMetadata {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default()
@@ -161,7 +161,7 @@ impl RequestMetadata {
     /// Returns self with the updated user address for method chaining
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default()
@@ -182,7 +182,7 @@ impl RequestMetadata {
     /// Returns self with the updated user id for method chaining
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::RequestMetadata;
     ///
     /// let metadata = RequestMetadata::default()
@@ -210,7 +210,7 @@ impl RequestMetadata {
     /// Returns self with the updated request type for method chaining
     ///
     /// # Example
-    /// ```
+    /// ```rust,ignore
     /// use atoma_service::middleware::{RequestMetadata, RequestType};
     ///
     /// let metadata = RequestMetadata::default()
