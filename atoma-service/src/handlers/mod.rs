@@ -585,6 +585,7 @@ pub fn handle_status_code_error(
 pub mod inference_service_metrics {
     use dashmap::DashMap;
     use futures::future::join_all;
+    use opentelemetry::KeyValue;
     use prometheus_parse::Scrape;
     use prometheus_parse::Value;
     use std::collections::VecDeque;
@@ -596,6 +597,7 @@ pub mod inference_service_metrics {
     use tokio::time;
     use tracing::info;
 
+    use crate::handlers::chat_completions::MODEL_KEY;
     use crate::handlers::metrics::NUM_RATE_LIMITED_REQUESTS;
     use crate::handlers::InferenceService;
     use hyper::StatusCode;
@@ -1229,7 +1231,7 @@ pub mod inference_service_metrics {
                 }
             }
 
-            NUM_RATE_LIMITED_REQUESTS.increment(model);
+            NUM_RATE_LIMITED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
             return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
         }
 
@@ -1287,7 +1289,7 @@ pub mod inference_service_metrics {
             }
         }
 
-        NUM_RATE_LIMITED_REQUESTS.increment(model);
+        NUM_RATE_LIMITED_REQUESTS.add(1, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
         return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
     }
 

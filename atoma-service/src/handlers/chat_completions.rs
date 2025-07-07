@@ -89,7 +89,7 @@ const MAX_COMPLETION_TOKENS_KEY: &str = "max_completion_tokens";
 const MAX_TOKENS_KEY: &str = "max_tokens";
 
 /// The key for the model parameter in the request body
-const MODEL_KEY: &str = "model";
+pub const MODEL_KEY: &str = "model";
 
 /// The key for the messages parameter in the request body
 const MESSAGES_KEY: &str = "messages";
