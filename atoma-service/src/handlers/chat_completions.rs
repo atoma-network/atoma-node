@@ -89,7 +89,7 @@ const MAX_COMPLETION_TOKENS_KEY: &str = "max_completion_tokens";
 const MAX_TOKENS_KEY: &str = "max_tokens";
 
 /// The key for the model parameter in the request body
-const MODEL_KEY: &str = "model";
+pub const MODEL_KEY: &str = "model";
 
 /// The key for the messages parameter in the request body
 const MESSAGES_KEY: &str = "messages";
@@ -906,6 +906,9 @@ async fn handle_streaming_response(
     let (chat_completions_service_url, status_code) =
         get_best_available_chat_completions_service_url(
             &state.running_num_requests,
+            &state.requests_limiter_times,
+            state.limit_request_interval_ms,
+            state.limit_number_of_requests_per_interval,
             chat_completions_service_urls,
             &model.to_lowercase(),
             state.memory_upper_threshold,
@@ -1328,6 +1331,9 @@ pub mod utils {
         let (chat_completions_service_url, status_code) =
             get_best_available_chat_completions_service_url(
                 &state.running_num_requests,
+                &state.requests_limiter_times,
+                state.limit_request_interval_ms,
+                state.limit_number_of_requests_per_interval,
                 chat_completions_service_url_services,
                 model,
                 state.memory_upper_threshold,

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    time::Instant,
+};
 
 use atoma_confidential::types::{
     ConfidentialComputeDecryptionRequest, ConfidentialComputeDecryptionResponse,
@@ -210,7 +214,7 @@ pub struct AppState {
     /// When was the too many requests triggered for each model.
     pub too_many_requests: Arc<DashMap<String, Instant>>,
 
-    /// The time for which we triiger too many requests since the first occurrence.
+    /// The time for which we trigger too many requests since the first occurrence.
     pub too_many_requests_timeout_ms: u128,
 
     /// Number of running requests for each inference service.
@@ -229,6 +233,15 @@ pub struct AppState {
 
     /// The channel sender for batching inference requests.
     pub request_batcher_sender: UnboundedSender<InferenceRequest>,
+
+    /// The maximum number of requests that can be processed in an interval.
+    pub limit_number_of_requests_per_interval: usize,
+
+    /// Interval in milliseconds for limiting requests.
+    pub limit_request_interval_ms: u128,
+
+    /// The times for the requests limiter.
+    pub requests_limiter_times: Arc<DashMap<String, VecDeque<Instant>>>,
 }
 
 /// Creates and configures the main router for the application.

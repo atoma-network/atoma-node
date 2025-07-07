@@ -879,6 +879,9 @@ async fn handle_streaming_response(
         })?;
     let (completions_service_url, status_code) = get_best_available_chat_completions_service_url(
         &state.running_num_requests,
+        &state.requests_limiter_times,
+        state.limit_request_interval_ms,
+        state.limit_number_of_requests_per_interval,
         chat_completions_service_urls,
         model,
         state.memory_upper_threshold,
@@ -1293,6 +1296,9 @@ pub mod utils {
         let (completions_service_url, status_code) =
             get_best_available_chat_completions_service_url(
                 &state.running_num_requests,
+                &state.requests_limiter_times,
+                state.limit_request_interval_ms,
+                state.limit_number_of_requests_per_interval,
                 completions_service_url_services,
                 model,
                 state.memory_upper_threshold,
