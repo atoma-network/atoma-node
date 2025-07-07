@@ -40,11 +40,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libtss2-dev
 
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --exclude atoma-p2p-tester --codecov --output-path codecov.json
+        run: cargo llvm-cov --all-features --workspace --exclude atoma-p2p-tester --codecov --output-path codecov.json --jobs 1 -- --test-threads=1
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
