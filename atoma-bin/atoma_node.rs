@@ -399,6 +399,9 @@ async fn main() -> Result<()> {
         memory_upper_threshold: config.service.memory_upper_threshold,
         max_num_queued_requests: config.service.max_num_queued_requests,
         request_batcher_sender,
+        limit_number_of_requests_per_interval: config.service.limit_number_of_requests_per_interval,
+        limit_request_interval_ms: u128::from(config.service.limit_request_interval_ms),
+        requests_limiter_times: Arc::new(DashMap::new()),
     };
 
     let chat_completions_service_urls = app_state

@@ -583,13 +583,16 @@ pub fn handle_status_code_error(
 }
 
 pub mod inference_service_metrics {
+    use dashmap::DashMap;
     use futures::future::join_all;
     use prometheus_parse::Scrape;
     use prometheus_parse::Value;
     use rand::Rng;
+    use std::collections::VecDeque;
     use std::sync::Arc;
     use std::sync::LazyLock;
     use std::time::Duration;
+    use std::time::Instant;
     use tokio::sync::RwLock;
     use tokio::time;
     use tracing::info;
@@ -1143,8 +1146,12 @@ pub mod inference_service_metrics {
     ///     though the function attempts to handle missing individual metrics gracefully.g
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_best_available_chat_completions_service_url(
         running_num_requests: &RequestCounter,
+        requests_limiter_times: &Arc<DashMap<String, VecDeque<Instant>>>,
+        limit_request_interval_ms: u128,
+        limit_number_of_requests_per_interval: usize,
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
         memory_upper_threshold: f64,
@@ -1180,6 +1187,26 @@ pub mod inference_service_metrics {
         metrics_results.sort();
 
         for metric in metrics_results {
+            if let Some(mut requests_times) =
+                requests_limiter_times.get_mut(metric.chat_completions_service_url.as_str())
+            {
+                while !requests_times.is_empty()
+                    && requests_times.front().unwrap().elapsed().as_millis()
+                        >= limit_request_interval_ms
+                {
+                    requests_times.pop_front();
+                }
+                if requests_times.len() >= limit_number_of_requests_per_interval {
+                    tracing::debug!(
+                        target = "atoma-service",
+                        level = "debug",
+                        "Too many requests in the last {} milliseconds for model: {model} at url: {}",
+                        limit_request_interval_ms,
+                        metric.chat_completions_service_url
+                    );
+                    continue;
+                }
+            }
             if metric.num_queued_requests > max_num_queued_requests {
                 tracing::debug!(
                     target = "atoma-service",

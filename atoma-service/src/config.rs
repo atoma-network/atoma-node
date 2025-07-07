@@ -72,6 +72,12 @@ pub struct AtomaServiceConfig {
 
     /// Batching interval for requests in milliseconds.
     pub requests_batcher_interval_ms: u64,
+
+    /// The maximum number of requests that can be processed in an interval.
+    pub limit_number_of_requests_per_interval: usize,
+
+    /// Interval in milliseconds for limiting requests.
+    pub limit_request_interval_ms: u64,
 }
 
 impl AtomaServiceConfig {
