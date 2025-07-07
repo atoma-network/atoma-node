@@ -1243,10 +1243,16 @@ pub mod inference_service_metrics {
                     level = "debug",
                     "Too many requests in the last {limit_request_interval_ms} milliseconds for model: {model} at url: {best_url}",
                 );
+                    NUM_OF_REQUEST_IN_RATE_LIMITER
+                        .record(0, &[KeyValue::new(MODEL_KEY, model.to_owned())]);
                     continue;
                 }
                 if running_num_requests.increment(best_url.as_str(), *max_concurrent_requests) {
                     requests_times_guard.push_back(Instant::now());
+                    NUM_OF_REQUEST_IN_RATE_LIMITER.record(
+                        requests_times_guard.len() as u64,
+                        &[KeyValue::new(MODEL_KEY, model.to_owned())],
+                    );
                     return Ok((best_url.clone(), StatusCode::OK));
                 }
             }
