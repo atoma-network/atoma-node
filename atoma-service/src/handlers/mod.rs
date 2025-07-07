@@ -947,19 +947,32 @@ pub mod inference_service_metrics {
             level = "info",
             "Getting best available chat completions service URL for model: {model} and urls: {chat_completions_service_urls:?}"
         );
-        let (vllm_chat_completions_service_urls, sglang_chat_completions_service_urls): (
-            ChatCompletionsServiceUrls,
-            ChatCompletionsServiceUrls,
-        ) = chat_completions_service_urls
-            .iter()
-            .cloned()
-            .partition(|(_, job, _)| job.contains("vllm"));
+        let mut vllm_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        let mut sglang_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        let mut dynamo_chat_completions_service_urls: ChatCompletionsServiceUrls = Vec::new();
+        for chat_completion_service_url in chat_completions_service_urls {
+            let (_, job, _) = chat_completion_service_url;
+            if job.contains("vllm") {
+                vllm_chat_completions_service_urls.push(chat_completion_service_url.clone());
+            } else if job.contains("sglang") {
+                sglang_chat_completions_service_urls.push(chat_completion_service_url.clone());
+            } else if job.contains("dynamo") {
+                dynamo_chat_completions_service_urls.push(chat_completion_service_url.clone());
+            } else {
+                tracing::warn!(
+                    target = "atoma-service",
+                    module = "inference_service_metrics",
+                    level = "warn",
+                    "Unknown job type for chat completions service URL: {chat_completion_service_url:?}"
+                );
+            }
+        }
 
         tracing::debug!(
             target = "atoma-service",
             module = "inference_service_metrics",
             level = "info",
-            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}"
+            "Partitioned chat completions service urls: vllm: {vllm_chat_completions_service_urls:?}, sglang: {sglang_chat_completions_service_urls:?}, dynamo: {dynamo_chat_completions_service_urls:?}"
         );
 
         // Get cached metrics
