@@ -650,3 +650,21 @@ pub static NUM_RATE_LIMITED_REQUESTS: LazyLock<Counter<u64>> = LazyLock::new(|| 
         .with_unit("requests")
         .build()
 });
+
+/// Gauge metric that tracks the number of requests currently in the rate limiter.
+///
+/// This metric provides insight into the current load on the rate limiter,
+/// helping to identify potential bottlenecks or performance issues.
+///
+/// # Metric Details
+/// - Name: `atoma_num_of_request_in_rate_limiter`
+/// - Type: Gauge
+/// - Unit: requests (count)
+/// - Description: "Number of requests currently in the rate limiter"
+pub static NUM_OF_REQUEST_IN_RATE_LIMITER: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    GLOBAL_METER
+        .u64_gauge("atoma_num_of_request_in_rate_limiter")
+        .with_description("Number of requests currently in the rate limiter")
+        .with_unit("requests")
+        .build()
+});

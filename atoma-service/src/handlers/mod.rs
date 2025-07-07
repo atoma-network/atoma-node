@@ -598,6 +598,7 @@ pub mod inference_service_metrics {
     use tracing::info;
 
     use crate::handlers::chat_completions::MODEL_KEY;
+    use crate::handlers::metrics::NUM_OF_REQUEST_IN_RATE_LIMITER;
     use crate::handlers::metrics::NUM_RATE_LIMITED_REQUESTS;
     use crate::handlers::InferenceService;
     use hyper::StatusCode;
@@ -1122,12 +1123,17 @@ pub mod inference_service_metrics {
         requests_times: &mut VecDeque<Instant>,
         limit_request_interval_ms: u128,
         limit_number_of_requests_per_interval: usize,
+        model: &str,
     ) -> bool {
         while !requests_times.is_empty()
             && requests_times.front().unwrap().elapsed().as_millis() >= limit_request_interval_ms
         {
             requests_times.pop_front();
         }
+        NUM_OF_REQUEST_IN_RATE_LIMITER.record(
+            requests_times.len() as u64,
+            &[KeyValue::new(MODEL_KEY, model.to_owned())],
+        );
         requests_times.len() < limit_number_of_requests_per_interval
     }
     /// Selects the best available chat completions service URL for a given model based on performance metrics.
@@ -1230,6 +1236,7 @@ pub mod inference_service_metrics {
                     &mut requests_times_guard,
                     limit_request_interval_ms,
                     limit_number_of_requests_per_interval,
+                    model,
                 ) {
                     tracing::debug!(
                     target = "atoma-service",
@@ -1259,6 +1266,7 @@ pub mod inference_service_metrics {
                 &mut requests_times_guard,
                 limit_request_interval_ms,
                 limit_number_of_requests_per_interval,
+                model,
             ) {
                 tracing::debug!(
                     target = "atoma-service",
