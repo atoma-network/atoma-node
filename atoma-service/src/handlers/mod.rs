@@ -587,7 +587,6 @@ pub mod inference_service_metrics {
     use futures::future::join_all;
     use prometheus_parse::Scrape;
     use prometheus_parse::Value;
-    use rand::Rng;
     use std::collections::VecDeque;
     use std::sync::Arc;
     use std::sync::LazyLock;
@@ -602,6 +601,7 @@ pub mod inference_service_metrics {
     use tracing::instrument;
 
     use super::request_counter::RequestCounter;
+    use rand::seq::SliceRandom;
 
     pub type Result<T> = std::result::Result<T, ChatCompletionsMetricsError>;
     type MetricValue = ChatCompletionsMetrics;
@@ -1086,6 +1086,34 @@ pub mod inference_service_metrics {
         Ok(metrics_results)
     }
 
+    /// Checks if the number of requests is within the allowed limits.
+    ///
+    /// This function checks if the number of requests is within the allowed limits
+    /// defined by `limit_request_interval_ms` and `limit_number_of_requests_per_interval`.
+    ///
+    /// # Arguments
+    ///
+    /// * `requests_limiter_times` - A reference to a shared map that tracks request times for each URL.
+    /// * `limit_request_interval_ms` - The time interval in milliseconds within which the number of requests is limited.
+    /// * `limit_number_of_requests_per_interval` - The maximum number of requests allowed within the specified interval.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the request can be made (i.e., the number of requests is within the allowed limits),
+    /// or `false` if the request exceeds the limit.
+    #[instrument(level = "debug")]
+    fn check_rate_limit(
+        requests_times: &mut VecDeque<Instant>,
+        limit_request_interval_ms: u128,
+        limit_number_of_requests_per_interval: usize,
+    ) -> bool {
+        while !requests_times.is_empty()
+            && requests_times.front().unwrap().elapsed().as_millis() >= limit_request_interval_ms
+        {
+            requests_times.pop_front();
+        }
+        requests_times.len() < limit_number_of_requests_per_interval
+    }
     /// Selects the best available chat completions service URL for a given model based on performance metrics.
     ///
     /// This function aims to distribute load and ensure optimal response times by choosing
@@ -1147,6 +1175,7 @@ pub mod inference_service_metrics {
     #[instrument(level = "info", skip_all, fields(model=model))]
     #[allow(clippy::float_cmp)]
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn get_best_available_chat_completions_service_url(
         running_num_requests: &RequestCounter,
         requests_limiter_times: &Arc<DashMap<String, VecDeque<Instant>>>,
@@ -1174,12 +1203,31 @@ pub mod inference_service_metrics {
                 "No metrics found for model: {model}",
             );
             // NOTE: In this case, we pick one of the urls at random
-            let random_index = rand::thread_rng().gen_range(0..chat_completions_service_urls.len());
-            let (best_url, _, max_concurrent_requets) =
-                &chat_completions_service_urls[random_index];
-            if running_num_requests.increment(best_url.as_str(), *max_concurrent_requets) {
-                return Ok((best_url.clone(), StatusCode::OK));
+            let mut indices: Vec<usize> = (0..chat_completions_service_urls.len()).collect();
+            indices.shuffle(&mut rand::thread_rng());
+
+            for index in indices {
+                let (best_url, _, max_concurrent_requests) = &chat_completions_service_urls[index];
+                let mut requests_times_guard =
+                    requests_limiter_times.entry(best_url.clone()).or_default();
+                if !check_rate_limit(
+                    &mut requests_times_guard,
+                    limit_request_interval_ms,
+                    limit_number_of_requests_per_interval,
+                ) {
+                    tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Too many requests in the last {limit_request_interval_ms} milliseconds for model: {model} at url: {best_url}",
+                );
+                    continue;
+                }
+                if running_num_requests.increment(best_url.as_str(), *max_concurrent_requests) {
+                    requests_times_guard.push_back(Instant::now());
+                    return Ok((best_url.clone(), StatusCode::OK));
+                }
             }
+
             return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
         }
 
@@ -1187,26 +1235,23 @@ pub mod inference_service_metrics {
         metrics_results.sort();
 
         for metric in metrics_results {
-            if let Some(mut requests_times) =
-                requests_limiter_times.get_mut(metric.chat_completions_service_url.as_str())
-            {
-                while !requests_times.is_empty()
-                    && requests_times.front().unwrap().elapsed().as_millis()
-                        >= limit_request_interval_ms
-                {
-                    requests_times.pop_front();
-                }
-                if requests_times.len() >= limit_number_of_requests_per_interval {
-                    tracing::debug!(
-                        target = "atoma-service",
-                        level = "debug",
-                        "Too many requests in the last {} milliseconds for model: {model} at url: {}",
-                        limit_request_interval_ms,
-                        metric.chat_completions_service_url
-                    );
-                    continue;
-                }
+            let best_url = metric.chat_completions_service_url.clone();
+            let mut requests_times_guard =
+                requests_limiter_times.entry(best_url.clone()).or_default();
+            if !check_rate_limit(
+                &mut requests_times_guard,
+                limit_request_interval_ms,
+                limit_number_of_requests_per_interval,
+            ) {
+                tracing::debug!(
+                    target = "atoma-service",
+                    level = "debug",
+                    "Too many requests in the last {limit_request_interval_ms} milliseconds for model: {model} at url: {}",
+                    metric.chat_completions_service_url
+                );
+                continue;
             }
+
             if metric.num_queued_requests > max_num_queued_requests {
                 tracing::debug!(
                     target = "atoma-service",
@@ -1229,7 +1274,7 @@ pub mod inference_service_metrics {
                 &metric.chat_completions_service_url,
                 metric.max_number_of_running_requests,
             ) {
-                let best_url = metric.chat_completions_service_url.clone();
+                requests_times_guard.push_back(Instant::now());
                 tracing::info!(
                     target = "atoma-service",
                     level = "info",
