@@ -596,6 +596,7 @@ pub mod inference_service_metrics {
     use tokio::time;
     use tracing::info;
 
+    use crate::handlers::metrics::NUM_RATE_LIMITED_REQUESTS;
     use crate::handlers::InferenceService;
     use hyper::StatusCode;
     use tracing::instrument;
@@ -1228,6 +1229,7 @@ pub mod inference_service_metrics {
                 }
             }
 
+            NUM_RATE_LIMITED_REQUESTS.increment(model);
             return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
         }
 
@@ -1285,6 +1287,7 @@ pub mod inference_service_metrics {
             }
         }
 
+        NUM_RATE_LIMITED_REQUESTS.increment(model);
         return Ok((String::new(), StatusCode::TOO_MANY_REQUESTS));
     }
 
