@@ -148,6 +148,8 @@ pub struct Streamer {
     running_num_requests: Arc<RequestCounter>,
     /// The URL of the chat completions service
     chat_completions_service_url: String,
+    /// Last seen usage
+    usage: Option<Value>,
 }
 
 /// Represents the various states of a streaming process
@@ -215,6 +217,7 @@ impl Streamer {
             user_address,
             running_num_requests,
             chat_completions_service_url,
+            usage: None,
         }
     }
 
@@ -251,20 +254,17 @@ impl Streamer {
     /// * `UpdateStackNumTokens` - Updates the token count for the stack
     #[instrument(
         level = "info",
-        skip(self, usage),
+        skip(self),
         fields(
             endpoint = "handle_final_chunk",
             stack_small_id = self.stack_small_id,
             estimated_output_tokens = self.estimated_output_tokens,
-            payload_hash = hex::encode(self.payload_hash)
+            payload_hash = hex::encode(self.payload_hash),
+            usage = self.usage.as_ref().map(std::string::ToString::to_string),
         ),
         err
     )]
-    fn handle_final_chunk(
-        &mut self,
-        usage: &Value,
-        response_hash: [u8; PAYLOAD_HASH_SIZE],
-    ) -> Result<(), Error> {
+    fn handle_final_chunk(&mut self) -> Result<(), Error> {
         let privacy_level = if self.streaming_encryption_metadata.is_some() {
             "confidential"
         } else {
@@ -285,7 +285,11 @@ impl Streamer {
         // Get total tokens
         let mut input_tokens = 0;
         let mut output_tokens = 0;
-        if let Some(prompt_tokens) = usage.get("prompt_tokens") {
+        if let Some(prompt_tokens) = self
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.get("prompt_tokens"))
+        {
             let prompt_tokens = prompt_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_INPUT_TOKENS_METRICS.add(
                 prompt_tokens,
@@ -303,7 +307,11 @@ impl Streamer {
             );
             return Err(Error::new("Error getting prompt tokens from usage"));
         }
-        if let Some(completion_tokens) = usage.get("completion_tokens") {
+        if let Some(completion_tokens) = self
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.get("completion_tokens"))
+        {
             let completion_tokens = completion_tokens.as_u64().unwrap_or(0);
             CHAT_COMPLETIONS_OUTPUT_TOKENS_METRICS.add(
                 completion_tokens,
@@ -558,6 +566,7 @@ impl Streamer {
         if chunk_str.starts_with(DONE_CHUNK) {
             // This is the last chunk, meaning the inference streaming is complete
             self.status = StreamStatus::Completed;
+            self.handle_final_chunk()?;
             return Poll::Ready(None);
         }
 
@@ -652,72 +661,64 @@ impl Streamer {
 
         let (signature, response_hash) = self.sign_chunk(&chunk)?;
 
-        // Check if this is a final chunk with usage info
         if let Some(usage) = chunk.get(USAGE_KEY).filter(|v| !v.is_null()) {
-            self.status = StreamStatus::Completed;
-            let mut chunk = if let Some(streaming_encryption_metadata) =
-                self.streaming_encryption_metadata.as_ref()
-            {
-                // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                Self::handle_encryption_request(&chunk, Some(usage), streaming_encryption_metadata)?
-            } else {
-                chunk.clone()
-            };
-            self.handle_final_chunk(usage, response_hash)?;
-            update_chunk(&mut chunk, &signature, response_hash);
-            Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
-        } else {
-            let mut chunk = if let Some(streaming_encryption_metadata) =
-                self.streaming_encryption_metadata.as_ref()
-            {
-                // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
-                Self::handle_encryption_request(&chunk, None, streaming_encryption_metadata)?
-            } else {
-                chunk
-            };
-            update_chunk(&mut chunk, &signature, response_hash);
-            // NOTE: We increment the number of tokens computed so far, as we are processing a new chunk
-            // which corresponds to a new generated token.
-            self.streamer_computed_num_tokens += 1;
-            if let Some(_client_dropped_streamer_connection) = self
-                .client_dropped_streamer_connections
-                .remove(&self.request_id)
-            {
-                info!(
-                    target = "atoma-service-streamer",
-                    level = "info",
-                    endpoint = self.endpoint,
-                    "Client dropped streamer connection, updating usage"
-                );
-                self.status = StreamStatus::Completed;
-                chunk[USAGE_KEY] = json!({
-                    PROMPT_TOKENS_KEY: self.num_input_tokens,
-                    COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
-                    TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
-                });
-                // NOTE: At this point, we will need to re-sign the chunk, as we added the usage key.
-                // This is also the last chunk, as the connection was dropped, and therefore, there is
-                // little to no latency overhead to do it once more.
-                //
-                // 1. Remove the previous signature and response hash from the chunk
-                if let Some(obj) = chunk.as_object_mut() {
-                    obj.remove(SIGNATURE_KEY);
-                    obj.remove(RESPONSE_HASH_KEY);
-                }
-                // 2. Sign the chunk again
-                let (signature, response_hash) = self.sign_chunk(&chunk)?;
-                // 3. Update the chunk with the new signature and response hash
-                update_chunk(&mut chunk, &signature, response_hash);
-                info!(
-                    target = "atoma-service-streamer",
-                    level = "info",
-                    endpoint = self.endpoint,
-                    "Client dropped streamer connection, updating usage, chunk = {chunk}"
-                );
-                return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
-            }
-            Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
+            self.usage = Some(usage.to_owned());
         }
+
+        let mut chunk = if let Some(streaming_encryption_metadata) =
+            self.streaming_encryption_metadata.as_ref()
+        {
+            // NOTE: We only need to perform chunk encryption when sending the chunk back to the client
+            Self::handle_encryption_request(
+                &chunk,
+                self.usage.as_ref(),
+                streaming_encryption_metadata,
+            )?
+        } else {
+            chunk
+        };
+        update_chunk(&mut chunk, &signature, response_hash);
+        // NOTE: We increment the number of tokens computed so far, as we are processing a new chunk
+        // which corresponds to a new generated token.
+        self.streamer_computed_num_tokens += 1;
+        if let Some(_client_dropped_streamer_connection) = self
+            .client_dropped_streamer_connections
+            .remove(&self.request_id)
+        {
+            info!(
+                target = "atoma-service-streamer",
+                level = "info",
+                endpoint = self.endpoint,
+                "Client dropped streamer connection, updating usage"
+            );
+            self.status = StreamStatus::Completed;
+            chunk[USAGE_KEY] = json!({
+                PROMPT_TOKENS_KEY: self.num_input_tokens,
+                COMPLETION_TOKENS_KEY: self.streamer_computed_num_tokens,
+                TOTAL_TOKENS_KEY: self.num_input_tokens + self.streamer_computed_num_tokens,
+            });
+            // NOTE: At this point, we will need to re-sign the chunk, as we added the usage key.
+            // This is also the last chunk, as the connection was dropped, and therefore, there is
+            // little to no latency overhead to do it once more.
+            //
+            // 1. Remove the previous signature and response hash from the chunk
+            if let Some(obj) = chunk.as_object_mut() {
+                obj.remove(SIGNATURE_KEY);
+                obj.remove(RESPONSE_HASH_KEY);
+            }
+            // 2. Sign the chunk again
+            let (signature, response_hash) = self.sign_chunk(&chunk)?;
+            // 3. Update the chunk with the new signature and response hash
+            update_chunk(&mut chunk, &signature, response_hash);
+            info!(
+                target = "atoma-service-streamer",
+                level = "info",
+                endpoint = self.endpoint,
+                "Client dropped streamer connection, updating usage, chunk = {chunk}"
+            );
+            return Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)));
+        }
+        Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
     }
 }
 
