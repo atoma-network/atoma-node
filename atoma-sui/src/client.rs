@@ -1,5 +1,10 @@
 use std::path::Path;
-use sui_sdk::{json::SuiJsonValue, types::base_types::ObjectID, wallet_context::WalletContext};
+use sui_keys::keystore::{AccountKeystore, Keystore};
+use sui_sdk::{
+    json::SuiJsonValue,
+    types::{base_types::ObjectID, crypto::Signature},
+    wallet_context::WalletContext,
+};
 use thiserror::Error;
 use tracing::{error, info, instrument};
 
@@ -1402,6 +1407,39 @@ impl Client {
             }
         }
         Ok(None)
+    }
+
+    /// Signs a hashed message using the active wallet's private key.
+    ///
+    /// This method retrieves the active address from the wallet context and uses the keystore
+    /// to sign the provided hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - A byte array representing the hash to be signed.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<Signature>` where:
+    /// - `Ok(Signature)` if the signing is successful
+    /// - `Err(AtomaSuiClientError)` if there is an error signing the hash
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The active address cannot be retrieved from the wallet context
+    /// - The keystore fails to sign the hash
+    #[instrument(level = "info", skip_all, err, fields(
+        endpoint = "sign_hashed",
+        address = %self.wallet_ctx.active_address().unwrap()
+    ))]
+    pub async fn sign_hashed(&mut self, hash: &[u8]) -> Result<Signature> {
+        let active_address = self.wallet_ctx.active_address().unwrap();
+        let signature = match &self.wallet_ctx.config.keystore {
+            Keystore::File(keystore) => keystore.sign_hashed(&active_address, hash).unwrap(),
+            Keystore::InMem(keystore) => keystore.sign_hashed(&active_address, hash).unwrap(),
+        };
+        Ok(signature)
     }
 }
 

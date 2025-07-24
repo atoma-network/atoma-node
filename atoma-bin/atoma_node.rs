@@ -301,6 +301,8 @@ async fn main() -> Result<()> {
             app_state_decryption_receiver,
             app_state_encryption_receiver,
             compute_shared_secret_receiver,
+            config.service.proxy_service_url.clone(),
+            config.sui.node_small_ids(),
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),

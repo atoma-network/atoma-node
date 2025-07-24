@@ -78,6 +78,9 @@ pub struct AtomaServiceConfig {
 
     /// Interval in milliseconds for limiting requests.
     pub limit_request_interval_ms: u64,
+
+    /// Proxy service URL for the Atoma Service.
+    pub proxy_service_url: String,
 }
 
 impl AtomaServiceConfig {

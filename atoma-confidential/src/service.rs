@@ -10,16 +10,19 @@ use crate::{
         CombinedEvidence, ConfidentialComputeDecryptionRequest,
         ConfidentialComputeDecryptionResponse, ConfidentialComputeEncryptionRequest,
         ConfidentialComputeEncryptionResponse, ConfidentialComputeSharedSecretRequest,
-        ConfidentialComputeSharedSecretResponse,
+        ConfidentialComputeSharedSecretResponse, NodeAttestation,
     },
 };
+use aes_gcm::aead::{consts::U32, generic_array::GenericArray};
 use atoma_sui::client::Client;
 use atoma_sui::{client::AtomaSuiClientError, events::AtomaEvent};
 use atoma_utils::{
     compression::{compress_bytes, CompressionError},
-    constants::NONCE_SIZE,
+    constants::{NONCE_SIZE, SIGNATURE},
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use blake2::{Blake2b, Digest};
+use fastcrypto::traits::EncodeDecodeBase64;
 use remote_attestation_verifier::{DeviceEvidence, NvSwitchEvidence};
 use std::sync::Arc;
 use thiserror::Error;
@@ -105,6 +108,12 @@ pub struct AtomaConfidentialCompute {
     /// Channel receiver for incoming Atoma service requests for shared secret computation
     service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
 
+    /// Proxy URL for the Atoma service
+    proxy_url: String,
+
+    /// Unique identifier for the node
+    node_small_ids: Option<Vec<u64>>,
+
     /// Signal receiver for coordinating graceful shutdown of the service
     shutdown_signal: tokio::sync::watch::Receiver<bool>,
 }
@@ -139,6 +148,8 @@ impl AtomaConfidentialCompute {
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
         service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
+        proxy_url: String,
+        node_small_ids: Option<Vec<u64>>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<Self> {
         let key_manager = X25519KeyPairManager::new()?;
@@ -195,6 +206,8 @@ impl AtomaConfidentialCompute {
             service_decryption_receiver,
             service_encryption_receiver,
             service_shared_secret_receiver,
+            proxy_url,
+            node_small_ids,
             shutdown_signal,
         })
     }
@@ -229,12 +242,15 @@ impl AtomaConfidentialCompute {
             num_devices = num_devices().unwrap_or(0),
         )
     )]
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_confidential_compute_service(
         sui_client: Arc<RwLock<Client>>,
         event_receiver: UnboundedReceiver<AtomaEvent>,
         service_decryption_receiver: UnboundedReceiver<ServiceDecryptionRequest>,
         service_encryption_receiver: UnboundedReceiver<ServiceEncryptionRequest>,
         service_shared_secret_receiver: UnboundedReceiver<ServiceSharedSecretRequest>,
+        proxy_url: String,
+        node_small_ids: Option<Vec<u64>>,
         shutdown_signal: tokio::sync::watch::Receiver<bool>,
     ) -> Result<()> {
         // NOTE: Submit the first node key rotation attestation, because the node is starting up afresh
@@ -250,6 +266,8 @@ impl AtomaConfidentialCompute {
                 service_decryption_receiver,
                 service_encryption_receiver,
                 service_shared_secret_receiver,
+                proxy_url,
+                node_small_ids,
                 shutdown_signal,
             )?;
             if service.is_cc_supported || service.is_ppcie_enabled {
@@ -270,6 +288,8 @@ impl AtomaConfidentialCompute {
                 service_decryption_receiver,
                 service_encryption_receiver,
                 service_shared_secret_receiver,
+                proxy_url,
+                node_small_ids,
                 shutdown_signal,
             )?
         };
@@ -469,6 +489,53 @@ impl AtomaConfidentialCompute {
         }
         let evidence_data_bytes = serde_json::to_vec(&evidence_data)?;
         let compressed_evidence_data = compress_bytes(&evidence_data_bytes)?;
+        for node_small_id in self.node_small_ids.iter().flatten() {
+            let attestation = NodeAttestation {
+                node_small_id: (*node_small_id).try_into()?,
+                attestation: compressed_evidence_data.clone(),
+            };
+            let mut blake2b = Blake2b::new();
+            blake2b.update(attestation.node_small_id.to_le_bytes());
+            blake2b.update(attestation.attestation.as_slice());
+            let hash: GenericArray<u8, U32> = blake2b.finalize();
+            let signature = self
+                .sui_client
+                .write()
+                .await
+                .sign_hashed(hash.as_slice())
+                .await?;
+            let response = reqwest::blocking::Client::new()
+                .put(format!("{}/v1/update_node_attestation", self.proxy_url))
+                .header(SIGNATURE, signature.encode_base64())
+                .json(&attestation)
+                .send();
+            match response {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        tracing::info!(
+                            target = "atoma-nvidia-cc-service",
+                            node_small_id = node_small_id,
+                            "Submitted node attestation to proxy successfully"
+                        );
+                    } else {
+                        let status_text = response.status().to_string();
+                        tracing::error!(
+                            target = "atoma-nvidia-cc-service",
+                            node_small_id = node_small_id,
+                            status_text = status_text,
+                            "Failed to submit node attestation to proxy"
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(
+                        target = "atoma-nvidia-cc-service",
+                        error = %err,
+                        "Failed to submit node attestation to proxy"
+                    );
+                }
+            }
+        }
         let response = {
             self.sui_client
                 .write()
