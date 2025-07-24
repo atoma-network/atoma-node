@@ -98,3 +98,9 @@ pub enum CombinedEvidence {
     #[serde(rename = "nvswitch")]
     NvSwitch(NvSwitchEvidence),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeAttestation {
+    pub node_small_id: i64,
+    pub attestation: Vec<u8>,
+}

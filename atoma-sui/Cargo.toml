@@ -13,6 +13,7 @@ hex        = { workspace = true }
 serde      = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 sui-sdk    = { workspace = true }
+sui-keys   = { workspace = true }
 thiserror  = { workspace = true }
 tokio      = { workspace = true }
 toml       = { workspace = true }
