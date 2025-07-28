@@ -11,7 +11,7 @@ use libp2p::{gossipsub, identity};
 use opentelemetry::KeyValue;
 use sui_sdk::types::{
     base_types::SuiAddress,
-    crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
+    crypto::{PublicKey, Signature, SignatureScheme, SuiSignature},
 };
 use tokio::{fs, sync::oneshot};
 use tracing::{error, info, instrument};
