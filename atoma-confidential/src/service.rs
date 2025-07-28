@@ -492,11 +492,11 @@ impl AtomaConfidentialCompute {
         for node_small_id in self.node_small_ids.iter().flatten() {
             let attestation = NodeAttestation {
                 node_small_id: (*node_small_id).try_into()?,
-                attestation: compressed_evidence_data.clone(),
+                compressed_evidence: compressed_evidence_data.clone(),
             };
             let mut blake2b = Blake2b::new();
             blake2b.update(attestation.node_small_id.to_le_bytes());
-            blake2b.update(attestation.attestation.as_slice());
+            blake2b.update(attestation.compressed_evidence.as_slice());
             let hash: GenericArray<u8, U32> = blake2b.finalize();
             let signature = self
                 .sui_client
