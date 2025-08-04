@@ -304,6 +304,8 @@ mod middleware {
                 decryption_receiver,
                 encryption_receiver,
                 compute_shared_secret_receiver,
+                "http://localhost:9000".to_string(),
+                None,
                 shutdown_receiver,
             )
             .expect("Failed to create confidential compute service");
