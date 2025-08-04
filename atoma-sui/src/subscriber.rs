@@ -208,7 +208,25 @@ impl Subscriber {
     /// * Event processing fails
     /// * Writing the cursor file fails
     /// * Communication with the state manager fails
+    ///
+    /// # Errors
+    ///
+    /// This method may return an error if:
+    /// * The Sui client cannot be built
+    /// * Event querying encounters an error
+    /// * Stack retrieval operations fail
+    /// * Event processing fails
+    /// * Writing the cursor file fails
+    /// * Communication with the state manager fails
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if:
+    /// * The Sui client cannot be built
+    /// * Event querying encounters an error
+    /// * Stack retrieval operations fail
     #[instrument(level = "trace", skip_all, fields(package_id))]
+    #[allow(clippy::too_many_lines)]
     pub async fn run(mut self) -> Result<()> {
         let package_id = self.config.atoma_package_id();
         let limit = self.config.limit();

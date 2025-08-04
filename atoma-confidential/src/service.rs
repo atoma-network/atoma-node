@@ -132,6 +132,7 @@ impl AtomaConfidentialCompute {
     #[instrument(level = "info", skip_all, fields(
         num_devices = num_devices().unwrap_or(0),
     ))]
+    #[allow(clippy::cognitive_complexity)]
     pub fn new(
         sui_client: Arc<RwLock<Client>>,
         key_rotation_counter: u64,
@@ -344,7 +345,7 @@ impl AtomaConfidentialCompute {
                     self.handle_encryption_request(encryption_request, sender)?;
                 }
                 Some((shared_secret_request, sender)) = self.service_shared_secret_receiver.recv() => {
-                    self.handle_shared_secret_request(shared_secret_request, sender)?;
+                    self.handle_shared_secret_request(&shared_secret_request, sender)?;
                 }
                 Some(event) = self.event_receiver.recv() => {
                     self.handle_atoma_event(event).await?;
@@ -411,7 +412,7 @@ impl AtomaConfidentialCompute {
         nonce = nonce,
         num_devices = self.num_devices,
     ))]
-    async fn submit_nvidia_cc_attestation(&mut self, nonce: u64) -> Result<()> {
+    async fn submit_nvidia_cc_attestation(&self, nonce: u64) -> Result<()> {
         let public_key_bytes = self.key_manager.get_public_key().to_bytes();
         let nonce_le_bytes = nonce.to_le_bytes();
         let nonce_blake3_hash = blake3::hash(
@@ -533,7 +534,7 @@ impl AtomaConfidentialCompute {
         )
     )]
     fn handle_decryption_request(
-        &mut self,
+        &self,
         decryption_request: ConfidentialComputeDecryptionRequest,
         sender: oneshot::Sender<anyhow::Result<ConfidentialComputeDecryptionResponse>>,
     ) -> Result<()> {
@@ -606,7 +607,7 @@ impl AtomaConfidentialCompute {
         )
     )]
     fn handle_encryption_request(
-        &mut self,
+        &self,
         encryption_request: ConfidentialComputeEncryptionRequest,
         sender: oneshot::Sender<anyhow::Result<ConfidentialComputeEncryptionResponse>>,
     ) -> Result<()> {
@@ -663,14 +664,14 @@ impl AtomaConfidentialCompute {
         )
     )]
     fn handle_shared_secret_request(
-        &mut self,
-        shared_secret_request: ConfidentialComputeSharedSecretRequest,
+        &self,
+        shared_secret_request: &ConfidentialComputeSharedSecretRequest,
         sender: oneshot::Sender<ConfidentialComputeSharedSecretResponse>,
     ) -> Result<()> {
         let ConfidentialComputeSharedSecretRequest {
             client_x25519_public_key,
         } = shared_secret_request;
-        let shared_secret = self.compute_shared_secret(&PublicKey::from(client_x25519_public_key));
+        let shared_secret = self.compute_shared_secret(&PublicKey::from(*client_x25519_public_key));
         let nonce = rand::random::<[u8; NONCE_SIZE]>();
         sender
             .send(ConfidentialComputeSharedSecretResponse {

@@ -205,6 +205,7 @@ pub struct ChatCompletionsOpenApi;
     fields(path = request_metadata.endpoint_path),
     err
 )]
+#[allow(clippy::too_many_lines)]
 pub async fn chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
@@ -432,6 +433,7 @@ pub struct ConfidentialChatCompletionsOpenApi;
     fields(path = request_metadata.endpoint_path),
     err
 )]
+#[allow(clippy::too_many_lines)]
 pub async fn confidential_chat_completions_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,
@@ -850,6 +852,7 @@ async fn handle_non_streaming_response(
     err
 )]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 async fn handle_streaming_response(
     state: &AppState,
     mut payload: Value,

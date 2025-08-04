@@ -418,9 +418,9 @@ async fn main() -> Result<()> {
                     )
                 })
         })
-        .collect();
+        .collect::<Vec<_>>();
     atoma_service::handlers::inference_service_metrics::start_metrics_updater(
-        chat_completions_service_urls,
+        &chat_completions_service_urls,
         config.service.metrics_update_interval,
     );
 

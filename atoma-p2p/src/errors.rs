@@ -33,7 +33,7 @@ pub enum AtomaP2pNodeError {
     #[error("Failed to initialize noise encryption: {0}")]
     NoiseError(#[from] libp2p::noise::Error),
     #[error("Failed to send event to state manager: {0}")]
-    StateManagerError(#[from] flume::SendError<StateManagerEvent>),
+    StateManagerError(#[from] Box<flume::SendError<StateManagerEvent>>),
     #[error("Failed to sign hashed message, with error: {0}")]
     SignatureError(String),
     #[error("Failed to publish gossipsub message: {0}")]

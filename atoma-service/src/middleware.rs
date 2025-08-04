@@ -310,6 +310,23 @@ impl RequestMetadata {
 /// # Security Note
 /// This middleware is crucial for ensuring that only authorized clients can access the
 /// chat completions endpoint, protecting against unauthorized use and potential abuse.
+///
+/// # Errors
+/// This function returns an error if:
+/// - The signature cannot be converted to a string
+/// - The body cannot be converted to bytes
+/// - The body cannot be parsed as JSON
+/// - The signature verification fails
+/// - The request metadata cannot be inserted into the request extensions
+/// - The request metadata cannot be inserted into the request extensions
+///
+/// # Panics
+/// This function panics if:
+/// - The signature cannot be converted to a string
+/// - The body cannot be converted to bytes
+/// - The body cannot be parsed as JSON
+/// - The signature verification fails
+/// - The request metadata cannot be inserted into the request extensions
 #[instrument(
     level = "info",
     skip_all,
@@ -396,6 +413,12 @@ pub async fn signature_verification_middleware(
 /// # Returns
 /// * `Ok(Request<Body>)` - The generated request.
 /// * `Err(AtomaServiceError)` - An error occurred while generating the request.
+///
+/// # Errors
+/// This function returns an error if:
+/// - The stack small ID cannot be converted to a string
+/// - The stack small ID is not a valid integer
+/// - The stack small ID cannot be converted to a string
 #[instrument(
     level = "info",
     skip_all,
@@ -405,6 +428,7 @@ pub async fn signature_verification_middleware(
     err
 )]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 async fn generate_request_from_stack(
     stack_small_id: HeaderValue,
     endpoint: String,
@@ -555,6 +579,14 @@ async fn generate_request_from_stack(
 /// # Returns
 /// * `Ok(Request<Body>)` - The generated request.
 /// * `Err(AtomaServiceError)` - An error occurred while generating the request.
+///
+/// # Errors
+/// This function returns an error if:
+/// - The stack was not found and the address is not enabled for fiat
+/// - The model pricing cannot be retrieved
+/// - The user ID cannot be converted to a string
+/// - The user ID is not a valid integer
+/// - The fiat amount cannot be locked
 #[instrument(
     level = "info",
     skip_all,
@@ -564,6 +596,7 @@ async fn generate_request_from_stack(
     err
 )]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 async fn generate_fiat_request(
     endpoint: String,
     state: State<AppState>,
@@ -734,6 +767,7 @@ async fn generate_fiat_request(
     ),
     err
 )]
+#[allow(clippy::too_many_lines)]
 pub async fn verify_permissions(
     state: State<AppState>,
     req: Request<Body>,
@@ -896,6 +930,14 @@ pub async fn verify_permissions(
 /// - The salt and nonce should be unique for each request
 /// - The Diffie-Hellman public key must be exactly 32 bytes when decoded
 /// - All cryptographic operations are performed in a separate confidential compute service
+///
+/// # Errors
+/// This function returns an error if:
+/// - The body cannot be converted to bytes
+/// - The body cannot be parsed as ConfidentialComputeRequest
+/// - The plaintext body hash cannot be converted to a string
+/// - The plaintext body hash cannot be converted to a [u8; PAYLOAD_HASH_SIZE]
+/// - The plaintext body hash is incorrect
 #[instrument(
     level = "info", skip_all,
     fields(
@@ -1252,6 +1294,12 @@ pub mod utils {
     ///     "max_tokens": 100
     /// }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The model is not supported
+    /// - Messages is not an array
+    /// - Message content not found
     #[instrument(level = "trace", skip_all, err)]
     pub fn calculate_chat_completion_compute_units(
         body_json: &Value,
@@ -1415,6 +1463,7 @@ pub mod utils {
     ///     Err(e) => eprintln!("Decryption failed: {}", e),
     /// }
     /// ```
+    #[allow(clippy::too_many_lines)]
     #[instrument(level = "trace", skip_all, err)]
     pub async fn decrypt_confidential_compute_request(
         state: &AppState,
@@ -1636,6 +1685,13 @@ pub mod utils {
     /// The function is designed to be deadlock-safe with respect to `DashMap` operations:
     /// - The lock acquired by `state.too_many_requests.entry()` is released before any `.await` point.
     /// - Subsequent operations on `state.too_many_requests` (like the second `remove` call) acquire new, independent locks.
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The model is not supported
+    /// - The chat completions service URL is not found
+    /// - The metrics cannot be retrieved
+    /// - The metrics indicate that the service is still exceeding the lower threshold
     #[instrument(level = "info", skip_all, err)]
     pub async fn check_if_too_many_requests(
         state: &AppState,
@@ -1724,6 +1780,11 @@ pub mod utils {
     /// # Returns
     /// * `Ok(T)` - The response from the state manager.
     /// * `Err(AtomaServiceError)` - If the event fails to send or the receiver fails to receive.
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The event fails to send
+    /// - The receiver fails to receive
     #[instrument(level = "info", skip_all, fields(endpoint = %endpoint, error_message = %error_message))]
     pub async fn send_and_receive_request<T>(
         state_manager_sender: &flume::Sender<AtomaAtomaStateManagerEvent>,

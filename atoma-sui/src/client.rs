@@ -160,6 +160,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - The node badge cannot be found after registration
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - The node badge cannot be found after registration
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -257,6 +269,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         model_name = %model_name,
         echelon = %echelon,
@@ -359,6 +383,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
@@ -468,6 +504,18 @@ impl Client {
     ///     Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         method = %UPDATE_NODE_TASK_SUBSCRIPTION_METHOD,
         price_per_one_million_compute_units = %price_per_one_million_compute_units,
@@ -567,6 +615,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -671,6 +731,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
         num_claimed_compute_units = %num_claimed_compute_units,
@@ -782,6 +854,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -888,6 +972,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -987,6 +1083,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics        
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap()
     ))]
@@ -1083,6 +1191,18 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(
         level = "info",
         skip_all,
@@ -1223,6 +1343,18 @@ impl Client {
     ///     Ok(())
     /// }
     /// ```
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "info", skip_all, err, fields(
         address = %self.wallet_ctx.active_address().unwrap(),
@@ -1307,6 +1439,18 @@ impl Client {
     /// let mut client = AtomaProxy::new(config).await?;
     /// let usdc_wallet_id = client.get_or_load_usdc_wallet_object_id().await?;
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The wallet context operations fail
+    /// - The transaction submission fails
+    /// - No node badge is found when one is not explicitly provided
     #[instrument(level = "info", skip_all, err, fields(
         endpoint = "get_or_load_usdc_wallet_object_id",
         address = %self.wallet_ctx.active_address().unwrap()
@@ -1364,6 +1508,18 @@ impl Client {
     ///     }
     /// }
     /// ```
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - Failed to get the client from wallet context
+    /// - Failed to retrieve the Atoma DB object
+    /// - Failed to access the content of the Atoma DB object
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - Failed to get the client from wallet context
+    /// - Failed to retrieve the Atoma DB object
+    /// - Failed to access the content of the Atoma DB object
     #[instrument(level = "info", skip_all, err, fields(
         endpoint = "get_last_key_rotation_event",
         address = %self.wallet_ctx.active_address().unwrap()
