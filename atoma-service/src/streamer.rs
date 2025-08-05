@@ -264,6 +264,7 @@ impl Streamer {
         ),
         err
     )]
+    #[allow(clippy::too_many_lines)]
     fn handle_final_chunk(&mut self) -> Result<(), Error> {
         let privacy_level = if self.streaming_encryption_metadata.is_some() {
             "confidential"
@@ -407,6 +408,12 @@ impl Streamer {
     /// Returns a tuple containing:
     /// * A base64-encoded string of the signature
     /// * A base64-encoded string of the response hash
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - The chunk cannot be signed
+    /// - The signature cannot be generated
     #[instrument(level = "debug", skip_all, err)]
     pub fn sign_chunk(&self, chunk: &Value) -> Result<(String, [u8; PAYLOAD_HASH_SIZE]), Error> {
         let (response_hash, signature) =
@@ -538,7 +545,9 @@ impl Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
-    fn handle_streaming_chunk(&mut self, chunk: Bytes) -> Poll<Option<Result<Event, Error>>> {
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cognitive_complexity)]
+    fn handle_streaming_chunk(&mut self, chunk: &Bytes) -> Poll<Option<Result<Event, Error>>> {
         if self.status != StreamStatus::Started {
             self.status = StreamStatus::Started;
         }
@@ -547,7 +556,7 @@ impl Streamer {
             return Poll::Pending;
         }
 
-        let chunk_str = match std::str::from_utf8(&chunk) {
+        let chunk_str = match std::str::from_utf8(chunk) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -731,7 +740,7 @@ impl Stream for Streamer {
         }
 
         match self.stream.as_mut().poll_next(cx) {
-            Poll::Ready(Some(Ok(chunk))) => self.handle_poll_chunk(chunk),
+            Poll::Ready(Some(Ok(chunk))) => self.handle_poll_chunk(&chunk),
             Poll::Ready(Some(Err(e))) => self.handle_poll_error(&e),
             Poll::Ready(None) => self.handle_poll_complete(),
             Poll::Pending => Poll::Pending,
@@ -741,7 +750,7 @@ impl Stream for Streamer {
 
 impl Streamer {
     /// Handles a successful chunk from the stream
-    fn handle_poll_chunk(&mut self, chunk: Bytes) -> Poll<Option<Result<Event, Error>>> {
+    fn handle_poll_chunk(&mut self, chunk: &Bytes) -> Poll<Option<Result<Event, Error>>> {
         match self.handle_streaming_chunk(chunk) {
             Poll::Ready(Some(Ok(event))) => self.handle_successful_event(event),
             Poll::Ready(Some(Err(e))) => self.handle_streaming_error(e),
@@ -813,6 +822,7 @@ impl Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
+    #[allow(clippy::cognitive_complexity)]
     fn update_balance_on_error(&self) {
         if let Some(stack_small_id) = self.stack_small_id {
             // NOTE: We need to update the stack number of tokens as the service failed to generate
@@ -914,6 +924,7 @@ impl Drop for Streamer {
             payload_hash = hex::encode(self.payload_hash)
         )
     )]
+    #[allow(clippy::cognitive_complexity)]
     fn drop(&mut self) {
         self.running_num_requests
             .decrement(&self.chat_completions_service_url);

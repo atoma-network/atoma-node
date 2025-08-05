@@ -113,6 +113,11 @@ impl InferenceService {
 /// # Returns
 ///
 /// Returns Result<(), AtomaServiceError> indicating success or failure
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - The response body cannot be signed
 #[instrument(
     level = "info",
     skip(response_body, state),
@@ -556,6 +561,11 @@ pub fn handle_concurrent_requests_count_decrement(
 /// # Returns
 ///
 /// Returns an `AtomaServiceError` variant based on the status code.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - The status code is not one of the expected values
 #[instrument(level = "info", skip_all, fields(endpoint), err)]
 pub fn handle_status_code_error(
     status_code: StatusCode,
@@ -718,7 +728,7 @@ pub mod inference_service_metrics {
     /// * `metrics_update_interval` - The interval in seconds to update the metrics.
     #[instrument(level = "info", skip_all)]
     pub fn start_metrics_updater(
-        chat_completions_service_urls: Vec<(String, String, String, usize)>,
+        chat_completions_service_urls: &[(String, String, String, usize)],
         metrics_update_interval: Option<u64>,
     ) {
         type ChatCompletionsServiceUrls = Vec<(String, String, String, usize)>;
@@ -926,6 +936,7 @@ pub mod inference_service_metrics {
         skip(chat_completions_service_urls, model),
         fields(model = model)
     )]
+    #[allow(clippy::too_many_lines)]
     pub async fn get_all_metrics(
         chat_completions_service_urls: &[(String, String, usize)], // (url, job, max_concurrent_requests)
         model: &str,
@@ -1198,6 +1209,7 @@ pub mod inference_service_metrics {
     #[allow(clippy::float_cmp)]
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::significant_drop_tightening)]
+    #[allow(clippy::too_many_lines)]
     pub async fn get_best_available_chat_completions_service_url(
         running_num_requests: &RequestCounter,
         requests_limiter_times: &Arc<DashMap<String, VecDeque<Instant>>>,

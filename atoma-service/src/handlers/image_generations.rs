@@ -255,6 +255,7 @@ pub struct ConfidentialImageGenerationsOpenApi;
     fields(path = request_metadata.endpoint_path),
     err
 )]
+#[allow(clippy::too_many_lines)]
 pub async fn confidential_image_generations_handler(
     Extension(request_metadata): Extension<RequestMetadata>,
     State(state): State<AppState>,

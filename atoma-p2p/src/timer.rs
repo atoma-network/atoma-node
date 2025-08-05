@@ -1,5 +1,5 @@
 use chrono::Utc;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, hash::BuildHasher, time::Duration};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use tracing::{error, instrument};
 
@@ -36,6 +36,11 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 /// # Errors
 ///
 /// Returns AtomaP2pNodeError::UsageMetricsSendError if sending metrics fails
+///
+/// # Panics
+///
+/// This function panics if:
+/// * The timestamp cannot be converted to a u64
 #[instrument(
     level = "info",
     fields(
@@ -45,9 +50,9 @@ const USAGE_METRICS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
     ),
     skip_all
 )]
-pub fn usage_metrics_timer_task(
+pub fn usage_metrics_timer_task<S: BuildHasher + Send + Sync + 'static>(
     country: Option<String>,
-    metrics_endpoints: HashMap<String, (String, Vec<String>)>,
+    metrics_endpoints: HashMap<String, (String, Vec<String>), S>,
     is_client: bool,
     node_public_url: Option<String>,
     node_small_id: Option<u64>,

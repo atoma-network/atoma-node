@@ -355,6 +355,7 @@ pub async fn nodes_claim_funds(
         (status = INTERNAL_SERVER_ERROR, description = "Failed to submit claim funds")
     )
 )]
+#[allow(dead_code)]
 #[tracing::instrument(level = "info", skip_all)]
 pub async fn nodes_claim_stacks(
     State(daemon_state): State<DaemonState>,

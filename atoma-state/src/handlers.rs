@@ -20,6 +20,27 @@ use crate::{
 
 const RATIO_FOR_CLAIM_STACK_THRESHOLD: f64 = 0.95;
 
+/// Handles an Atoma event by routing it to the appropriate handler function.
+///
+/// This function takes an `AtomaEvent` and routes it to the appropriate handler function
+/// based on the event type. It supports various event types including task registration,
+/// task deprecation, node task subscriptions, stack creation, and more.
+///
+/// # Arguments
+///
+/// * `event` - The `AtomaEvent` to handle
+/// * `state_manager` - The `AtomaStateManager` to use for database operations
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event cannot be deserialized into a `AtomaEvent`.
+/// * The database operation fails.
+/// * The event cannot be handled by the appropriate handler function.
 #[instrument(level = "info", skip_all)]
 pub async fn handle_atoma_event(
     event: AtomaEvent,
@@ -713,6 +734,7 @@ pub(crate) async fn handle_claimed_stack_event(
 /// 1. Matches the incoming event to determine the type of operation to perform.
 /// 2. For `GetAvailableStackWithComputeUnits`, it retrieves the available stack and sends the result.
 /// 3. For `UpdateStackNumComputeUnits`, it updates the number of compute units for the specified stack.
+#[allow(clippy::too_many_lines)]
 #[instrument(level = "info", skip_all)]
 pub(crate) async fn handle_state_manager_event(
     state_manager: &AtomaStateManager,

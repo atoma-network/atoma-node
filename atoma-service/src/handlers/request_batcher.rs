@@ -72,6 +72,10 @@ impl RequestsBatcher {
     ///
     /// # Returns
     /// A future that runs the batcher, processing requests and sending results.
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The batcher cannot be joined
     #[instrument(level = "debug", skip_all, fields(interval = %self.interval.as_secs()))]
     pub async fn run(
         mut self,
@@ -196,6 +200,12 @@ impl RequestsBatcher {
 ///
 /// # Returns
 /// A `Result` containing the response from the inference service or an `AtomaServiceError` if an error occurs.
+///
+/// # Errors
+/// This function returns an error if:
+/// - The request cannot be sent
+/// - The response cannot be received
+/// - The response cannot be processed
 #[instrument(level = "debug", skip_all, fields(url = %url, payload_hash = ?payload_hash, stack_small_id = ?stack_small_id))]
 #[allow(clippy::too_many_arguments)]
 pub async fn send_and_receive_request(

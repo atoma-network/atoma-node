@@ -1311,6 +1311,13 @@ impl AtomaState {
     ///
     /// The operation is performed atomically using CTEs to ensure thread safety
     /// and prevent race conditions.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The query result cannot be parsed.
+    /// - The query result is invalid.
     #[tracing::instrument(
         level = "trace",
         skip_all,

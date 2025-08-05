@@ -58,7 +58,7 @@ mod middleware {
         let keystore_path = temp_dir.path().join("keystore");
         let mut keystore = FileBasedKeystore::new(&keystore_path).unwrap();
         keystore
-            .generate_and_add_new_key(
+            .generate(
                 SignatureScheme::ED25519,
                 Some("test".to_string()),
                 None,

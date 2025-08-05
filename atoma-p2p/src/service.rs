@@ -204,7 +204,17 @@ impl AtomaP2pNode {
     /// - Messages are signed using the node's private key
     /// - Peer connections are authenticated
     /// - The node validates all incoming messages
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The runtime cannot be built
+    /// - The local key cannot be read or created
+    /// - The local peer ID cannot be parsed
+    /// - The swarm cannot be built
+    /// - The topic cannot be subscribed to
     #[instrument(level = "debug", skip_all)]
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cognitive_complexity)]
     pub fn start(
         config: AtomaP2pNodeConfig,
         keystore: Arc<FileBasedKeystore>,
@@ -560,7 +570,16 @@ impl AtomaP2pNode {
     /// - Peer subscription/unsubscription events
     /// - Usage metrics processing errors
     /// - Shutdown events
+    ///
+    /// # Panics
+    /// This function panics if:
+    /// - The runtime cannot be built
+    /// - The local key cannot be read or created
+    /// - The local peer ID cannot be parsed
+    /// - The swarm cannot be built
+    /// - The topic cannot be subscribed to
     #[instrument(level = "debug", skip_all)]
+    #[allow(clippy::too_many_lines)]
     pub async fn run(
         mut self,
         mut shutdown_signal: watch::Receiver<bool>,
@@ -1103,7 +1122,7 @@ impl AtomaP2pNode {
                     error = %e,
                     "Failed to send event to state manager"
                 );
-                AtomaP2pNodeError::StateManagerError(e)
+                AtomaP2pNodeError::StateManagerError(Box::new(e))
             })?;
         }
 

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    hash::BuildHasher,
     num::ParseFloatError,
     sync::{LazyLock, Mutex},
 };
@@ -170,7 +171,7 @@ pub struct ImageGenerationMetrics {
 }
 
 /// Trait for setting metrics values for a specific model
-trait MetricsCollector {
+pub trait MetricsCollector {
     /// Set the metrics value
     fn set_metrics_value(&mut self, query: &str, value: f64);
 }
@@ -395,8 +396,8 @@ pub async fn collect_metrics<T: Default + MetricsCollector + Send>(
     skip_all,
     fields(metrics_endpoints = %metrics_endpoints.len())
 )]
-pub async fn compute_node_metrics(
-    metrics_endpoints: &HashMap<String, (String, Vec<String>)>,
+pub async fn compute_node_metrics<S: BuildHasher + Send + Sync + 'static>(
+    metrics_endpoints: &HashMap<String, (String, Vec<String>), S>,
 ) -> Result<NodeMetrics, NodeMetricsError> {
     let futures =
         metrics_endpoints

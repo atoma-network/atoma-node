@@ -24,6 +24,7 @@ reqwest                     = { workspace = true }
 serde                       = { workspace = true }
 serde_json                  = { workspace = true }
 sui-keys                    = { workspace = true }
+sui-sdk                     = { workspace = true }
 thiserror                   = { workspace = true }
 tokio                       = { workspace = true }
 tracing                     = { workspace = true }

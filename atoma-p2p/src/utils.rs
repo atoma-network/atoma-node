@@ -11,7 +11,7 @@ use libp2p::{gossipsub, identity};
 use opentelemetry::KeyValue;
 use sui_sdk::types::{
     base_types::SuiAddress,
-    crypto::{PublicKey, Signature, SignatureScheme, SuiSignature},
+    crypto::{PublicKey, Signature, SignatureScheme, SuiSignature, ToFromBytes},
 };
 use tokio::{fs, sync::oneshot};
 use tracing::{error, info, instrument};
@@ -165,6 +165,22 @@ fn validate_country_code(code: &str) -> Result<(), Box<AtomaP2pNodeError>> {
 ///     Err(e) => println!("Signature verification failed: {}", e),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// This function will return an error in the following situations:
+/// * `SignatureParseError` - If the signature bytes cannot be parsed into a valid signature structure
+///   or if the public key cannot be extracted from the signature
+/// * `SignatureVerificationError` - If the signature verification fails (indicating the signature is invalid
+///   for the given message)
+/// * `SignatureParseError` - If the signature uses an unsupported signature scheme
+///
+/// # Panics
+/// This function panics if:
+/// * The signature cannot be parsed
+/// * The public key cannot be extracted
+/// * The signature verification fails
+/// * The signature uses an unsupported signature scheme
 #[instrument(level = "trace", skip_all)]
 pub fn verify_signature(
     signature_bytes: &[u8],
@@ -294,7 +310,7 @@ pub async fn verify_node_small_id_ownership(
             error = %e,
             "Failed to send event to state manager"
         );
-        return Err(AtomaP2pNodeError::StateManagerError(e));
+        return Err(AtomaP2pNodeError::StateManagerError(Box::new(e)));
     }
     match receiver.await {
         Ok(result) => {
@@ -327,6 +343,21 @@ pub async fn verify_node_small_id_ownership(
 /// # Returns
 ///
 /// Returns `Ok(())` if the message is valid, or a `AtomaP2pNodeError` if any step fails.
+///
+/// # Errors
+///
+/// This function will return an error in the following situations:
+/// * `SignatureParseError` - If the signature cannot be parsed
+/// * `StateManagerError` - If the verification request cannot be sent to the state manager
+/// * `NodeSmallIdOwnershipVerificationError` - If the state manager reports the node does not own the ID
+/// * `UrlParseError` - If the URL is invalid or malformed  
+///
+/// # Panics
+/// This function panics if:
+/// * The signature cannot be parsed
+/// * The public key cannot be extracted
+/// * The signature verification fails
+/// * The signature uses an unsupported signature scheme
 #[instrument(level = "debug", skip_all)]
 pub async fn validate_signed_node_message(
     node_message: &NodeMessage,

@@ -120,6 +120,18 @@ where
 /// This function is critical for ensuring request authenticity. It verifies that:
 /// 1. The request was signed by the owner of the public key
 /// 2. The request body hasn't been tampered with since signing
+///
+/// # Panics
+/// This function panics if:
+/// - The signature cannot be parsed
+/// - The public key cannot be extracted
+/// - The signature verification fails
+///
+/// # Errors
+/// This function returns an error if:
+/// - The signature cannot be parsed
+/// - The public key cannot be extracted
+/// - The signature verification fails
 #[instrument(level = "trace", skip_all)]
 pub fn verify_signature(
     base64_signature: &str,
@@ -209,6 +221,18 @@ pub fn verify_signature(
 ///
 /// This function logs errors at the trace level using the `tracing` crate,
 /// including the field name in the log context.
+///
+/// # Panics
+/// This function panics if:
+/// - The field doesn't exist in the JSON
+/// - The field's value is not an array
+/// - Any array element cannot be converted to a `u8`
+///
+/// # Errors
+/// This function returns an error if:
+/// - The field doesn't exist in the JSON
+/// - The field's value is not an array
+/// - Any array element cannot be converted to a `u8`
 #[instrument(
     level = "trace",
     skip_all,
