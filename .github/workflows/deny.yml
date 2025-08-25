@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: EmbarkStudios/cargo-deny-action@v2.0.12
+      - uses: EmbarkStudios/cargo-deny-action@v2.0.13
         with:
           command: check ${{ matrix.checks }}
           arguments: --exclude addchain
