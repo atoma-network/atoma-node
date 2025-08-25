@@ -182,7 +182,7 @@ impl Subscriber {
     ///
     /// 1. Stack Retrieval:
     ///    - Receives transaction digests and responds with compute units information
-    ///    - Processes StackCreatedEvents from transactions and forwards them to the state manager
+    ///    - Processes `StackCreatedEvents` from transactions and forwards them to the state manager
     ///
     /// 2. Event Processing:
     ///    - Queries for new events using the configured filter and cursor
@@ -559,7 +559,7 @@ fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> 
 ///
 /// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to handle
 /// * `value` - The serialized event data as a `serde_json::Value`
-/// * `db` - A reference to the SQLite connection pool for database operations
+/// * `db` - A reference to the `SQLite` connection pool for database operations
 /// * `node_small_ids` - A slice of node IDs that are relevant for the current context
 ///
 /// # Returns
