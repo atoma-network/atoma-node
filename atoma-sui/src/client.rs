@@ -133,9 +133,9 @@ impl Client {
     ///
     /// # Arguments
     ///
-    /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction. If None, the system will
     ///           automatically select a gas object.
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
     ///                  constant (5,000,000 MIST = 0.005 SUI).
     /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's
     ///                 reference gas price.
@@ -233,9 +233,9 @@ impl Client {
     ///
     /// * `model_name` - The name of the model to subscribe to
     /// * `echelon` - The echelon level for the subscription (0-255)
-    /// * `node_badge_id` - Optional ObjectID of the node badge. If None, uses the client's stored badge
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
     /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
     ///
     /// # Returns
@@ -347,11 +347,11 @@ impl Client {
     /// # Arguments
     ///
     /// * `task_small_id` - The small ID of the task to subscribe to
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `price_per_one_million_compute_units` - The price per compute unit the node is willing to charge
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -461,11 +461,11 @@ impl Client {
     /// # Arguments
     ///
     /// * `task_small_id` - The small ID of the task to update the subscription for
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `price_per_one_million_compute_units` - The new price per compute unit for the task subscription
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -582,10 +582,10 @@ impl Client {
     /// # Arguments
     ///
     /// * `task_small_id` - The small ID of the task to unsubscribe from
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -689,13 +689,13 @@ impl Client {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack to settle
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `num_claimed_compute_units` - The number of compute units being claimed for this stack
     /// * `committed_stack_proof` - The proof data for the committed stack
     /// * `stack_merkle_leaf` - The merkle leaf data for the stack
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -815,12 +815,12 @@ impl Client {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack being attested
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `committed_stack_proof` - The proof data for the committed stack
     /// * `stack_merkle_leaf` - The merkle leaf data for the stack
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -936,11 +936,11 @@ impl Client {
     /// # Arguments
     ///
     /// * `stack_small_id` - The small ID of the stack being disputed
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `committed_stack_proof` - The proof data for the committed stack that supports the dispute
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -1050,10 +1050,10 @@ impl Client {
     /// # Arguments
     ///
     /// * `settled_ticket_ids` - A vector of ticket IDs that have been settled and are ready for claiming
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -1159,11 +1159,11 @@ impl Client {
     /// # Arguments
     ///
     /// * `stack_small_ids` - A vector of stack small IDs that have been settled and are ready for claiming
-    /// * `node_badge_id` - Optional Node badge ID of the node. If None, uses the client's stored badge ID
+    /// * `node_badge_id` - Optional `ObjectID` of the node badge. If None, uses the client's stored badge ID
     /// * `num_claimed_compute_units` - A vector of the number of compute units claimed for each stack
-    /// * `gas` - Optional ObjectID to use as gas for the transaction
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///
@@ -1304,10 +1304,10 @@ impl Client {
     /// * `key_rotation_counter` - The key rotation counter value
     /// * `device_type` - The device type identifier (as a u16)
     /// * `task_small_id` - Optional small ID of the task
-    /// * `gas` - Optional ObjectID to use as gas for the transaction. If None, the system will
+    /// * `gas` - Optional `ObjectID` to use as gas for the transaction. If None, the system will
     ///           automatically select a gas object
-    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to GAS_BUDGET
-    /// * `gas_price` - Optional gas price for the transaction. If None, uses network's reference price
+    /// * `gas_budget` - Optional gas budget for the transaction. If None, defaults to `GAS_BUDGET`
+    /// * `gas_price` - Optional gas price for the transaction. If None, uses the network's reference price
     ///
     /// # Returns
     ///

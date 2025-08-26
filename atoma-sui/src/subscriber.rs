@@ -142,26 +142,26 @@ impl Subscriber {
         )
     }
 
-    /// Builds a SuiClient based on the provided configuration.
+    /// Builds a `SuiClient` based on the provided configuration.
     ///
-    /// This asynchronous method creates a new SuiClient instance using the settings
-    /// specified in the AtomaSuiConfig. It sets up the client with the
+    /// This asynchronous method creates a new `SuiClient` instance using the settings
+    /// specified in the `AtomaSuiConfig`. It sets up the client with the
     /// configured request timeout and HTTP RPC node address.
     ///
     /// # Arguments
     ///
-    /// * `config` - A reference to a AtomaSuiConfig containing the necessary
+    /// * `config` - A reference to a `AtomaSuiConfig` containing the necessary
     ///              configuration parameters.
     ///
     /// # Returns
     ///
-    /// * `Result<SuiClient>` - A Result containing the newly created SuiClient if successful,
-    ///                         or a SuiEventSubscriberError if the client creation fails.
+    /// * `Result<SuiClient>` - A `Result` containing the newly created `SuiClient` if successful,
+    ///                         or a `SuiEventSubscriberError` if the client creation fails.
     ///
     /// # Errors
     ///
     /// This function will return an error if:
-    /// * The SuiClient cannot be built with the provided configuration.
+    /// * The `SuiClient` cannot be built with the provided configuration.
     /// * There's a network issue when connecting to the specified RPC node.
     #[instrument(level = "info", skip_all, fields(
         http_rpc_node_addr = %config.http_rpc_node_addr()
@@ -182,13 +182,13 @@ impl Subscriber {
     ///
     /// 1. Stack Retrieval:
     ///    - Receives transaction digests and responds with compute units information
-    ///    - Processes StackCreatedEvents from transactions and forwards them to the state manager
+    ///    - Processes `StackCreatedEvents` from transactions and forwards them to the state manager
     ///
     /// 2. Event Processing:
     ///    - Queries for new events using the configured filter and cursor
     ///    - Parses and filters events based on node and task IDs
     ///    - Forwards relevant events to the state manager
-    ///    - Updates the cursor periodically (every CURSOR_FILE_UPDATE_ITERATIONS)
+    ///    - Updates the cursor periodically (every `CURSOR_FILE_UPDATE_ITERATIONS`)
     ///    - Implements backoff when no new events are available
     ///
     /// 3. Shutdown Handling:
@@ -202,7 +202,7 @@ impl Subscriber {
     /// # Errors
     ///
     /// This method may return an error if:
-    /// * There's a failure in building the Sui client
+    /// * There's a failure in building the `SuiClient`
     /// * Event querying encounters an error
     /// * Stack retrieval operations fail
     /// * Event processing fails
@@ -212,7 +212,7 @@ impl Subscriber {
     /// # Errors
     ///
     /// This method may return an error if:
-    /// * The Sui client cannot be built
+    /// * The `SuiClient` cannot be built
     /// * Event querying encounters an error
     /// * Stack retrieval operations fail
     /// * Event processing fails
@@ -222,7 +222,7 @@ impl Subscriber {
     /// # Panics
     ///
     /// This method may panic if:
-    /// * The Sui client cannot be built
+    /// * The `SuiClient` cannot be built
     /// * Event querying encounters an error
     /// * Stack retrieval operations fail
     #[instrument(level = "trace", skip_all, fields(package_id))]
@@ -433,7 +433,7 @@ impl Subscriber {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use your_crate::{AtomaEventIdentifier, AtomaEvent, SuiEventSubscriber};
+    /// # use atoma_sui::{AtomaEventIdentifier, AtomaEvent, SuiEventSubscriber};
     /// # async fn example(subscriber: &SuiEventSubscriber) -> Result<(), Box<dyn std::error::Error>> {
     /// let event_id = AtomaEventIdentifier::TaskRegisteredEvent;
     /// let event = AtomaEvent::TaskRegisteredEvent(/* ... */);
@@ -559,7 +559,7 @@ fn write_cursor_to_toml_file(cursor: Option<EventID>, path: &str) -> Result<()> 
 ///
 /// * `event` - A reference to the `AtomaEvent` enum indicating the type of event to handle
 /// * `value` - The serialized event data as a `serde_json::Value`
-/// * `db` - A reference to the SQLite connection pool for database operations
+/// * `db` - A reference to the `SQLite` connection pool for database operations
 /// * `node_small_ids` - A slice of node IDs that are relevant for the current context
 ///
 /// # Returns
@@ -686,7 +686,7 @@ async fn parse_event(
     }
 }
 
-/// Filters an Atoma event based on a list of node small IDs.
+/// Filters an `AtomaEvent` based on a list of node small IDs.
 ///
 /// This function checks if the given event is related to any of the nodes specified by their small IDs.
 /// For node-specific events (like registration, subscriptions, etc.), it returns true only if the
@@ -694,7 +694,7 @@ async fn parse_event(
 ///
 /// # Arguments
 ///
-/// * `event` - Reference to the Atoma event to filter
+/// * `event` - Reference to the `AtomaEvent` to filter
 /// * `node_small_ids` - Slice containing the node small IDs to filter by
 ///
 /// # Returns
