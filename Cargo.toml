@@ -19,7 +19,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 aes-gcm                     = "0.10.3"
-anyhow                      = "1.0.98"
+anyhow                      = "1.0.100"
 atoma-confidential          = { path = "./atoma-confidential" }
 atoma-daemon                = { path = "./atoma-daemon" }
 atoma-p2p                   = { path = "./atoma-p2p" }
